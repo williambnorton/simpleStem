@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
 const app = express();
@@ -44,8 +45,10 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Paths to the media directories
-// Root: ~/ClaudeDrive/simpleStem  (browses local filesystem, not Google Drive cloud)
-const SIMPLE_STEM_ROOT = '/Users/wbn/ClaudeDrive/simpleStem';
+// Root: ~/ClaudeDrive/simpleStem (browses the local filesystem, not the cloud).
+// Derived from the home dir so it works on both Macs; override with
+// SIMPLE_STEM_ROOT=/path if Drive is mounted somewhere non-default.
+const SIMPLE_STEM_ROOT = process.env.SIMPLE_STEM_ROOT || path.join(os.homedir(), 'ClaudeDrive', 'simpleStem');
 const STEMS_DIR = `${SIMPLE_STEM_ROOT}/STEMS`;
 const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
