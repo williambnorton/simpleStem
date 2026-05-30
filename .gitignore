@@ -1,0 +1,23 @@
+# Audio data — large, shared via Google Drive, not in git
+STEMS/
+M4A/
+_quarantine_dupes/
+
+# Runtime queues & process state (machine-local)
+INCOMING_WEBLOC/
+STEM_QUEUE/
+.run/
+*.webloc
+*.webloc.failed
+.current
+*.pid
+*.lock
+
+# Node
+node_modules/
+bt-construction-kit/durations.json
+bt-construction-kit/library_cache.json
+
+# macOS / misc
+.DS_Store
+.probe_write

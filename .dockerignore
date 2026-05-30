@@ -1,0 +1,7 @@
+# Keep the build context tiny — STEMS/ can be many GBs and would
+# otherwise be sent to the Docker daemon on every build.
+STEMS/
+*.log
+.DS_Store
+.git/
+.gitignore

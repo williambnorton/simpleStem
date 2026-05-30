@@ -1,0 +1,943 @@
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+const CACHE_FILE = path.join(__dirname, 'durations.json');
+let durationCache = {};
+
+if (fs.existsSync(CACHE_FILE)) {
+  try {
+    durationCache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+  } catch (e) {
+    console.error('Error reading duration cache:', e);
+  }
+}
+
+function getAudioDuration(filePath) {
+  if (durationCache[filePath]) {
+    return durationCache[filePath];
+  }
+  try {
+    const cmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
+    const stdout = execSync(cmd, { encoding: 'utf8' });
+    const duration = parseFloat(stdout.trim());
+    if (!isNaN(duration) && duration > 0) {
+      durationCache[filePath] = duration;
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(durationCache, null, 2), 'utf8');
+      return duration;
+    }
+  } catch (err) {
+    // Graceful fallback
+  }
+  return null;
+}
+
+app.use(cors());
+app.use(express.json());
+
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Paths to the media directories
+// Root: ~/ClaudeDrive/simpleStem  (browses local filesystem, not Google Drive cloud)
+const SIMPLE_STEM_ROOT = '/Users/wbn/ClaudeDrive/simpleStem';
+const STEMS_DIR = `${SIMPLE_STEM_ROOT}/STEMS`;
+const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
+const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
+const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
+
+// Comprehensive list of known artists in this library for intelligent parsing
+const KNOWN_ARTISTS = [
+  'Beatles', 'The Beatles', 'Grateful Dead', 'Tom Petty', 'Tom and Stevie', 'Joe Jackson', 
+  'Neil Young', 'Cat Stevens', 'Aerosmith', 'Lynyrd Skynyrd', 'Lynryd Skynryd', 'Eagles', 
+  'The Eagles', 'Don Henley', 'Led Zeppelin', 'Eddie Money', 'Cake', 'Black Crowes', 
+  'Black Crows', 'ACDC', 'AC_DC', 'AC/DC', 'Jackson Browne', 'Steely Dan', 'David Bowie', 
+  'Green Day', 'The Faces', 'Faces', 'Violent Femmes', 'Jimi Hendrix', 'Bill Withers', 
+  'Bob Dylan', 'Grand Funk Railroad', 'Bad Company', 'Paul McCartney and Wings', 'Paul McCartney',
+  'Rolling Stones', 'The Rolling Stones', 'Tears for Fears', 'Pink Floyd', 'Boz Scaggs', 
+  'Journey', 'Zombies', 'The Zombies', 'Santana', 'Allman Brothers', 'Allman Bros', 
+  'Alman Brothers', 'Chris Isaak', 'Chis Issak', 'Johnny Nash', 'Gil Scott-Heron', 
+  'Talking Heads', 'The Beat', 'Pretenders', 'The Pretenders', 'Gary Numan', 'Chicago', 
+  'Amy Winehouse', 'Modern English', 'Commodores', 'Simple Minds', 'Burt Bacharach', 
+  'Cheap Trick', 'The Who', 'Van Morrison', 'Cream', 'Soft Cell', 'Pat Benatar', 
+  'Pete Seeger', 'Johnny Cash', 'Blind Melon', 'Elvis', 'Til Tuesday', 'George Harrison', 
+  'Harvey Danger', 'NEEDTOBREATHE', 'Alannah Myles', 'Dolly Parton', 'CCR', 'Jimmy Eat World', 
+  'Bob seager', 'Billie Joe Armstrong', 'Bob Marley', 'The Band', 'Matt'
+];
+
+/**
+ * Intelligent parser to extract song metadata (Title, Artist, BPM, Key)
+ * from a filename or folder name.
+ */
+function parseSongMetadata(rawName, isFolder = false) {
+  // Clean up extensions and leading/trailing spaces
+  let name = rawName.replace(/\.(m4a|wav|mp3)$/i, '').trim();
+
+  let practiceBpm = null;
+  let originalBpm = null;
+  let key = null;
+
+  // 1. Extract Key if specified (e.g. "Doctor My Eyes in D" or "Easy in G")
+  const keyMatch = name.match(/\bin\s+([A-G][b#]?m?)\b/i);
+  if (keyMatch) {
+    key = keyMatch[1];
+    name = name.replace(/\bin\s+[A-G][b#]?m?\b/i, '').trim();
+  }
+
+  // 2. Extract BPMs of format "120@88" or similar
+  const bpmAtMatch = name.match(/(\d+)\s*@\s*(\d+)/);
+  if (bpmAtMatch) {
+    practiceBpm = parseInt(bpmAtMatch[1]);
+    originalBpm = parseInt(bpmAtMatch[2]);
+    name = name.replace(/\d+\s*@\s*\d+/, '').trim();
+  } else {
+    // Check for single BPM at the end of the filename
+    const singleBpmMatch = name.match(/\b(\d{2,3})\b(?!.*\b\d{2,3}\b)/);
+    if (singleBpmMatch) {
+      practiceBpm = parseInt(singleBpmMatch[1]);
+      name = name.replace(/\b\d{2,3}\b/, '').trim();
+    }
+  }
+
+  // Clean double spaces and lingering characters
+  name = name.replace(/\s+/g, ' ').trim();
+
+  // 3. Separate Title and Artist
+  let title = name;
+  let artist = 'Unknown Artist';
+
+  // Check for explicit hyphen separator (common in M4A files: "Title-Artist")
+  if (name.includes('-')) {
+    const parts = name.split('-');
+    title = parts[0].trim();
+    artist = parts[1].trim();
+  } else if (name.includes('_')) {
+    // For folders, try to match known artists first, otherwise split by last underscore
+    const nameWithSpaces = name.replace(/_/g, ' ');
+    let matchedArtist = null;
+
+    for (const art of KNOWN_ARTISTS) {
+      const regex = new RegExp(`\\b${art}\\b`, 'i');
+      if (regex.test(nameWithSpaces)) {
+        matchedArtist = art;
+        break;
+      }
+    }
+
+    if (matchedArtist) {
+      artist = matchedArtist;
+      // Extract title by removing the artist from the name
+      const regex = new RegExp(`_?${artist.replace(/\s+/g, '_')}_?`, 'i');
+      title = name.replace(regex, '').replace(/_/g, ' ').trim();
+    } else {
+      // Fallback: split by the last underscore segment
+      const parts = name.split('_');
+      if (parts.length > 1) {
+        artist = parts[parts.length - 1];
+        title = parts.slice(0, -1).join(' ');
+      }
+      title = title.replace(/_/g, ' ').trim();
+    }
+  } else {
+    // If no separator, scan against known artists list
+    for (const art of KNOWN_ARTISTS) {
+      const regex = new RegExp(`\\b${art}\\b`, 'i');
+      if (regex.test(name)) {
+        artist = art;
+        title = name.replace(regex, '').trim();
+        break;
+      }
+    }
+  }
+
+  // Final polishing
+  title = title.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  artist = artist.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Clean trailing hyphens or commas from Title
+  title = title.replace(/^[,\-\s]+|[,\-\s]+$/g, '');
+
+  return {
+    title: title || rawName,
+    artist: artist,
+    practiceBpm,
+    originalBpm,
+    key
+  };
+}
+
+/**
+ * Scan the STEMS directory and return metadata of available stems and loops.
+ */
+function scanStems() {
+  if (!fs.existsSync(STEMS_DIR)) {
+    console.warn(`Stems directory not found: ${STEMS_DIR}`);
+    return [];
+  }
+
+  const results = [];
+  const folders = fs.readdirSync(STEMS_DIR).filter(file => {
+    if (/ \(\d+\)$/.test(file)) return false;   // skip ' (1)' duplicate copies
+    const fullPath = path.join(STEMS_DIR, file);
+    return fs.statSync(fullPath).isDirectory();
+  });
+
+  for (const folder of folders) {
+    const folderPath = path.join(STEMS_DIR, folder);
+    const filesInFolder = fs.readdirSync(folderPath);
+
+    // Identify standard stems
+    const stems = {
+      vocals: filesInFolder.includes('vocals.wav') ? `vocals.wav` : null,
+      drums: filesInFolder.includes('drums.wav') ? `drums.wav` : null,
+      bass: filesInFolder.includes('bass.wav') ? `bass.wav` : null,
+      guitar: filesInFolder.includes('guitar.wav') ? `guitar.wav` : null,
+      piano: filesInFolder.includes('piano.wav') ? `piano.wav` : null,
+      other: filesInFolder.includes('other.wav') ? `other.wav` : null,
+      rhythm: filesInFolder.includes('bass+drums.wav') ? `bass+drums.wav` : null,
+      source: filesInFolder.includes('source.wav') ? `source.wav` : null,
+    };
+
+    // Find loop files (e.g. drums_loop1_83bars.wav)
+    const loops = [];
+    const loopFiles = filesInFolder.filter(f => f.toLowerCase().includes('loop') && f.endsWith('.wav'));
+    
+    // Parse loop metadata
+    for (const loopFile of loopFiles) {
+      // Pattern: [stem]_loop[num]_[bars]bars.wav
+      const match = loopFile.match(/^([a-z+]+)_loop(\d+)_(\d+)bars\.wav$/i);
+      if (match) {
+        loops.push({
+          fileName: loopFile,
+          type: match[1].toLowerCase(), // 'drums', 'bass', 'drumsbass', etc.
+          loopNum: parseInt(match[2]),
+          bars: parseInt(match[3])
+        });
+      }
+    }
+
+    // Group loops by number for easier UI representation
+    const groupedLoops = {};
+    for (const l of loops) {
+      if (!groupedLoops[l.loopNum]) {
+        groupedLoops[l.loopNum] = {
+          loopNum: l.loopNum,
+          bars: l.bars,
+          files: {}
+        };
+      }
+      groupedLoops[l.loopNum].files[l.type] = l.fileName;
+    }
+
+    // Prefer pre-computed metadata.json (title/artist/duration_sec/bpm/key).
+    // Falls back to filename parsing + ffprobe only when the JSON is missing.
+    let title, artist, duration, practiceBpm, originalBpm, key, keySignature;
+    const metaJsonPath = path.join(folderPath, 'metadata.json');
+    let usedMetaJson = false;
+    if (fs.existsSync(metaJsonPath)) {
+      try {
+        const mj = JSON.parse(fs.readFileSync(metaJsonPath, 'utf8'));
+        title = mj.title;
+        artist = mj.artist;
+        duration = typeof mj.duration_sec === 'number' ? mj.duration_sec : null;
+        if (typeof mj.bpm === 'number') practiceBpm = Math.round(mj.bpm);
+        key = mj.key || null;
+        keySignature = mj.key_signature || null;
+        usedMetaJson = true;
+      } catch (e) {
+        console.warn(`Bad metadata.json in ${folder}:`, e.message);
+      }
+    }
+    if (!usedMetaJson) {
+      const meta = parseSongMetadata(folder, true);
+      title = meta.title;
+      artist = meta.artist;
+      practiceBpm = meta.practiceBpm;
+      originalBpm = meta.originalBpm;
+      key = meta.key;
+      const representativeFile = stems.source || stems.drums || stems.bass || stems.vocals || stems.other;
+      if (representativeFile) {
+        duration = getAudioDuration(path.join(folderPath, representativeFile));
+      }
+    }
+
+    results.push({
+      id: `stem-${folder}`,
+      type: 'stems',
+      variantCode: 'STEMS',
+      variantLabel: 'Multitrack Stems',
+      folderName: folder,
+      title: title,
+      artist: artist,
+      practiceBpm: practiceBpm || null,
+      originalBpm: originalBpm || null,
+      key: key,
+      keySignature: keySignature || null,
+      stems: stems,
+      cached: isStemsFolderCached(folder),
+      loops: Object.values(groupedLoops).sort((a, b) => a.loopNum - b.loopNum),
+      duration: duration,
+      stats: {
+        stemCount: Object.values(stems).filter(Boolean).length,
+        loopCount: loops.length
+      }
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Scan the M4A directory and return list of backing tracks.
+ * If a matching STEMS folder exists, inherits title/artist/bpm/key/duration
+ * from its metadata.json (avoids re-running ffprobe and gives accurate data).
+ */
+function scanM4a(stemsByKey) {
+  if (!fs.existsSync(M4A_DIR)) {
+    console.warn(`M4A directory not found: ${M4A_DIR}`);
+    return [];
+  }
+
+  const files = fs.readdirSync(M4A_DIR).filter(file => {
+    if (/ \(\d+\)\.m4a$/i.test(file)) return false;   // skip ' (1)' duplicate downloads
+    const fullPath = path.join(M4A_DIR, file);
+    return fs.statSync(fullPath).isFile() && file.endsWith('.m4a');
+  });
+
+  // Known variant suffixes appended after artist (e.g. Foo_Artist_-V-G-B.m4a).
+  // Strip these BEFORE title/artist parsing, then label the variant.
+  const VARIANT_PATTERNS = [
+    { re: /_-V-G-B$/i,  code: '-V-G-B', label: 'No Vocals/Guitar/Bass' },
+    { re: /_-V-G$/i,    code: '-V-G',   label: 'No Vocals/Guitar' },
+    { re: /_-V-B$/i,    code: '-V-B',   label: 'No Vocals/Bass' },
+    { re: /_-V$/i,      code: '-V',     label: 'No Vocals' },
+    { re: /_DO$/i,      code: 'DO',     label: 'Drums Only' },
+  ];
+
+  return files.map(file => {
+    const baseName = file.replace(/\.m4a$/i, '');
+    let stripped = baseName;
+    let variantCode = 'FULL';
+    let variantLabel = 'Full Mix';
+    for (const v of VARIANT_PATTERNS) {
+      if (v.re.test(stripped)) {
+        stripped = stripped.replace(v.re, '');
+        variantCode = v.code;
+        variantLabel = v.label;
+        break;
+      }
+    }
+    // Try to inherit metadata from a sibling STEMS folder (same stripped name).
+    // E.g. Come_Together_Beatles_-V-G-B.m4a → STEMS/Come_Together_Beatles/metadata.json.
+    let title, artist, duration, practiceBpm, originalBpm, key, keySignature;
+    const sibling = stemsByKey && stemsByKey[stripped];
+    if (sibling) {
+      title = sibling.title;
+      artist = sibling.artist;
+      duration = sibling.duration;
+      practiceBpm = sibling.practiceBpm;
+      originalBpm = sibling.originalBpm;
+      key = sibling.key;
+      keySignature = sibling.keySignature;
+    } else {
+      const meta = parseSongMetadata(stripped, true);
+      title = meta.title;
+      artist = meta.artist;
+      practiceBpm = meta.practiceBpm;
+      originalBpm = meta.originalBpm;
+      key = meta.key;
+      duration = getAudioDuration(path.join(M4A_DIR, file));
+    }
+    return {
+      id: `m4a-${file}`,
+      type: 'm4a',
+      fileName: file,
+      title,
+      artist,
+      practiceBpm: practiceBpm || null,
+      originalBpm: originalBpm || null,
+      key,
+      keySignature: keySignature || null,
+      duration,
+      cached: isM4aCached(file),
+      variantCode,
+      variantLabel
+    };
+  });
+}
+
+// =====================================================================
+// LIBRARY CACHE
+// The library directory changes at most a few times per hour; scanning
+// it (especially M4A on Google Drive) is slow. We cache the full scan
+// result in memory and persist to library_cache.json so a server restart
+// serves stale data immediately while a refresh runs in the background.
+// Refresh cadence: every 60 minutes + explicit ?refresh=1 query param.
+// =====================================================================
+const LIBRARY_CACHE_FILE = path.join(__dirname, 'library_cache.json');
+const LIBRARY_REFRESH_MS = 60 * 60 * 1000; // 1 hour
+let libraryCache = null;       // { scannedAt: ISO string, data: { stats, songs } }
+let libraryRefreshing = false; // re-entrancy guard
+
+// Dedupe raw song entries (stems + m4a) by (title, artist) — one entry per
+// unique song so stats don't double-count a song that exists in multiple
+// formats / variants. Prefer the stems entry when available since its
+// metadata is canonical.
+function pickUniqueSongs(allSongs) {
+  const norm = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const byKey = new Map();
+  for (const s of allSongs) {
+    const k = `${norm(s.title)}|${norm(s.artist)}`;
+    const prev = byKey.get(k);
+    if (!prev) {
+      byKey.set(k, s);
+    } else if (prev.type !== 'stems' && s.type === 'stems') {
+      // Upgrade: stems entry is canonical
+      byKey.set(k, s);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function buildLibraryData() {
+  const stems = scanStems();
+  const stemsByKey = {};
+  for (const s of stems) stemsByKey[s.folderName] = s;
+  const m4as = scanM4a(stemsByKey);
+  const allSongs = [...stems, ...m4as];
+
+  // Stats are computed from unique songs (one entry per title+artist), not raw
+  // file entries — so "Eminence Front" doesn't show up 4 times (stems + 3 m4a
+  // variants) when counting "songs in F minor".
+  const uniqueSongs = pickUniqueSongs(allSongs);
+
+  const stats = {
+    totalSongs:  uniqueSongs.length,                   // unique songs (was raw file count)
+    totalFiles:  allSongs.length,                      // new: raw file count (stems + m4a entries)
+    totalStems:  stems.length,
+    totalM4as:   m4as.length,
+    artistCount: new Set(uniqueSongs.map(s => s.artist).filter(a => a && a !== 'Unknown Artist')).size,
+    bpmDistribution: {
+      slow:    uniqueSongs.filter(s => s.practiceBpm && s.practiceBpm < 90).length,
+      medium:  uniqueSongs.filter(s => s.practiceBpm && s.practiceBpm >= 90 && s.practiceBpm <= 125).length,
+      fast:    uniqueSongs.filter(s => s.practiceBpm && s.practiceBpm > 125).length,
+      unknown: uniqueSongs.filter(s => !s.practiceBpm).length
+    },
+    keyDistribution: uniqueSongs.reduce((acc, s) => {
+      if (s.key) acc[s.key] = (acc[s.key] || 0) + 1;
+      return acc;
+    }, {})
+  };
+
+  return { stats, songs: allSongs };
+}
+
+// Returns mtimes (as ISO strings) of the source directories — used to detect
+// whether anything was added/removed since the last scan so we can short-circuit.
+function getSourceMtimes() {
+  const out = { stems: null, m4a: null };
+  try { out.stems = fs.statSync(STEMS_DIR).mtime.toISOString(); } catch (e) {}
+  try { out.m4a   = fs.statSync(M4A_DIR).mtime.toISOString();   } catch (e) {}
+  return out;
+}
+
+function refreshLibraryCache(reason, force) {
+  if (libraryRefreshing) return Promise.resolve();
+  libraryRefreshing = true;
+  const t0 = Date.now();
+  return new Promise(resolve => {
+    setImmediate(() => {
+      try {
+        const currentMtimes = getSourceMtimes();
+        const prevMtimes = (libraryCache && libraryCache.sourceMtimes) || {};
+        const unchanged =
+          libraryCache && libraryCache.data &&
+          prevMtimes.stems === currentMtimes.stems &&
+          prevMtimes.m4a   === currentMtimes.m4a;
+
+        if (unchanged && !force) {
+          console.log(`[lib] skipped (${reason}) — source dirs unchanged since ${libraryCache.scannedAt}`);
+          // Touch checkedAt so we know when we last verified
+          libraryCache.checkedAt = new Date().toISOString();
+          try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
+          return;
+        }
+
+        const data = buildLibraryData();
+        libraryCache = {
+          scannedAt: new Date().toISOString(),
+          checkedAt: new Date().toISOString(),
+          sourceMtimes: currentMtimes,
+          data
+        };
+        try {
+          fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache));
+        } catch (e) { console.warn('[lib] persist failed:', e.message); }
+        console.log(`[lib] rebuilt (${reason}) in ${Date.now() - t0}ms — ${data.songs.length} songs · stems mtime ${currentMtimes.stems}`);
+      } catch (e) {
+        console.warn('[lib] refresh failed:', e.message);
+      } finally {
+        libraryRefreshing = false;
+        resolve();
+      }
+    });
+  });
+}
+
+// Hydrate from persisted cache on startup so the first request is instant
+try {
+  if (fs.existsSync(LIBRARY_CACHE_FILE)) {
+    libraryCache = JSON.parse(fs.readFileSync(LIBRARY_CACHE_FILE, 'utf8'));
+    console.log(`[lib] hydrated cache from disk — ${libraryCache.data.songs.length} songs (scanned ${libraryCache.scannedAt})`);
+  }
+} catch (e) { console.warn('[lib] failed to hydrate cache:', e.message); }
+
+// Kick off a refresh on startup (background) and every hour after
+refreshLibraryCache('startup');
+setInterval(() => refreshLibraryCache('hourly'), LIBRARY_REFRESH_MS);
+
+// Overlay fresh `cached` state on every song in a library payload. The
+// cached state changes frequently (every precache completion) but the
+// library cache only rebuilds when source dirs change — so we update
+// this field on every request rather than baking it into the cache.
+function overlayCachedState(data) {
+  if (!data || !data.songs) return data;
+  for (const s of data.songs) {
+    if (s.type === 'stems' && s.folderName) {
+      s.cached = isStemsFolderCached(s.folderName);
+    } else if (s.type === 'm4a' && s.fileName) {
+      s.cached = isM4aCached(s.fileName);
+    }
+  }
+  return data;
+}
+
+// Endpoint to retrieve the entire library and stats
+app.get('/api/library', async (req, res) => {
+  // ?refresh=1 forces a synchronous rescan
+  if (req.query.refresh === '1') {
+    await refreshLibraryCache('manual');
+  }
+
+  // Serve cached if we have it (even if stale — the background refresh updates it)
+  if (libraryCache && libraryCache.data) {
+    const data = overlayCachedState(libraryCache.data);
+    return res.json({
+      ...data,
+      scannedAt: libraryCache.scannedAt,
+      checkedAt: libraryCache.checkedAt,
+      sourceMtimes: libraryCache.sourceMtimes,
+      cached: true
+    });
+  }
+
+  // First-ever startup with no persisted cache: do a synchronous scan
+  try {
+    await refreshLibraryCache('cold');
+    if (libraryCache) {
+      const data = overlayCachedState(libraryCache.data);
+      return res.json({
+        ...data,
+        scannedAt: libraryCache.scannedAt,
+        checkedAt: libraryCache.checkedAt,
+        sourceMtimes: libraryCache.sourceMtimes,
+        cached: false
+      });
+    }
+    res.status(503).json({ error: 'Library not ready' });
+  } catch (error) {
+    console.error('Error scanning library:', error);
+    res.status(500).json({ error: 'Failed to scan music library' });
+  }
+});
+
+// Old inline endpoint replaced by the cached version above. The block below
+// remains only to keep variable scope tidy for the catch-all at the bottom.
+app.get('/api/library-uncached', (req, res) => {
+  try {
+    const data = buildLibraryData();
+    res.json(data);
+  } catch (error) {
+    console.error('Error scanning library:', error);
+    res.status(500).json({ error: 'Failed to scan music library' });
+  }
+});
+
+// (the original handler below is unreachable now; left for reference)
+app.get('/api/library__old', (req, res) => {
+  try {
+    const stems = scanStems();
+    const stemsByKey = {};
+    for (const s of stems) stemsByKey[s.folderName] = s;
+    const m4as = scanM4a(stemsByKey);
+    const allSongs = [...stems, ...m4as];
+
+    // Compute library statistics (Instrumentation)
+    const stats = {
+      totalSongs: allSongs.length,
+      totalStems: stems.length,
+      totalM4as: m4as.length,
+      artistCount: new Set(allSongs.map(s => s.artist).filter(a => a !== 'Unknown Artist')).size,
+      bpmDistribution: {
+        slow: allSongs.filter(s => s.practiceBpm && s.practiceBpm < 90).length,
+        medium: allSongs.filter(s => s.practiceBpm && s.practiceBpm >= 90 && s.practiceBpm <= 125).length,
+        fast: allSongs.filter(s => s.practiceBpm && s.practiceBpm > 125).length,
+        unknown: allSongs.filter(s => !s.practiceBpm).length
+      },
+      keyDistribution: allSongs.reduce((acc, s) => {
+        if (s.key) {
+          acc[s.key] = (acc[s.key] || 0) + 1;
+        }
+        return acc;
+      }, {})
+    };
+
+    res.json({
+      stats,
+      songs: allSongs
+    });
+  } catch (error) {
+    console.error('Error scanning library:', error);
+    res.status(500).json({ error: 'Failed to scan music library' });
+  }
+});
+
+// =====================================================================
+// LOCAL DISK CACHE for audio files
+// Google Drive (~/ClaudeDrive) streams on-demand and can take a minute+
+// to download a stem on first access. We mirror requested files into
+// ~/.bt-cache and serve from there afterward — fast on repeat plays and
+// resilient to Drive evictions. Cache grows monotonically; the user can
+// nuke ~/.bt-cache to reclaim disk.
+// =====================================================================
+const AUDIO_CACHE_DIR = path.join(require('os').homedir(), '.bt-cache');
+const AUDIO_CACHE_STEMS = path.join(AUDIO_CACHE_DIR, 'STEMS');
+const AUDIO_CACHE_M4A   = path.join(AUDIO_CACHE_DIR, 'M4A');
+try {
+  fs.mkdirSync(AUDIO_CACHE_STEMS, { recursive: true });
+  fs.mkdirSync(AUDIO_CACHE_M4A,   { recursive: true });
+} catch (e) { console.warn('cache mkdir:', e.message); }
+
+// SYNC version — used by the on-demand audio request handler when the
+// file isn't cached yet. Blocks the request until the copy is done, since
+// the response can't be sent until we have the file.
+function ensureCached(sourcePath, cachePath) {
+  try {
+    if (fs.existsSync(cachePath)) {
+      const csz = fs.statSync(cachePath).size;
+      const ssz = fs.statSync(sourcePath).size;
+      if (csz === ssz && csz > 0) return cachePath;
+    }
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.copyFileSync(sourcePath, cachePath);
+    return cachePath;
+  } catch (e) {
+    console.warn('cache copy failed:', sourcePath, '->', cachePath, e.message);
+    return sourcePath;
+  }
+}
+
+// ASYNC version — used by the background precache so it doesn't block the
+// event loop. The user can play an M4A *while* large stems are streaming
+// in from Google Drive in parallel. Uses fs.promises (async I/O) and
+// awaits each file so we yield to incoming requests between copies.
+const fsp = fs.promises;
+async function ensureCachedAsync(sourcePath, cachePath) {
+  try {
+    try {
+      const [csz, ssz] = await Promise.all([
+        fsp.stat(cachePath).then(s => s.size).catch(() => -1),
+        fsp.stat(sourcePath).then(s => s.size).catch(() => -2)
+      ]);
+      if (csz > 0 && csz === ssz) return cachePath; // good cache hit
+    } catch (e) {}
+    await fsp.mkdir(path.dirname(cachePath), { recursive: true });
+    await fsp.copyFile(sourcePath, cachePath);
+    return cachePath;
+  } catch (e) {
+    console.warn('cache copy failed (async):', sourcePath, '->', cachePath, e.message);
+    return sourcePath;
+  }
+}
+
+// Audio streaming endpoints — supports HTTP Range via res.sendFile.
+function sendCachedAudio(req, res, sourcePath, cachePath) {
+  if (!fs.existsSync(sourcePath)) {
+    console.warn('[audio 404] source missing:', sourcePath);
+    return res.status(404).send('Audio file not found');
+  }
+  const served = ensureCached(sourcePath, cachePath);
+  if (!fs.existsSync(served)) {
+    console.warn('[audio 500] served path missing after ensureCached:', served);
+    return res.status(500).send('Cache failure');
+  }
+  // dotfiles: 'allow' is required because our cache lives under ~/.bt-cache
+  // and 'send' otherwise refuses any path with a dot-prefixed segment.
+  res.sendFile(served, { dotfiles: 'allow' }, (err) => {
+    if (err) console.warn('[audio sendFile err]', served, err.message);
+  });
+}
+
+app.get('/api/audio/stems/:song/:file', (req, res) => {
+  const { song, file } = req.params;
+  if (song.includes('..') || file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(STEMS_DIR, song, file);
+  const cachePath  = path.join(AUDIO_CACHE_STEMS, song, file);
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+app.get('/api/audio/m4a/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(M4A_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_M4A, file);
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+// Returns true when every wav file we expect for a stems song is present
+// in the local cache with non-zero size. Two-tier fast path:
+//   1. .cached sentinel (written by the bulk precache POST) → instant true.
+//   2. Otherwise, read the song's expected file list from the in-memory
+//      library cache (built from the source folder's stems + loops) and
+//      verify each is in the local cache. All stats are against the local
+//      SSD; no Google Drive calls.
+function isStemsFolderCached(folderName) {
+  const sentinel = path.join(AUDIO_CACHE_STEMS, folderName, '.cached');
+  if (fs.existsSync(sentinel)) return true;
+
+  // Look up the expected file list from the library cache (already in memory)
+  const data = libraryCache && libraryCache.data;
+  if (!data) return false;
+  const entry = data.songs.find(s => s.type === 'stems' && s.folderName === folderName);
+  if (!entry) return false;
+
+  // Only the main mixable stems count toward "ready". Loops + source.wav
+  // are auxiliary — the user can mix without them.
+  const MAIN_STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
+  const expected = [];
+  if (entry.stems) {
+    for (const k of MAIN_STEMS) {
+      if (entry.stems[k]) expected.push(entry.stems[k]);
+    }
+  }
+  if (expected.length === 0) return false;
+
+  for (const f of expected) {
+    try {
+      const cp = path.join(AUDIO_CACHE_STEMS, folderName, f);
+      const st = fs.statSync(cp);
+      if (!st.size) return false;
+    } catch (e) {
+      return false; // missing
+    }
+  }
+  return true;
+}
+
+// Returns true if a single m4a file is mirrored in the cache with matching
+// size. Used to mark instantly-playable songs in the library.
+function isM4aCached(fileName) {
+  try {
+    const cachePath = path.join(AUDIO_CACHE_M4A, fileName);
+    if (!fs.existsSync(cachePath)) return false;
+    const srcPath = path.join(M4A_DIR, fileName);
+    const csz = fs.statSync(cachePath).size;
+    const ssz = fs.statSync(srcPath).size;
+    return csz > 0 && csz === ssz;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Background pre-fetch of every M4A file at startup. M4As are small
+// (~5-10MB each) so caching all of them uses modest disk (~2GB for 230
+// files). This makes the user's primary play mode (M4A backing track)
+// instant for every song without ever touching Google Drive at click time.
+// WAV stems are NOT precached — they're huge (~50MB each × 6 per song
+// × 89 folders ≈ 25GB), so they only enter the cache on explicit request.
+// Process many files concurrently in capped-parallel batches. Pure serial
+// was ~5s/file × 230 = 20+ minutes on Google Drive. Eight concurrent fetches
+// keeps disk + network busy without thrashing.
+async function runWithConcurrency(items, limit, worker) {
+  const results = [];
+  let i = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      try { results[idx] = await worker(items[idx], idx); }
+      catch (e) { results[idx] = { error: e }; }
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+async function precacheAllM4as() {
+  if (!fs.existsSync(M4A_DIR)) return;
+  const t0 = Date.now();
+  let copied = 0, skipped = 0, failed = 0;
+  try {
+    const files = (await fsp.readdir(M4A_DIR)).filter(f => f.toLowerCase().endsWith('.m4a'));
+    console.log(`[m4a precache] starting — ${files.length} files (8 in parallel)`);
+    await runWithConcurrency(files, 8, async (f) => {
+      try {
+        const sourcePath = path.join(M4A_DIR, f);
+        const cachePath  = path.join(AUDIO_CACHE_M4A, f);
+        // Cheap test: cache file already exists AND non-zero size → skip without statting source
+        if (fs.existsSync(cachePath)) {
+          const csz = fs.statSync(cachePath).size;
+          if (csz > 0) { skipped++; return; }
+        }
+        await ensureCachedAsync(sourcePath, cachePath);
+        copied++;
+        if ((copied + skipped) % 25 === 0) {
+          console.log(`[m4a precache] progress: ${copied + skipped}/${files.length}`);
+        }
+      } catch (e) { failed++; }
+    });
+    console.log(`[m4a precache] done — copied ${copied}, already cached ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+  } catch (e) {
+    console.warn('[m4a precache] failed:', e.message);
+  }
+}
+// Kick off at startup — runs in background, doesn't block server.listen()
+setImmediate(precacheAllM4as);
+// Re-check every hour in case new m4a files were added
+setInterval(precacheAllM4as, 60 * 60 * 1000);
+
+// Background pre-fetch — kicks off cache fill for every file in a stems
+// folder without blocking the request. Writes a `.cached` sentinel on
+// success so the library can advertise the folder as ready-to-play.
+app.post('/api/precache/stems/:song', (req, res) => {
+  const { song } = req.params;
+  if (song.includes('..')) return res.status(403).send('Forbidden');
+  const folder = path.join(STEMS_DIR, song);
+  if (!fs.existsSync(folder)) return res.status(404).send('Not found');
+
+  // Respond immediately; the actual copying runs async so other HTTP
+  // requests (in particular the user's M4A audio fetch) interleave with it.
+  res.json({ status: 'precaching', song, alreadyCached: isStemsFolderCached(song) });
+  if (isStemsFolderCached(song)) return;
+
+  (async () => {
+    const t0 = Date.now();
+    try {
+      let copied = 0;
+      const files = (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'));
+      for (const f of files) {
+        // Awaiting each copy yields to other handlers between files. For
+        // even more concurrency we could Promise.all, but serial keeps
+        // disk + network pressure predictable on Google Drive.
+        await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, song, f));
+        copied++;
+      }
+      await fsp.writeFile(
+        path.join(AUDIO_CACHE_STEMS, song, '.cached'),
+        JSON.stringify({ at: new Date().toISOString(), files: copied })
+      );
+      console.log(`[precache] ${song} done (${copied} files, ${Math.round((Date.now() - t0) / 1000)}s)`);
+    } catch (e) {
+      console.warn('[precache] failed for', song, '-', e.message);
+    }
+  })();
+});
+
+// Lightweight endpoint: returns which stems folders and m4a files are cached.
+// Used by the frontend to refresh chips without re-scanning the full library.
+app.get('/api/cache-status', (req, res) => {
+  try {
+    const stems = {};
+    if (fs.existsSync(AUDIO_CACHE_STEMS)) {
+      for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
+        if (isStemsFolderCached(d)) stems[d] = true;
+      }
+    }
+    const m4a = {};
+    if (fs.existsSync(AUDIO_CACHE_M4A)) {
+      for (const f of fs.readdirSync(AUDIO_CACHE_M4A)) {
+        if (f.toLowerCase().endsWith('.m4a') && isM4aCached(f)) m4a[f] = true;
+      }
+    }
+    // Back-compat shape: `cached` still holds stems; new field `m4a` holds m4a files.
+    res.json({ cached: stems, m4a });
+  } catch (e) {
+    res.json({ cached: {}, m4a: {}, error: e.message });
+  }
+});
+
+// ── Queue: submit a YouTube URL → drop a .webloc into INCOMING_WEBLOC ──────
+// webloc_watch.sh turns it into metadata jobs in STEM_QUEUE; queue_runner.sh
+// renders each into STEMS/ + M4A/. This endpoint only creates the .webloc.
+function xmlEscape(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+app.post('/api/enqueue', (req, res) => {
+  const url = ((req.body && req.body.url) || '').trim();
+  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
+    return res.status(400).json({ error: 'Please paste a YouTube video or playlist URL.' });
+  }
+  try {
+    fs.mkdirSync(INCOMING_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const m = url.match(/[?&]v=([\w-]+)/) || url.match(/youtu\.be\/([\w-]+)/) || url.match(/[?&]list=([\w-]+)/);
+    const tag = m ? m[1].slice(0, 20) : 'link';
+    const file = path.join(INCOMING_DIR, `portal_${stamp}_${tag}.webloc`);
+    const plist = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+      '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n';
+    fs.writeFileSync(file, plist);
+    res.json({ ok: true, queued: path.basename(file) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Queue status for the portal (derived from the filesystem) ──────────────
+// Shows the three stages: dropped .webloc (awaiting metadata) → STEM_QUEUE
+// jobs (awaiting render) → the one currently rendering (.current marker).
+app.get('/api/queue', (req, res) => {
+  const countJson = dir => { try { return fs.readdirSync(dir).filter(f => f.endsWith('.json')).length; } catch (e) { return 0; } };
+  const out = { incoming: [], failed: [], queued: [], processing: null };
+  try {
+    if (fs.existsSync(INCOMING_DIR)) {
+      for (const f of fs.readdirSync(INCOMING_DIR)) {
+        if (f.endsWith('.webloc')) out.incoming.push(f);
+        else if (f.endsWith('.failed')) out.failed.push(f);
+      }
+    }
+    if (fs.existsSync(QUEUE_DIR)) {
+      for (const entry of fs.readdirSync(QUEUE_DIR)) {
+        if (entry.startsWith('.') || entry === '_done') continue;
+        const p = path.join(QUEUE_DIR, entry);
+        const st = fs.statSync(p);
+        if (st.isDirectory()) out.queued.push({ name: entry, type: 'setlist', songs: countJson(p) });
+        else if (entry.endsWith('.json')) out.queued.push({ name: entry, type: 'single', songs: 1 });
+      }
+      const cur = path.join(QUEUE_DIR, '.current');
+      if (fs.existsSync(cur)) {
+        try { out.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
+        catch (e) { out.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
+      }
+    }
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Fallback to serve index.html for spa behavior
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`==================================================`);
+  console.log(`Backing Track Construction Kit Server Running`);
+  console.log(`Local Access: http://localhost:${PORT}`);
+  console.log(`==================================================`);
+});

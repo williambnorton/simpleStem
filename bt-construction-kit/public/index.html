@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backing Track Construction Kit // Rehearsal & Stem Mixing Studio</title>
+  <meta name="description" content="Build backing tracks, mix stems, loop segments, and plan setlist timings with professional Web Audio playback.">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons for premium visual cues -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Left Sidebar: Search, Filters & Instrumentation Stats -->
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-logo">
+          <i data-lucide="waves" class="logo-icon glow-purple"></i>
+          <span>BT Construction Kit</span>
+        </div>
+        <span class="brand-badge">Kit</span>
+      </div>
+      
+      <!-- Instant Search & Filters -->
+      <section class="search-section">
+        <div class="search-box glass-input">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" id="song-search" placeholder="Search title, artist, key..." autocomplete="off">
+          <button id="clear-search" class="btn-icon" style="display: none;"><i data-lucide="x"></i></button>
+        </div>
+        
+        <div class="filter-controls">
+          <div class="filter-row">
+            <button id="btn-filter-all" class="filter-btn active">All</button>
+            <button id="btn-filter-stems" class="filter-btn"><i data-lucide="sliders"></i> Stems</button>
+            <button id="btn-filter-m4a" class="filter-btn"><i data-lucide="music-4"></i> M4As</button>
+          </div>
+          
+          <div class="advanced-filters">
+            <select id="filter-key" class="glass-select">
+              <option value="">Any Key</option>
+            </select>
+            <select id="filter-bpm" class="glass-select">
+              <option value="">Any Tempo</option>
+              <option value="slow">Slow (&lt; 90 BPM)</option>
+              <option value="medium">Medium (90-125 BPM)</option>
+              <option value="fast">Fast (&gt; 125 BPM)</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add from YouTube (queue for processing into the library) -->
+      <section class="add-yt-section">
+        <div class="search-box glass-input">
+          <i data-lucide="youtube" class="search-icon"></i>
+          <input type="text" id="yt-url" placeholder="Paste a YouTube video or playlist URL to add…" autocomplete="off">
+          <button id="btn-enqueue" class="filter-btn"><i data-lucide="plus"></i> Add</button>
+        </div>
+        <div id="queue-status" class="queue-status"></div>
+      </section>
+
+      <!-- Instrumentation Stats Panel (Library Analytics) -->
+      <section class="stats-panel">
+        <h3 class="panel-title"><i data-lucide="bar-chart-3"></i> Library Analytics</h3>
+        
+        <div class="stats-grid">
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
+            <span class="stat-label">Total Songs</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-purple" id="stat-total-stems">-</span>
+            <span class="stat-label">Multitrack Stems</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-green" id="stat-total-m4as">-</span>
+            <span class="stat-label">M4A Tracks</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-orange" id="stat-total-artists">-</span>
+            <span class="stat-label">Artists</span>
+          </div>
+        </div>
+        
+        <div class="tempo-dist-card glass-card">
+          <h4 class="sub-title">Tempo Profile</h4>
+          <div class="tempo-bars">
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Slow</span>
+              <div class="bar-container"><div id="tempo-slow-bar" class="bar-fill bg-cyan" style="width: 0%;"></div></div>
+              <span id="tempo-slow-count" class="bar-value">0</span>
+            </div>
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Medium</span>
+              <div class="bar-container"><div id="tempo-medium-bar" class="bar-fill bg-purple" style="width: 0%;"></div></div>
+              <span id="tempo-medium-count" class="bar-value">0</span>
+            </div>
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Fast</span>
+              <div class="bar-container"><div id="tempo-fast-bar" class="bar-fill bg-green" style="width: 0%;"></div></div>
+              <span id="tempo-fast-count" class="bar-value">0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <div class="sidebar-footer">
+        <i data-lucide="folder" class="info-icon"></i>
+        <span>~/ClaudeDrive/simpleStem</span>
+      </div>
+    </aside>
+    
+    <!-- Main Content Area: Player dashboard & Song list -->
+    <main class="main-content">
+      
+      <!-- Top Section: Active Song Player & Mixer -->
+      <section class="player-hero-section glass">
+        
+        <!-- Welcome / Idle state -->
+        <div id="player-idle" class="player-idle">
+          <div class="idle-content">
+            <i data-lucide="music" class="idle-icon pulse"></i>
+            <h2>Select a Song to Begin Construction</h2>
+            <p>Choose a multi-stem folder or stereo M4A backing track from your library below to start.</p>
+          </div>
+        </div>
+        
+        <!-- Active playback dashboard -->
+        <div id="player-active" class="player-active-layout" style="display: none;">
+          
+          <!-- Master Header Details -->
+          <div class="track-header">
+            <div class="track-meta-left">
+              <span id="active-track-type" class="badge">STEMS</span>
+              <h1 id="active-track-title" class="track-title">Song Title</h1>
+              <p id="active-track-artist" class="track-artist">Artist Name</p>
+            </div>
+            <div class="track-meta-right">
+              <div class="meta-stat-pill hover-glow" id="active-meta-bpm">
+                <i data-lucide="activity" class="text-purple"></i>
+                <div>
+                  <span id="active-bpm-value" class="stat-val">-</span>
+                  <span class="stat-lbl">BPM</span>
+                </div>
+              </div>
+              <div class="meta-stat-pill hover-glow" id="active-meta-key">
+                <i data-lucide="key" class="text-cyan"></i>
+                <div>
+                  <span id="active-key-value" class="stat-val">-</span>
+                  <span class="stat-lbl">Key</span>
+                  <span id="active-key-signature" class="stat-sig"></span>
+                </div>
+              </div>
+              <button id="btn-collapse-player" class="control-btn hover-glow" title="Collapse player (show more of the song list)">
+                <i data-lucide="chevrons-up"></i>
+              </button>
+              <div id="wall-clock" class="wall-clock" title="Local time"></div>
+            </div>
+          </div>
+          
+          <!-- Source variant picker (STEMS / M4A variants of the same song) -->
+          <div id="variant-picker" class="variant-picker glass-card" style="display:none;">
+            <span class="variant-picker-label"><i data-lucide="layers"></i> Source:</span>
+            <div id="variant-picker-chips" class="variant-picker-chips"></div>
+          </div>
+
+          <!-- Mid Panel: Visualizer & Timeline Player -->
+          <div class="player-visualization-area">
+            <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
+            
+            <div class="player-wave-overlay">
+              <div id="player-buffering-indicator" class="buffering" style="display: none;">
+                <div class="spinner"></div>
+                <span>Buffering Audio...</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Progress bar / Timeline -->
+          <div class="player-timeline-container">
+            <span id="time-current" class="time-label">0:00</span>
+            <div class="timeline-bar-wrapper">
+              <input type="range" id="player-timeline" class="timeline-slider" value="0" min="0" max="100" step="0.1">
+              <div id="timeline-progress" class="timeline-fill"></div>
+            </div>
+            <span id="time-duration" class="time-label">0:00</span>
+          </div>
+
+          <!-- Main Player Controls Dashboard -->
+          <div class="controls-dashboard">
+            
+            <!-- Standard Playback Controls -->
+            <div class="playback-controls">
+              <button id="btn-stop" class="control-btn hover-glow" title="Stop"><i data-lucide="square"></i></button>
+              <button id="btn-play-pause" class="control-btn play-btn hover-glow" title="Play"><i data-lucide="play" id="play-icon"></i></button>
+              <button id="btn-loop-toggle" class="control-btn toggle-btn hover-glow" title="Toggle Looping"><i data-lucide="repeat"></i></button>
+              <button id="btn-speed-dialog" class="control-btn hover-glow" title="Playback Speed">
+                <i data-lucide="gauge"></i>
+                <span id="speed-display-mini" class="speed-mini-label">1.00x</span>
+              </button>
+            </div>
+
+            <!-- Playback Speed popover (hidden until btn-speed-dialog is clicked) -->
+            <div id="speed-popover" class="speed-popover glass-card" style="display:none;" role="dialog" aria-label="Playback speed">
+              <div class="speed-header">
+                <span class="speed-title"><i data-lucide="gauge"></i> Playback Speed</span>
+                <span id="speed-display" class="speed-val text-green">1.00x</span>
+                <button id="btn-speed-close" class="btn-icon" title="Close"><i data-lucide="x"></i></button>
+              </div>
+              <div class="speed-slider-wrapper">
+                <i data-lucide="turtle" class="speed-icon text-cyan"></i>
+                <input type="range" id="speed-slider" class="speed-slider" min="0.5" max="1.5" step="0.05" value="1">
+                <i data-lucide="rabbit" class="speed-icon text-green"></i>
+              </div>
+              <div class="speed-presets">
+                <button class="preset-btn" data-speed="0.5">0.5x</button>
+                <button class="preset-btn" data-speed="0.75">0.75x</button>
+                <button class="preset-btn" data-speed="0.9">0.9x</button>
+                <button class="preset-btn active" data-speed="1.0">1x</button>
+                <button class="preset-btn" data-speed="1.1">1.1x</button>
+                <button class="preset-btn" data-speed="1.25">1.25x</button>
+              </div>
+            </div>
+
+            <!-- Outro Loop Stretching panel -->
+            <div class="stretch-outro-card glass-card">
+              <div class="stretch-header">
+                <span class="stretch-title"><i data-lucide="expand"></i> Outro Jam Stretch</span>
+                <label class="switch-toggle-label">
+                  <input type="checkbox" id="stretch-toggle">
+                  <span class="slider-round"></span>
+                </label>
+              </div>
+              <div class="stretch-cycles-row" id="stretch-cycles-container" style="opacity: 0.5; pointer-events: none;">
+                <span class="cycles-label">Repeat Last:</span>
+                <button class="cycle-btn active" data-cycles="2">2x</button>
+                <button class="cycle-btn" data-cycles="4">4x</button>
+                <button class="cycle-btn" data-cycles="8">8x</button>
+                <button class="cycle-btn" data-cycles="infinite">∞</button>
+              </div>
+              <div class="stretch-info" id="stretch-info-text">
+                Extend track using the last loop.
+              </div>
+            </div>
+          </div>
+
+          <!-- Multitrack Mixer Console (Dynamically shown only when Stems are playing) -->
+          <div id="mixer-container" class="mixer-console glass-card" style="display: none;">
+            <div class="mixer-header">
+              <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
+              <button id="btn-reset-mixer" class="btn-secondary"><i data-lucide="rotate-ccw"></i> Reset Faders</button>
+            </div>
+            
+            <div class="faders-container">
+              <!-- Vocals Channel -->
+              <div class="channel-strip vocals-strip">
+                <div class="channel-header">Vocals</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-vocals" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-vocals">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-vocals" class="mute-btn">M</button>
+                  <button id="solo-vocals" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-pink"><i data-lucide="mic"></i></div>
+              </div>
+
+              <!-- Drums Channel -->
+              <div class="channel-strip drums-strip">
+                <div class="channel-header">Drums</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-drums" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-drums">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-drums" class="mute-btn">M</button>
+                  <button id="solo-drums" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-green"><i data-lucide="drum"></i></div>
+                <div class="channel-loops" data-channel="drums"></div>
+              </div>
+
+              <!-- Bass Channel -->
+              <div class="channel-strip bass-strip">
+                <div class="channel-header">Bass</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-bass" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-bass">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-bass" class="mute-btn">M</button>
+                  <button id="solo-bass" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-blue"><i data-lucide="audio-waveform"></i></div>
+                <div class="channel-loops" data-channel="bass"></div>
+              </div>
+
+              <!-- Guitar Channel -->
+              <div class="channel-strip guitar-strip">
+                <div class="channel-header">Guitar</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-guitar" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-guitar">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-guitar" class="mute-btn">M</button>
+                  <button id="solo-guitar" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-yellow"><i data-lucide="guitar"></i></div>
+                <div class="channel-loops" data-channel="guitar"></div>
+              </div>
+
+              <!-- Piano Channel -->
+              <div class="channel-strip piano-strip">
+                <div class="channel-header">Piano</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-piano" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-piano">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-piano" class="mute-btn">M</button>
+                  <button id="solo-piano" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-purple"><i data-lucide="piano"></i></div>
+                <div class="channel-loops" data-channel="piano"></div>
+              </div>
+
+              <!-- Other Channel -->
+              <div class="channel-strip other-strip">
+                <div class="channel-header">Other</div>
+                <div class="fader-track">
+                  <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  <div class="fader-value" id="val-other">80%</div>
+                </div>
+                <div class="channel-buttons">
+                  <button id="mute-other" class="mute-btn">M</button>
+                  <button id="solo-other" class="solo-btn">S</button>
+                </div>
+                <div class="channel-icon text-orange"><i data-lucide="music"></i></div>
+              </div>
+
+              <!-- Drums Channel loop selector goes on Drums strip too -->
+            </div>
+          </div>
+
+          <!-- Loop Jam Section (Dynamically shown when Stems have loop segments) -->
+          <div id="loops-container" class="loops-section glass-card" style="display: none;">
+            <div class="loops-header">
+              <h3 class="section-title"><i data-lucide="repeat-2"></i> Synced Jam Loops</h3>
+              <span class="loop-subtitle">Loop segments mapped across stems</span>
+            </div>
+            
+            <div class="loop-grid-wrapper">
+              <div class="loop-options-row">
+                <span class="label">Mix Type:</span>
+                <button id="loop-mix-both" class="loop-mix-btn active">Full Rhythm (Drums+Bass)</button>
+                <button id="loop-mix-drums" class="loop-mix-btn">Drums Only</button>
+                <button id="loop-mix-bass" class="loop-mix-btn">Bass Only</button>
+              </div>
+              <div id="loop-grid" class="loop-grid">
+                <!-- Dynamically populated buttons -->
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </section>
+
+      <!-- Bottom Split Grid: Library Browser on Left, Setlist Planner on Right -->
+      <div class="bottom-split-grid">
+        
+        <!-- Left Side: Song Library Browser -->
+        <section class="library-section glass">
+          <div class="library-header">
+            <div class="title-area">
+              <h2>Song Library</h2>
+              <span class="sub" id="library-count-label">Loading library...</span>
+            </div>
+            
+            <div class="library-view-toggles">
+              <button id="btn-list-view" class="view-btn active" title="List View"><i data-lucide="list"></i></button>
+              <button id="btn-grid-view" class="view-btn" title="Grid View"><i data-lucide="layout-grid"></i></button>
+            </div>
+          </div>
+          
+          <div class="library-wrapper list-mode" id="library-container">
+            <div class="song-table-header">
+              <div class="col-select" style="width: 45px; cursor: default;">Set</div>
+              <div class="col-title" data-sort="title">Song Title <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-type">Format</div>
+              <div class="col-action">Action</div>
+            </div>
+            
+            <div id="song-list-body" class="song-list-body">
+              <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Scanning ~/ClaudeDrive/simpleStem ...</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- Right Side: Setlist Planner -->
+        <section class="setlist-section glass">
+          <div class="setlist-header">
+            <div class="title-area">
+              <h2>Setlist Planner</h2>
+              <span class="sub" id="setlist-stats-label">0 tracks // 0 min total</span>
+            </div>
+            <div class="setlist-actions">
+              <button id="btn-clear-setlist" class="btn-secondary" title="Clear Setlist"><i data-lucide="trash-2"></i> Clear</button>
+            </div>
+          </div>
+          
+          <div class="setlist-name-box glass-card">
+            <span class="label"><i data-lucide="tag"></i> Setlist Name:</span>
+            <input type="text" id="setlist-name" class="glass-select setlist-name-input" placeholder="Untitled Setlist" maxlength="60">
+          </div>
+
+          <div class="setlist-timing-box glass-card">
+            <span class="label"><i data-lucide="clock"></i> Start Time:</span>
+            <input type="time" id="setlist-start-time" class="glass-select time-picker" value="16:00">
+          </div>
+          
+          <div class="setlist-dropzone" id="setlist-songs-container">
+            <div class="empty-state">
+              <i data-lucide="clipboard-list" style="width: 32px; height: 32px;"></i>
+              <p>No tracks added to setlist yet. Use the library "Set" checkboxes to add songs.</p>
+            </div>
+          </div>
+        </section>
+        
+      </div>
+      
+    </main>
+  </div>
+
+  <!-- Audio Context scripts -->
+  <script src="visualizer.js"></script>
+  <script src="app.js"></script>
+  
+  <script>
+    // Initialize Lucide Icons initially
+    lucide.createIcons();
+  </script>
+</body>
+</html>
