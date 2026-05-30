@@ -146,6 +146,17 @@ syncs. To avoid corruption, **don't run git operations on both machines at the
 same time**, prefer pulling from the remote over relying on Drive to sync code,
 and ideally exclude `.git` from Drive sync if your client allows it.
 
+Known friction: Drive can leave stale lock files in `.git` that block the next
+git command. If you see `Unable to create '.git/index.lock': File exists` (or
+similar), clear them:
+
+```
+rm -f .git/index.lock .git/HEAD.lock .git/objects/maintenance.lock
+```
+
+Most robust long-term: host the canonical repo on a remote (GitHub) and let each
+machine pull from it, rather than trusting Drive to sync `.git`.
+
 ## Constraints & gotchas
 
 - **Memory (8 GB acquisition Mac):** don't pile heavy UI/agent work on top of
