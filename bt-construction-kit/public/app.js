@@ -146,6 +146,20 @@ const els = {
   setlistStartTime: document.getElementById('setlist-start-time'),
   setlistName: document.getElementById('setlist-name'),
   setlistSongsContainer: document.getElementById('setlist-songs-container'),
+  // Saved SetLists panel
+  setlistsList: document.getElementById('setlists-list'),
+  btnRefreshSetlists: document.getElementById('btn-refresh-setlists'),
+  btnSaveSetlist: document.getElementById('btn-save-setlist'),
+  // Version / update
+  versionRunning: document.getElementById('version-running'),
+  btnUpdate: document.getElementById('btn-update'),
+  updateLabel: document.getElementById('update-label'),
+  // Stemming progress
+  stemProgress: document.getElementById('stem-progress'),
+  stemProgressLabel: document.getElementById('stem-progress-label'),
+  stemProgressCount: document.getElementById('stem-progress-count'),
+  stemProgressFill: document.getElementById('stem-progress-fill'),
+  stemProgressNow: document.getElementById('stem-progress-now'),
 
   // Add-from-YouTube queue
   ytUrl: document.getElementById('yt-url'),
@@ -179,6 +193,8 @@ window.addEventListener('DOMContentLoaded', () => {
   startWallClock();
   startCacheStatusPoll();
   setupQueueUI();
+  setupSetlistsPanel();
+  setupVersionWatch();
 
   // Diagnostic: log audio element errors and unexpected ended events
   Object.keys(audioElements).forEach(chan => {
@@ -250,6 +266,49 @@ function renderQueue(q) {
   const failed = (q.failed || []).length;
   if (failed) chips.push(`<span class="queue-chip queue-err">✕ ${failed} failed</span>`);
   el.innerHTML = chips.length ? chips.join(' ') : '<span class="queue-idle">Queue empty</span>';
+
+  renderStemProgress(q);
+}
+
+// Stemming progress bar (e.g. "Stemming 5/9").
+// /api/queue gives the CURRENT backlog (queued count) + whether one is
+// processing, but no fixed total. We derive a denominator client-side: when the
+// remaining work rises, that's the size of the current batch (high-water mark);
+// as jobs finish, the bar fills toward it. Resets to idle when the queue drains.
+let stemBatchTotal = 0;
+function renderStemProgress(q) {
+  if (!els.stemProgress) return;
+
+  // count songs still to render: queued jobs (setlist folders count their songs)
+  // + anything actively processing. Awaiting-metadata items aren't stemmable yet,
+  // so they're shown separately, not in the denominator.
+  let remaining = 0;
+  for (const j of (q.queued || [])) remaining += (j.songs || 1);
+  const processing = q.processing ? 1 : 0;
+  const toDo = remaining + processing;
+
+  if (toDo === 0) {
+    stemBatchTotal = 0;
+    els.stemProgress.style.display = 'none';
+    return;
+  }
+
+  // Grow the batch total if the workload increased (new jobs queued).
+  if (toDo > stemBatchTotal) stemBatchTotal = toDo;
+  const done = Math.max(0, stemBatchTotal - toDo);
+  const pct = stemBatchTotal ? Math.round((done / stemBatchTotal) * 100) : 0;
+
+  els.stemProgress.style.display = 'block';
+  els.stemProgressCount.textContent = `${done}/${stemBatchTotal}`;
+  els.stemProgressFill.style.width = `${pct}%`;
+
+  if (q.processing) {
+    const s = q.processing.song || q.processing.job || 'song';
+    const ph = q.processing.phase ? ` · ${q.processing.phase}` : '';
+    els.stemProgressNow.textContent = `${s}${ph}`;
+  } else {
+    els.stemProgressNow.textContent = 'waiting for the Performer to pick up the queue…';
+  }
 }
 
 // Fetch songs from server
@@ -560,10 +619,19 @@ function applyFilters() {
   const bpmRange = els.filterBpm.value;
   
   filteredLibrary = mergedLibrary.filter(song => {
+    const hasStems = song.variants.some(v => v.type === 'stems');
     const titleMatch = song.title.toLowerCase().includes(query);
     const artistMatch = song.artist.toLowerCase().includes(query);
     const keyMatchStr = song.key && song.key.toLowerCase().includes(query);
-    const matchesQuery = !query || titleMatch || artistMatch || keyMatchStr;
+    // "stems" keyword → songs with a full stem set available for live remix.
+    const stemsMatch = hasStems && ('stems'.includes(query) && query.length >= 3);
+    // BPM: a bare number matches within ±3; "128bpm"/"128 bpm" also accepted.
+    let bpmMatch = false;
+    const bpmQ = query.replace(/\s*bpm$/, '');
+    if (/^\d{2,3}$/.test(bpmQ) && song.practiceBpm) {
+      bpmMatch = Math.abs(song.practiceBpm - parseInt(bpmQ, 10)) <= 3;
+    }
+    const matchesQuery = !query || titleMatch || artistMatch || keyMatchStr || stemsMatch || bpmMatch;
 
     let matchesFormat = true;
     if (format === 'btn-filter-stems') matchesFormat = song.variants.some(v => v.type === 'stems');
@@ -1292,6 +1360,193 @@ function applyMixerVolumes() {
 }
 
 /* ==========================================
+   VERSION / SELF-UPDATE
+   Shows the running version; if a newer VERSION has synced to disk,
+   reveals an Update button that restarts the Performer into it.
+   ========================================== */
+function setupVersionWatch() {
+  if (els.btnUpdate) els.btnUpdate.addEventListener('click', applyUpdate);
+  checkVersion();
+  setInterval(checkVersion, 30000);   // poll every 30s
+}
+
+async function checkVersion() {
+  if (!els.versionRunning) return;
+  try {
+    const res = await fetch('/api/version');
+    if (!res.ok) return;
+    const v = await res.json();
+    els.versionRunning.textContent = `v${v.running}`;
+    // Title the app + browser tab "simpleStem vYYMMDD.HHMM"
+    document.title = `simpleStem v${v.running}`;
+    const brandV = document.getElementById('brand-version');
+    if (brandV) brandV.textContent = `v${v.running}`;
+    if (els.btnUpdate) {
+      if (v.updateAvailable) {
+        els.btnUpdate.style.display = 'inline-flex';
+        els.btnUpdate.title = `Update available: v${v.running} → v${v.available} (restart to apply)`;
+        if (els.updateLabel) els.updateLabel.textContent = `Update → v${v.available}`;
+      } else {
+        els.btnUpdate.style.display = 'none';
+      }
+    }
+  } catch (e) { /* server may be restarting; keep last shown */ }
+}
+
+async function applyUpdate() {
+  if (!confirm('Restart the Performer to apply the update? Playback will stop briefly.')) return;
+  if (els.updateLabel) els.updateLabel.textContent = 'Restarting…';
+  els.btnUpdate.disabled = true;
+  try {
+    await fetch('/api/update', { method: 'POST' });
+  } catch (e) { /* the server is going down — expected */ }
+  // Poll until the server answers again, then reload into the new version.
+  let tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (r.ok) { clearInterval(poll); location.reload(); }
+    } catch (e) { /* still down */ }
+    if (tries > 40) { clearInterval(poll); els.updateLabel.textContent = 'Restart timed out'; els.btnUpdate.disabled = false; }
+  }, 1000);
+}
+
+/* ==========================================
+   SAVED SETLISTS PANEL (Librarian-maintained)
+   Playlist-synced + manual SetLists from /api/setlists.
+   ========================================== */
+
+function setupSetlistsPanel() {
+  if (els.btnRefreshSetlists) els.btnRefreshSetlists.addEventListener('click', loadSetlistsList);
+  if (els.btnSaveSetlist) els.btnSaveSetlist.addEventListener('click', saveCurrentSetlist);
+  loadSetlistsList();
+}
+
+async function loadSetlistsList() {
+  if (!els.setlistsList) return;
+  try {
+    const res = await fetch('/api/setlists');
+    const data = await res.json();
+    const lists = (data && data.setlists) || [];
+    if (lists.length === 0) {
+      els.setlistsList.innerHTML = '<span class="setlists-empty">No saved SetLists yet.</span>';
+      return;
+    }
+    els.setlistsList.innerHTML = '';
+    lists.forEach(sl => {
+      const row = document.createElement('button');
+      row.className = 'setlist-chip';
+      const isPlaylist = sl.origin === 'playlist';
+      const badge = isPlaylist
+        ? '<span class="sl-badge sl-yt" title="Synced from a YouTube playlist"><i data-lucide="youtube" style="width:11px;height:11px;"></i> sync</span>'
+        : '<span class="sl-badge sl-manual" title="Hand-curated; never auto-changed">manual</span>';
+      row.innerHTML = `${badge}<span class="sl-title">${escapeHtml(sl.title)}</span>` +
+        `<span class="sl-count">${sl.count}</span>`;
+      row.title = `Load "${sl.title}" (${sl.count} songs) into the planner`;
+      row.addEventListener('click', () => loadSetlistIntoPlanner(sl.slug));
+      els.setlistsList.appendChild(row);
+    });
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    els.setlistsList.innerHTML = `<span class="setlists-empty">Couldn't load SetLists (${escapeHtml(e.message)})</span>`;
+  }
+}
+
+// Resolve a saved SetList's ordered songs to merged-library entries and load
+// them into the existing planner. Songs match by song_base (the canonical key);
+// playlist songs not yet rendered are shown as pending and skipped from playback.
+async function loadSetlistIntoPlanner(slug) {
+  try {
+    const res = await fetch(`/api/setlists/${encodeURIComponent(slug)}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'not found');
+    const sl = await res.json();
+
+    // Index the merged library by song_base for O(1) lookup.
+    const byBase = new Map();
+    for (const m of mergedLibrary) {
+      const sv = m.variants.find(v => v.type === 'stems') || m.primary;
+      if (sv && sv.folderName) byBase.set(sv.folderName, m);
+    }
+
+    setlist = [];
+    let pending = 0;
+    (sl.songs || []).forEach((entry, i) => {
+      const base = entry.song_base;
+      const merged = base ? byBase.get(base) : null;
+      if (merged) {
+        const primary = merged.primary;
+        setlist.push({ ...primary, setlistItemId: `setlist-${primary.id}-${Date.now()}-${Math.random().toString(36).slice(2,6)}` });
+      } else {
+        // Not yet stemmed — add a greyed, non-playable placeholder so the set
+        // looks complete and fills in as the batch renders.
+        pending++;
+        setlist.push({
+          id: `pending-${slug}-${i}`,
+          setlistItemId: `pending-${slug}-${i}-${Date.now()}`,
+          title: entry.title || '(pending)',
+          artist: entry.artist || '',
+          duration: 0,
+          pending: true,
+          pendingStatus: entry.status || 'queued',
+        });
+      }
+    });
+
+    if (els.setlistName) els.setlistName.value = sl.title || '';
+    saveSetlistToLocalStorage();
+    renderSetlist();
+    updateLibraryCheckboxes();
+
+    if (pending > 0 && els.setlistStatsLabel) {
+      els.setlistStatsLabel.textContent += ` · ${pending} pending (stemming)`;
+    }
+
+    // Warm the local cache for this setlist's ready songs in the background.
+    fetch(`/api/precache/setlist/${encodeURIComponent(slug)}`, { method: 'POST' }).catch(() => {});
+  } catch (e) {
+    console.warn('loadSetlist failed:', e);
+    alert(`Couldn't load SetList: ${e.message}`);
+  }
+}
+
+// Save the current planner as a MANUAL SetList (server refuses to overwrite a
+// playlist-synced one). Stores by song_base so it survives across rescans.
+async function saveCurrentSetlist() {
+  if (!setlist.length) { alert('Setlist is empty — add songs first.'); return; }
+  const title = (els.setlistName && els.setlistName.value.trim()) ||
+    prompt('Name this SetList:') || '';
+  if (!title.trim()) return;
+
+  // Map each planner item back to its song_base via the merged library.
+  const bases = [];
+  for (const item of setlist) {
+    const merged = mergedLibrary.find(m => m.variants.some(v => v.id === item.id));
+    const sv = merged && (merged.variants.find(v => v.type === 'stems') || merged.primary);
+    if (sv && sv.folderName) bases.push(sv.folderName);
+  }
+  if (!bases.length) { alert('These songs have no stem folders to reference yet.'); return; }
+
+  try {
+    const res = await fetch('/api/setlists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), songs: bases })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'save failed');
+    loadSetlistsList();
+  } catch (e) {
+    alert(`Couldn't save: ${e.message}`);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ==========================================
    SETLIST PLANNER & SCHEDULER IMPLEMENTATION
    ========================================== */
 
@@ -1362,12 +1617,30 @@ function renderSetlist() {
   container.innerHTML = '';
   
   setlist.forEach((item, index) => {
+    // Pending (not-yet-stemmed) song: greyed, non-playable placeholder.
+    if (item.pending) {
+      const card = document.createElement('div');
+      card.className = 'setlist-item setlist-item-pending';
+      card.dataset.index = index;
+      card.innerHTML = `
+        <span class="setlist-item-num">${index + 1}.</span>
+        <div class="setlist-item-details">
+          <span class="setlist-item-title">${escapeHtml(item.title)}</span>
+          <span class="setlist-item-artist">${escapeHtml(item.artist || '')}
+            <span class="tag tag-pending" style="padding:1px 5px;font-size:8px;">${item.pendingStatus === 'rendering' ? 'rendering…' : 'queued'}</span>
+          </span>
+        </div>
+        <span class="setlist-item-time" title="Not yet stemmed">⏳</span>`;
+      container.appendChild(card);
+      return;
+    }
+
     const card = document.createElement('div');
     card.className = 'setlist-item';
     card.dataset.index = index;
     card.dataset.id = item.id;
     card.dataset.setlistItemId = item.setlistItemId;
-    
+
     // Support browser Drag and Drop reordering natively
     card.draggable = true;
     setupDragAndDropEvents(card);

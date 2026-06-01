@@ -21,3 +21,5 @@ bt-construction-kit/library_cache.json
 # macOS / misc
 .DS_Store
 .probe_write
+ARCHIVE_*/
+SETLISTS/registry.json

@@ -2421,3 +2421,84 @@ input:checked + .slider-round:before {
 .queue-chip.processing { border-color: #2e9e5b; color: #4fd089; }
 .queue-idle { color: var(--text-secondary, #8a877f); opacity: 0.7; }
 .queue-err { color: #e06a6a; }
+
+/* ===== Saved SetLists panel (Librarian-maintained) ===== */
+.setlists-box { padding: 12px; margin-bottom: 12px; }
+.setlists-box-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.setlists-box-header .label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 600; color: var(--text-main); font-size: 0.85rem;
+}
+.setlists-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.setlists-empty { color: var(--text-dim); font-size: 0.8rem; padding: 4px 2px; }
+.setlist-chip {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 7px 10px; color: var(--text-main);
+  transition: var(--transition-smooth);
+}
+.setlist-chip:hover { background: var(--bg-card-hover); border-color: var(--border-active); }
+.setlist-chip .sl-title { flex: 1; font-weight: 600; font-size: 0.85rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setlist-chip .sl-count {
+  font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--text-muted);
+  background: var(--bg-dark); border-radius: 10px; padding: 1px 8px; min-width: 24px; text-align: center;
+}
+.sl-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 2px 6px; border-radius: 6px; white-space: nowrap;
+}
+.sl-badge.sl-yt { color: #fff; background: var(--color-red); }
+.sl-badge.sl-manual { color: var(--text-main); background: var(--color-yellow); }
+
+/* ===== Stemming progress (inside the SetLists box) ===== */
+.stem-progress { margin: 4px 0 10px; padding: 8px 2px 2px; border-top: 1px solid var(--border-color); }
+.stem-progress-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 5px; }
+.stem-progress-label { font-size: 0.78rem; font-weight: 600; color: var(--text-main); }
+.stem-progress-count { font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.stem-progress-track { height: 7px; background: var(--bg-dark); border-radius: 6px; overflow: hidden; }
+.stem-progress-fill {
+  height: 100%; width: 0%; border-radius: 6px;
+  background: var(--color-green); box-shadow: var(--glow-green);
+  transition: width 0.5s ease;
+}
+.stem-progress-now {
+  display: block; margin-top: 4px; font-size: 0.72rem; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===== Version + update (sidebar footer) ===== */
+.version-footer { display: flex; align-items: center; gap: 8px; padding: 4px 0 2px; }
+.version-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.update-btn {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-size: 0.72rem; font-weight: 700; color: #fff;
+  background: var(--color-green); box-shadow: var(--glow-green);
+  border: none; border-radius: 7px; padding: 4px 9px;
+  transition: var(--transition-smooth);
+}
+.update-btn:hover { filter: brightness(1.08); }
+.update-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
+
+/* ===== Brand version tag (header) ===== */
+.brand-version {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; margin-left: 4px;
+}
+
+/* ===== Pending (not-yet-stemmed) setlist rows ===== */
+.setlist-item-pending {
+  opacity: 0.55; filter: grayscale(0.6);
+  display: flex; align-items: center; gap: 10px;
+  border-style: dashed !important; cursor: default;
+}
+.setlist-item-pending .setlist-item-title { font-weight: 600; }
+.tag-pending { background: var(--color-orange); color: #fff; border-radius: 4px; }

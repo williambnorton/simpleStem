@@ -318,6 +318,7 @@ M4A_DIR="$HOME/ClaudeDrive/simpleStem/M4A"
 mkdir -p "$M4A_DIR"
 M4A_BASE="${SLUG_TITLE}_${SLUG_ARTIST}"
 M4A_DO="$M4A_DIR/${M4A_BASE}_DO.m4a"
+M4A_V="$M4A_DIR/${M4A_BASE}_-V.m4a"
 M4A_VG="$M4A_DIR/${M4A_BASE}_-V-G.m4a"
 M4A_VGB="$M4A_DIR/${M4A_BASE}_-V-G-B.m4a"
 
@@ -327,6 +328,18 @@ else
   echo ">> Encoding $(basename "$M4A_DO") (drums only)"
   ffmpeg -y -loglevel error -i "$OUT_DIR/drums.wav" \
     -c:a aac -b:a 256k "$M4A_DO"
+fi
+
+# -V : source minus vocals (the most common "sing over the band" track).
+if [[ -f "$M4A_V" ]]; then
+  echo ">> $(basename "$M4A_V") exists, skipping."
+else
+  echo ">> Encoding $(basename "$M4A_V") (source - vocals)"
+  ffmpeg -y -loglevel error \
+    -i "$OUT_DIR/source.wav" \
+    -i "$OUT_DIR/vocals.wav" \
+    -filter_complex "[1:a]volume=-1[v];[0:a][v]amix=inputs=2:normalize=0[out]" \
+    -map "[out]" -c:a aac -b:a 256k "$M4A_V"
 fi
 
 if [[ -f "$M4A_VG" ]]; then
@@ -372,6 +385,44 @@ else
              "$OUT_DIR/piano.wav" "$OUT_DIR/guitar.wav" \
     --out "$OUT_DIR" \
     --max-loops 4
+fi
+
+# 4) Mixdown loops: detect the most-repeated sections (from source.wav) and tile
+#    them out of EACH m4a mixdown (-V, -V-G, -V-G-B, DO), up to 4 per mixdown.
+#    Output: M4A/<base>_<variant>_loop<i>_<bars>bars.m4a
+#    Section names are loop1..loop4 (recurrence-ranked); intro/verse/chorus
+#    labels are NOT inferred — that detection is unreliable on live/extended cuts.
+#    Sentinel: M4A/<base>_-V_loop1_*bars.m4a — skip if mixdown loops already made.
+shopt -s nullglob
+_mixloop_done=("$M4A_DIR/${M4A_BASE}_-V_loop1_"*bars.m4a)
+shopt -u nullglob
+if (( ${#_mixloop_done[@]} > 0 )); then
+  echo ">> Mixdown loops already present, skipping."
+else
+  echo ">> Building mixdown loops for -V / -V-G / -V-G-B / DO…"
+  for pair in "-V:$M4A_V" "-V-G:$M4A_VG" "-V-G-B:$M4A_VGB" "DO:$M4A_DO"; do
+    variant="${pair%%:*}"; m4a="${pair#*:}"
+    [[ -f "$m4a" ]] || { echo "   (skip $variant — m4a missing)"; continue; }
+    tmp="$(mktemp -d)"
+    # decode mixdown → wav so loop_detect can tile from it
+    ffmpeg -y -loglevel error -i "$m4a" -ar 48000 "$tmp/mix.wav" </dev/null || { rm -rf "$tmp"; continue; }
+    "$VENV_PY" "$LOOP_SCRIPT" \
+      --ref "$OUT_DIR/source.wav" \
+      --target "$tmp/mix.wav" \
+      --out "$tmp" \
+      --max-loops 4 || { rm -rf "$tmp"; continue; }
+    # encode each produced loop wav → m4a named <base>_<variant>_loopN_Mbars.m4a
+    shopt -s nullglob
+    for lw in "$tmp"/mix_loop*bars.wav; do
+      suffix="${lw##*/mix_}"        # e.g. loop2_27bars.wav
+      suffix="${suffix%.wav}"       # loop2_27bars
+      out="$M4A_DIR/${M4A_BASE}_${variant}_${suffix}.m4a"
+      ffmpeg -y -loglevel error -i "$lw" -c:a aac -b:a 256k "$out" </dev/null \
+        && echo "   + $(basename "$out")"
+    done
+    shopt -u nullglob
+    rm -rf "$tmp"
+  done
 fi
 
 echo ">> Done. Files:"

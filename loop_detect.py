@@ -22,11 +22,31 @@ Assumptions:
       clustering; expect ~70-80% accuracy on typical pop/rock material.
 """
 import argparse
+import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import librosa
 import soundfile as sf
+
+
+def write_m4a(samples, sr, out_path):
+    """Write samples as a compressed .m4a (AAC) instead of a giant WAV.
+    Encodes via ffmpeg through a temporary WAV. ~10x smaller than raw WAV, which
+    matters because loops are tiled to full song length."""
+    out_path = Path(out_path)
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tf:
+        tmp = tf.name
+    try:
+        sf.write(tmp, samples, sr)
+        subprocess.run(
+            ['ffmpeg', '-y', '-loglevel', 'error', '-i', tmp,
+             '-c:a', 'aac', '-b:a', '256k', str(out_path)],
+            check=True, stdin=subprocess.DEVNULL)
+    finally:
+        try: Path(tmp).unlink()
+        except OSError: pass
 
 
 def detect_sections(ref_path, max_loops, beats_per_bar):
@@ -155,7 +175,24 @@ def main():
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--max-loops", type=int, default=4)
     ap.add_argument("--beats-per-bar", type=int, default=4)
+    ap.add_argument("--max-duration", type=float, default=600.0,
+                    help="skip loop generation if the source is longer than this "
+                         "many seconds (default 600 = 10 min). Live concerts / "
+                         "multi-song uploads are not single songs and produce "
+                         "meaningless, multi-GB tiled loops.")
     args = ap.parse_args()
+
+    # Guard: don't loop-detect long/multi-song sources (live concerts, full
+    # albums). Tiling a 95-min source to song length yields 1GB+ files and the
+    # detected 'sections' are just different songs, not a repeating groove.
+    try:
+        dur = sf.info(str(args.ref)).duration
+        if dur > args.max_duration:
+            print(f"   source is {dur:.0f}s (> {args.max_duration:.0f}s) — "
+                  "looks like a concert/album, skipping loop generation.")
+            return
+    except Exception as e:
+        print(f"   could not read source duration ({e}); proceeding cautiously.")
 
     loops, sr_ref, total_len, tempo = detect_sections(
         args.ref, args.max_loops, args.beats_per_bar
@@ -205,12 +242,12 @@ def main():
         return
 
     for name, y, sr in loaded:
-        print(f">> {name}.wav: writing {len(loops)} tiled loop(s)…")
+        print(f">> {name}: writing {len(loops)} tiled loop(s) as m4a…")
         for i, (s, e, n_bars) in enumerate(loops, start=1):
             seg = y[s:e]
             tiled = tile_with_crossfade(seg, total_len, sr)
-            out_path = args.out / f"{name}_loop{i}_{n_bars}bars.wav"
-            sf.write(str(out_path), tiled, sr)
+            out_path = args.out / f"{name}_loop{i}_{n_bars}bars.m4a"
+            write_m4a(tiled, sr, out_path)
             print(f"   -> {out_path.name}")
 
 

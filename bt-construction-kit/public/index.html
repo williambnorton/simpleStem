@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Backing Track Construction Kit // Rehearsal & Stem Mixing Studio</title>
+  <title>simpleStem</title>
   <meta name="description" content="Build backing tracks, mix stems, loop segments, and plan setlist timings with professional Web Audio playback.">
   
   <!-- Modern Google Fonts -->
@@ -28,13 +28,14 @@
           <span>BT Construction Kit</span>
         </div>
         <span class="brand-badge">Kit</span>
+        <span id="brand-version" class="brand-version" title="Performer version (YYMMDD.HHMM)"></span>
       </div>
       
       <!-- Instant Search & Filters -->
       <section class="search-section">
         <div class="search-box glass-input">
           <i data-lucide="search" class="search-icon"></i>
-          <input type="text" id="song-search" placeholder="Search title, artist, key..." autocomplete="off">
+          <input type="text" id="song-search" placeholder="Search title, artist, key, BPM, or 'stems'…" autocomplete="off">
           <button id="clear-search" class="btn-icon" style="display: none;"><i data-lucide="x"></i></button>
         </div>
         
@@ -117,6 +118,16 @@
       <div class="sidebar-footer">
         <i data-lucide="folder" class="info-icon"></i>
         <span>~/ClaudeDrive/simpleStem</span>
+      </div>
+      <div class="version-footer">
+        <span class="version-tag" title="Performer version">
+          <i data-lucide="git-commit" style="width:12px;height:12px;"></i>
+          <span id="version-running">v–</span>
+        </span>
+        <button id="btn-update" class="update-btn" style="display:none;" title="A newer version is on disk — restart to apply">
+          <i data-lucide="arrow-up-circle" style="width:13px;height:13px;"></i>
+          <span id="update-label">Update</span>
+        </button>
       </div>
     </aside>
     
@@ -422,10 +433,32 @@
               <span class="sub" id="setlist-stats-label">0 tracks // 0 min total</span>
             </div>
             <div class="setlist-actions">
+              <button id="btn-save-setlist" class="btn-secondary" title="Save current as a manual SetList"><i data-lucide="save"></i> Save</button>
               <button id="btn-clear-setlist" class="btn-secondary" title="Clear Setlist"><i data-lucide="trash-2"></i> Clear</button>
             </div>
           </div>
-          
+
+          <!-- Saved SetLists (playlist-synced + manual) maintained by the Librarian -->
+          <div class="setlists-box glass-card">
+            <div class="setlists-box-header">
+              <span class="label"><i data-lucide="list-music"></i> Saved SetLists</span>
+              <button id="btn-refresh-setlists" class="btn-icon" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+            </div>
+
+            <!-- Stemming progress (driven by /api/queue; idle when nothing rendering) -->
+            <div id="stem-progress" class="stem-progress" style="display:none;">
+              <div class="stem-progress-row">
+                <span id="stem-progress-label" class="stem-progress-label">Stemming…</span>
+                <span id="stem-progress-count" class="stem-progress-count">0/0</span>
+              </div>
+              <div class="stem-progress-track"><div id="stem-progress-fill" class="stem-progress-fill"></div></div>
+              <span id="stem-progress-now" class="stem-progress-now"></span>
+            </div>
+            <div id="setlists-list" class="setlists-list">
+              <span class="setlists-empty">No saved SetLists yet.</span>
+            </div>
+          </div>
+
           <div class="setlist-name-box glass-card">
             <span class="label"><i data-lucide="tag"></i> Setlist Name:</span>
             <input type="text" id="setlist-name" class="glass-select setlist-name-input" placeholder="Untitled Setlist" maxlength="60">

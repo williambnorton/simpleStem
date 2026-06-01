@@ -1,0 +1,178 @@
+{
+  "origin": "playlist",
+  "playlist_id": "PL87YY3OyC-86tLauIcFi0T1e0kY34_nvm",
+  "title": "Friday Set",
+  "source_url": "https://www.youtube.com/playlist?list=PL87YY3OyC-86tLauIcFi0T1e0kY34_nvm",
+  "synced_at": "2026-06-01T15:17:41Z",
+  "count": 21,
+  "songs": [
+    {
+      "position": 1,
+      "video_id": "YG8FFJQYoTM",
+      "title": "Green-Eyed Lady",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 2,
+      "video_id": "lPkEpfwJX_Q",
+      "title": "Spooky",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 3,
+      "video_id": "Fy_jSSJOAjQ",
+      "title": "Tom Petty & The Heartbreakers - American Girl (Live Aid 1985)",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 4,
+      "video_id": "BorfLk7LDLs",
+      "title": "Tim Pierce & Rhett Shull – Dreams (Fleetwood Mac)",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 5,
+      "video_id": "SbyAZQ45uww",
+      "title": "Nancy Sinatra - These Boots Are Made for Walkin'",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 6,
+      "video_id": "NaD7bNmblm0",
+      "title": "Donna Summer - I Feel Love 1977 (Remastered)",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 7,
+      "video_id": "g4CkaK2rxFo",
+      "title": "Don't Call Us, We'll Call You - Sugarloaf | The Midnight Special",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 8,
+      "video_id": "TCRS4DRmf_w",
+      "title": "Allman Brothers Midnight Rider",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 9,
+      "video_id": "Wa4DCp6cl2U",
+      "title": "Ramblin Man",
+      "artist": "Allman Brothers",
+      "song_base": "Ramblin_Man_Allman_Brothers",
+      "status": "rendering"
+    },
+    {
+      "position": 10,
+      "video_id": "IbW5K2F1N28",
+      "title": "Rock and Roll Live Video (Madison Square Garden 1973) Original Records",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 11,
+      "video_id": "4gT63xovuWE",
+      "title": "Led Zeppelin - Since I've Been Loving You (Live at Madison Square Garden 1973) [Official Video]",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 12,
+      "video_id": "eAHQ-9Fniac",
+      "title": "Hey Nineteen - Steely Dan",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 13,
+      "video_id": "oXY_DNVFWVY",
+      "title": "Steely Dan Pretzel Logic",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 14,
+      "video_id": "GaH25Sghoqc",
+      "title": "Reelin' In The Years",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 15,
+      "video_id": "3tvRSFAVAqU",
+      "title": "Rikki Don't Lose That Number",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 16,
+      "video_id": "A_t59To7Snk",
+      "title": "Grand Funk Railroad  -  I'm Your Captain - Shea Stadium 1971",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 17,
+      "video_id": "9F69etVKuUs",
+      "title": "GRAND FUNK RAILROAD - We're An American Band",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 18,
+      "video_id": "ym7tLOdF-co",
+      "title": "Walk Like A Man (You Can Call Me Your Man) (Remastered 2002)",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 19,
+      "video_id": "FTWH1Fdkjow",
+      "title": "SNL",
+      "artist": "Blues Brothers: Soul Man",
+      "song_base": "SNL_Blues_Brothers_Soul_Man",
+      "status": "rendering"
+    },
+    {
+      "position": 20,
+      "video_id": "erMgpfiOMSU",
+      "title": "The Beatles - Oh! Darling (2019 Mix / Audio)",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    },
+    {
+      "position": 21,
+      "video_id": "ga9oBogL2V4",
+      "title": "Joe Cocker, Mad Dogs and Englishmen - Feelin' Alright (LIVE) HD",
+      "artist": null,
+      "song_base": null,
+      "status": "queued"
+    }
+  ]
+}

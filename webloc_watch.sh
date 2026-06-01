@@ -30,11 +30,13 @@ set -euo pipefail
 BASE="$HOME/ClaudeDrive/simpleStem"
 INCOMING="$BASE/INCOMING_WEBLOC"
 QUEUE="$BASE/STEM_QUEUE"
+STEMS="$BASE/STEMS"              # cache: STEMS/<base>/source.wav (fetched once)
 PENDING="/tmp/PENDING"           # playlists/albums staged here until complete
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 META_SCRIPT="$SCRIPT_DIR/metadata.py"
+. "$SCRIPT_DIR/lib-common.sh"    # slugify / song_base (canonical cache path)
 
-mkdir -p "$INCOMING" "$QUEUE" "$PENDING"
+mkdir -p "$INCOMING" "$QUEUE" "$STEMS" "$PENDING"
 
 # ── Prereqs ──────────────────────────────────────────────────────────────
 missing=0
@@ -221,6 +223,7 @@ _download() {
 _emit_metadata() {
   local adir="$1" title="$2" artist="$3" url="$4" info="$5" seq="$6" ptitle="$7"
   local idtag="$8" duration="${9:-}" destdir="${10:-$QUEUE}" clip="${11:-}"
+  local cache_src="${12:-}"   # full-song wav to cache under STEMS/<base>/
   local dargs=()
   [[ -n "$duration" ]] && dargs+=( --duration "$duration" )
   [[ -n "$clip"     ]] && dargs+=( --clip-start "$clip" )
@@ -232,6 +235,17 @@ _emit_metadata() {
   if (( seq > 0 )); then
     inject_playlist_fields "$adir/metadata.json" "$seq" "$ptitle"
     name="$(printf '%02d_%s.json' "$seq" "$base")"
+  fi
+  # Cache the fetched audio + metadata under STEMS/<base>/ so the song is
+  # downloaded ONCE here on the Librarian; stem.sh reuses source.wav and skips
+  # its own download. Uses the canonical song_base so the path matches stem.sh.
+  if [[ -n "$cache_src" && -f "$cache_src" ]]; then
+    local cbase cdir; cbase="$(song_base "$title" "$artist")"
+    cdir="$STEMS/$cbase"; mkdir -p "$cdir"
+    [[ -f "$cdir/source.wav" ]] || cp "$cache_src" "$cdir/source.wav"
+    [[ -f "$info" ]] && cp -f "$info" "$cdir/source.info.json"
+    cp -f "$adir/metadata.json" "$cdir/metadata.json"
+    echo ">> [$idtag] cached source.wav → STEMS/$cbase/"
   fi
   local dest="$destdir/$name"
   [[ -e "$dest" ]] && dest="$destdir/${name%.json}_$idtag.json"   # avoid clobber
@@ -258,7 +272,8 @@ _emit_one_video() {
            "$adir/source.wav" </dev/null
   fi
   echo ">> [$id] analyzing: $title — $artist"
-  _emit_metadata "$adir" "$title" "$artist" "$url" "$info" "$seq" "$ptitle" "$id" "$fulldur" "$destdir" ""
+  # cache the FULL download ($work/source.wav), not the analysis excerpt.
+  _emit_metadata "$adir" "$title" "$artist" "$url" "$info" "$seq" "$ptitle" "$id" "$fulldur" "$destdir" "" "$work/source.wav"
 }
 
 # A directly-dropped single video. If it's a chaptered "full album" it becomes
@@ -294,7 +309,7 @@ _process_single_body() {
              "$seg/source.wav" </dev/null
       echo ">> [$id] #$idx: $ctitle"
       _emit_metadata "$seg" "$ctitle" "$artist" "$url" "$info" "$idx" "$album" \
-                     "${id}_$idx" "$dur" "$stage" "$start" && any=1
+                     "${id}_$idx" "$dur" "$stage" "$start" "$seg/source.wav" && any=1
       rm -rf "$seg"
     done <<< "$plan"
     if (( any == 1 )); then finalize_setlist "$stage"; else rm -rf "$stage"; return 1; fi

@@ -3,10 +3,49 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ── Version / self-update ───────────────────────────────────────────────────
+// VERSION (at the simpleStem root) is the single source of truth. The running
+// process captures its version at boot (BOOT_VERSION). Because the repo lives on
+// Google Drive, editing code on the mini eventually syncs the new VERSION to the
+// laptop's disk — at which point readDiskVersion() != BOOT_VERSION means an
+// update is staged and the server should be restarted to run it.
+function SIMPLE_STEM_ROOT_FOR_VERSION() {
+  return process.env.SIMPLE_STEM_ROOT || path.join(os.homedir(), 'ClaudeDrive', 'simpleStem');
+}
+// Version is a BUILD TIMESTAMP in local time, formatted YYMMDD.HHMM, derived
+// from the newest modification time across the code files. No manual bumping:
+// when Drive syncs a newer file to this machine, the on-disk version advances,
+// and the running process (which captured its version at boot) sees the diff.
+function CODE_FILES() {
+  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
+  return [
+    path.join(__dirname, 'server.js'),
+    path.join(__dirname, 'public', 'app.js'),
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(__dirname, 'public', 'styles.css'),
+    path.join(root, 'performer.sh'),
+    path.join(root, 'queue_runner.sh'),
+    path.join(root, 'stem.sh'),
+  ];
+}
+function fmtVersion(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}`
+       + `.${p(d.getHours())}${p(d.getMinutes())}`;
+}
+function readDiskVersion() {
+  let newest = 0;
+  for (const f of CODE_FILES()) {
+    try { newest = Math.max(newest, fs.statSync(f).mtimeMs); } catch (e) {}
+  }
+  return newest ? fmtVersion(new Date(newest)) : 'unknown';
+}
+const BOOT_VERSION = readDiskVersion();
 
 const CACHE_FILE = path.join(__dirname, 'durations.json');
 let durationCache = {};
@@ -53,6 +92,7 @@ const STEMS_DIR = `${SIMPLE_STEM_ROOT}/STEMS`;
 const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
+const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
 
 // Comprehensive list of known artists in this library for intelligent parsing
 const KNOWN_ARTISTS = [
@@ -206,14 +246,14 @@ function scanStems() {
       source: filesInFolder.includes('source.wav') ? `source.wav` : null,
     };
 
-    // Find loop files (e.g. drums_loop1_83bars.wav)
+    // Find loop files (e.g. drums_loop1_83bars.m4a; legacy .wav also accepted)
     const loops = [];
-    const loopFiles = filesInFolder.filter(f => f.toLowerCase().includes('loop') && f.endsWith('.wav'));
-    
+    const loopFiles = filesInFolder.filter(f => f.toLowerCase().includes('loop') && /\.(m4a|wav)$/i.test(f));
+
     // Parse loop metadata
     for (const loopFile of loopFiles) {
-      // Pattern: [stem]_loop[num]_[bars]bars.wav
-      const match = loopFile.match(/^([a-z+]+)_loop(\d+)_(\d+)bars\.wav$/i);
+      // Pattern: [stem]_loop[num]_[bars]bars.(m4a|wav)
+      const match = loopFile.match(/^([a-z+]+)_loop(\d+)_(\d+)bars\.(m4a|wav)$/i);
       if (match) {
         loops.push({
           fileName: loopFile,
@@ -626,6 +666,49 @@ try {
   fs.mkdirSync(AUDIO_CACHE_M4A,   { recursive: true });
 } catch (e) { console.warn('cache mkdir:', e.message); }
 
+// LRU cap: you typically play ~50 songs, but the library is large. Keep the
+// local cache bounded — when it exceeds CACHE_CAP_BYTES, evict least-recently-
+// used files (by atime/mtime) until under cap. Runs after precache batches and
+// on a timer. Never touches source data on Drive — only the ~/.bt-cache mirror.
+const CACHE_CAP_BYTES = Number(process.env.BT_CACHE_CAP_GB || 12) * 1024 * 1024 * 1024;
+function pruneCache() {
+  try {
+    const files = [];
+    const walk = dir => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name !== '.cached') {
+          try { const st = fs.statSync(p); files.push({ p, size: st.size, used: st.atimeMs || st.mtimeMs }); }
+          catch (e) {}
+        }
+      }
+    };
+    if (fs.existsSync(AUDIO_CACHE_DIR)) walk(AUDIO_CACHE_DIR);
+    let total = files.reduce((a, f) => a + f.size, 0);
+    if (total <= CACHE_CAP_BYTES) return;
+    files.sort((a, b) => a.used - b.used);   // oldest-used first
+    let removed = 0;
+    for (const f of files) {
+      if (total <= CACHE_CAP_BYTES) break;
+      try { fs.unlinkSync(f.p); total -= f.size; removed++; } catch (e) {}
+    }
+    // invalidate any .cached sentinels whose folder we evicted from
+    if (removed) {
+      const stemsRoot = AUDIO_CACHE_STEMS;
+      if (fs.existsSync(stemsRoot)) for (const d of fs.readdirSync(stemsRoot)) {
+        const folder = path.join(stemsRoot, d);
+        try {
+          const wavs = fs.readdirSync(folder).filter(f => f.endsWith('.wav'));
+          if (wavs.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
+        } catch (e) {}
+      }
+      console.log(`[cache] pruned ${removed} file(s) to stay under ${Math.round(CACHE_CAP_BYTES/1e9)}GB`);
+    }
+  } catch (e) { console.warn('[cache] prune failed:', e.message); }
+}
+setInterval(pruneCache, 10 * 60 * 1000);   // every 10 min
+
 // SYNC version — used by the on-demand audio request handler when the
 // file isn't cached yet. Blocks the request until the copy is done, since
 // the response can't be sent until we have the file.
@@ -850,6 +933,45 @@ app.post('/api/precache/stems/:song', (req, res) => {
   })();
 });
 
+// Precache a whole SetList: pull every song's m4a + stems into the local cache
+// in the background, so loading a setlist before a gig makes its songs instant.
+// Honors the LRU cap afterward. Body/param: setlist slug.
+app.post('/api/precache/setlist/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const file = path.join(SETLISTS_DIR, `${slug}.json`);
+  if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'setlist not found' });
+  }
+  let sl;
+  try { sl = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const bases = (sl.songs || []).map(s => s.song_base).filter(Boolean);
+  res.json({ status: 'precaching', setlist: slug, songs: bases.length });
+
+  (async () => {
+    for (const base of bases) {
+      // stems
+      const folder = path.join(STEMS_DIR, base);
+      try {
+        if (fs.existsSync(folder)) {
+          for (const f of (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'))) {
+            await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
+          }
+        }
+      } catch (e) {}
+      // m4a variants for this base
+      try {
+        for (const f of (await fsp.readdir(M4A_DIR)).filter(f => f.startsWith(base + '_') && f.endsWith('.m4a'))) {
+          await ensureCachedAsync(path.join(M4A_DIR, f), path.join(AUDIO_CACHE_M4A, f));
+        }
+      } catch (e) {}
+    }
+    pruneCache();
+    console.log(`[precache setlist] ${slug} done (${bases.length} songs)`);
+  })();
+});
+
 // Lightweight endpoint: returns which stems folders and m4a files are cached.
 // Used by the frontend to refresh chips without re-scanning the full library.
 app.get('/api/cache-status', (req, res) => {
@@ -931,6 +1053,125 @@ app.get('/api/queue', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// =====================================================================
+// SETLISTS — persistent ordered song collections maintained by the
+// Librarian (setlist_sync.py). Two kinds, distinguished by `origin`:
+//   "playlist" — synced from a YouTube playlist (sync owns the file)
+//   "manual"   — curated here in the portal (sync never touches it)
+// Each setlist file is SETLISTS/<slug>.json. registry.json is internal
+// (playlist URLs) and is not served as a setlist.
+// =====================================================================
+
+// List all setlists (summaries only — title, origin, count, synced_at).
+app.get('/api/setlists', (req, res) => {
+  try {
+    if (!fs.existsSync(SETLISTS_DIR)) return res.json({ setlists: [] });
+    const out = [];
+    for (const f of fs.readdirSync(SETLISTS_DIR)) {
+      if (!f.endsWith('.json') || f === 'registry.json') continue;
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(SETLISTS_DIR, f), 'utf8'));
+        out.push({
+          slug: f.replace(/\.json$/i, ''),
+          title: d.title || f.replace(/\.json$/i, ''),
+          origin: d.origin || 'manual',
+          count: Array.isArray(d.songs) ? d.songs.length : (d.count || 0),
+          synced_at: d.synced_at || d.created_at || null,
+          source_url: d.source_url || null,
+        });
+      } catch (e) { /* skip unreadable */ }
+    }
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    res.json({ setlists: out });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Full setlist by slug (the ordered songs).
+app.get('/api/setlists/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  if (slug === 'registry') return res.status(404).json({ error: 'not a setlist' });
+  const file = path.join(SETLISTS_DIR, `${slug}.json`);
+  if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'setlist not found' });
+  }
+  try {
+    res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Save a MANUAL setlist (create or replace). Body: { title, songs:[song_base...] }.
+// Refuses to overwrite a playlist-origin file — those belong to setlist_sync.py.
+app.post('/api/setlists', (req, res) => {
+  const { title, songs } = req.body || {};
+  if (!title || !Array.isArray(songs)) {
+    return res.status(400).json({ error: 'need { title, songs: [...] }' });
+  }
+  const slug = String(title).replace(/[^A-Za-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (!slug) return res.status(400).json({ error: 'title produced an empty slug' });
+  const file = path.join(SETLISTS_DIR, `${slug}.json`);
+  if (!file.startsWith(SETLISTS_DIR)) return res.status(400).json({ error: 'bad slug' });
+  try {
+    if (fs.existsSync(file)) {
+      const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (existing.origin === 'playlist') {
+        return res.status(409).json({ error: 'that name is a playlist-synced setlist; pick another' });
+      }
+    }
+    if (!fs.existsSync(SETLISTS_DIR)) fs.mkdirSync(SETLISTS_DIR, { recursive: true });
+    const payload = {
+      origin: 'manual',
+      title,
+      created_at: new Date().toISOString(),
+      count: songs.length,
+      // store as ordered entries keyed by song_base; the client resolves details from /api/library
+      songs: songs.map((sb, i) => ({ position: i + 1, song_base: sb })),
+    };
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n');
+    res.json({ ok: true, slug });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Version status: what the running process booted with, what's on disk now, and
+// whether they differ (→ an update is staged and a restart will pick it up).
+app.get('/api/version', (req, res) => {
+  const disk = readDiskVersion();
+  res.json({
+    running: BOOT_VERSION,
+    available: disk,
+    updateAvailable: disk !== 'unknown' && disk !== BOOT_VERSION,
+  });
+});
+
+// Apply a staged update: relaunch via performer.sh so the new code runs. The
+// restart is spawned DETACHED — it must outlive this very process (which it's
+// about to kill + restart). We reply first, then trigger it a moment later.
+app.post('/api/update', (req, res) => {
+  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
+  const script = path.join(root, 'performer.sh');
+  if (!fs.existsSync(script)) {
+    return res.status(500).json({ error: 'performer.sh not found at root' });
+  }
+  res.json({ ok: true, restarting: true, to: readDiskVersion() });
+  // Give the response time to flush, then restart out-of-band.
+  setTimeout(() => {
+    try {
+      const child = spawn('bash', [script, 'restart'], {
+        cwd: root, detached: true, stdio: 'ignore',
+        env: { ...process.env, PORT: String(PORT) },
+      });
+      child.unref();   // don't let it tie to this dying process
+    } catch (e) {
+      console.error('[update] restart spawn failed:', e.message);
+    }
+  }, 300);
 });
 
 // Fallback to serve index.html for spa behavior

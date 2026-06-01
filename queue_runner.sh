@@ -28,6 +28,7 @@ QUEUE="$BASE/STEM_QUEUE"
 STEMS="$BASE/STEMS"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STEM_SCRIPT="$SCRIPT_DIR/stem.sh"
+. "$SCRIPT_DIR/lib-common.sh"   # song_base (canonical cache path)
 CURRENT="$QUEUE/.current"
 LOCK="$QUEUE/.runner.lock"
 POLL="${POLL:-5}"
@@ -89,6 +90,17 @@ run_stem() {
 # Otherwise hand the URL straight to stem.sh.
 render() {
   local title="$1" artist="$2" url="$3" cstart="$4" cend="$5" rc=0
+  # Cache fast-path: the Librarian (webloc_watch.sh) already fetched source.wav
+  # for this song — album chapters are cached already-sliced. Hand it to stem.sh,
+  # which reuses STEMS/<base>/source.wav and skips both download and slicing.
+  # The clip/url branches below remain as a fallback when there is no cache
+  # (e.g. right after a wipe/rebuild before re-ingest).
+  local cbase; cbase="$(song_base "$title" "$artist")"
+  if [[ -f "$STEMS/$cbase/source.wav" ]]; then
+    set_phase "using cached source.wav"
+    run_stem "$title" "$artist"
+    return $?
+  fi
   if [[ -n "$cstart" && -n "$cend" ]]; then
     local work; work="$(mktemp -d)"
     set_phase "downloading full video for clip ${cstart}-${cend}s"
@@ -158,8 +170,16 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null; rm -f "$CURRENT"' EXIT
 
 ONCE=0; [[ "${1:-}" == "--once" ]] && ONCE=1
+# Pause flag: if STEM_QUEUE/.paused exists, the runner idles between songs
+# (it never interrupts a song mid-render). Set/cleared by performer.sh pause|resume
+# so you can stop heavy CPU before a gig without losing the in-flight render.
+PAUSE="$QUEUE/.paused"
 echo ">> queue_runner watching $QUEUE (poll ${POLL}s; Ctrl-C to stop)"
 while true; do
+  if [[ -f "$PAUSE" ]]; then
+    (( ONCE == 1 )) && { echo ">> paused (.paused present) — exiting --once"; break; }
+    sleep "$POLL"; continue
+  fi
   job="$(next_job)"
   if [[ -z "$job" ]]; then
     (( ONCE == 1 )) && break

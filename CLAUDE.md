@@ -22,42 +22,44 @@ m4a mixdowns) → STEMS/ + M4A/ → bt-construction-kit (Express :3000) plays th
 
 ## Two-machine setup (important)
 
+> **This split was REVERSED in May 2026. See `ARCHITECTURE.md` for the full
+> rationale and the cache model.** Demucs now runs on the larger machine because
+> the 8 GB machine ran out of memory. The roles below reflect the new layout.
+
 This project runs across two Macs that both mount the same Google Drive folder
 (`~/ClaudeDrive/simpleStem`). Their roles are **not** interchangeable:
 
 | Machine | Drive mode | Role | Runs |
 |---|---|---|---|
-| **Acquisition Mac** (smaller, 8 GB) | **mirrors** Drive (local copy) | Ingest + render + serve live | `studio.sh` → `webloc_watch.sh`, `queue_runner.sh`, the portal, and Demucs |
-| **Studio Mac** (larger) | **streams** Drive (no local mirror) | Evolve the UI | edits to `bt-construction-kit/` + docs; `node server.js` for local UI testing only |
+| **Mac mini** (8 GB, 24/7, external disk) — the **Librarian** | **mirrors** Drive to external disk | Ingest + cache + metadata + catalog | `librarian.sh` → `webloc_watch.sh` (download once → cache) + daily `catalog.py` |
+| **MacBook Pro** (36 GB, travels) — the **Performer** | **streams** Drive, pins active jobs | Demucs render + serve live | `performer.sh` → `queue_runner.sh` + `stem.sh` (Demucs) + the portal |
 
-Why this split:
+Why this split (reversed from the original):
 
-- **Demucs and yt-dlp write gigabytes** (downloads, stems). That must happen on
-  the machine that *mirrors* Drive locally; doing it on the streaming machine
-  would push GBs back over the network and be slow/expensive.
-- **The 8 GB machine is memory-tight.** Demucs + Chrome + an agent already hit
-  "out of application memory." So heavy *UI/agent* work moves to the larger
-  machine, while the acquisition machine focuses on the pipeline + serving.
-- **UI work is light I/O** (editing JS/HTML/CSS, reading small files), which is
-  fine over a streamed Drive.
+- **Demucs needs several GB of RAM** and crashed the 8 GB machine ("out of
+  application memory"). It belongs on the 36 GB laptop.
+- **The big audio file is fetched once.** The Librarian downloads `source.wav`
+  into `STEMS/<base>/` (the cache); the Performer reuses it (`stem.sh` skips its
+  own download). The audio crosses the network once, at home on wifi, and never
+  touches the gig tether. (Previously YouTube was hit twice per song.)
+- **The mini's work is light + I/O-bound** (download, slice, tag, queue, index),
+  fine for 8 GB running 24/7 with the library on a big external disk.
 
-### If you are the Claude on the Studio (UI) Mac
+### If you are the Claude on the Performer (laptop)
 
-- **Do** edit `bt-construction-kit/` (server.js, public/*) and the docs.
-- **Do** validate changes locally: `node --check bt-construction-kit/server.js`,
-  `node --check bt-construction-kit/public/app.js`, and run just the UI with
-  `cd bt-construction-kit && node server.js` (it can read stems streamed from
-  Drive, slowly).
-- **Don't** run `webloc_watch.sh`, `queue_runner.sh`, `stem.sh`, or Demucs here
-  — that's the acquisition machine's job and would thrash the streamed Drive.
+- Own rendering + the portal: `performer.sh start` runs `queue_runner.sh`
+  (Demucs) and the `bt-construction-kit` server.
+- **Do** edit `bt-construction-kit/` (server.js, public/*) and validate with
+  `node --check`.
+- **Don't** run the watcher/cataloger here — that's the Librarian's job.
+
+### If you are the Claude on the Librarian (mini)
+
+- Own ingest + the catalog: `librarian.sh start` runs `webloc_watch.sh` and the
+  daily `catalog.py` pass; `librarian.sh catalog` runs the consistency pass now.
+- **Never run Demucs here** (the memory crash). No `queue_runner.sh`/`stem.sh`.
 - **Don't** change the `metadata.json` schema without also updating
-  `metadata.py` (the producer) on the acquisition side — see Conventions.
-
-### If you are the Claude on the Acquisition Mac
-
-- Own the pipeline: `studio.sh start` runs the watcher, runner, and portal.
-- Treat `bt-construction-kit/` as owned by the Studio Mac; pull its changes via
-  git rather than editing in parallel.
+  `metadata.py` and `catalog.py` — see Conventions.
 
 ## File map
 
@@ -99,16 +101,30 @@ Data (shared via Drive, git-ignored — see below):
 
 Docs: `WORKFLOW.md` (diagram), `README.md`, `README-DRAFT.md`.
 
-## Running it (acquisition machine)
+## Running it
 
+On the **mini (Librarian)**:
+```
+cd ~/ClaudeDrive/simpleStem
+./librarian.sh start          # watcher (ingest→cache) + daily catalog poll
+./librarian.sh catalog        # run the consistency pass once, now
+./librarian.sh status
+```
+
+On the **laptop (Performer)**:
 ```
 cd ~/ClaudeDrive/simpleStem
 (cd bt-construction-kit && npm install)   # once
-./studio.sh start        # server + watcher + runner
-./studio.sh status       # state + queue depth + current render & phase
-./studio.sh logs runner  # tail a service
-./studio.sh stop
+./performer.sh start          # queue_runner (Demucs) + portal
+./performer.sh status         # queue depth + current render & phase
+./performer.sh logs runner
+./performer.sh stop
 ```
+
+> `studio.sh` is the legacy single-machine switch (ingest+render+serve on one
+> Mac). It still works but predates the cache model and the machine flip; prefer
+> `librarian.sh` / `performer.sh`. A full rebuild is staged with `./rebuild.sh`
+> (dry-run by default; `--go` to execute) — see `ARCHITECTURE.md`.
 
 Add a song from the portal's "Add from YouTube" box (or drop a `.webloc` into
 `INCOMING_WEBLOC/`). Render phases show in the portal and in `status`:
