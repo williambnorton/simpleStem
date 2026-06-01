@@ -592,7 +592,17 @@ function renderLibrary() {
     // Action
     const actionCell = document.createElement('div');
     actionCell.className = 'col-action';
-    actionCell.innerHTML = `<button class="btn-secondary" style="padding: 4px 10px;">Load</button>`;
+    actionCell.innerHTML = `<button class="btn-secondary load-btn" style="padding: 4px 10px;">Load</button>` +
+      `<button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;margin-left:4px;">⋯</button>`;
+    // song_base = the stems folder name (canonical key for the per-song API)
+    const stemsVar = merged.variants.find(v => v.type === 'stems');
+    const songBase = stemsVar && stemsVar.folderName;
+    const menuBtn = actionCell.querySelector('.song-menu-btn');
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (songBase) openSongMenu(songBase, merged);
+      else alert('This song has no stems folder yet — options apply to stemmed songs.');
+    });
 
     row.appendChild(selectCell);
     row.appendChild(titleCell);
@@ -609,6 +619,116 @@ function renderLibrary() {
   });
   
   lucide.createIcons();
+}
+
+// ── Per-song options menu (metadata / re-fetch / delete) ───────────────────
+async function openSongMenu(base, merged) {
+  // Fetch full metadata
+  let meta = {}, artifacts = {};
+  try {
+    const r = await fetch(`/api/song/${encodeURIComponent(base)}/metadata`);
+    if (r.ok) { const d = await r.json(); meta = d.metadata || {}; artifacts = d.artifacts || {}; }
+  } catch (e) {}
+
+  const overlay = document.createElement('div');
+  overlay.className = 'song-modal-overlay';
+  const stemsList = (artifacts.stems || []).join(', ') || 'none';
+  const m4aList = (artifacts.m4a || []).join(', ') || 'none';
+  const metaRows = Object.entries(meta)
+    .filter(([k]) => k !== 'processing')
+    .map(([k, v]) => `<tr><td class="mk">${escapeHtml(k)}</td><td class="mv">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}</td></tr>`)
+    .join('');
+
+  overlay.innerHTML = `
+    <div class="song-modal glass-card">
+      <div class="song-modal-head">
+        <h3>${escapeHtml(meta.title || base)} <span class="song-modal-artist">${escapeHtml(meta.artist || '')}</span></h3>
+        <button class="song-modal-close">✕</button>
+      </div>
+
+      <div class="song-modal-section">
+        <label class="song-modal-label">Source URL — open the current one, or paste a better version and re-fetch:</label>
+        <div class="song-modal-url-row">
+          <input type="text" class="song-modal-url" value="${escapeHtml(meta.source_url || '')}" placeholder="https://www.youtube.com/watch?v=…">
+          <button class="btn-secondary song-url-open" title="Open current URL in a new tab">↗ Open</button>
+          <button class="btn-secondary song-refetch-btn">Re-fetch</button>
+        </div>
+        <div class="song-modal-note"></div>
+      </div>
+
+      <div class="song-modal-section">
+        <details><summary>All metadata</summary>
+          <div class="song-modal-artifacts">stems: ${escapeHtml(stemsList)}<br>m4a: ${escapeHtml(m4aList)}</div>
+          <table class="song-modal-table">${metaRows}</table>
+        </details>
+      </div>
+
+      <div class="song-modal-section song-modal-danger">
+        <label class="song-modal-label">Delete permanently (not reversible):</label>
+        <button class="btn-secondary song-delete-btn">Delete this song</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.song-modal-close').addEventListener('click', close);
+
+  // Open the current URL in a new tab (whatever is in the field right now)
+  overlay.querySelector('.song-url-open').addEventListener('click', () => {
+    const u = overlay.querySelector('.song-modal-url').value.trim();
+    if (/^https?:\/\//.test(u)) window.open(u, '_blank', 'noopener');
+    else alert('No valid URL to open.');
+  });
+
+  // Re-fetch
+  const note = overlay.querySelector('.song-modal-note');
+  overlay.querySelector('.song-refetch-btn').addEventListener('click', async () => {
+    const url = overlay.querySelector('.song-modal-url').value.trim();
+    if (!/^https?:\/\//.test(url)) { note.textContent = 'Enter a valid YouTube URL.'; return; }
+    if (!confirm(`Re-fetch "${meta.title || base}" from the new URL? This deletes the current stems/m4a and re-downloads.`)) return;
+    note.textContent = 'Clearing old artifacts and queueing re-fetch…';
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(base)}/refetch`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      note.textContent = d.note || 'Queued. The Librarian (mini) will download; then it re-stems.';
+      fetchLibrary();
+    } catch (e) { note.textContent = `Error: ${e.message}`; }
+  });
+
+  // Delete — two-click confirm: first click arms it, second click within 4s
+  // actually deletes. Avoids typing long concert titles while still being
+  // deliberate (one stray click can't erase a song).
+  const delBtn = overlay.querySelector('.song-delete-btn');
+  let armed = false, armTimer = null;
+  delBtn.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true;
+      delBtn.textContent = 'Click again to confirm delete';
+      delBtn.classList.add('armed');
+      armTimer = setTimeout(() => {
+        armed = false;
+        delBtn.textContent = 'Delete this song';
+        delBtn.classList.remove('armed');
+      }, 4000);
+      return;
+    }
+    clearTimeout(armTimer);
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(base)}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: base })   // server still requires this
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      close();
+      fetchLibrary();
+    } catch (e) { alert(`Delete failed: ${e.message}`); }
+  });
 }
 
 // Client Side Search and Filters

@@ -1176,6 +1176,114 @@ app.post('/api/update', (req, res) => {
   }, 300);
 });
 
+// =====================================================================
+// PER-SONG management: metadata / delete / re-fetch.
+// :base is the STEMS folder name (the canonical song_base, e.g.
+// Valerie_Amy_Winehouse). All paths are validated to stay inside the
+// library — no traversal, no touching anything but this song's own files.
+// =====================================================================
+function safeSongDir(base) {
+  const b = path.basename(base);                 // strip any path components
+  const dir = path.join(STEMS_DIR, b);
+  if (!dir.startsWith(STEMS_DIR + path.sep)) return null;   // guard traversal
+  return { b, dir };
+}
+
+// Full metadata for one song.
+app.get('/api/song/:base/metadata', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
+    // also report which artifacts currently exist on disk
+    const EX = ['vocals','drums','bass','other','piano','guitar'];
+    const stems = EX.filter(x => fs.existsSync(path.join(s.dir, `${x}.wav`)));
+    let m4a = [];
+    try { m4a = fs.readdirSync(M4A_DIR).filter(f => f.startsWith(s.b + '_') && f.endsWith('.m4a')); } catch (e) {}
+    res.json({ base: s.b, metadata: meta, artifacts: { stems, m4a, hasSource: fs.existsSync(path.join(s.dir, 'source.wav')) } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Hard delete a song: remove its STEMS folder, its M4A files, and its cache.
+// Body must include { confirm: "<base>" } matching the song id — a deliberate
+// guard against accidental deletes. This is NOT reversible.
+app.delete('/api/song/:base', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song not found' });
+  if (!req.body || req.body.confirm !== s.b) {
+    return res.status(400).json({ error: 'confirmation mismatch — send { confirm: "<base>" }' });
+  }
+  try {
+    let removedM4a = 0;
+    // STEMS folder (+ its cache)
+    fs.rmSync(s.dir, { recursive: true, force: true });
+    fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true });
+    // M4A files for this base (+ their cache)
+    try {
+      for (const f of fs.readdirSync(M4A_DIR)) {
+        if (f.startsWith(s.b + '_') && f.endsWith('.m4a')) {
+          fs.rmSync(path.join(M4A_DIR, f), { force: true });
+          fs.rmSync(path.join(AUDIO_CACHE_M4A, f), { force: true });
+          removedM4a++;
+        }
+      }
+    } catch (e) {}
+    console.log(`[delete] ${s.b}: removed STEMS folder + ${removedM4a} m4a`);
+    refreshLibraryCache('song-deleted', true);
+    res.json({ ok: true, base: s.b, removedM4a });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Re-fetch a song from a NEW url: update source_url in metadata, delete the
+// stale source.wav + stems + m4a (so the cache model re-downloads instead of
+// reusing), and drop a .webloc so the Librarian re-ingests. The actual download
+// happens on the Librarian (mini) watcher; re-stem on the Performer runner.
+app.post('/api/song/:base/refetch', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song not found' });
+  const url = ((req.body && req.body.url) || '').trim();
+  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
+    return res.status(400).json({ error: 'need a valid YouTube URL' });
+  }
+  try {
+    // 1. update source_url in metadata.json (keep title/artist so the re-ingest
+    //    names it the same — webloc_watch derives title/artist from the video,
+    //    but we preserve the existing record as a hint).
+    const mp = path.join(s.dir, 'metadata.json');
+    if (fs.existsSync(mp)) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
+        meta.source_url = url;
+        if (meta.processing && meta.processing.download) meta.processing.download.source_url = url;
+        meta.refetched_at = new Date().toISOString();
+        fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+      } catch (e) {}
+    }
+    // 2. delete stale audio so stem.sh won't reuse it (the cache model otherwise
+    //    skips download when source.wav exists).
+    for (const f of ['source.wav', 'source.info.json', 'vocals.wav','drums.wav','bass.wav','other.wav','piano.wav','guitar.wav','bass+drums.wav']) {
+      fs.rmSync(path.join(s.dir, f), { force: true });
+    }
+    // also any loop files + the whole cached copy
+    try { for (const f of fs.readdirSync(s.dir)) if (/loop\d+_\d+bars\.(wav|m4a)$/i.test(f)) fs.rmSync(path.join(s.dir, f), { force: true }); } catch (e) {}
+    fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true });
+    // 3. delete old m4a mixdowns (they're from the old source)
+    try { for (const f of fs.readdirSync(M4A_DIR)) if (f.startsWith(s.b + '_') && f.endsWith('.m4a')) { fs.rmSync(path.join(M4A_DIR, f), { force: true }); fs.rmSync(path.join(AUDIO_CACHE_M4A, f), { force: true }); } } catch (e) {}
+    // 4. drop a webloc for the Librarian to re-ingest the new URL
+    fs.mkdirSync(INCOMING_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.writeFileSync(path.join(INCOMING_DIR, `refetch_${s.b}_${stamp}.webloc`),
+      '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n');
+    console.log(`[refetch] ${s.b}: cleared old artifacts, queued new URL ${url}`);
+    refreshLibraryCache('song-refetch', true);
+    res.json({ ok: true, base: s.b, url, note: 'Old artifacts cleared and re-ingest queued. The Librarian (mini) must be running to download; then it re-stems on the Performer.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Fallback to serve index.html for spa behavior
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

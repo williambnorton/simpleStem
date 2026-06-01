@@ -47,10 +47,28 @@ version_str() {
 pidfile() { echo "$RUN/perf-$1.pid"; }
 logfile() { echo "$RUN/perf-$1.log"; }
 
+# Resolve an absolute path to node. A backgrounded/non-login shell may not have
+# the interactive PATH (nvm, Homebrew), so `node` bare can fail to launch. Try
+# PATH first, then the usual install locations, then nvm's newest version.
+find_node() {
+  local n
+  n="$(command -v node 2>/dev/null)" && [[ -x "$n" ]] && { echo "$n"; return; }
+  for n in /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.local/bin/node"; do
+    [[ -x "$n" ]] && { echo "$n"; return; }
+  done
+  # nvm: pick the highest installed version
+  if [[ -d "$HOME/.nvm/versions/node" ]]; then
+    n="$(ls -d "$HOME/.nvm/versions/node"/*/bin/node 2>/dev/null | sort -V | tail -n1)"
+    [[ -x "$n" ]] && { echo "$n"; return; }
+  fi
+  echo ""   # not found
+}
+NODE_BIN="$(find_node)"
+
 start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
-    server) echo "cd '$BASE/bt-construction-kit' && exec node server.js" ;;
+    server) echo "cd '$BASE/bt-construction-kit' && exec '${NODE_BIN:-node}' server.js" ;;
   esac
 }
 
@@ -66,7 +84,8 @@ kill_tree() {
 }
 
 preflight() {
-  command -v node   >/dev/null 2>&1 || echo "  ! node not found — install Node for the portal" >&2
+  [[ -n "$NODE_BIN" ]] && echo "  node: $NODE_BIN" \
+    || echo "  ! node not found in PATH or common locations — install Node for the portal" >&2
   command -v demucs >/dev/null 2>&1 || echo "  ! demucs not found — 'pipx install demucs' (the laptop does the rendering)" >&2
   command -v yt-dlp >/dev/null 2>&1 || echo "  ! yt-dlp not found — needed when a song isn't cached yet" >&2
   command -v ffmpeg >/dev/null 2>&1 || echo "  ! ffmpeg not found — 'brew install ffmpeg'" >&2
@@ -79,8 +98,11 @@ start_one() {
   if is_running "$name"; then
     echo "  $name already running (pid $(cat "$(pidfile "$name")"))"; return
   fi
-  bash -c "$(start_cmd "$name")" >"$(logfile "$name")" 2>&1 &
+  # nohup + setsid-style detach so the service SURVIVES closing the terminal
+  # (without nohup, a plain & job gets SIGHUP and dies on terminal close).
+  nohup bash -c "$(start_cmd "$name")" >"$(logfile "$name")" 2>&1 &
   local pid=$!
+  disown "$pid" 2>/dev/null || true
   echo "$pid" > "$(pidfile "$name")"
   sleep 0.4
   if kill -0 "$pid" 2>/dev/null; then
