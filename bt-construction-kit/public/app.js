@@ -150,6 +150,9 @@ const els = {
   setlistsList: document.getElementById('setlists-list'),
   btnRefreshSetlists: document.getElementById('btn-refresh-setlists'),
   btnSaveSetlist: document.getElementById('btn-save-setlist'),
+  // Master volume (right rail)
+  masterVol: document.getElementById('master-vol'),
+  masterVolPct: document.getElementById('master-vol-pct'),
   // Version / update
   versionRunning: document.getElementById('version-running'),
   btnUpdate: document.getElementById('btn-update'),
@@ -195,6 +198,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupQueueUI();
   setupSetlistsPanel();
   setupVersionWatch();
+  setupMasterVolume();
 
   // Diagnostic: log audio element errors and unexpected ended events
   Object.keys(audioElements).forEach(chan => {
@@ -577,14 +581,14 @@ function renderLibrary() {
       const cachedCls = v.cached ? ' chip-cached' : '';
       const activeCls = currentSong && currentSong.id === v.id ? ' chip-active' : '';
       chip.className = `format-chip ${isStems ? 'chip-stems' : 'chip-m4a'}${cachedCls}${activeCls}`;
-      chip.title = `${v.variantLabel}${v.cached ? ' — cached, instant play' : ''} — click to load`;
+      chip.title = `${v.variantLabel}${v.cached ? ' — cached, instant play' : ''} — click to play`;
       chip.dataset.variantId = v.id;
       const icon = isStems ? 'sliders' : 'music-4';
       const label = isStems ? 'STEMS' : v.variantCode;
       chip.innerHTML = `<i data-lucide="${icon}" style="width:10px;height:10px;"></i> ${label}`;
       chip.addEventListener('click', e => {
         e.stopPropagation();
-        loadSong(v);
+        loadSong(v, { autoplay: true });   // clicking a chip plays immediately
       });
       formatCell.appendChild(chip);
     });
@@ -619,6 +623,21 @@ function renderLibrary() {
   });
   
   lucide.createIcons();
+}
+
+// ── Master volume (full-height right-rail slider) ──────────────────────────
+function setupMasterVolume() {
+  if (!els.masterVol) return;
+  const apply = () => {
+    const v = parseFloat(els.masterVol.value);
+    currentMasterVolume = v;
+    if (masterGainNode && audioCtx) {
+      masterGainNode.gain.setValueAtTime(v, audioCtx.currentTime);
+    }
+    if (els.masterVolPct) els.masterVolPct.textContent = `${Math.round(v * 100)}%`;
+  };
+  els.masterVol.addEventListener('input', apply);
+  apply();   // initialize label
 }
 
 // ── Per-song options menu (metadata / re-fetch / delete) ───────────────────
@@ -795,9 +814,11 @@ function initAudioCtx() {
   analyserNode.fftSize = 256;
   
   masterGainNode = audioCtx.createGain();
-  currentMasterVolume = 1.0;
-  masterGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
-  
+  // Respect the master-volume slider's current position rather than forcing 1.0,
+  // so the graph initializes at whatever level the user has set.
+  if (els.masterVol) currentMasterVolume = parseFloat(els.masterVol.value);
+  masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+
   masterGainNode.connect(analyserNode);
   analyserNode.connect(audioCtx.destination);
   
@@ -853,10 +874,11 @@ function loadSong(song, opts) {
   isLooping = false;
   if (els.btnLoop) els.btnLoop.classList.remove('active');
   
-  // Reset master fader volume
-  masterGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
-  currentMasterVolume = 1.0;
-  
+  // Restore master gain to the user's slider level (undoes any prior fade-out
+  // without overriding the volume they've set on the right-rail slider).
+  currentMasterVolume = els.masterVol ? parseFloat(els.masterVol.value) : 1.0;
+  masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+
   // Active row highlight: a merged row is active when ANY of its variants matches the loaded song.
   document.querySelectorAll('.song-row').forEach(row => {
     const merged = mergedLibrary.find(m => m.id === row.dataset.id);
