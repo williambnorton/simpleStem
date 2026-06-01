@@ -666,15 +666,18 @@ try {
   fs.mkdirSync(AUDIO_CACHE_M4A,   { recursive: true });
 } catch (e) { console.warn('cache mkdir:', e.message); }
 
-// LRU cap: you typically play ~50 songs, but the library is large. Keep the
-// local cache bounded — when it exceeds CACHE_CAP_BYTES, evict least-recently-
-// used files (by atime/mtime) until under cap. Runs after precache batches and
-// on a timer. Never touches source data on Drive — only the ~/.bt-cache mirror.
+// LRU cap — applies ONLY to the STEMS cache (the big WAV stems). M4A mixdowns
+// are tiny (~3 MB each; the whole library is ~1 GB) so they're cached
+// permanently and never pruned — every backing track stays instantly playable.
+// Only the multi-hundred-MB stem WAVs are bounded: when the STEMS cache exceeds
+// CACHE_CAP_BYTES, evict least-recently-used files until under cap. Never
+// touches source data on Drive — only the ~/.bt-cache mirror.
 const CACHE_CAP_BYTES = Number(process.env.BT_CACHE_CAP_GB || 12) * 1024 * 1024 * 1024;
 function pruneCache() {
   try {
     const files = [];
     const walk = dir => {
+      if (!fs.existsSync(dir)) return;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
@@ -684,7 +687,7 @@ function pruneCache() {
         }
       }
     };
-    if (fs.existsSync(AUDIO_CACHE_DIR)) walk(AUDIO_CACHE_DIR);
+    walk(AUDIO_CACHE_STEMS);   // STEMS cache ONLY — M4A cache is left untouched
     let total = files.reduce((a, f) => a + f.size, 0);
     if (total <= CACHE_CAP_BYTES) return;
     files.sort((a, b) => a.used - b.used);   // oldest-used first
@@ -693,17 +696,16 @@ function pruneCache() {
       if (total <= CACHE_CAP_BYTES) break;
       try { fs.unlinkSync(f.p); total -= f.size; removed++; } catch (e) {}
     }
-    // invalidate any .cached sentinels whose folder we evicted from
+    // invalidate any .cached sentinels whose folder we evicted stems from
     if (removed) {
-      const stemsRoot = AUDIO_CACHE_STEMS;
-      if (fs.existsSync(stemsRoot)) for (const d of fs.readdirSync(stemsRoot)) {
-        const folder = path.join(stemsRoot, d);
+      if (fs.existsSync(AUDIO_CACHE_STEMS)) for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
+        const folder = path.join(AUDIO_CACHE_STEMS, d);
         try {
           const wavs = fs.readdirSync(folder).filter(f => f.endsWith('.wav'));
           if (wavs.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
         } catch (e) {}
       }
-      console.log(`[cache] pruned ${removed} file(s) to stay under ${Math.round(CACHE_CAP_BYTES/1e9)}GB`);
+      console.log(`[cache] pruned ${removed} stem file(s) to keep STEMS cache under ${Math.round(CACHE_CAP_BYTES/1e9)}GB (m4a never pruned)`);
     }
   } catch (e) { console.warn('[cache] prune failed:', e.message); }
 }
