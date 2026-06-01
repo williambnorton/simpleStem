@@ -631,13 +631,17 @@ function setupMasterVolume() {
   const apply = () => {
     const v = parseFloat(els.masterVol.value);
     currentMasterVolume = v;
+    // 1) Web Audio master gain (when the graph is active)…
     if (masterGainNode && audioCtx) {
       masterGainNode.gain.setValueAtTime(v, audioCtx.currentTime);
     }
+    // 2) …AND the per-element volume path (the reliable one) — recompute every
+    //    element's volume with the new master multiplier.
+    applyMixerVolumes();
     if (els.masterVolPct) els.masterVolPct.textContent = `${Math.round(v * 100)}%`;
   };
   els.masterVol.addEventListener('input', apply);
-  apply();   // initialize label
+  apply();   // initialize label + apply
 }
 
 // ── Per-song options menu (metadata / re-fetch / delete) ───────────────────
@@ -1478,10 +1482,16 @@ function applyMixerVolumes() {
   // M4A playback uses the drums element as a single-track carrier — bypass
   // the multitrack mixer (mute/solo/faders) so leftover stems state can't
   // silence it. The mixer UI is hidden in M4A mode anyway.
+  // Master volume is applied as a multiplier on every element's own volume.
+  // This rides the same HTMLMediaElement.volume path the per-stem faders use
+  // (which is proven to work), so the master control is reliable regardless of
+  // Web Audio graph quirks. clamp to [0,1].
+  const master = Math.max(0, Math.min(1, currentMasterVolume));
+
   const m4aMode = currentSong && currentSong.type === 'm4a';
   if (m4aMode) {
     Object.keys(audioElements).forEach(chan => {
-      audioElements[chan].volume = (chan === 'drums') ? 1.0 : 0;
+      audioElements[chan].volume = (chan === 'drums') ? master : 0;
     });
     return;
   }
@@ -1500,7 +1510,7 @@ function applyMixerVolumes() {
       targetVolume = 0;
     }
 
-    ae.volume = targetVolume;
+    ae.volume = targetVolume * master;
     
     if (strip) {
       if (targetVolume > 0 && isPlaying) {
