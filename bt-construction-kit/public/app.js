@@ -634,10 +634,21 @@ async function openSongMenu(base, merged) {
   overlay.className = 'song-modal-overlay';
   const stemsList = (artifacts.stems || []).join(', ') || 'none';
   const m4aList = (artifacts.m4a || []).join(', ') || 'none';
+  const srcSize = (artifacts.sourceBytes != null) ? humanBytes(artifacts.sourceBytes) : 'not present';
+
+  // Render a metadata value: URL-valued fields become clickable links.
+  const renderVal = (k, v) => {
+    const s = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+    if (/^https?:\/\//.test(s)) {
+      return `<a href="${escapeHtml(s)}" target="_blank" rel="noopener" class="meta-link">${escapeHtml(s)}</a>`;
+    }
+    return escapeHtml(s);
+  };
   const metaRows = Object.entries(meta)
     .filter(([k]) => k !== 'processing')
-    .map(([k, v]) => `<tr><td class="mk">${escapeHtml(k)}</td><td class="mv">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}</td></tr>`)
-    .join('');
+    .map(([k, v]) => `<tr><td class="mk">${escapeHtml(k)}</td><td class="mv">${renderVal(k, v)}</td></tr>`)
+    .join('') +
+    `<tr><td class="mk">source.wav size</td><td class="mv">${escapeHtml(srcSize)}</td></tr>`;
 
   overlay.innerHTML = `
     <div class="song-modal glass-card">
@@ -1664,6 +1675,14 @@ async function saveCurrentSetlist() {
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function humanBytes(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (n < 1024) return `${n} B`;
+  const u = ['KB', 'MB', 'GB', 'TB'];
+  let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return `${n.toFixed(1)} ${u[i]}`;
 }
 
 /* ==========================================

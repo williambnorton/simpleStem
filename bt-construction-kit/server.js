@@ -1202,7 +1202,9 @@ app.get('/api/song/:base/metadata', (req, res) => {
     const stems = EX.filter(x => fs.existsSync(path.join(s.dir, `${x}.wav`)));
     let m4a = [];
     try { m4a = fs.readdirSync(M4A_DIR).filter(f => f.startsWith(s.b + '_') && f.endsWith('.m4a')); } catch (e) {}
-    res.json({ base: s.b, metadata: meta, artifacts: { stems, m4a, hasSource: fs.existsSync(path.join(s.dir, 'source.wav')) } });
+    let sourceBytes = null;
+    try { sourceBytes = fs.statSync(path.join(s.dir, 'source.wav')).size; } catch (e) {}
+    res.json({ base: s.b, metadata: meta, artifacts: { stems, m4a, hasSource: sourceBytes != null, sourceBytes } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

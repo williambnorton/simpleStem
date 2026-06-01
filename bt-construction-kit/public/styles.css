@@ -2533,3 +2533,7 @@ input:checked + .slider-round:before {
 /* armed delete button (two-click confirm) */
 .song-delete-btn.armed { background: var(--color-red); color: #fff; font-weight: 700; }
 .song-modal-url { min-width: 0; }   /* let the URL field shrink/scroll within the row */
+
+/* clickable metadata links (lyrics/chords/source URLs) */
+.song-modal-table .meta-link { color: var(--color-blue); text-decoration: underline; word-break: break-all; }
+.song-modal-table .meta-link:hover { color: var(--color-purple); }
