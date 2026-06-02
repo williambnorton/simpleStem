@@ -215,17 +215,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ── Add-from-YouTube queue ────────────────────────────────────────────────
 function setupQueueUI() {
-  if (!elements.btnEnqueue) return;
-  elements.btnEnqueue.addEventListener('click', enqueueUrl);
-  elements.ytUrl.addEventListener('keydown', e => { if (e.key === 'Enter') enqueueUrl(); });
+  if (!els.btnEnqueue) return;
+  els.btnEnqueue.addEventListener('click', enqueueUrl);
+  els.ytUrl.addEventListener('keydown', e => { if (e.key === 'Enter') enqueueUrl(); });
   refreshQueue();
   setInterval(refreshQueue, 5000);
 }
 
 async function enqueueUrl() {
-  const url = (elements.ytUrl.value || '').trim();
+  const url = (els.ytUrl.value || '').trim();
   if (!url) return;
-  elements.btnEnqueue.disabled = true;
+  els.btnEnqueue.disabled = true;
   try {
     const res = await fetch('/api/enqueue', {
       method: 'POST',
@@ -234,18 +234,18 @@ async function enqueueUrl() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to queue');
-    elements.ytUrl.value = '';
+    els.ytUrl.value = '';
     refreshQueue();
   } catch (e) {
-    if (elements.queueStatus) elements.queueStatus.innerHTML =
+    if (els.queueStatus) els.queueStatus.innerHTML =
       `<span class="queue-err">${e.message}</span>`;
   } finally {
-    elements.btnEnqueue.disabled = false;
+    els.btnEnqueue.disabled = false;
   }
 }
 
 async function refreshQueue() {
-  if (!elements.queueStatus) return;
+  if (!els.queueStatus) return;
   try {
     const res = await fetch('/api/queue');
     if (!res.ok) return;
@@ -254,7 +254,7 @@ async function refreshQueue() {
 }
 
 function renderQueue(q) {
-  const el = elements.queueStatus;
+  const el = els.queueStatus;
   const chips = [];
   if (q.processing) {
     const s = q.processing.song || q.processing.job || 'a song';

@@ -1291,17 +1291,35 @@ app.post('/api/song/:base/refetch', (req, res) => {
 // Splitter and bounces replacement m4a mixdowns. The server sets KBM Engine
 // variables (so the macro can read them as %Variable%simpleStem_*%) and then
 // triggers the macro by name. Logic stem splitting is interactive — KBM owns
-// the actual workflow; this endpoint only kicks it off with the right paths.
+// the actual workflow; this endpoint only kicks it off with the right paths
+// and the song's full metadata so the macro can configure Logic's project
+// (tempo, key, project length, notes) without round-tripping to read files.
 //
 // KBM macro contract:
 //   Macro name: "simpleStem"
-//   Reads these KBM variables:
-//     simpleStem_SourceDir   → STEMS/<base>            (folder holding source.wav)
-//     simpleStem_SourceWav   → STEMS/<base>/source.wav (convenience: full path)
-//     simpleStem_M4ADir      → M4A                      (where to bounce output)
-//     simpleStem_M4ABase     → <base>                   (filename prefix)
-//     simpleStem_Title       → song title (from metadata.json)
-//     simpleStem_Artist      → artist (from metadata.json)
+//   Reads these KBM variables (all strings; empty if unknown):
+//     ─ paths ───────────────────────────────────────────────────────
+//     simpleStem_SourceDir   → STEMS/<base>            (folder)
+//     simpleStem_SourceWav   → STEMS/<base>/source.wav (full path)
+//     simpleStem_M4ADir      → M4A                     (bounce target)
+//     simpleStem_M4ABase     → <base>                  (filename prefix)
+//     ─ identity ────────────────────────────────────────────────────
+//     simpleStem_Title       → song title
+//     simpleStem_Artist      → artist
+//     simpleStem_Version     → "studio"/"live"/etc
+//     simpleStem_SourceUrl   → YouTube URL of the source
+//     ─ musical metadata (for Logic project setup) ──────────────────
+//     simpleStem_BPM         → e.g. "120.5"   (from metadata.json bpm)
+//     simpleStem_Key         → e.g. "G# major"
+//     simpleStem_KeySignature→ e.g. "3 sharps"
+//     simpleStem_Duration    → active audio length in seconds
+//     simpleStem_Bars        → ceil(BPM × Duration / 240), 4/4 assumed
+//     simpleStem_ClipStartSec→ chapter window start (album sources only)
+//     simpleStem_ClipEndSec  → chapter window end (album sources only)
+//     ─ reference links (for Project Notes) ─────────────────────────
+//     simpleStem_LyricsUrl   → lyrics_search_url
+//     simpleStem_ChordsUrl   → chords_search_url
+//
 //   Expected output files (overwriting the demucs versions):
 //     M4A/<base>_-V.m4a       source minus vocals
 //     M4A/<base>_-V-G.m4a     source minus vocals, guitar
@@ -1315,6 +1333,15 @@ function asEscape(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+// Format a number to a stable string for KBM (no JS quirks like "12.0"→"12").
+// Returns '' for null/undefined/NaN so the macro can branch on empty.
+function numStr(n, digits) {
+  if (n == null || (typeof n === 'number' && !isFinite(n))) return '';
+  const x = Number(n);
+  if (!isFinite(x)) return '';
+  return digits == null ? String(x) : x.toFixed(digits);
+}
+
 app.post('/api/song/:base/logic-restem', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
@@ -1322,21 +1349,51 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
   const sourceWav = path.join(s.dir, 'source.wav');
   if (!fs.existsSync(sourceWav)) return res.status(404).json({ error: 'source.wav not found in song folder' });
 
-  // Pull title/artist from metadata.json (best-effort; falls back to the slug).
-  let title = s.b, artist = '';
+  // Pull metadata.json — every field is best-effort. Missing values are
+  // passed to KBM as empty strings so the macro can branch on them.
+  let meta = {};
   try {
-    const meta = JSON.parse(fs.readFileSync(path.join(s.dir, 'metadata.json'), 'utf8'));
-    if (meta.title)  title  = meta.title;
-    if (meta.artist) artist = meta.artist;
+    meta = JSON.parse(fs.readFileSync(path.join(s.dir, 'metadata.json'), 'utf8')) || {};
   } catch (e) {}
 
+  // Active audio duration: source.wav is the clip window when this is an
+  // album chapter; the full youtube video duration otherwise. Pick whichever
+  // describes what's actually in source.wav so KBM/Logic see consistent length.
+  const clipStart = (typeof meta.clip_start_sec === 'number') ? meta.clip_start_sec : null;
+  const clipEnd   = (typeof meta.clip_end_sec   === 'number') ? meta.clip_end_sec   : null;
+  const fullDur   = (typeof meta.duration_sec   === 'number') ? meta.duration_sec   : null;
+  const activeDur = (clipStart != null && clipEnd != null) ? (clipEnd - clipStart) : fullDur;
+
+  // Bars assumes 4/4 (covers the band's repertoire; flag in CLAUDE.md if that
+  // ever changes). Formula: ceil(BPM × seconds / 240). Empty if either input
+  // is missing so the macro can skip setting project end.
+  let bars = '';
+  if (typeof meta.bpm === 'number' && typeof activeDur === 'number' && meta.bpm > 0) {
+    bars = String(Math.ceil((meta.bpm * activeDur) / 240));
+  }
+
   const vars = {
-    SourceDir: s.dir,
-    SourceWav: sourceWav,
-    M4ADir:    M4A_DIR,
-    M4ABase:   s.b,
-    Title:     title,
-    Artist:    artist,
+    // paths
+    SourceDir:      s.dir,
+    SourceWav:      sourceWav,
+    M4ADir:         M4A_DIR,
+    M4ABase:        s.b,
+    // identity
+    Title:          meta.title  || s.b,
+    Artist:         meta.artist || '',
+    Version:        meta.version || '',
+    SourceUrl:      meta.source_url || '',
+    // musical metadata
+    BPM:            numStr(meta.bpm, 1),
+    Key:            meta.key || '',
+    KeySignature:   meta.key_signature || '',
+    Duration:       numStr(activeDur, 2),
+    Bars:           bars,
+    ClipStartSec:   numStr(clipStart, 2),
+    ClipEndSec:     numStr(clipEnd, 2),
+    // reference links
+    LyricsUrl:      meta.lyrics_search_url || '',
+    ChordsUrl:      meta.chords_search_url || '',
   };
 
   // Build the AppleScript: set each variable in the KBM Engine, then run the
