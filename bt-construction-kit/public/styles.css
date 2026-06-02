@@ -266,9 +266,13 @@ select {
   color: #fff !important;
   border-left: 4px solid #7c4dff !important;
 }
+.song-row.active,
+.song-row.active .song-title-cell,
+.song-row.active .song-title-cell span,
 .song-row.active .song-artist-cell,
 .song-row.active .song-bpm-cell,
-.song-row.active .song-key-cell { color: #d4d8e4 !important; }
+.song-row.active .song-key-cell,
+.song-row.active .song-bpm-cell .bpm-sub { color: #ffffff !important; }
 
 /* Table header */
 .song-table-header {

@@ -697,6 +697,12 @@ async function openSongMenu(base, merged) {
         </details>
       </div>
 
+      <div class="song-modal-section">
+        <label class="song-modal-label">Re-stem in Logic Pro (triggers Keyboard Maestro macro "simpleStem"):</label>
+        <button class="btn-secondary song-logic-btn">↻ Re-stem in Logic</button>
+        <div class="song-modal-logic-note"></div>
+      </div>
+
       <div class="song-modal-section song-modal-danger">
         <label class="song-modal-label">Delete permanently (not reversible):</label>
         <button class="btn-secondary song-delete-btn">Delete this song</button>
@@ -732,6 +738,21 @@ async function openSongMenu(base, merged) {
       note.textContent = d.note || 'Queued. The Librarian (mini) will download; then it re-stems.';
       fetchLibrary();
     } catch (e) { note.textContent = `Error: ${e.message}`; }
+  });
+
+  // Re-stem in Logic Pro — POST to the server, which sets KBM variables and
+  // triggers the "simpleStem" macro. The macro owns the rest (open Logic,
+  // run Stem Splitter, bounce m4as into M4A_DIR with the same filenames).
+  const logicBtn = overlay.querySelector('.song-logic-btn');
+  const logicNote = overlay.querySelector('.song-modal-logic-note');
+  logicBtn.addEventListener('click', async () => {
+    logicNote.textContent = 'Triggering Keyboard Maestro…';
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(base)}/logic-restem`, { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      logicNote.textContent = `Macro "${d.macro}" triggered — Logic Pro should open shortly.`;
+    } catch (e) { logicNote.textContent = `Error: ${e.message}`; }
   });
 
   // Delete — two-click confirm: first click arms it, second click within 4s

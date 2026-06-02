@@ -3,7 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, spawn } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1284,6 +1284,82 @@ app.post('/api/song/:base/refetch', (req, res) => {
     refreshLibraryCache('song-refetch', true);
     res.json({ ok: true, base: s.b, url, note: 'Old artifacts cleared and re-ingest queued. The Librarian (mini) must be running to download; then it re-stems on the Performer.' });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Re-stem in Logic Pro via Keyboard Maestro ──────────────────────────────
+// Hands a song off to a Keyboard Maestro macro that drives Logic Pro's Stem
+// Splitter and bounces replacement m4a mixdowns. The server sets KBM Engine
+// variables (so the macro can read them as %Variable%simpleStem_*%) and then
+// triggers the macro by name. Logic stem splitting is interactive — KBM owns
+// the actual workflow; this endpoint only kicks it off with the right paths.
+//
+// KBM macro contract:
+//   Macro name: "simpleStem"
+//   Reads these KBM variables:
+//     simpleStem_SourceDir   → STEMS/<base>            (folder holding source.wav)
+//     simpleStem_SourceWav   → STEMS/<base>/source.wav (convenience: full path)
+//     simpleStem_M4ADir      → M4A                      (where to bounce output)
+//     simpleStem_M4ABase     → <base>                   (filename prefix)
+//     simpleStem_Title       → song title (from metadata.json)
+//     simpleStem_Artist      → artist (from metadata.json)
+//   Expected output files (overwriting the demucs versions):
+//     M4A/<base>_-V.m4a       source minus vocals
+//     M4A/<base>_-V-G.m4a     source minus vocals, guitar
+//     M4A/<base>_-V-G-B.m4a   source minus vocals, guitar, bass
+//     M4A/<base>_DO.m4a       drums only
+const KBM_MACRO_NAME = 'simpleStem';
+const KBM_VAR_PREFIX = 'simpleStem_';
+
+// Escape a string for embedding inside an AppleScript double-quoted literal.
+function asEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+app.post('/api/song/:base/logic-restem', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song folder not found' });
+  const sourceWav = path.join(s.dir, 'source.wav');
+  if (!fs.existsSync(sourceWav)) return res.status(404).json({ error: 'source.wav not found in song folder' });
+
+  // Pull title/artist from metadata.json (best-effort; falls back to the slug).
+  let title = s.b, artist = '';
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(s.dir, 'metadata.json'), 'utf8'));
+    if (meta.title)  title  = meta.title;
+    if (meta.artist) artist = meta.artist;
+  } catch (e) {}
+
+  const vars = {
+    SourceDir: s.dir,
+    SourceWav: sourceWav,
+    M4ADir:    M4A_DIR,
+    M4ABase:   s.b,
+    Title:     title,
+    Artist:    artist,
+  };
+
+  // Build the AppleScript: set each variable in the KBM Engine, then run the
+  // named macro. execFileSync passes the script as a single argv element, so
+  // no shell-quoting tricks — just AppleScript's own quote escaping.
+  const lines = [`tell application "Keyboard Maestro Engine"`];
+  for (const [k, v] of Object.entries(vars)) {
+    lines.push(`  setvariable "${KBM_VAR_PREFIX}${k}" to "${asEscape(v)}"`);
+  }
+  lines.push(`  do script "${asEscape(KBM_MACRO_NAME)}"`);
+  lines.push(`end tell`);
+  const script = lines.join('\n');
+
+  try {
+    execFileSync('osascript', ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(`[logic-restem] ${s.b}: triggered KBM macro "${KBM_MACRO_NAME}"`);
+    res.json({ ok: true, base: s.b, macro: KBM_MACRO_NAME, vars });
+  } catch (e) {
+    const stderr = (e.stderr && e.stderr.toString()) || '';
+    res.status(500).json({
+      error: `Keyboard Maestro trigger failed: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}. Is KBM Engine running and is a macro named "${KBM_MACRO_NAME}" enabled?`
+    });
+  }
 });
 
 // Fallback to serve index.html for spa behavior
