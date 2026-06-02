@@ -21,7 +21,9 @@
 #   ./backfill.sh --go       # actually enqueue the incomplete songs
 set -uo pipefail
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # code dir (this clone)
+. "$SCRIPT_DIR/lib-common.sh"                  # data_root
+BASE="$(data_root)"                            # data dir (Drive)
 STEMS="$BASE/STEMS"
 M4A="$BASE/M4A"
 QUEUE="$BASE/STEM_QUEUE"

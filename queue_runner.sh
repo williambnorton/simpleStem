@@ -23,19 +23,19 @@
 #   ./queue_runner.sh --once    # drain the current queue, then exit
 set -euo pipefail
 
-BASE="$HOME/ClaudeDrive/simpleStem"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # code dir (this clone)
+. "$SCRIPT_DIR/lib-common.sh"   # song_base, data_root
+BASE="$(data_root)"             # data dir (Drive) — honors $SIMPLE_STEM_ROOT
 QUEUE="$BASE/STEM_QUEUE"
 STEMS="$BASE/STEMS"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STEM_SCRIPT="$SCRIPT_DIR/stem.sh"
-. "$SCRIPT_DIR/lib-common.sh"   # song_base (canonical cache path)
 CURRENT="$QUEUE/.current"
 LOCK="$QUEUE/.runner.lock"
 POLL="${POLL:-5}"
 
 [[ -x "$STEM_SCRIPT" || -f "$STEM_SCRIPT" ]] || { echo "Missing $STEM_SCRIPT" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "Missing python3" >&2; exit 1; }
-mkdir -p "$QUEUE" "$STEMS"
+mkdir -p "$QUEUE" "$STEMS" "$QUEUE/_done" "$QUEUE/_failed"
 
 # Read title/artist/source_url/clip_start/clip_end from a job json (one per line,
 # empty for nulls). Used to drive stem.sh.
@@ -130,7 +130,14 @@ finish() {
   local job="$1" bucket="$2" rel="${1#$QUEUE/}"
   local dest="$QUEUE/$bucket/$rel"
   mkdir -p "$(dirname "$dest")"
-  mv -f "$job" "$dest"
+  if [[ -f "$job" ]]; then
+    mv -f "$job" "$dest" 2>/dev/null || { rm -f "$job" 2>/dev/null || true; }
+  else
+    # Source job already gone (Drive sync race / placeholder). The work itself
+    # completed; just leave a marker so it isn't re-picked and we don't crash.
+    echo "   (job file $rel already absent — recording $bucket marker)" >&2
+    : > "$dest" 2>/dev/null || true
+  fi
   local srcdir; srcdir="$(dirname "$job")"
   if [[ "$srcdir" != "$QUEUE" ]] && ! ls "$srcdir"/*.json >/dev/null 2>&1; then
     rmdir "$srcdir" 2>/dev/null || true

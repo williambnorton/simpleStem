@@ -21,11 +21,14 @@
 # Mirrors studio.sh's process model (pidfiles + logs in .run/, tree-kill).
 set -uo pipefail
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
-RUN="$BASE/.run"
-QUEUE="$BASE/STEM_QUEUE"
-INCOMING="$BASE/INCOMING_WEBLOC"
-STEMS="$BASE/STEMS"
+BASE="$(cd "$(dirname "$0")" && pwd)"      # where the code lives (this clone)
+. "$BASE/lib-common.sh"
+DATA="$(data_root)"                         # where the audio/data lives (Drive)
+export SIMPLE_STEM_ROOT="$DATA"             # so child scripts inherit the same root
+RUN="$BASE/.run"                            # runtime state stays with the code
+QUEUE="$DATA/STEM_QUEUE"
+INCOMING="$DATA/INCOMING_WEBLOC"
+STEMS="$DATA/STEMS"
 CATALOG_INTERVAL="${CATALOG_INTERVAL:-86400}"   # seconds between catalog passes
 SERVICES="watcher cataloger"
 mkdir -p "$RUN"

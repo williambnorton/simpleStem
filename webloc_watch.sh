@@ -27,14 +27,14 @@
 #   ./webloc_watch.sh --once     # process whatever is already in the folder, exit
 set -euo pipefail
 
-BASE="$HOME/ClaudeDrive/simpleStem"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # code dir (this clone)
+. "$SCRIPT_DIR/lib-common.sh"    # slugify / song_base / data_root
+BASE="$(data_root)"              # data dir (Drive) — honors $SIMPLE_STEM_ROOT
 INCOMING="$BASE/INCOMING_WEBLOC"
 QUEUE="$BASE/STEM_QUEUE"
 STEMS="$BASE/STEMS"              # cache: STEMS/<base>/source.wav (fetched once)
 PENDING="/tmp/PENDING"           # playlists/albums staged here until complete
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 META_SCRIPT="$SCRIPT_DIR/metadata.py"
-. "$SCRIPT_DIR/lib-common.sh"    # slugify / song_base (canonical cache path)
 
 mkdir -p "$INCOMING" "$QUEUE" "$STEMS" "$PENDING"
 

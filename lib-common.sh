@@ -26,6 +26,25 @@ slugify() {
 # song_base TITLE ARTIST  → canonical per-song key
 song_base() { printf '%s_%s' "$(slugify "$1")" "$(slugify "$2")"; }
 
+# data_root → the simpleStem DATA directory (STEMS/, M4A/, STEM_QUEUE/, …).
+# Since the code now lives in a separate git clone (e.g. ~/simpleStem-code) while
+# the audio lives on Google Drive, scripts must NOT assume data is next to the
+# script. Resolution order:
+#   1. $SIMPLE_STEM_ROOT if set
+#   2. ~/ClaudeDrive/simpleStem (the common mount symlink/path)
+#   3. the Google Drive CloudStorage path (My Drive/ClaudeDrive/simpleStem)
+# Falls back to (2) even if missing, so callers get a sensible default.
+data_root() {
+  if [[ -n "${SIMPLE_STEM_ROOT:-}" ]]; then printf '%s' "$SIMPLE_STEM_ROOT"; return; fi
+  local c1="$HOME/ClaudeDrive/simpleStem"
+  [[ -d "$c1/STEMS" || -d "$c1" ]] && { printf '%s' "$c1"; return; }
+  local gd
+  for gd in "$HOME/Library/CloudStorage"/GoogleDrive-*/My\ Drive/ClaudeDrive/simpleStem; do
+    [[ -d "$gd" ]] && { printf '%s' "$gd"; return; }
+  done
+  printf '%s' "$c1"   # default even if absent
+}
+
 # video_id URL_OR_ID → the bare YouTube 11-char video id, or '' if none.
 # source_url is stored inconsistently across the library (sometimes a full
 # watch?v= URL, sometimes a bare id, sometimes a youtu.be link). Setlist sync

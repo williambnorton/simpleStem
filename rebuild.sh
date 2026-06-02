@@ -30,11 +30,12 @@
 #   ./rebuild.sh --go --refetch  # re-download AND re-stem everything
 set -uo pipefail
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # code dir (this clone)
+. "$SCRIPT_DIR/lib-common.sh"                  # slugify / data_root
+BASE="$(data_root)"                            # data dir (Drive)
 STEMS="$BASE/STEMS"
 M4A="$BASE/M4A"
 QUEUE="$BASE/STEM_QUEUE"
-. "$BASE/lib-common.sh"
 
 GO=0; REFETCH=0
 for a in "$@"; do

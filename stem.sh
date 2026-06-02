@@ -144,7 +144,21 @@ if [[ -z "$SLUG_TITLE" || -z "$SLUG_ARTIST" ]]; then
   exit 1
 fi
 
-OUT_DIR="$HOME/ClaudeDrive/simpleStem/STEMS/${SLUG_TITLE}_${SLUG_ARTIST}"
+# Data root: honor $SIMPLE_STEM_ROOT (exported by performer/queue_runner), else
+# ~/ClaudeDrive/simpleStem, else the Google Drive CloudStorage path. Code may
+# live elsewhere (a git clone) but data lives here.
+if [[ -n "${SIMPLE_STEM_ROOT:-}" ]]; then
+  DATA_ROOT="$SIMPLE_STEM_ROOT"
+elif [[ -d "$HOME/ClaudeDrive/simpleStem" ]]; then
+  DATA_ROOT="$HOME/ClaudeDrive/simpleStem"
+else
+  DATA_ROOT="$HOME/ClaudeDrive/simpleStem"
+  for gd in "$HOME/Library/CloudStorage"/GoogleDrive-*/My\ Drive/ClaudeDrive/simpleStem; do
+    [[ -d "$gd" ]] && DATA_ROOT="$gd" && break
+  done
+fi
+
+OUT_DIR="$DATA_ROOT/STEMS/${SLUG_TITLE}_${SLUG_ARTIST}"
 mkdir -p "$OUT_DIR"
 
 # Prereq check
@@ -314,7 +328,7 @@ done
 #     "Minus" mixes phase-invert the unwanted stems (volume=-1) and sum them
 #     onto the source via amix=normalize=0 — cleaner than summing the
 #     remaining stems, and preserves whatever residue Demucs left behind.
-M4A_DIR="$HOME/ClaudeDrive/simpleStem/M4A"
+M4A_DIR="$DATA_ROOT/M4A"
 mkdir -p "$M4A_DIR"
 M4A_BASE="${SLUG_TITLE}_${SLUG_ARTIST}"
 M4A_DO="$M4A_DIR/${M4A_BASE}_DO.m4a"
@@ -411,14 +425,14 @@ else
       --target "$tmp/mix.wav" \
       --out "$tmp" \
       --max-loops 4 || { rm -rf "$tmp"; continue; }
-    # encode each produced loop wav → m4a named <base>_<variant>_loopN_Mbars.m4a
+    # loop_detect.py now writes .m4a directly — just move each into M4A/ named
+    # <base>_<variant>_loopN_Mbars.m4a (no re-encode needed).
     shopt -s nullglob
-    for lw in "$tmp"/mix_loop*bars.wav; do
-      suffix="${lw##*/mix_}"        # e.g. loop2_27bars.wav
-      suffix="${suffix%.wav}"       # loop2_27bars
+    for lw in "$tmp"/mix_loop*bars.m4a; do
+      suffix="${lw##*/mix_}"        # e.g. loop2_27bars.m4a
+      suffix="${suffix%.m4a}"       # loop2_27bars
       out="$M4A_DIR/${M4A_BASE}_${variant}_${suffix}.m4a"
-      ffmpeg -y -loglevel error -i "$lw" -c:a aac -b:a 256k "$out" </dev/null \
-        && echo "   + $(basename "$out")"
+      mv -f "$lw" "$out" && echo "   + $(basename "$out")"
     done
     shopt -u nullglob
     rm -rf "$tmp"

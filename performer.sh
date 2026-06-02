@@ -17,10 +17,13 @@
 # clears the runner lock on stop).
 set -uo pipefail
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
-RUN="$BASE/.run"
-QUEUE="$BASE/STEM_QUEUE"
-STEMS="$BASE/STEMS"
+BASE="$(cd "$(dirname "$0")" && pwd)"      # where the code lives (this clone)
+. "$BASE/lib-common.sh"
+DATA="$(data_root)"                         # where the audio/data lives (Drive)
+export SIMPLE_STEM_ROOT="$DATA"             # so queue_runner + server inherit it
+RUN="$BASE/.run"                            # runtime state stays with the code
+QUEUE="$DATA/STEM_QUEUE"
+STEMS="$DATA/STEMS"
 PORT="${PORT:-3000}"            # portal port (server.js reads $PORT too)
 SERVICES="runner server"
 mkdir -p "$RUN"
