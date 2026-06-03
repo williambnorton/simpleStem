@@ -510,10 +510,15 @@ function refreshLibraryCache(reason, force) {
       try {
         const currentMtimes = getSourceMtimes();
         const prevMtimes = (libraryCache && libraryCache.sourceMtimes) || {};
-        const unchanged =
-          libraryCache && libraryCache.data &&
+        // Compare both source-dir mtimes AND the parser version. If the code
+        // has been updated (parser rules changed, new filters added), we must
+        // re-parse even if the data dirs haven't moved — otherwise the cache
+        // serves stale results forever after a restart.
+        const sameMtimes =
           prevMtimes.stems === currentMtimes.stems &&
           prevMtimes.m4a   === currentMtimes.m4a;
+        const sameCode = libraryCache && libraryCache.codeVersion === BOOT_VERSION;
+        const unchanged = libraryCache && libraryCache.data && sameMtimes && sameCode;
 
         if (unchanged && !force) {
           console.log(`[lib] skipped (${reason}) — source dirs unchanged since ${libraryCache.scannedAt}`);
@@ -528,6 +533,7 @@ function refreshLibraryCache(reason, force) {
           scannedAt: new Date().toISOString(),
           checkedAt: new Date().toISOString(),
           sourceMtimes: currentMtimes,
+          codeVersion: BOOT_VERSION,
           data
         };
         try {

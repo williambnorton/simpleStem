@@ -300,7 +300,7 @@ function renderDrumLoops() {
   const grid = document.getElementById('drumloops-grid');
   if (!grid) return;
   const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
-  const sortKey = document.getElementById('drumloops-sort')?.value || 'song';
+  const sortKey = document.getElementById('drumloops-sort')?.value || 'bpm';
 
   // Build per-song groups from the flat loops list.
   const byBase = new Map();
