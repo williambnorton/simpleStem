@@ -199,6 +199,8 @@ window.addEventListener('DOMContentLoaded', () => {
   setupSetlistsPanel();
   setupVersionWatch();
   setupMasterVolume();
+  setupTabs();
+  setupDrumLoopsTab();
 
   // Diagnostic: log audio element errors and unexpected ended events
   Object.keys(audioElements).forEach(chan => {
@@ -212,6 +214,142 @@ window.addEventListener('DOMContentLoaded', () => {
     ae.addEventListener('stalled', () => console.log(`[audio:${chan}] stalled`));
   });
 });
+
+// ── Tab system ────────────────────────────────────────────────────────────
+// One docked player at top + three swappable tabs below: Library / Setlist /
+// Drum Loops. Tab switching is purely cosmetic — audio keeps playing because
+// the player section sits OUTSIDE the tab container.
+function setupTabs() {
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panes = document.querySelectorAll('.tab-pane');
+  tabs.forEach(t => {
+    t.addEventListener('click', () => {
+      const target = t.dataset.tab;
+      tabs.forEach(b => {
+        const active = b === t;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      panes.forEach(p => {
+        p.classList.toggle('tab-pane-active', p.dataset.tabPane === target);
+      });
+      // Lazy-load drum loops the first time the tab is opened
+      if (target === 'drumloops' && !drumLoopsLoaded) {
+        loadDrumLoops();
+      }
+    });
+  });
+}
+
+// ── Drum Loops tab ────────────────────────────────────────────────────────
+// Library-wide grid of every song's drums-only loops (the `_DO_loopN_Nbars.m4a`
+// mixdowns from stem.sh). Each card plays the loop on click; clicking the
+// playing card stops it. Uses the same `m4a` audio element as the rest of
+// the player so master volume + transport state apply uniformly.
+let drumLoopsLoaded = false;
+let drumLoopsAll = [];
+let drumLoopAudio = null;
+let drumLoopPlayingId = null;
+
+function setupDrumLoopsTab() {
+  const searchEl = document.getElementById('drumloops-search');
+  const sortEl   = document.getElementById('drumloops-sort');
+  if (searchEl) searchEl.addEventListener('input', renderDrumLoops);
+  if (sortEl)   sortEl.addEventListener('change', renderDrumLoops);
+}
+
+async function loadDrumLoops() {
+  const grid = document.getElementById('drumloops-grid');
+  const label = document.getElementById('drumloops-count-label');
+  try {
+    const res = await fetch('/api/drum-loops');
+    const data = await res.json();
+    drumLoopsAll = data.loops || [];
+    drumLoopsLoaded = true;
+    if (label) label.textContent = `${drumLoopsAll.length} drum loops across ${new Set(drumLoopsAll.map(l => l.songBase)).size} songs`;
+    renderDrumLoops();
+  } catch (e) {
+    if (grid) grid.innerHTML = `<div class="empty-state">Couldn't load drum loops: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderDrumLoops() {
+  const grid = document.getElementById('drumloops-grid');
+  if (!grid) return;
+  const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
+  const sortKey = document.getElementById('drumloops-sort')?.value || 'song';
+  let list = drumLoopsAll;
+  if (q) list = list.filter(l =>
+    (l.title || '').toLowerCase().includes(q) ||
+    (l.artist || '').toLowerCase().includes(q));
+  list = [...list].sort((a, b) => {
+    switch (sortKey) {
+      case 'artist': return (a.artist || '').localeCompare(b.artist || '') ||
+                            a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber;
+      case 'bpm':    return (a.bpm || 9999) - (b.bpm || 9999) || a.title.localeCompare(b.title);
+      case 'bars':   return a.bars - b.bars || a.title.localeCompare(b.title);
+      default:       return a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber;
+    }
+  });
+  if (list.length === 0) {
+    grid.innerHTML = '<div class="empty-state">No drum loops match.</div>';
+    return;
+  }
+  grid.innerHTML = list.map(l => `
+    <div class="drumloop-card" data-id="${l.id}">
+      <div class="dl-title" title="${escapeHtml(l.title)}">${escapeHtml(l.title)}</div>
+      <div class="dl-artist" title="${escapeHtml(l.artist || '')}">${escapeHtml(l.artist || '')}</div>
+      <div class="dl-meta">
+        <span class="dl-bars">${l.bars} bars</span>
+        <span>· loop ${l.loopNumber}</span>
+        ${l.bpm ? `<span>· ${l.bpm} BPM</span>` : ''}
+        ${l.key ? `<span>· ${escapeHtml(l.key)}</span>` : ''}
+      </div>
+      <button class="dl-play" data-file="${encodeURIComponent(l.fileName)}" data-id="${l.id}">
+        <i data-lucide="play"></i> Play loop
+      </button>
+    </div>
+  `).join('');
+  grid.querySelectorAll('.dl-play').forEach(btn => {
+    btn.addEventListener('click', () => toggleDrumLoop(btn));
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleDrumLoop(btn) {
+  const id = btn.dataset.id;
+  // If this card is already playing, stop it.
+  if (drumLoopPlayingId === id && drumLoopAudio) {
+    drumLoopAudio.pause();
+    drumLoopAudio.currentTime = 0;
+    drumLoopPlayingId = null;
+    btn.classList.remove('playing');
+    btn.innerHTML = '<i data-lucide="play"></i> Play loop';
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+  // Otherwise stop any other playing loop first
+  if (drumLoopAudio) {
+    drumLoopAudio.pause();
+    document.querySelectorAll('.dl-play.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<i data-lucide="play"></i> Play loop';
+    });
+  }
+  if (!drumLoopAudio) {
+    drumLoopAudio = new Audio();
+    drumLoopAudio.loop = true;
+    drumLoopAudio.addEventListener('ended', () => {
+      drumLoopPlayingId = null;
+    });
+  }
+  drumLoopAudio.src = `/api/audio/m4a/${btn.dataset.file}`;
+  drumLoopAudio.play().catch(err => console.warn('[drumloop] play failed', err));
+  drumLoopPlayingId = id;
+  btn.classList.add('playing');
+  btn.innerHTML = '<i data-lucide="square"></i> Stop';
+  if (window.lucide) lucide.createIcons();
+}
 
 // ── Add-from-YouTube queue ────────────────────────────────────────────────
 function setupQueueUI() {

@@ -1094,6 +1094,10 @@ select {
   gap: 4px;
   align-items: center;
 }
+/* All format chips signal "playable" — every chip on a row is a green pill.
+   STEMS chip is a deeper green so it's distinguishable; cached chips are
+   brighter (handled below); active (currently loaded) chip gets a purple
+   outline so the user can tell what's loaded vs what's just available. */
 .format-chip {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px;
@@ -1101,22 +1105,24 @@ select {
   letter-spacing: 0.3px;
   padding: 3px 7px;
   border-radius: 4px;
-  border: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
+  border: 1px solid #2e8b57;
+  background: #2ecc71;
+  color: #fff;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   transition: all 0.12s ease;
 }
-.format-chip:hover { background: rgba(255, 255, 255, 0.12); color: var(--text-main); }
-.format-chip.chip-stems { color: #b39ddb; border-color: rgba(179, 157, 219, 0.4); }
-.format-chip.chip-m4a   { color: #80cbc4; border-color: rgba(128, 203, 196, 0.4); }
+.format-chip:hover { background: #27a25b; border-color: #1e7e3a; }
+.format-chip.chip-stems {
+  background: #1b8e3a;
+  border-color: #0f6926;
+}
+.format-chip.chip-stems:hover { background: #15722e; border-color: #0a4f1c; }
 .format-chip.chip-active {
-  background: linear-gradient(135deg, #7c4dff, #b39ddb);
-  color: #fff;
-  border-color: #b39ddb;
+  outline: 2px solid #7c4dff;
+  outline-offset: 1px;
   box-shadow: 0 0 6px rgba(124, 77, 255, 0.5);
 }
 
@@ -2084,20 +2090,88 @@ select {
   }
 }
 
-/* Split layout bottom row */
-.bottom-split-grid {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 24px;
-  align-items: start;
-  width: 100%;
+/* ===== Tab system ===== */
+/* Player stays docked above; tab bar + tab container fill the rest. Each tab
+   pane takes the full content width — the old left/right column split goes
+   away in favor of one full-bleed view per tab. */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 12px;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0;
 }
+.tab-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  margin-bottom: -2px;
+}
+.tab-btn i { width: 16px; height: 16px; }
+.tab-btn:hover { color: var(--text-main); background: rgba(124, 77, 255, 0.04); }
+.tab-btn.active {
+  color: var(--text-main);
+  border-bottom-color: var(--color-purple);
+}
+.tab-container { width: 100%; }
+.tab-pane { display: none; width: 100%; }
+.tab-pane.tab-pane-active { display: block; }
+.tab-pane > .library-section,
+.tab-pane > .setlist-section,
+.tab-pane > .drumloops-section { width: 100%; }
 
-@media (max-width: 1200px) {
-  .bottom-split-grid {
-    grid-template-columns: 1fr;
-  }
+/* ===== Drum Loops tab ===== */
+.drumloops-section { padding: 18px; }
+.drumloops-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
 }
+.drumloops-header .title-area h2 { font-size: 20px; font-weight: 700; }
+.drumloops-header .sub { font-size: 12px; color: var(--text-muted); }
+.drumloops-controls { display: flex; gap: 8px; align-items: center; }
+.drumloops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.drumloop-card {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  transition: var(--transition-smooth);
+}
+.drumloop-card:hover { border-color: var(--color-green); box-shadow: var(--glow-green); }
+.drumloop-card .dl-title {
+  font-weight: 700; font-size: 14px; color: var(--text-main);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.drumloop-card .dl-artist {
+  font-size: 12px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.drumloop-card .dl-meta {
+  display: flex; gap: 8px; font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.drumloop-card .dl-meta .dl-bars { color: var(--color-green); font-weight: 700; }
+.drumloop-card .dl-play {
+  display: flex; align-items: center; justify-content: center;
+  height: 36px; border: none; border-radius: 8px;
+  background: var(--color-green); color: #fff;
+  font-weight: 700; cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.drumloop-card .dl-play:hover { transform: translateY(-1px); box-shadow: var(--glow-green); }
+.drumloop-card .dl-play.playing { background: var(--color-red); }
+.drumloop-card .dl-play i { width: 14px; height: 14px; margin-right: 4px; }
 
 /* Checkbox styling in table */
 .col-select, .song-select-cell {

@@ -791,6 +791,44 @@ app.get('/api/audio/stems/:song/:file', (req, res) => {
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
+// Drum-loops catalog — all *_DO_loopN_Nbars.m4a files in M4A/, with metadata
+// from each loop's parent song (stems folder, m4a base, BPM, key). The library
+// scan filters these out as standalone rows; this endpoint surfaces them
+// specifically for the Drum Loops tab.
+app.get('/api/drum-loops', (req, res) => {
+  if (!fs.existsSync(M4A_DIR)) return res.json({ loops: [] });
+  const stems = (libraryCache && libraryCache.data && libraryCache.data.songs || [])
+    .filter(s => s.type === 'stems');
+  const stemsByBase = new Map(stems.map(s => [s.folderName, s]));
+  // Match: <base>_DO_loop<N>_<bars>bars.m4a   (DO = drums-only mixdown loop)
+  const re = /^(.+?)_DO_loop(\d+)_(\d+)bars\.m4a$/i;
+  const loops = [];
+  for (const f of fs.readdirSync(M4A_DIR)) {
+    if (/ \(\d+\)\.m4a$/i.test(f)) continue;
+    const m = f.match(re);
+    if (!m) continue;
+    const songBase  = m[1];
+    const loopNumber = Number(m[2]);
+    const bars      = Number(m[3]);
+    const parent    = stemsByBase.get(songBase);
+    loops.push({
+      id:        `drumloop-${f}`,
+      fileName:  f,
+      songBase,
+      loopNumber,
+      bars,
+      title:     (parent && parent.title)  || songBase.replace(/_/g, ' '),
+      artist:    (parent && parent.artist) || '',
+      bpm:       parent && parent.practiceBpm || null,
+      key:       parent && parent.key       || null,
+      cached:    isM4aCached(f),
+    });
+  }
+  loops.sort((a, b) =>
+    a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber);
+  res.json({ loops, count: loops.length });
+});
+
 app.get('/api/audio/m4a/:file', (req, res) => {
   const { file } = req.params;
   if (file.includes('..')) return res.status(403).send('Forbidden');

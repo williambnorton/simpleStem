@@ -387,10 +387,24 @@
         </div>
       </section>
 
-      <!-- Bottom Split Grid: Library Browser on Left, Setlist Planner on Right -->
-      <div class="bottom-split-grid">
-        
-        <!-- Left Side: Song Library Browser -->
+      <!-- Tab bar — three full-width views below the docked player -->
+      <nav class="tab-bar" role="tablist" aria-label="Workspace tabs">
+        <button class="tab-btn active" data-tab="library" role="tab" aria-selected="true">
+          <i data-lucide="library"></i> Library
+        </button>
+        <button class="tab-btn" data-tab="setlist" role="tab" aria-selected="false">
+          <i data-lucide="clipboard-list"></i> Setlist
+        </button>
+        <button class="tab-btn" data-tab="drumloops" role="tab" aria-selected="false">
+          <i data-lucide="drum"></i> Drum Loops
+        </button>
+      </nav>
+
+      <!-- Tabbed content area: one tab visible at a time, player stays above -->
+      <div class="tab-container">
+
+        <!-- Library tab — full-width song table -->
+        <section class="tab-pane tab-pane-active" data-tab-pane="library">
         <section class="library-section glass">
           <div class="library-header">
             <div class="title-area">
@@ -423,8 +437,10 @@
             </div>
           </div>
         </section>
-        
-        <!-- Right Side: Setlist Planner -->
+        </section><!-- /tab-pane:library -->
+
+        <!-- Setlist tab — was the right rail -->
+        <section class="tab-pane" data-tab-pane="setlist">
         <section class="setlist-section glass">
           <div class="setlist-header">
             <div class="title-area">
@@ -475,9 +491,37 @@
             </div>
           </div>
         </section>
-        
-      </div>
-      
+        </section><!-- /tab-pane:setlist -->
+
+        <!-- Drum Loops tab — library-wide grid of every song's drum-only loops -->
+        <section class="tab-pane" data-tab-pane="drumloops">
+          <section class="drumloops-section glass">
+            <div class="drumloops-header">
+              <div class="title-area">
+                <h2>Drum Loops</h2>
+                <span class="sub" id="drumloops-count-label">Loading drum loops…</span>
+              </div>
+              <div class="drumloops-controls">
+                <div class="search-box glass-input" style="max-width:260px;">
+                  <i data-lucide="search" class="search-icon"></i>
+                  <input type="text" id="drumloops-search" placeholder="Search song or artist…" autocomplete="off">
+                </div>
+                <select id="drumloops-sort" class="glass-select" title="Sort drum loops">
+                  <option value="song">Sort: Song A→Z</option>
+                  <option value="artist">Sort: Artist A→Z</option>
+                  <option value="bpm">Sort: BPM Low→High</option>
+                  <option value="bars">Sort: Bars Low→High</option>
+                </select>
+              </div>
+            </div>
+            <div id="drumloops-grid" class="drumloops-grid">
+              <div class="loading-state"><div class="spinner"></div><span>Scanning M4A/ for drum loops…</span></div>
+            </div>
+          </section>
+        </section><!-- /tab-pane:drumloops -->
+
+      </div><!-- /tab-container -->
+
     </main>
 
     <!-- Right rail: full-height master volume -->
