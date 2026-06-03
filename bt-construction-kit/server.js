@@ -1290,10 +1290,21 @@ app.post('/api/song/:base/refetch', (req, res) => {
 // Hands a song off to a Keyboard Maestro macro that drives Logic Pro's Stem
 // Splitter and bounces replacement m4a mixdowns. The server sets KBM Engine
 // variables (so the macro can read them as %Variable%simpleStem_*%) and then
-// triggers the macro by name. Logic stem splitting is interactive — KBM owns
-// the actual workflow; this endpoint only kicks it off with the right paths
-// and the song's full metadata so the macro can configure Logic's project
-// (tempo, key, project length, notes) without round-tripping to read files.
+// fires the macro via the kmtrigger:// URL scheme — fire-and-forget, so the
+// HTTP request returns in <1s even though the macro runs for ~3 minutes.
+//
+// Two protections against overlapping Logic runs:
+//   1. Atomic check-and-set in a single osascript: read simpleStem_Running;
+//      if non-empty, return its value (the song already in flight) and
+//      DON'T overwrite any variables. Otherwise set all variables in one
+//      block and stamp simpleStem_Running with the new song's base.
+//   2. The macro itself MUST clear simpleStem_Running at exit (both the
+//      success and error paths). The /api/logic-restem/unlock endpoint
+//      below clears it manually if the macro fails to.
+//
+// If KBM Engine restarts, all engine variables reset — the lock auto-clears.
+// If the macro hangs and never clears the variable, the user calls
+// /api/logic-restem/unlock to release it.
 //
 // KBM macro contract:
 //   Macro name: "simpleStem"
@@ -1319,6 +1330,11 @@ app.post('/api/song/:base/refetch', (req, res) => {
 //     ─ reference links (for Project Notes) ─────────────────────────
 //     simpleStem_LyricsUrl   → lyrics_search_url
 //     simpleStem_ChordsUrl   → chords_search_url
+//     ─ lifecycle (managed by server + macro together) ──────────────
+//     simpleStem_Running     → set by server before firing (= song base);
+//                              MACRO MUST CLEAR THIS AT EXIT (success or
+//                              error path). While non-empty, new triggers
+//                              are rejected with 409.
 //
 //   Expected output files (overwriting the demucs versions):
 //     M4A/<base>_-V.m4a       source minus vocals
@@ -1327,6 +1343,7 @@ app.post('/api/song/:base/refetch', (req, res) => {
 //     M4A/<base>_DO.m4a       drums only
 const KBM_MACRO_NAME = 'simpleStem';
 const KBM_VAR_PREFIX = 'simpleStem_';
+const KBM_RUNNING_VAR = KBM_VAR_PREFIX + 'Running';
 
 // Escape a string for embedding inside an AppleScript double-quoted literal.
 function asEscape(s) {
@@ -1396,26 +1413,83 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
     ChordsUrl:      meta.chords_search_url || '',
   };
 
-  // Build the AppleScript: set each variable in the KBM Engine, then run the
-  // named macro. execFileSync passes the script as a single argv element, so
-  // no shell-quoting tricks — just AppleScript's own quote escaping.
-  const lines = [`tell application "Keyboard Maestro Engine"`];
+  // Phase 1 — atomic check-and-set, fully synchronous but tiny (~16 KBM
+  // setvariable AppleEvents, sub-second total). The AppleScript reads the
+  // current lock first; if held, it returns the existing owner WITHOUT
+  // overwriting any variables. Otherwise it sets every variable, stamps
+  // the lock, and returns "". This single tell-block is atomic from the
+  // Engine's perspective — concurrent triggers can't interleave halfway.
+  const setupLines = [
+    `tell application "Keyboard Maestro Engine"`,
+    `  set existingLock to getvariable "${KBM_RUNNING_VAR}"`,
+    `  if existingLock is not "" then return existingLock`,
+  ];
   for (const [k, v] of Object.entries(vars)) {
-    lines.push(`  setvariable "${KBM_VAR_PREFIX}${k}" to "${asEscape(v)}"`);
+    setupLines.push(`  setvariable "${KBM_VAR_PREFIX}${k}" to "${asEscape(v)}"`);
   }
-  lines.push(`  do script "${asEscape(KBM_MACRO_NAME)}"`);
-  lines.push(`end tell`);
-  const script = lines.join('\n');
+  // Stamp the lock LAST so all the song's variables are already in place
+  // by the time any observer sees Running != "".
+  setupLines.push(`  setvariable "${KBM_RUNNING_VAR}" to "${asEscape(s.b)}"`);
+  setupLines.push(`  return ""`);
+  setupLines.push(`end tell`);
+  const setupScript = setupLines.join('\n');
 
+  let lockOwner;
   try {
-    execFileSync('osascript', ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-    console.log(`[logic-restem] ${s.b}: triggered KBM macro "${KBM_MACRO_NAME}"`);
-    res.json({ ok: true, base: s.b, macro: KBM_MACRO_NAME, vars });
+    const out = execFileSync('osascript', ['-e', setupScript],
+      { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+    lockOwner = out.toString().trim();
   } catch (e) {
     const stderr = (e.stderr && e.stderr.toString()) || '';
-    res.status(500).json({
-      error: `Keyboard Maestro trigger failed: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}. Is KBM Engine running and is a macro named "${KBM_MACRO_NAME}" enabled?`
+    return res.status(500).json({
+      error: `Failed to set up KBM variables: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}. Is KBM Engine running?`
     });
+  }
+
+  if (lockOwner) {
+    // Lock was already held — macro is currently running for that song.
+    return res.status(409).json({
+      error: `Keyboard Maestro is already running simpleStem for "${lockOwner}". Wait for it to finish, or POST /api/logic-restem/unlock if the macro is stuck.`,
+      lockedBy: lockOwner,
+    });
+  }
+
+  // Phase 2 — fire the macro via the kmtrigger:// URL scheme, detached.
+  // open(1) hands the URL to the OS URL handler and returns in ~50ms;
+  // KBM picks it up out of band and runs the macro for its full 3
+  // minutes without holding any handle back to this Node process.
+  try {
+    const proc = spawn('open',
+      [`kmtrigger://macro=${encodeURIComponent(KBM_MACRO_NAME)}`],
+      { detached: true, stdio: 'ignore' });
+    proc.unref();
+  } catch (e) {
+    // Couldn't even fire open(1). Release the lock so the user isn't stuck.
+    try {
+      execFileSync('osascript', ['-e',
+        `tell application "Keyboard Maestro Engine" to setvariable "${KBM_RUNNING_VAR}" to ""`
+      ], { timeout: 5000 });
+    } catch (e2) { /* best-effort */ }
+    return res.status(500).json({ error: `Failed to fire kmtrigger URL: ${e.message}` });
+  }
+
+  console.log(`[logic-restem] ${s.b}: lock acquired, kmtrigger URL fired (detached)`);
+  res.json({ ok: true, base: s.b, macro: KBM_MACRO_NAME, vars });
+});
+
+// Manual lock release — escape hatch for when the macro fails to clear
+// simpleStem_Running on exit (macro doesn't exist yet, user aborted it
+// from the KBM Editor, macro crashed, etc.). Idempotent.
+app.post('/api/logic-restem/unlock', (req, res) => {
+  try {
+    execFileSync('osascript', ['-e',
+      `tell application "Keyboard Maestro Engine" to setvariable "${KBM_RUNNING_VAR}" to ""`
+    ], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
+    console.log(`[logic-restem] unlocked: ${KBM_RUNNING_VAR} cleared`);
+    res.json({ ok: true, note: `Cleared ${KBM_RUNNING_VAR} in KBM Engine.` });
+  } catch (e) {
+    const stderr = (e.stderr && e.stderr.toString()) || '';
+    res.status(500).json({ error: `Unlock failed: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}` });
   }
 });
 
