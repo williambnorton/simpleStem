@@ -201,6 +201,10 @@ window.addEventListener('DOMContentLoaded', () => {
   setupMasterVolume();
   setupTabs();
   setupDrumLoopsTab();
+  // Pre-fetch the drum-loops index so library rows can show drum-loop chips
+  // immediately on first render. (Drum Loops tab uses the same data — no
+  // second round-trip if/when the user opens it.)
+  loadDrumLoops();
 
   // Diagnostic: log audio element errors and unexpected ended events
   Object.keys(audioElements).forEach(chan => {
@@ -248,6 +252,7 @@ function setupTabs() {
 // the player so master volume + transport state apply uniformly.
 let drumLoopsLoaded = false;
 let drumLoopsAll = [];
+let drumLoopsByBase = new Map();   // songBase → [loops sorted by loopNumber]
 let drumLoopAudio = null;
 let drumLoopPlayingId = null;
 
@@ -258,97 +263,140 @@ function setupDrumLoopsTab() {
   if (sortEl)   sortEl.addEventListener('change', renderDrumLoops);
 }
 
+// Fetches the drum-loops catalog once and indexes it by songBase so both
+// the Drum Loops tab and the per-row chips in the Library tab can share
+// the same data without two round-trips.
 async function loadDrumLoops() {
-  const grid = document.getElementById('drumloops-grid');
-  const label = document.getElementById('drumloops-count-label');
   try {
     const res = await fetch('/api/drum-loops');
     const data = await res.json();
     drumLoopsAll = data.loops || [];
+    drumLoopsByBase = new Map();
+    for (const l of drumLoopsAll) {
+      if (!drumLoopsByBase.has(l.songBase)) drumLoopsByBase.set(l.songBase, []);
+      drumLoopsByBase.get(l.songBase).push(l);
+    }
+    // Each song's loops are already sorted server-side, but defensively re-sort.
+    for (const arr of drumLoopsByBase.values()) arr.sort((a, b) => a.loopNumber - b.loopNumber);
     drumLoopsLoaded = true;
-    if (label) label.textContent = `${drumLoopsAll.length} drum loops across ${new Set(drumLoopsAll.map(l => l.songBase)).size} songs`;
-    renderDrumLoops();
+    const grid = document.getElementById('drumloops-grid');
+    const label = document.getElementById('drumloops-count-label');
+    if (label) label.textContent = `${drumLoopsAll.length} drum loops across ${drumLoopsByBase.size} songs`;
+    if (grid) renderDrumLoops();
+    // If the library has already rendered, re-render so the new chips show up.
+    if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
+      renderSongList();
+    }
   } catch (e) {
+    const grid = document.getElementById('drumloops-grid');
     if (grid) grid.innerHTML = `<div class="empty-state">Couldn't load drum loops: ${escapeHtml(e.message)}</div>`;
   }
 }
 
+// One CARD per song (not per loop). Each card has the song header + a row of
+// loop buttons inside, so a 4-loop song shows up as one card with 4 buttons —
+// matching how a drummer thinks about it ("give me Harvest Moon's loops").
 function renderDrumLoops() {
   const grid = document.getElementById('drumloops-grid');
   if (!grid) return;
   const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
   const sortKey = document.getElementById('drumloops-sort')?.value || 'song';
-  let list = drumLoopsAll;
-  if (q) list = list.filter(l =>
-    (l.title || '').toLowerCase().includes(q) ||
-    (l.artist || '').toLowerCase().includes(q));
-  list = [...list].sort((a, b) => {
+
+  // Build per-song groups from the flat loops list.
+  const byBase = new Map();
+  for (const l of drumLoopsAll) {
+    if (q && !(l.title || '').toLowerCase().includes(q) &&
+            !(l.artist || '').toLowerCase().includes(q)) continue;
+    if (!byBase.has(l.songBase)) {
+      byBase.set(l.songBase, {
+        songBase: l.songBase,
+        title:    l.title,
+        artist:   l.artist,
+        bpm:      l.bpm,
+        loops:    [],
+      });
+    }
+    byBase.get(l.songBase).loops.push(l);
+  }
+  const groups = [...byBase.values()];
+  for (const g of groups) g.loops.sort((a, b) => a.loopNumber - b.loopNumber);
+
+  groups.sort((a, b) => {
     switch (sortKey) {
-      case 'artist': return (a.artist || '').localeCompare(b.artist || '') ||
-                            a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber;
+      case 'artist': return (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title);
       case 'bpm':    return (a.bpm || 9999) - (b.bpm || 9999) || a.title.localeCompare(b.title);
-      case 'bars':   return a.bars - b.bars || a.title.localeCompare(b.title);
-      default:       return a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber;
+      case 'bars':   return (a.loops[0]?.bars || 0) - (b.loops[0]?.bars || 0) || a.title.localeCompare(b.title);
+      default:       return a.title.localeCompare(b.title);
     }
   });
-  if (list.length === 0) {
+
+  if (groups.length === 0) {
     grid.innerHTML = '<div class="empty-state">No drum loops match.</div>';
     return;
   }
-  grid.innerHTML = list.map(l => `
-    <div class="drumloop-card" data-id="${l.id}">
-      <div class="dl-title" title="${escapeHtml(l.title)}">${escapeHtml(l.title)}</div>
-      <div class="dl-artist" title="${escapeHtml(l.artist || '')}">${escapeHtml(l.artist || '')}</div>
+
+  grid.innerHTML = groups.map(g => `
+    <div class="drumloop-card" data-base="${escapeHtml(g.songBase)}">
+      <div class="dl-title" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
+      <div class="dl-artist" title="${escapeHtml(g.artist || '')}">${escapeHtml(g.artist || '')}</div>
       <div class="dl-meta">
-        <span class="dl-bars">${l.bars} bars</span>
-        <span>· loop ${l.loopNumber}</span>
-        ${l.bpm ? `<span>· ${l.bpm} BPM</span>` : ''}
-        ${l.key ? `<span>· ${escapeHtml(l.key)}</span>` : ''}
+        ${g.bpm ? `<span>${g.bpm} BPM</span>` : '<span>— BPM</span>'}
+        <span>· ${g.loops.length} loop${g.loops.length === 1 ? '' : 's'}</span>
       </div>
-      <button class="dl-play" data-file="${encodeURIComponent(l.fileName)}" data-id="${l.id}">
-        <i data-lucide="play"></i> Play loop
-      </button>
+      <div class="dl-loop-row">
+        ${g.loops.map(l => `
+          <button class="dl-loop-btn" data-file="${encodeURIComponent(l.fileName)}" data-id="${l.id}" data-loopnum="${l.loopNumber}" data-bars="${l.bars}" title="loop${l.loopNumber} · ${l.bars} bars">
+            L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>
+          </button>
+        `).join('')}
+      </div>
     </div>
   `).join('');
-  grid.querySelectorAll('.dl-play').forEach(btn => {
+
+  grid.querySelectorAll('.dl-loop-btn').forEach(btn => {
     btn.addEventListener('click', () => toggleDrumLoop(btn));
   });
   if (window.lucide) lucide.createIcons();
 }
 
+// Toggle a drum loop on or off. Same audio element is used everywhere drum
+// loops play (Drum Loops tab AND library-row chips), so clicking a second
+// button just swaps the source; clicking the playing button again stops it.
 function toggleDrumLoop(btn) {
   const id = btn.dataset.id;
-  // If this card is already playing, stop it.
+  const PLAYING_SELECTOR = '.dl-loop-btn.playing, .song-drumloop-chip.playing';
+  const resetButton = (b) => {
+    b.classList.remove('playing');
+    if (b.classList.contains('song-drumloop-chip')) {
+      // chip-only — restore its original label from data attr
+      b.innerHTML = b.dataset.idleLabel || b.innerHTML;
+    } else {
+      // tab button — restore "L# Nb" label from data
+      const lp = b.dataset.loopnum, bars = b.dataset.bars;
+      if (lp && bars) b.innerHTML = `L${lp} <span class="dl-bars">${bars}b</span>`;
+    }
+  };
   if (drumLoopPlayingId === id && drumLoopAudio) {
     drumLoopAudio.pause();
     drumLoopAudio.currentTime = 0;
     drumLoopPlayingId = null;
-    btn.classList.remove('playing');
-    btn.innerHTML = '<i data-lucide="play"></i> Play loop';
-    if (window.lucide) lucide.createIcons();
+    resetButton(btn);
     return;
   }
-  // Otherwise stop any other playing loop first
   if (drumLoopAudio) {
     drumLoopAudio.pause();
-    document.querySelectorAll('.dl-play.playing').forEach(b => {
-      b.classList.remove('playing');
-      b.innerHTML = '<i data-lucide="play"></i> Play loop';
-    });
+    document.querySelectorAll(PLAYING_SELECTOR).forEach(resetButton);
   }
   if (!drumLoopAudio) {
     drumLoopAudio = new Audio();
     drumLoopAudio.loop = true;
-    drumLoopAudio.addEventListener('ended', () => {
-      drumLoopPlayingId = null;
-    });
+    drumLoopAudio.addEventListener('ended', () => { drumLoopPlayingId = null; });
   }
   drumLoopAudio.src = `/api/audio/m4a/${btn.dataset.file}`;
   drumLoopAudio.play().catch(err => console.warn('[drumloop] play failed', err));
   drumLoopPlayingId = id;
   btn.classList.add('playing');
-  btn.innerHTML = '<i data-lucide="square"></i> Stop';
-  if (window.lucide) lucide.createIcons();
+  btn.innerHTML = '■';
 }
 
 // ── Add-from-YouTube queue ────────────────────────────────────────────────
@@ -740,6 +788,30 @@ function renderLibrary() {
       });
       formatCell.appendChild(chip);
     });
+
+    // Drum-loop chips — sit immediately AFTER the DO chip (which sorted last
+    // among the format chips). Each chip is a tiny green pill labeled "L1 27b"
+    // that toggles the drum loop in place. Reuses the same audio element as
+    // the Drum Loops tab so only one loop plays globally at a time.
+    const drumSongBase = stemsVariant && stemsVariant.folderName;
+    const drumLoops = drumSongBase ? drumLoopsByBase.get(drumSongBase) : null;
+    if (drumLoops && drumLoops.length) {
+      drumLoops.forEach(l => {
+        const chip = document.createElement('button');
+        chip.className = 'format-chip song-drumloop-chip';
+        chip.dataset.id = l.id;
+        chip.dataset.file = encodeURIComponent(l.fileName);
+        const idleLabel = `L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>`;
+        chip.dataset.idleLabel = idleLabel;
+        chip.title = `Drum loop ${l.loopNumber} · ${l.bars} bars — click to play`;
+        chip.innerHTML = idleLabel;
+        chip.addEventListener('click', e => {
+          e.stopPropagation();
+          toggleDrumLoop(chip);
+        });
+        formatCell.appendChild(chip);
+      });
+    }
 
     // Action
     const actionCell = document.createElement('div');
