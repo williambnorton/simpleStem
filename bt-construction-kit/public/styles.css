@@ -626,8 +626,9 @@ select {
 /* Brand logo */
 .brand {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   margin-bottom: 32px;
 }
 
@@ -2453,6 +2454,10 @@ input:checked + .slider-round:before {
   padding: 0.15rem 0.55rem; border-radius: 999px;
   background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
   color: var(--text-secondary, #b9b6ae);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .queue-chip.processing { border-color: #2e9e5b; color: #4fd089; }
 .queue-idle { color: var(--text-secondary, #8a877f); opacity: 0.7; }
@@ -2471,19 +2476,31 @@ input:checked + .slider-round:before {
 .setlists-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
 .setlists-empty { color: var(--text-dim); font-size: 0.8rem; padding: 4px 2px; }
 .setlist-chip {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; text-align: left; cursor: pointer;
+  display: flex; align-items: stretch; width: 100%;
   background: var(--bg-card); border: 1px solid var(--border-color);
-  border-radius: 8px; padding: 7px 10px; color: var(--text-main);
-  transition: var(--transition-smooth);
+  border-radius: 8px; color: var(--text-main);
+  transition: var(--transition-smooth); overflow: hidden;
 }
 .setlist-chip:hover { background: var(--bg-card-hover); border-color: var(--border-active); }
+.setlist-chip .sl-load-btn {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  text-align: left; cursor: pointer; padding: 7px 10px;
+  background: transparent; border: none; color: inherit; font: inherit;
+}
 .setlist-chip .sl-title { flex: 1; font-weight: 600; font-size: 0.85rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .setlist-chip .sl-count {
   font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--text-muted);
   background: var(--bg-dark); border-radius: 10px; padding: 1px 8px; min-width: 24px; text-align: center;
 }
+.setlist-chip .sl-delete-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; flex-shrink: 0;
+  background: transparent; border: none; border-left: 1px solid var(--border-color);
+  color: var(--text-dim); cursor: pointer; font-size: 16px; line-height: 1;
+  transition: var(--transition-smooth);
+}
+.setlist-chip .sl-delete-btn:hover { background: rgba(231, 76, 60, 0.15); color: var(--color-red); }
 .sl-badge {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
@@ -2527,7 +2544,7 @@ input:checked + .slider-round:before {
 /* ===== Brand version tag (header) ===== */
 .brand-version {
   font-size: 0.68rem; font-weight: 600; color: var(--text-dim);
-  font-variant-numeric: tabular-nums; margin-left: 4px;
+  font-variant-numeric: tabular-nums; margin-left: 38px;
 }
 
 /* ===== Pending (not-yet-stemmed) setlist rows ===== */

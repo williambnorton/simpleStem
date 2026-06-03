@@ -36,7 +36,7 @@ function CODE_FILES() {
 function fmtVersion(d) {
   const p = n => String(n).padStart(2, '0');
   return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}`
-       + `.${p(d.getHours())}${p(d.getMinutes())}`;
+       + `:${p(d.getHours())}${p(d.getMinutes())}`;
 }
 function readDiskVersion() {
   let newest = 0;
@@ -124,6 +124,17 @@ function parseSongMetadata(rawName, isFolder = false) {
   let practiceBpm = null;
   let originalBpm = null;
   let key = null;
+
+  // 0. Strip iTunes / Logic-export track-number prefixes BEFORE BPM extraction
+  //    so the digits don't get caught as BPM. Patterns seen:
+  //      "1 01 Whole Lotta Love..."        → "Whole Lotta Love..." (disc 1, track 01)
+  //      "1_01_Whole_Lotta_Love..."        → same, underscore form
+  //      "01 Whole Lotta Love..."          → "Whole Lotta Love..."
+  //      "01_Whole_Lotta_Love..."          → same
+  //    Conservative — only strips digit-only leading tokens, not anything else.
+  name = name.replace(/^\d{1,2}[_\s]+\d{1,2}[_\s]+/, '')   // disc + track
+             .replace(/^\d{1,2}[_\s]+/, '')                  // track only
+             .trim();
 
   // 1. Extract Key if specified (e.g. "Doctor My Eyes in D" or "Easy in G")
   const keyMatch = name.match(/\bin\s+([A-G][b#]?m?)\b/i);
@@ -347,7 +358,8 @@ function scanM4a(stemsByKey) {
   }
 
   const files = fs.readdirSync(M4A_DIR).filter(file => {
-    if (/ \(\d+\)\.m4a$/i.test(file)) return false;   // skip ' (1)' duplicate downloads
+    if (/ \(\d+\)\.m4a$/i.test(file)) return false;        // skip ' (1)' duplicate downloads
+    if (/[_ ]loop\d+[_ ]\d+bars\.m4a$/i.test(file)) return false;  // skip loop artifacts — surfaced inside the player, not as library rows
     const fullPath = path.join(M4A_DIR, file);
     return fs.statSync(fullPath).isFile() && file.endsWith('.m4a');
   });
@@ -1102,6 +1114,27 @@ app.get('/api/setlists/:slug', (req, res) => {
   }
   try {
     res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete a MANUAL setlist. Refuses to delete a playlist-origin one — those are
+// owned by setlist_sync.py and would just re-sync on next pass.
+app.delete('/api/setlists/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  if (slug === 'registry') return res.status(400).json({ error: 'not a setlist' });
+  const file = path.join(SETLISTS_DIR, `${slug}.json`);
+  if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'setlist not found' });
+  }
+  try {
+    const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (existing.origin === 'playlist') {
+      return res.status(409).json({ error: 'that setlist is playlist-synced; delete its source playlist instead' });
+    }
+    fs.rmSync(file, { force: true });
+    res.json({ ok: true, slug });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

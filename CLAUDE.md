@@ -134,6 +134,15 @@ queues behind the current song.
 
 ## Conventions
 
+- **Shell snippets pasted into zsh:** never put `#` comments on the same
+  line as a command. zsh defaults to `no_interactive_comments`, so the
+  `#` and everything after it get passed as positional arguments and
+  produce confusing "does not match any" / "command not found" errors.
+  If commentary is needed, put it on its own line *above* the command,
+  or render it as prose outside the code block. Multi-line code blocks
+  with one comment line followed by the command are fine; same-line
+  trailing comments are not.
+
 - **Slug**: lowercase, spaces → `_`, drop anything but `[a-z0-9_-]`. Song files
   are `<slug>.json`; setlist entries are `NN_<slug>.json` (zero-padded order).
 - **M4A naming**: `<Title>_<Artist>_<suffix>.m4a`, suffix ∈ `-V`, `-V-G`,

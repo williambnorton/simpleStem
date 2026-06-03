@@ -379,7 +379,17 @@ function mergeByTitleArtist(rawSongs) {
       const order = { STEMS: 0, FULL: 1, '-V': 2, '-V-G': 3, '-V-B': 4, '-V-G-B': 5, DO: 6 };
       return (order[a.variantCode] ?? 9) - (order[b.variantCode] ?? 9);
     });
-    const primary = variants[0];
+    // Dedupe by (type, variantCode) — when multiple files map to the same
+    // variant (e.g. several FULL-suffix m4as for one song), show one chip.
+    // Prefer a cached entry over an uncached one so the chip lights up.
+    const seen = new Map();
+    for (const v of variants) {
+      const code = `${v.type}:${v.variantCode}`;
+      const prev = seen.get(code);
+      if (!prev || (v.cached && !prev.cached)) seen.set(code, v);
+    }
+    const dedupedVariants = [...seen.values()];
+    const primary = dedupedVariants[0];
     merged.push({
       id: `merged-${key}`,
       type: 'merged',
@@ -389,7 +399,7 @@ function mergeByTitleArtist(rawSongs) {
       originalBpm: primary.originalBpm,
       key: primary.key,
       duration: primary.duration,
-      variants,
+      variants: dedupedVariants,
       primary
     });
   }
@@ -1619,16 +1629,35 @@ async function loadSetlistsList() {
     }
     els.setlistsList.innerHTML = '';
     lists.forEach(sl => {
-      const row = document.createElement('button');
+      const row = document.createElement('div');
       row.className = 'setlist-chip';
       const isPlaylist = sl.origin === 'playlist';
       const badge = isPlaylist
         ? '<span class="sl-badge sl-yt" title="Synced from a YouTube playlist"><i data-lucide="youtube" style="width:11px;height:11px;"></i> sync</span>'
         : '<span class="sl-badge sl-manual" title="Hand-curated; never auto-changed">manual</span>';
-      row.innerHTML = `${badge}<span class="sl-title">${escapeHtml(sl.title)}</span>` +
-        `<span class="sl-count">${sl.count}</span>`;
-      row.title = `Load "${sl.title}" (${sl.count} songs) into the planner`;
-      row.addEventListener('click', () => loadSetlistIntoPlanner(sl.slug));
+      // Manual setlists get a small × to remove them. Playlist-synced ones don't
+      // (deleting one would just re-sync on the next pass — own the source instead).
+      const deleteBtn = isPlaylist ? '' :
+        '<button class="sl-delete-btn" title="Delete this SetList" aria-label="Delete">×</button>';
+      row.innerHTML =
+        `<button class="sl-load-btn" title="Load &quot;${escapeHtml(sl.title)}&quot; (${sl.count} songs) into the planner">` +
+        `${badge}<span class="sl-title">${escapeHtml(sl.title)}</span>` +
+        `<span class="sl-count">${sl.count}</span>` +
+        `</button>${deleteBtn}`;
+      row.querySelector('.sl-load-btn').addEventListener('click', () => loadSetlistIntoPlanner(sl.slug));
+      const delEl = row.querySelector('.sl-delete-btn');
+      if (delEl) {
+        delEl.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Delete SetList "${sl.title}" (${sl.count} songs)? The songs themselves stay in the library.`)) return;
+          try {
+            const r = await fetch(`/api/setlists/${encodeURIComponent(sl.slug)}`, { method: 'DELETE' });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'failed');
+            loadSetlistsList();
+          } catch (err) { alert(`Couldn't delete: ${err.message}`); }
+        });
+      }
       els.setlistsList.appendChild(row);
     });
     if (window.lucide) lucide.createIcons();
