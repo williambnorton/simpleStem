@@ -1,168 +1,117 @@
 # simpleStem
 
-Fetch a song from YouTube, separate it into vocals/drums/bass/other with
-Demucs, balance the stems against the original, and generate
-beat-synced jam loops for practice.
+A band backing-track system. Turns YouTube songs into separated stems
+(vocals · drums · bass · guitar · piano · other) plus drop-in practice
+mixes ("source minus vocals", "drums only", etc.), and serves them
+through a web studio you load setlists into for rehearsal and live use.
 
-Built for the New Mitchell Park band: drummer wants drums-only tracks
-to practice over, bass wants bass-only, guitar/vocals want the full
-rhythm section. simpleStem produces all three from any YouTube URL or
-search query.
+Built for and around the New Mitchell Park band. Two Macs share the
+work: a Mac mini (Librarian) ingests and indexes; a MacBook Pro
+(Performer) renders the stems and serves the portal on stage.
 
-## What you get per song
+---
 
-All song outputs live under `~/ClaudeDrive/simpleStem/STEMS/`. Per song
-folder `STEMS/${Title}_${Artist}/`:
+## The shape of the system
 
+```mermaid
+flowchart TB
+    GH["GitHub · simpleStem repo<br/><i>canonical CODE</i>"]
+
+    subgraph MINI["Mac mini · LIBRARIAN · 8 GB · always on"]
+      MC["~/simpleStem-code/<br/>git clone"]
+      WW["webloc_watch.sh<br/>ingest + metadata"]
+    end
+
+    subgraph LAPTOP["MacBook Pro · PERFORMER · 36 GB · travels"]
+      LC["~/simpleStem-code/<br/>git clone"]
+      QR["queue_runner.sh + stem.sh<br/>Demucs render"]
+      PORTAL["bt-construction-kit<br/>portal :3000"]
+    end
+
+    subgraph DRIVE["Google Drive · ~/ClaudeDrive/simpleStem/ · DATA only"]
+      STEMS["STEMS/&lt;slug&gt;/<br/>M4A/<br/>STEM_QUEUE/"]
+    end
+
+    GH ==git pull==> MC
+    GH ==git pull==> LC
+    WW --> STEMS
+    STEMS --> QR
+    QR --> STEMS
+    STEMS --> PORTAL
+
+    classDef machine fill:#f6f8fc,stroke:#3f6fd6,stroke-width:2px;
+    classDef data fill:#fdf6e3,stroke:#b58900,stroke-width:1.5px;
+    classDef code fill:#eef9e8,stroke:#2e8b57,stroke-width:1.5px;
+    class MINI,LAPTOP machine;
+    class DRIVE data;
+    class GH code;
 ```
-source.wav                          downloaded audio
-vocals.wav   drums.wav   bass.wav   other.wav   demucs stems
-                                                (balanced to match source)
-bass+drums.wav                      full-length rhythm-section mix
 
-drums_loop{1..4}_<N>bars.wav        loops (drum-only) tiled to song length
-bass_loop{1..4}_<N>bars.wav         loops (bass-only)
-drumsbass_loop{1..4}_<N>bars.wav    loops (combined rhythm section)
+Code lives in GitHub. Both machines clone it onto local disk under
+`~/simpleStem-code/`. Drive holds only the data (song folders, queue,
+m4as). The machines never share code; they only share the data folder.
 
-run.log                             batch run log (only when launched
-                                    via mpbbatch.bash)
-.stem_balanced                      marker — stems have been gain-matched
-```
+Two-machine split exists because Demucs needs several GB of RAM and the
+8 GB mini crashed running it. The 36 GB laptop owns Demucs; the mini
+owns 24/7 ingest. Audio is fetched from YouTube **once** (on the mini,
+into the cache) and reused by the laptop — the gig tether never hits
+YouTube.
 
-The simpleStem project folder itself stays clean: only the scripts +
-README live there; the `STEMS/` subdirectory holds everything else.
+---
 
-Up to 4 loops per stem, ranked by how often that section recurs (loop1 is
-usually the chorus or main groove).
+## Where to go from here
 
-## Install
+**If you're a bandmate using the portal** —
+[USER_GUIDE.md](USER_GUIDE.md) walks through adding a song, finding
+songs, the stem mixer, loops, and setlist planning. No internals.
+
+**If you're a developer / forker / project owner** —
+[ARCHITECTURE.md](ARCHITECTURE.md) covers the two-machine model, the
+end-to-end pipeline, data contracts (`metadata.json`, M4A naming,
+slugs), the code map, all Express endpoints, the optional Logic Pro
+re-stem hand-off, operations, and the roadmap.
+
+**If you're an AI coding agent** — [CLAUDE.md](CLAUDE.md) is the
+project-specific guide loaded automatically each session.
+
+---
+
+## Quick start
+
+### Install
 
 ```
 ./install.sh
 ```
 
-Installs ffmpeg, yt-dlp, pipx via Homebrew, then demucs (with torch,
-torchcodec, librosa, soundfile) into an isolated pipx venv. Idempotent —
-safe to re-run if anything is missing.
+Installs Homebrew prereqs (ffmpeg, yt-dlp, pipx), then demucs into a
+pipx venv with torch / torchcodec / librosa / soundfile. Idempotent —
+re-run if anything is missing.
 
-Prereq: [Homebrew](https://brew.sh). The script verifies brew is on PATH
-before doing anything.
-
-## Usage
-
-### One song
+### Run
 
 ```
-./stem.sh "I Melt With You" "Modern English"
+cd ~/simpleStem-code
+(cd bt-construction-kit && npm install)   # once
+
+# Librarian (mini)
+./librarian.sh start         # watcher + daily catalog poll
+
+# Performer (laptop)
+./performer.sh start         # queue runner (Demucs) + portal at :3000
 ```
 
-Search is `ytsearch1:Modern English I Melt With You`; usually returns
-the studio version, but YouTube ordering isn't guaranteed. If you need
-a specific upload, edit the `yt-dlp` query line in `stem.sh` to a URL.
+Then open <http://localhost:3000>, paste a YouTube URL into "Paste a
+YouTube URL", and click Add. Render takes 10–25 min per song; the
+portal stays responsive while it cooks.
 
-Re-running on the same title is cheap: each step is idempotent.
+For non-developers, see [USER_GUIDE.md](USER_GUIDE.md). For the
+single-machine legacy path or the Docker setup, see
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
-- `source.wav` exists       → skip download
-- all 4 stems exist         → skip Demucs
-- `.stem_balanced` exists   → skip post-processing
-- `bass+drums.wav` exists   → skip loop detection
+---
 
-To force a step to re-run, delete its output (e.g. `rm bass+drums.wav`
-to regenerate loops only).
+## License
 
-### Batch from the band's Google Sheet
-
-```
-nohup ./mpbbatch.bash > batch.log 2>&1 &
-tail -f batch.log
-```
-
-Pulls every row with both Song and Artist filled from
-[the master list sheet](https://docs.google.com/spreadsheets/d/1e3DewMjHOmf_OlexPo6E1F_2i69YTYGMemJIZyRQIJA),
-skips anything already fully stemmed, and launches each missing song's
-`stem.sh` in the background with a 60-second stagger.
-
-Edit `SLEEP_BETWEEN` at the top of `mpbbatch.bash` to throttle (Demucs is
-CPU-heavy; many parallel jobs will pin a Mac). Change `GID` to pull from
-a different sheet tab.
-
-Per-song log: `~/ClaudeDrive/simpleStem/STEMS/${Title}_${Artist}/run.log`.
-
-To kill the whole batch:
-```
-pkill -f mpbbatch.bash ; pkill -f stem.sh
-```
-
-## How the stages work
-
-**Download** — `yt-dlp` extracts best audio, converts to WAV via ffmpeg.
-
-**Demucs (htdemucs model)** — 4-stem separation. ~5–15 min per song on
-CPU. The stems land in `htdemucs/source/`; we flatten them up next to
-`source.wav`.
-
-**Post-process (`post_process.py`)** — Solves for the per-stem scalar
-gains that minimize ‖Σ gᵢ·stemᵢ − source‖². A negative gain indicates
-polarity inversion (which Demucs occasionally produces); applying the
-gain corrects it. Prints before/after sum-vs-source residual in dB.
-
-**Loop detection (`loop_detect.py`)** — Beat-tracks `source.wav` with
-librosa, builds beat-synced MFCC+chroma features, agglomeratively
-segments, clusters similar sections by cosine similarity, and picks up
-to N representatives ranked by recurrence count. For each representative
-it snaps the time range to whole bars (assuming 4/4) and tiles it to
-song length with a ~20 ms crossfade. The same time ranges are applied
-to drums and bass so the loop sets align across stems.
-
-## Troubleshooting
-
-**`pipx install demucs` fails with PEP 668 / externally-managed-environment**
-  → That's the modern Homebrew Python lockout. Use the `install.sh`
-    script; it routes everything through `pipx` which sidesteps PEP 668.
-
-**`demucs: command not found` after install**
-  → `pipx ensurepath` writes to `~/.zshrc` but your current shell
-    doesn't see it. Open a new terminal or `exec zsh`. The install.sh
-    script also adds the PATH export to `~/.zshrc` directly.
-
-**`ImportError: TorchCodec is required for save_with_torchcodec`**
-  → Newer `torchaudio` delegates WAV writing to `torchcodec`.
-    `pipx inject demucs torchcodec` (install.sh does this).
-
-**`librosa/soundfile not available in the demucs env`**
-  → `stem.sh` auto-injects on failure, but if that fails too:
-    `pipx inject demucs librosa soundfile`.
-
-**Search returns a cover or live version**
-  → Edit `stem.sh` and replace the `"$QUERY"` argument to `yt-dlp` with
-    a direct YouTube URL. Then delete the song's folder and re-run.
-
-**Tempo detected at half/double**
-  → Known librosa quirk. Loop bar counts will halve or double — the
-    audio is still musically correct, just labeled differently. Pass
-    `--beats-per-bar 4` (default) or override for waltz time.
-
-**Demucs picks the wrong polarity for a stem**
-  → `post_process.py` should catch this and apply a negative gain.
-    Inspect the per-stem gains it prints; any with `(polarity flipped)`
-    were corrected.
-
-## Files
-
-| File                | What                                                          |
-|---------------------|---------------------------------------------------------------|
-| `install.sh`        | One-shot prereq installer (Homebrew + pipx + injects)         |
-| `stem.sh`           | Per-song pipeline: download → demucs → balance → loops        |
-| `post_process.py`   | LSQ gain match of stems to source                              |
-| `loop_detect.py`    | Section detection + beat-aligned crossfade tiling             |
-| `mpbbatch.bash`     | Batch driver: pull Song/Artist from the Google Sheet          |
-
-## Limits worth knowing
-
-- 4/4 assumed. Other meters: pass `--beats-per-bar 3` to `loop_detect.py`.
-- Demucs runs CPU-only by default — slow but reliable. Apple Silicon
-  users could try MPS but htdemucs is finicky on Metal; leaving as CPU.
-- Segmentation is heuristic — expect ~70–80% accuracy on
-  standard pop/rock; less reliable for ambient/jam material.
-- YouTube downloading is technically against TOS. This is for personal
-  practice use.
+Personal project for the New Mitchell Park band. YouTube downloading is
+technically against TOS — used here for personal practice and live use.

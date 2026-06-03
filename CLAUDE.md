@@ -175,6 +175,12 @@ machine pull from it, rather than trusting Drive to sync `.git`.
 
 ## Constraints & gotchas
 
+- **Logic Pro 12 Stem Splitter produces 6 stems** (vocals, drums, bass, guitar,
+  piano, "other") — *not* the 4 (vocals/drums/bass/other) that earlier Logic
+  versions and most third-party write-ups describe. Don't assert otherwise in
+  designs that hand off to Logic; the KBM `simpleStem` macro is built around
+  the 6-stem output and matches the demucs `htdemucs_6s` shape one-to-one.
+
 - **Memory (8 GB acquisition Mac):** don't pile heavy UI/agent work on top of
   Demucs — that's what the two-machine split is for.
 - **Hardcoded path:** `bt-construction-kit/server.js` sets
