@@ -1161,6 +1161,12 @@ select {
 .variant-chip:hover { background: rgba(255, 255, 255, 0.12); color: var(--text-main); }
 .variant-chip.chip-stems { color: #b39ddb; border-color: rgba(179, 157, 219, 0.4); }
 .variant-chip.chip-m4a   { color: #80cbc4; border-color: rgba(128, 203, 196, 0.4); }
+.variant-chip.chip-drumloop {
+  color: #fff; background: var(--color-green);
+  border-color: #2e8b57;
+}
+.variant-chip.chip-drumloop:hover { background: #27a25b; border-color: #1e7e3a; }
+.variant-chip.chip-drumloop .dl-bars { font-weight: 500; opacity: 0.9; font-size: 10px; }
 .variant-chip.chip-active {
   background: linear-gradient(135deg, #7c4dff, #b39ddb);
   color: #fff;

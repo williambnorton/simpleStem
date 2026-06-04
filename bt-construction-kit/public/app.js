@@ -1116,8 +1116,11 @@ function loadSong(song, opts) {
   // Reset loop-mode flag — a leftover `isLooping=true` from a previous loop
   // segment was causing the master 'ended' handler to restart playback at 0
   // every time, locking the playhead near the start.
-  isLooping = false;
-  if (els.btnLoop) els.btnLoop.classList.remove('active');
+  // Drum-loop variants are meant to repeat forever — engage loop mode by
+  // default. For everything else, reset to non-looping (the user can opt in
+  // via the loop button if they want).
+  isLooping = !!song.isDrumLoop;
+  if (els.btnLoop) els.btnLoop.classList.toggle('active', isLooping);
   
   // Restore master gain to the user's slider level (undoes any prior fade-out
   // without overriding the volume they've set on the right-rail slider).
@@ -1270,9 +1273,22 @@ function renderVariantPicker(currentVariant) {
   const chipsEl = document.getElementById('variant-picker-chips');
   if (!picker || !chipsEl) return;
 
-  // Find the merged record that contains this variant
-  const merged = mergedLibrary.find(m => m.variants.some(v => v.id === currentVariant.id));
-  if (!merged || merged.variants.length <= 1) {
+  // Find the merged record that contains this variant. Drum-loop "variants"
+  // are synthetic — they're not in mergedLibrary — so when one is currently
+  // loaded, fall back to the parent song stored on the variant itself.
+  let merged = mergedLibrary.find(m => m.variants.some(v => v.id === currentVariant.id));
+  if (!merged && currentVariant.parentBase) {
+    merged = mergedLibrary.find(m => {
+      const sv = m.variants.find(v => v.type === 'stems');
+      return sv && sv.folderName === currentVariant.parentBase;
+    });
+  }
+  // Decide whether we have anything to show: regular variants, OR drum loops
+  // that we can append even when there's only one regular variant.
+  const stemsVar = merged && merged.variants.find(v => v.type === 'stems');
+  const songBase = stemsVar && stemsVar.folderName;
+  const drumLoops = songBase ? (drumLoopsByBase.get(songBase) || []) : [];
+  if (!merged || (merged.variants.length <= 1 && drumLoops.length === 0)) {
     picker.style.display = 'none';
     return;
   }
@@ -1290,6 +1306,38 @@ function renderVariantPicker(currentVariant) {
     btn.addEventListener('click', () => loadSong(v));
     chipsEl.appendChild(btn);
   });
+
+  // Drum-loop chips: come AFTER all the regular variants. Each chip is a
+  // synthetic m4a-style variant that loadSong can swallow whole — it carries
+  // the loop's filename so the audio path routes through the drums element,
+  // and an isDrumLoop flag so loadSong auto-engages the loop toggle (the
+  // whole point of clicking a drum-loop chip is for it to repeat forever).
+  drumLoops.forEach(l => {
+    const btn = document.createElement('button');
+    const synth = {
+      id:           `drumloop-variant-${l.id}`,
+      type:         'm4a',
+      fileName:     l.fileName,
+      title:        merged.title,
+      artist:       merged.artist,
+      practiceBpm:  merged.practiceBpm,
+      originalBpm:  merged.originalBpm,
+      key:          merged.key,
+      keySignature: merged.keySignature,
+      duration:     null,
+      variantCode:  `L${l.loopNumber}`,
+      variantLabel: `Drum loop ${l.loopNumber} · ${l.bars} bars`,
+      parentBase:   songBase,
+      isDrumLoop:   true,
+    };
+    const isActive = currentVariant.id === synth.id;
+    btn.className = `variant-chip chip-drumloop ${isActive ? 'chip-active' : ''}`;
+    btn.innerHTML = `<i data-lucide="drum" style="width:12px;height:12px;"></i> L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>`;
+    btn.title = `Drum loop ${l.loopNumber} · ${l.bars} bars — plays through the main player; loop button is auto-engaged so it repeats forever`;
+    btn.addEventListener('click', () => loadSong(synth, { autoplay: true }));
+    chipsEl.appendChild(btn);
+  });
+
   lucide.createIcons();
 }
 
