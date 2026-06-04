@@ -16,8 +16,17 @@
 #   ./batch_restem.sh < songs.txt
 #   printf '%s\n' Harvest_Moon_Neil_Young American_Girl_Tom_Petty | ./batch_restem.sh
 #
-# Output formats accepted:
-#   one slug per line; lines starting with '#' and blank lines ignored
+# Input formats accepted (one entry per line):
+#   <base>                                       # song must already have
+#                                                  metadata.json OR source.wav
+#   <base> <youtube_url>                         # if STEMS/<base>/metadata.json
+#                                                  is missing, the URL is used to
+#                                                  drop a webloc into
+#                                                  INCOMING_WEBLOC/ so the
+#                                                  Librarian ingests it before
+#                                                  the re-stem fires
+# Lines starting with '#' and blank lines are ignored. Tab or whitespace
+# separates the base from the URL.
 #
 # Tunables (env or top of file):
 #   PORTAL=http://localhost:3000      where /api/* lives
@@ -78,6 +87,7 @@ extract_source_url() {
 
 ensure_source_wav() {
   local base="$1"
+  local fallback_url="${2:-}"
   local song_dir="$STEMS_DIR/$base"
   local source_wav="$song_dir/source.wav"
   local meta="$song_dir/metadata.json"
@@ -86,16 +96,20 @@ ensure_source_wav() {
     return 0
   fi
 
-  if [[ ! -f "$meta" ]]; then
-    log "  no metadata.json at $meta — can't determine source URL; skipping"
-    return 1
+  local url=""
+  if [[ -f "$meta" ]]; then
+    url="$(extract_source_url "$meta")"
   fi
 
-  local url
-  url="$(extract_source_url "$meta")"
   if [[ -z "$url" || "$url" == "null" ]]; then
-    log "  metadata.json has no source_url; can't auto-fetch; skipping"
-    return 1
+    if [[ -n "$fallback_url" ]]; then
+      url="$fallback_url"
+      log "  no metadata.json / source_url; using URL from input line"
+    else
+      log "  no metadata.json or source_url, and no URL in input line; skipping"
+      log "  (add URL on the same line as the base, e.g. '$base https://www.youtube.com/watch?v=...')"
+      return 1
+    fi
   fi
 
   log "  source.wav missing; queueing Librarian ingest from $url"
@@ -154,8 +168,10 @@ verify_outputs() {
 }
 
 process_one() {
-  local base="$1" t0 elapsed lock_state http_status body
-  log "▶ $base"
+  local base="$1"
+  local fallback_url="${2:-}"
+  local t0 elapsed lock_state http_status body
+  log "▶ $base${fallback_url:+ (fallback URL provided)}"
   t0=$(ms_now)
 
   local fetched_source=0
@@ -171,13 +187,13 @@ process_one() {
       log "  lock held by '$lock_state' — waiting ${POLL_INTERVAL}s"
       sleep "$POLL_INTERVAL"
       continue
-    elif [[ "$http_status" == "404" ]] && grep -q 'source.wav not found' <<<"$body"; then
+    elif [[ "$http_status" == "404" ]] && grep -q -e 'source.wav not found' -e 'song folder not found' <<<"$body"; then
       if (( fetched_source )); then
         log "  source.wav still missing after auto-fetch — giving up"
         return 5
       fi
       log "  source.wav missing on the Performer side; attempting auto-fetch"
-      if ensure_source_wav "$base"; then
+      if ensure_source_wav "$base" "$fallback_url"; then
         fetched_source=1
         continue
       else
@@ -255,12 +271,16 @@ main() {
     line="${line//$'\r'/}"
     line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -z "$line" ]] && continue
+
+    local base url
+    read -r base url <<<"$line"
+
     total=$(( total + 1 ))
-    if process_one "$line"; then
+    if process_one "$base" "$url"; then
       ok=$(( ok + 1 ))
     else
       fail=$(( fail + 1 ))
-      failed_bases+=( "$line" )
+      failed_bases+=( "$base" )
     fi
     log ""
   done < "$input"
