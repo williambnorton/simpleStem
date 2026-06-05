@@ -2737,11 +2737,16 @@ input:checked + .slider-round:before {
 .setlist-side-toggle i { width: 14px; height: 14px; }
 
 .setlist-side-mode {
-  width: 100%; display: flex; justify-content: flex-start; align-items: center; gap: 4px;
+  width: 100%; display: flex; justify-content: flex-start; align-items: center; gap: 6px;
   background: transparent; border: none; padding: 2px 0 8px;
   cursor: pointer;
 }
-.setlist-side-mode .sl-badge { font-size: 0.6rem; padding: 2px 7px; }
+.setlist-side-mode .sl-badge { font-size: 0.6rem; padding: 2px 7px; flex-shrink: 0; }
+.setlist-side-mode .setlist-side-name {
+  font-weight: 600; font-size: 0.85rem; color: var(--text-main);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; text-align: left;
+}
 .setlist-side-mode:hover { opacity: 0.8; }
 
 .setlist-side-songs {

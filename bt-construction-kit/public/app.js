@@ -416,6 +416,18 @@ function renderSidebarSetlist() {
       renderSidebarSetlist();
     });
   });
+  // Click a row anywhere outside the grip / × → load that song the same
+  // way a library row click does (preferred variant, no autoplay).
+  songsEl.querySelectorAll('.sls-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.sls-del') || e.target.closest('.sls-grip')) return;
+      const id = row.dataset.id;
+      const item = setlist.find(s => s.setlistItemId === id);
+      if (!item) return;
+      const merged = mergedLibrary.find(m => m.variants.some(v => v.id === item.id));
+      if (merged) loadSong(preferredPlayVariant(merged));
+    });
+  });
   attachSidebarDragHandlers(songsEl);
 
   if (window.lucide) lucide.createIcons();
@@ -729,6 +741,19 @@ function renderQueue(q) {
   renderStemProgress(q);
 }
 
+// Pick the variant a bare 'play this song' action should use. Default
+// preference for live + practice use is the -V-G m4a (vocals + guitar
+// dropped — the band's most-used mix). Fallbacks in descending usefulness.
+// Used by: library row click, inline play button on each row, sidebar
+// setlist song click. Format chips and the variant picker still load
+// their explicit variant.
+function preferredPlayVariant(merged) {
+  if (!merged || !merged.variants) return merged && merged.primary;
+  const byCode = code => merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
+  return byCode('-V-G') || byCode('-V-G-B') || byCode('-V') ||
+         byCode('FULL')  || merged.primary;
+}
+
 // Stemming progress bar (e.g. "Stemming 5/9").
 // /api/queue gives the CURRENT backlog (queued count) + whether one is
 // processing, but no fixed total. We derive a denominator client-side: when the
@@ -986,17 +1011,9 @@ function renderLibrary() {
       if (sect && sect.classList.contains('player-collapsed') && els.btnCollapsePlayer) {
         els.btnCollapsePlayer.click();
       }
-      // Fast-play decision:
-      //   - If STEMS are cached → play STEMS (instant, full mixer).
-      //   - Else, if a -V-G M4A exists → play that (one small file, plays now).
-      //   - Else fall back to primary.
-      const stems = merged.variants.find(v => v.type === 'stems');
-      const vgM4a = merged.variants.find(v => v.type === 'm4a' && v.variantCode === '-V-G');
-      let pick;
-      if (stems && stems.cached) pick = stems;
-      else if (vgM4a)            pick = vgM4a;
-      else                       pick = merged.primary;
-      loadSong(pick, { autoplay: true });
+      // Play button always plays the preferred variant (-V-G m4a) with
+      // autoplay. Row click does the same load WITHOUT autoplay.
+      loadSong(preferredPlayVariant(merged), { autoplay: true });
     });
 
     // Artist
@@ -1114,16 +1131,10 @@ function renderLibrary() {
     row.appendChild(formatCell);
     row.appendChild(actionCell);
 
-    // Row click default: prefer the -V-G m4a (vocals + guitar dropped — the
-    // band's most-used practice/perform mix). Fallbacks in order: -V-G-B,
-    // -V, FULL, then the merged primary (stems) if nothing else exists.
-    // Chips and the inline play button still load their specific variant.
-    row.addEventListener('click', () => {
-      const byCode = code => merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
-      const pick = byCode('-V-G') || byCode('-V-G-B') || byCode('-V') ||
-                   byCode('FULL') || primary;
-      loadSong(pick);
-    });
+    // Row click default: load the preferred variant (-V-G m4a usually) into
+    // the player WITHOUT autoplay — the user can hit play, drop it in a
+    // setlist, or click a different format chip from there.
+    row.addEventListener('click', () => loadSong(preferredPlayVariant(merged)));
 
     els.songListBody.appendChild(row);
   });

@@ -126,8 +126,7 @@
       <section class="setlist-side-panel rollup" id="setlist-rollup">
         <button class="rollup-header" id="setlist-rollup-header" aria-expanded="true" type="button">
           <i data-lucide="clipboard-list"></i>
-          <span class="rollup-title">Setlist:</span>
-          <span class="rollup-title-active" id="setlist-side-name">Untitled</span>
+          <span class="rollup-title">Setlist</span>
           <span class="rollup-count" id="setlist-side-count">0</span>
           <i data-lucide="chevron-down" class="rollup-caret"></i>
         </button>
@@ -137,9 +136,12 @@
             <i data-lucide="plus"></i> <span id="setlist-side-toggle-label">Add current song</span>
           </button>
 
-          <!-- Sync/manual badge — sync click opens YouTube playlist; manual click expands -->
-          <button class="setlist-side-mode" id="setlist-side-mode" type="button" title="Click to expand / open">
+          <!-- Sync/manual badge + the active setlist's name. YTSYNC click opens
+               the source YouTube playlist; MANUAL click is a no-op. Name stays
+               'Untitled' until the user types one in the create field below. -->
+          <button class="setlist-side-mode" id="setlist-side-mode" type="button" title="">
             <span class="sl-badge sl-manual">MANUAL</span>
+            <span class="setlist-side-name" id="setlist-side-name">Untitled</span>
           </button>
 
           <!-- Expanded song list (manual mode only) -->
