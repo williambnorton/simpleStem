@@ -287,9 +287,10 @@ function setupSidebarSetlistPanel() {
     const meta = getActiveSetlistMeta();
     if (meta.isSync && meta.url) {
       window.open(meta.url, '_blank', 'noopener');
-    } else {
-      songsEl.classList.toggle('expanded');
     }
+    // MANUAL is purely a label now — songs are always visible below; the
+    // click does nothing extra (the list doesn't collapse anymore because
+    // 'show me what I just added' is the right default).
   });
 
   // Filesystem-safe: ASCII alnum + space + _ - .; convert spaces to _ later
@@ -1113,8 +1114,16 @@ function renderLibrary() {
     row.appendChild(formatCell);
     row.appendChild(actionCell);
 
-    // Row click loads the primary (richest) variant
-    row.addEventListener('click', () => loadSong(primary));
+    // Row click default: prefer the -V-G m4a (vocals + guitar dropped — the
+    // band's most-used practice/perform mix). Fallbacks in order: -V-G-B,
+    // -V, FULL, then the merged primary (stems) if nothing else exists.
+    // Chips and the inline play button still load their specific variant.
+    row.addEventListener('click', () => {
+      const byCode = code => merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
+      const pick = byCode('-V-G') || byCode('-V-G-B') || byCode('-V') ||
+                   byCode('FULL') || primary;
+      loadSong(pick);
+    });
 
     els.songListBody.appendChild(row);
   });

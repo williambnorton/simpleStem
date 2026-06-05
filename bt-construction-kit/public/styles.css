@@ -2745,11 +2745,11 @@ input:checked + .slider-round:before {
 .setlist-side-mode:hover { opacity: 0.8; }
 
 .setlist-side-songs {
-  display: none; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px;
   max-height: 240px; overflow-y: auto;
   margin-bottom: 8px;
 }
-.setlist-side-songs.expanded { display: flex; }
+.setlist-side-songs:empty { display: none; }
 .sls-row {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px;
