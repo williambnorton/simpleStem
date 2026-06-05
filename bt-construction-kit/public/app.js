@@ -230,7 +230,10 @@ function setupRollups() {
   document.querySelectorAll('.rollup').forEach(roll => {
     const header = roll.querySelector('.rollup-header');
     if (!header) return;
-    const key = `simpleStem.rollup.${roll.id || header.textContent.trim()}`;
+    // v2 key — the v1 key persisted a stale 'closed' state for the setlist
+    // rollup so a returning user could end up with the panel hidden by
+    // default. Bumping the key resets to the documented defaults below.
+    const key = `simpleStem.rollup.v2.${roll.id || header.textContent.trim()}`;
     let stored = null;
     try { stored = localStorage.getItem(key); } catch (e) {}
     // Default: analytics collapsed (user asked for it), setlist expanded.
@@ -353,7 +356,6 @@ function renderSidebarSetlist() {
   const nameEl   = document.getElementById('setlist-side-name');
   const countEl  = document.getElementById('setlist-side-count');
   const toggleBtn = document.getElementById('setlist-side-toggle');
-  const toggleLabel = document.getElementById('setlist-side-toggle-label');
   const modeBtn = document.getElementById('setlist-side-mode');
   const songsEl = document.getElementById('setlist-side-songs');
   if (!nameEl || !countEl || !toggleBtn || !modeBtn || !songsEl) return;
@@ -362,19 +364,27 @@ function renderSidebarSetlist() {
   nameEl.textContent = meta.name;
   countEl.textContent = setlist.length;
 
-  // Toggle button reflects current song's membership in active setlist
+  // Toggle button reflects current song's membership in active setlist.
+  // Rebuild innerHTML each render rather than mutating in place — lucide
+  // swaps <i data-lucide> for <svg> on first paint, so a subsequent
+  // querySelector('i') returns null and setAttribute throws.
+  let iconName, labelText, isRemove, disabled;
   if (!currentSong) {
-    toggleBtn.disabled = true;
-    toggleBtn.classList.remove('remove');
-    toggleLabel.textContent = 'Load a song first';
-    toggleBtn.querySelector('i').setAttribute('data-lucide', 'plus');
+    iconName = 'plus';
+    labelText = 'Load a song first';
+    isRemove = false;
+    disabled = true;
   } else {
-    toggleBtn.disabled = false;
     const inSetlist = setlist.some(item => item.id === currentSong.id);
-    toggleBtn.classList.toggle('remove', inSetlist);
-    toggleLabel.textContent = inSetlist ? 'Remove current song' : 'Add current song';
-    toggleBtn.querySelector('i').setAttribute('data-lucide', inSetlist ? 'minus' : 'plus');
+    iconName = inSetlist ? 'minus' : 'plus';
+    labelText = inSetlist ? 'Remove current song' : 'Add current song';
+    isRemove = inSetlist;
+    disabled = false;
   }
+  toggleBtn.disabled = disabled;
+  toggleBtn.classList.toggle('remove', isRemove);
+  toggleBtn.innerHTML =
+    `<i data-lucide="${iconName}"></i> <span id="setlist-side-toggle-label">${labelText}</span>`;
 
   // Mode badge: YTSYNC (red) for synced playlists, MANUAL (yellow) otherwise
   const badge = modeBtn.querySelector('.sl-badge');
