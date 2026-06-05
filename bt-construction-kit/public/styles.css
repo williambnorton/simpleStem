@@ -802,12 +802,15 @@ select {
   color: var(--text-main);
 }
 
-/* Stats panel */
+/* Stats panel — used to have flex: 1 to push the sidebar footer down, but
+   that interacts badly with the new collapsible rollups (an empty/collapsed
+   analytics panel still grew to fill the column, shoving the Setlist rollup
+   off-screen). The .sidebar-footer { margin-top: auto } already pushes the
+   footer to the bottom without needing flex: 1 here. */
 .stats-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  flex: 1;
 }
 
 .panel-title {
