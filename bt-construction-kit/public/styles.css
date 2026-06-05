@@ -2794,6 +2794,28 @@ input:checked + .slider-round:before {
   padding: 6px 4px; text-align: center;
 }
 
+/* Ghost preview row — only shown in the ACTIVE setlist while a song is
+   loaded but not yet added. Muted text shows 'this song would land here';
+   the prominent green + makes the next gesture obvious. Dashed border
+   reinforces 'not committed yet'. */
+.sls-row.sls-ghost {
+  background: rgba(46, 204, 113, 0.04);
+  border: 1px dashed rgba(46, 139, 87, 0.45);
+}
+.sls-ghost-title { color: var(--text-dim); font-style: italic; }
+.sls-ghost-artist { color: var(--text-dim); font-style: italic; }
+.sls-add-ghost {
+  background: var(--color-green); color: #fff;
+  border: 1px solid #2e8b57; border-radius: 6px;
+  width: 26px; height: 22px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.45);
+  transition: var(--transition-smooth);
+}
+.sls-add-ghost:hover { background: #27a25b; transform: scale(1.05); }
+.sls-add-ghost i { width: 12px; height: 12px; }
+
 /* ===== Setlist side panel (sits below Library Analytics in sidebar) ===== */
 .setlist-side-toggle {
   width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px;

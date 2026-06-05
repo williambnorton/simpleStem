@@ -546,6 +546,34 @@ function renderOneGigSetlist(sl, idx) {
     });
     songsEl.appendChild(row);
   });
+
+  // Ghost preview slot — only on the ACTIVE setlist, only when there's a
+  // current song that isn't already in this setlist. Greyed out, with a
+  // bright green + so the user sees exactly what would happen if they
+  // confirmed: 'this song would land here'.
+  if (idx === activeSetlistIdx && currentSong) {
+    const previewBase = songBaseOf(currentSong);
+    const alreadyIn = previewBase && sl.songs.some(s => s.song_base === previewBase);
+    if (previewBase && !alreadyIn) {
+      const ghost = document.createElement('div');
+      ghost.className = 'sls-row sls-ghost';
+      ghost.innerHTML = `
+        <span class="sls-grip" style="visibility:hidden;">⋮⋮</span>
+        <span class="sls-title sls-ghost-title" title="Click + to add — '${escapeHtml(currentSong.title)}'">${escapeHtml(currentSong.title)}</span>
+        <span class="sls-artist sls-ghost-artist">${escapeHtml(currentSong.artist || '')}</span>
+        <button class="sls-add-ghost" title="Add the currently loaded song to this setlist"><i data-lucide="plus"></i></button>
+      `;
+      ghost.querySelector('.sls-add-ghost').addEventListener('click', e => {
+        e.stopPropagation();
+        sl.songs.push({ song_base: previewBase });
+        renderGigSidebar();
+        scheduleGigSave();
+      });
+      // Clicking elsewhere on the ghost row does nothing (no song loaded here yet)
+      songsEl.appendChild(ghost);
+    }
+  }
+
   body.appendChild(songsEl);
 
   attachGigDragHandlers(wrap, songsEl);
