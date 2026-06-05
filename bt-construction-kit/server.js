@@ -1131,11 +1131,21 @@ app.get('/api/setlists', (req, res) => {
       if (!f.endsWith('.json') || f === 'registry.json') continue;
       try {
         const d = JSON.parse(fs.readFileSync(path.join(SETLISTS_DIR, f), 'utf8'));
+        // Cache-ready count: how many of this setlist's songs have a fully
+        // cached stems folder on local disk. Drives the 'ready/total' badge
+        // in the saved-setlists panel so the user can see at a glance which
+        // setlists are gig-safe (no Drive fetches needed).
+        const songBases = Array.isArray(d.songs) ? d.songs.map(s => s.song_base).filter(Boolean) : [];
+        let cachedCount = 0;
+        for (const b of songBases) {
+          if (isStemsFolderCached(b)) cachedCount++;
+        }
         out.push({
           slug: f.replace(/\.json$/i, ''),
           title: d.title || f.replace(/\.json$/i, ''),
           origin: d.origin || 'manual',
           count: Array.isArray(d.songs) ? d.songs.length : (d.count || 0),
+          cached_count: cachedCount,
           synced_at: d.synced_at || d.created_at || null,
           source_url: d.source_url || null,
         });

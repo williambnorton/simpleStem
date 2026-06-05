@@ -201,6 +201,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupMasterVolume();
   setupTabs();
   setupDrumLoopsTab();
+  setupGigMode();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -218,6 +219,35 @@ window.addEventListener('DOMContentLoaded', () => {
     ae.addEventListener('stalled', () => console.log(`[audio:${chan}] stalled`));
   });
 });
+
+// ── Gig Mode ──────────────────────────────────────────────────────────────
+// A header toggle the user flips before walking on stage. While on:
+//   - the body gets `class="gig-mode"`; CSS then hides every chip that
+//     isn't .chip-cached so the user literally can't click anything that
+//     would stall on a Drive fetch
+//   - song rows with zero cached variants are marked `.gig-uncached` and
+//     hidden too — the library shrinks to just what's safe to play
+//   - the toggle glows red so you can't forget you're in stage mode
+// Persisted in localStorage so a server restart doesn't reset stage state.
+function setupGigMode() {
+  const btn = document.getElementById('btn-gig-mode');
+  if (!btn) return;
+  const apply = (on) => {
+    document.body.classList.toggle('gig-mode', on);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    try { localStorage.setItem('simpleStem.gigMode', on ? '1' : '0'); } catch (e) {}
+    // Re-render the library so per-row .gig-uncached classes get
+    // applied/cleared based on current cache state.
+    if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
+      renderSongList();
+    }
+  };
+  btn.addEventListener('click', () => apply(!document.body.classList.contains('gig-mode')));
+  let initial = false;
+  try { initial = localStorage.getItem('simpleStem.gigMode') === '1'; } catch (e) {}
+  apply(initial);
+}
 
 // ── Tab system ────────────────────────────────────────────────────────────
 // One docked player at top + three swappable tabs below: Library / Setlist /
@@ -680,7 +710,12 @@ function renderLibrary() {
     const primary = merged.primary;
     const row = document.createElement('div');
     const isActive = currentSong && merged.variants.some(v => v.id === currentSong.id);
-    row.className = `song-row ${isActive ? 'active' : ''}`;
+    // Gig-uncached: zero cached variants on this song (and no drum loops, since
+    // those are tiny and play instantly anyway). When body.gig-mode is on, CSS
+    // hides these rows entirely so the user can't accidentally click a song
+    // that would stall mid-song trying to stream from Drive.
+    const hasCachedVariant = merged.variants.some(v => v.cached);
+    row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'}`;
     row.dataset.id = merged.id;
 
     // Setlist checkbox (toggles the primary variant)
@@ -777,9 +812,13 @@ function renderLibrary() {
       const cachedCls = v.cached ? ' chip-cached' : '';
       const activeCls = currentSong && currentSong.id === v.id ? ' chip-active' : '';
       chip.className = `format-chip ${isStems ? 'chip-stems' : 'chip-m4a'}${cachedCls}${activeCls}`;
-      chip.title = `${v.variantLabel}${v.cached ? ' — cached, instant play' : ''} — click to play`;
+      chip.title = v.cached
+        ? `${v.variantLabel} — cached, plays instantly`
+        : `${v.variantLabel} — NOT cached; click will fetch from Drive (may spin during gig)`;
       chip.dataset.variantId = v.id;
-      const icon = isStems ? 'sliders' : 'music-4';
+      // Icon doubles as a cache-state signal: play = ready, download = will
+      // fetch. STEMS keeps its slider icon since it's a multi-file variant.
+      const icon = isStems ? 'sliders' : (v.cached ? 'play' : 'download');
       const label = isStems ? 'STEMS' : v.variantCode;
       chip.innerHTML = `<i data-lucide="${icon}" style="width:10px;height:10px;"></i> ${label}`;
       chip.addEventListener('click', e => {
@@ -1298,11 +1337,14 @@ function renderVariantPicker(currentVariant) {
   merged.variants.forEach(v => {
     const btn = document.createElement('button');
     const isStems = v.type === 'stems';
-    btn.className = `variant-chip ${isStems ? 'chip-stems' : 'chip-m4a'} ${v.id === currentVariant.id ? 'chip-active' : ''}`;
-    const icon = isStems ? 'sliders' : 'music-4';
+    const cachedCls = v.cached ? 'chip-cached' : '';
+    btn.className = `variant-chip ${isStems ? 'chip-stems' : 'chip-m4a'} ${cachedCls} ${v.id === currentVariant.id ? 'chip-active' : ''}`;
+    const icon = isStems ? 'sliders' : (v.cached ? 'play' : 'download');
     const code = isStems ? 'STEMS' : v.variantCode;
     btn.innerHTML = `<i data-lucide="${icon}" style="width:12px;height:12px;"></i> ${code}`;
-    btn.title = v.variantLabel;
+    btn.title = v.cached
+      ? `${v.variantLabel} — cached, plays instantly`
+      : `${v.variantLabel} — NOT cached; click will fetch from Drive`;
     btn.addEventListener('click', () => loadSong(v));
     chipsEl.appendChild(btn);
   });
@@ -1897,10 +1939,24 @@ async function loadSetlistsList() {
       // (deleting one would just re-sync on the next pass — own the source instead).
       const deleteBtn = isPlaylist ? '' :
         '<button class="sl-delete-btn" title="Delete this SetList" aria-label="Delete">×</button>';
+      // Gig-readiness badge: how many of this setlist's songs are fully
+      // cached locally. All-cached → solid green check. Partial → yellow
+      // 'X/N' counter. None → grey 'N' so the user knows to either save
+      // it (auto-precache fires on save) or hit the refresh button.
+      const total = sl.count;
+      const ready = sl.cached_count || 0;
+      let cacheBadge;
+      if (total === 0) {
+        cacheBadge = `<span class="sl-cache sl-cache-empty" title="No songs in this SetList">0</span>`;
+      } else if (ready >= total) {
+        cacheBadge = `<span class="sl-cache sl-cache-ready" title="All ${total} songs cached locally — gig-safe">✓ ${total}</span>`;
+      } else {
+        cacheBadge = `<span class="sl-cache sl-cache-partial" title="${ready} of ${total} songs cached; rest will fetch from Drive">${ready}/${total}</span>`;
+      }
       row.innerHTML =
-        `<button class="sl-load-btn" title="Load &quot;${escapeHtml(sl.title)}&quot; (${sl.count} songs) into the planner">` +
+        `<button class="sl-load-btn" title="Load &quot;${escapeHtml(sl.title)}&quot; (${total} songs; ${ready} cached) into the planner">` +
         `${badge}<span class="sl-title">${escapeHtml(sl.title)}</span>` +
-        `<span class="sl-count">${sl.count}</span>` +
+        `${cacheBadge}` +
         `</button>${deleteBtn}`;
       row.querySelector('.sl-load-btn').addEventListener('click', () => loadSetlistIntoPlanner(sl.slug));
       const delEl = row.querySelector('.sl-delete-btn');
@@ -2006,7 +2062,21 @@ async function saveCurrentSetlist() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'save failed');
+    // Auto-precache: a saved setlist is by definition the songs you intend
+    // to play, so warm ~/.bt-cache for all of them in the background. The
+    // server returns immediately and copies async; loadSetlistsList polling
+    // below picks up the cached_count growing.
+    fetch(`/api/precache/setlist/${encodeURIComponent(data.slug)}`, { method: 'POST' })
+      .catch(() => { /* best-effort; UI keeps polling */ });
     loadSetlistsList();
+    // Re-poll the setlists list a few times so the cached_count counter
+    // visibly catches up while precache runs (~30s on a typical setlist).
+    let polls = 0;
+    const pollTimer = setInterval(() => {
+      polls++;
+      loadSetlistsList();
+      if (polls >= 6) clearInterval(pollTimer);
+    }, 10000);
   } catch (e) {
     alert(`Couldn't save: ${e.message}`);
   }
