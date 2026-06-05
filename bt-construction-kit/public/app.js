@@ -203,7 +203,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupDrumLoopsTab();
   setupGigMode();
   setupRollups();
-  setupSidebarSetlistPanel();
+  setupGigSidebar();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -250,12 +250,404 @@ function setupRollups() {
   });
 }
 
-// ── Sidebar setlist panel ─────────────────────────────────────────────────
-// Quick-access setlist controls in the left sidebar. Mirrors the active
-// `setlist` array used by the existing planner — adds/removes go through
-// addToSetlist / removeFromSetlist so the planner tab stays in sync.
+// ── Sidebar gig hierarchy ─────────────────────────────────────────────────
+// A gig is the unit you plan for: title + 1-4 setlists, each setlist is
+// title + ordered songs[]. Sidebar shows ONE active gig; the picker switches
+// between gigs; duplicate copies a gig (with its setlists) to start a new
+// one. All mutations debounce-save to /api/gigs/:slug so reloads pick up
+// where you left off.
+//
+// Drag model: drag a song row out of one setlist body and drop it on
+// another setlist (header or body) to MOVE it; hold Alt while dropping
+// to COPY (same song base, new setlistItemId). Drop inside the same
+// setlist to reorder.
+
+let activeGig = null;             // { slug, title, setlists: [...] } — live edited
+let activeSetlistIdx = 0;          // which setlist the bare 'Add current song' +/- adds to
+let gigSaveTimer = null;
+
+const GIG_ACTIVE_SLUG_KEY = 'simpleStem.activeGigSlug';
+
+function setupGigSidebar() {
+  document.getElementById('gig-new-btn').addEventListener('click', onGigNew);
+  document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
+  document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
+  document.getElementById('gig-picker').addEventListener('change', e => {
+    if (e.target.value) loadActiveGig(e.target.value);
+  });
+  document.getElementById('gig-add-setlist-btn').addEventListener('click', () => {
+    if (!activeGig || activeGig.setlists.length >= 4) return;
+    activeGig.setlists.push({ title: `Set ${activeGig.setlists.length + 1}`, songs: [] });
+    renderGigSidebar();
+    scheduleGigSave();
+  });
+
+  refreshGigList().then(initialSlug => {
+    if (initialSlug) loadActiveGig(initialSlug);
+    else renderGigSidebar();
+  });
+}
+
+// Fetch /api/gigs and populate the picker. Returns the slug to load on init
+// (last-used from localStorage if it still exists, else the most-recently-
+// updated one, else null).
+async function refreshGigList() {
+  const picker = document.getElementById('gig-picker');
+  try {
+    const res = await fetch('/api/gigs');
+    const data = await res.json();
+    const gigs = data.gigs || [];
+    picker.innerHTML = gigs.length
+      ? gigs.map(g => `<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`).join('')
+      : '<option value="">— no gigs yet —</option>';
+    let initial = null;
+    try { initial = localStorage.getItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
+    if (initial && gigs.some(g => g.slug === initial)) {
+      picker.value = initial;
+    } else if (gigs.length) {
+      picker.value = gigs[0].slug;
+      initial = gigs[0].slug;
+    } else {
+      initial = null;
+    }
+    return initial;
+  } catch (e) {
+    picker.innerHTML = '<option value="">(error)</option>';
+    return null;
+  }
+}
+
+async function loadActiveGig(slug) {
+  if (!slug) { activeGig = null; renderGigSidebar(); return; }
+  try {
+    const res = await fetch(`/api/gigs/${encodeURIComponent(slug)}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'load failed');
+    activeGig = await res.json();
+    if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
+      activeGig.setlists = [{ title: 'Set 1', songs: [] }];
+    }
+    activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
+    try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
+    renderGigSidebar();
+  } catch (e) {
+    alert(`Couldn't load gig: ${e.message}`);
+    activeGig = null;
+    renderGigSidebar();
+  }
+}
+
+async function onGigNew() {
+  const title = prompt('Name this new gig:');
+  if (!title || !title.trim()) return;
+  try {
+    const res = await fetch('/api/gigs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), setlists: [{ title: 'Set 1', songs: [] }] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'create failed');
+    await refreshGigList();
+    document.getElementById('gig-picker').value = data.slug;
+    loadActiveGig(data.slug);
+  } catch (e) { alert(`Couldn't create gig: ${e.message}`); }
+}
+
+async function onGigDuplicate() {
+  if (!activeGig || !activeGig.slug) return;
+  const newTitle = prompt('Name the duplicated gig:', `${activeGig.title} (copy)`);
+  if (!newTitle || !newTitle.trim()) return;
+  try {
+    const res = await fetch(`/api/gigs/${encodeURIComponent(activeGig.slug)}/duplicate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newTitle: newTitle.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'duplicate failed');
+    await refreshGigList();
+    document.getElementById('gig-picker').value = data.slug;
+    loadActiveGig(data.slug);
+  } catch (e) { alert(`Couldn't duplicate: ${e.message}`); }
+}
+
+async function onGigDelete() {
+  if (!activeGig || !activeGig.slug) return;
+  if (!confirm(`Delete the gig "${activeGig.title}"? Its setlists go too.`)) return;
+  try {
+    const res = await fetch(`/api/gigs/${encodeURIComponent(activeGig.slug)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error || 'delete failed');
+    try { localStorage.removeItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
+    activeGig = null;
+    const initial = await refreshGigList();
+    if (initial) loadActiveGig(initial);
+    else renderGigSidebar();
+  } catch (e) { alert(`Couldn't delete: ${e.message}`); }
+}
+
+function scheduleGigSave() {
+  if (!activeGig || !activeGig.slug) return;
+  if (gigSaveTimer) clearTimeout(gigSaveTimer);
+  gigSaveTimer = setTimeout(persistActiveGig, 600);
+}
+
+async function persistActiveGig() {
+  if (!activeGig || !activeGig.slug) return;
+  try {
+    const res = await fetch(`/api/gigs/${encodeURIComponent(activeGig.slug)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: activeGig.title, setlists: activeGig.setlists }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'save failed');
+    if (data.renamed_from) {
+      // Slug changed (title was edited). Re-fetch the list + update the picker.
+      activeGig.slug = data.slug;
+      try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, data.slug); } catch (e) {}
+      await refreshGigList();
+      document.getElementById('gig-picker').value = data.slug;
+    }
+  } catch (e) {
+    console.warn('[gig save]', e.message);
+  }
+}
+
+function renderGigSidebar() {
+  const nameEl = document.getElementById('gig-side-name');
+  const countEl = document.getElementById('gig-side-count');
+  const setlistsEl = document.getElementById('gig-setlists');
+  const addBtn = document.getElementById('gig-add-setlist-btn');
+  const dupBtn = document.getElementById('gig-dup-btn');
+  const delBtn = document.getElementById('gig-del-btn');
+  if (!nameEl || !setlistsEl) return;
+
+  if (!activeGig) {
+    nameEl.textContent = 'Untitled';
+    countEl.textContent = '0';
+    setlistsEl.innerHTML = '<div class="setlist-side-hint">No gig loaded. Hit + to create one.</div>';
+    addBtn.disabled = true;
+    dupBtn.disabled = true;
+    delBtn.disabled = true;
+    return;
+  }
+
+  nameEl.textContent = activeGig.title;
+  countEl.textContent = activeGig.setlists.length;
+  dupBtn.disabled = false;
+  delBtn.disabled = false;
+  addBtn.disabled = activeGig.setlists.length >= 4;
+
+  setlistsEl.innerHTML = '';
+  activeGig.setlists.forEach((sl, idx) => {
+    const node = renderOneGigSetlist(sl, idx);
+    setlistsEl.appendChild(node);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderOneGigSetlist(sl, idx) {
+  const open = idx === activeSetlistIdx;
+  const wrap = document.createElement('div');
+  wrap.className = 'gig-setlist';
+  wrap.dataset.setlistIdx = String(idx);
+  wrap.dataset.open = open ? 'true' : 'false';
+
+  const head = document.createElement('div');
+  head.className = 'gig-setlist-head';
+  head.innerHTML = `
+    <i data-lucide="list-music" style="width:14px;height:14px;"></i>
+    <input class="gig-setlist-title-input" type="text" value="${escapeHtml(sl.title)}" maxlength="40" />
+    <span class="gig-setlist-count">${sl.songs.length}</span>
+    <button class="gig-setlist-del" title="Remove this setlist from the gig">×</button>
+    <i data-lucide="chevron-down" class="gig-setlist-caret" style="width:14px;height:14px;"></i>
+  `;
+  head.addEventListener('click', e => {
+    if (e.target.closest('.gig-setlist-title-input') || e.target.closest('.gig-setlist-del')) return;
+    activeSetlistIdx = idx;
+    wrap.dataset.open = wrap.dataset.open === 'true' ? 'false' : 'true';
+  });
+  const titleInput = head.querySelector('.gig-setlist-title-input');
+  titleInput.addEventListener('input', e => {
+    sl.title = e.target.value;
+    scheduleGigSave();
+  });
+  titleInput.addEventListener('click', e => e.stopPropagation());
+  head.querySelector('.gig-setlist-del').addEventListener('click', e => {
+    e.stopPropagation();
+    if (activeGig.setlists.length <= 1) {
+      alert("Can't delete the only setlist in the gig.");
+      return;
+    }
+    if (!confirm(`Remove "${sl.title}" from the gig?`)) return;
+    activeGig.setlists.splice(idx, 1);
+    if (activeSetlistIdx >= activeGig.setlists.length) activeSetlistIdx = activeGig.setlists.length - 1;
+    renderGigSidebar();
+    scheduleGigSave();
+  });
+
+  const body = document.createElement('div');
+  body.className = 'gig-setlist-body';
+
+  // +/- toggle for current song relative to THIS setlist
+  const toggle = document.createElement('button');
+  toggle.className = 'gig-setlist-toggle';
+  const inThis = currentSong && sl.songs.some(s => s.song_base === songBaseOf(currentSong));
+  if (!currentSong) {
+    toggle.disabled = true;
+    toggle.innerHTML = '<i data-lucide="plus"></i> <span>Load a song to add</span>';
+  } else if (inThis) {
+    toggle.classList.add('remove');
+    toggle.innerHTML = `<i data-lucide="minus"></i> <span>Remove from "${escapeHtml(sl.title)}"</span>`;
+  } else {
+    toggle.innerHTML = `<i data-lucide="plus"></i> <span>Add to "${escapeHtml(sl.title)}"</span>`;
+  }
+  toggle.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!currentSong) return;
+    const base = songBaseOf(currentSong);
+    if (!base) { alert('This song has no stems folder yet, so it has no song_base to track.'); return; }
+    activeSetlistIdx = idx;
+    const at = sl.songs.findIndex(s => s.song_base === base);
+    if (at >= 0) sl.songs.splice(at, 1);
+    else sl.songs.push({ song_base: base });
+    renderGigSidebar();
+    scheduleGigSave();
+  });
+  body.appendChild(toggle);
+
+  // Songs list
+  const songsEl = document.createElement('div');
+  songsEl.className = 'gig-setlist-songs';
+  sl.songs.forEach((s, songIdx) => {
+    const merged = mergedLibrary.find(m => {
+      const sv = m.variants.find(v => v.type === 'stems');
+      return sv && sv.folderName === s.song_base;
+    });
+    const title = (merged && merged.title) || s.song_base.replace(/_/g, ' ');
+    const artist = (merged && merged.artist) || '';
+    const row = document.createElement('div');
+    row.className = 'sls-row';
+    row.draggable = true;
+    row.dataset.setlistIdx = String(idx);
+    row.dataset.songIdx = String(songIdx);
+    row.innerHTML = `
+      <span class="sls-grip">⋮⋮</span>
+      <span class="sls-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+      <span class="sls-artist">${escapeHtml(artist)}</span>
+      <button class="sls-del" title="Remove from setlist">×</button>
+    `;
+    row.querySelector('.sls-del').addEventListener('click', e => {
+      e.stopPropagation();
+      sl.songs.splice(songIdx, 1);
+      renderGigSidebar();
+      scheduleGigSave();
+    });
+    row.addEventListener('click', e => {
+      if (e.target.closest('.sls-del') || e.target.closest('.sls-grip')) return;
+      if (merged) loadSong(preferredPlayVariant(merged));
+    });
+    songsEl.appendChild(row);
+  });
+  body.appendChild(songsEl);
+
+  attachGigDragHandlers(wrap, songsEl);
+
+  wrap.appendChild(head);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function songBaseOf(song) {
+  // If this song is itself a stems variant, use its folderName.
+  if (song && song.folderName) return song.folderName;
+  // Else find the merged record and use the stems variant's folderName.
+  const merged = mergedLibrary.find(m => m.variants.some(v => v.id === song.id));
+  if (!merged) return null;
+  const sv = merged.variants.find(v => v.type === 'stems');
+  return (sv && sv.folderName) || null;
+}
+
+// Drag-between setlists in the same gig.
+// - Drag a .sls-row: dragstart sets payload {fromSetlist, fromSongIdx}.
+// - Drop on a .gig-setlist: append the dragged song there (or insert at
+//   computed position if dropped on a row). Alt held → copy instead of move.
+function attachGigDragHandlers(wrap, songsEl) {
+  songsEl.querySelectorAll('.sls-row').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      const payload = {
+        fromSetlist: Number(row.dataset.setlistIdx),
+        fromSong:    Number(row.dataset.songIdx),
+      };
+      e.dataTransfer.setData('application/x-simpleStem-song', JSON.stringify(payload));
+      e.dataTransfer.effectAllowed = 'copyMove';
+      row.classList.add('sls-drag');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('sls-drag'));
+  });
+
+  wrap.addEventListener('dragover', e => {
+    if (!hasOurPayload(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+    wrap.dataset.dropTarget = 'true';
+  });
+  wrap.addEventListener('dragleave', e => {
+    if (e.target === wrap) wrap.dataset.dropTarget = 'false';
+  });
+  wrap.addEventListener('drop', e => {
+    if (!hasOurPayload(e)) return;
+    e.preventDefault();
+    wrap.dataset.dropTarget = 'false';
+    let payload;
+    try { payload = JSON.parse(e.dataTransfer.getData('application/x-simpleStem-song')); }
+    catch (err) { return; }
+    if (!activeGig) return;
+    const fromSl = activeGig.setlists[payload.fromSetlist];
+    if (!fromSl) return;
+    const moved = fromSl.songs[payload.fromSong];
+    if (!moved) return;
+    const toIdx = Number(wrap.dataset.setlistIdx);
+    const toSl = activeGig.setlists[toIdx];
+    if (!toSl) return;
+
+    // Insert position: drop near a row → before that row; otherwise append
+    const targetRow = e.target.closest && e.target.closest('.sls-row');
+    let insertAt = toSl.songs.length;
+    if (targetRow && targetRow.parentElement === wrap.querySelector('.gig-setlist-songs')) {
+      insertAt = Number(targetRow.dataset.songIdx);
+      const rect = targetRow.getBoundingClientRect();
+      if (e.clientY > rect.top + rect.height / 2) insertAt += 1;
+    }
+
+    if (e.altKey) {
+      // copy: leave the source alone, insert a new reference
+      toSl.songs.splice(insertAt, 0, { song_base: moved.song_base });
+    } else if (payload.fromSetlist === toIdx) {
+      // reorder within same setlist
+      fromSl.songs.splice(payload.fromSong, 1);
+      const adj = insertAt > payload.fromSong ? insertAt - 1 : insertAt;
+      fromSl.songs.splice(adj, 0, moved);
+    } else {
+      // move across setlists
+      fromSl.songs.splice(payload.fromSong, 1);
+      toSl.songs.splice(insertAt, 0, moved);
+    }
+    renderGigSidebar();
+    scheduleGigSave();
+  });
+}
+
+function hasOurPayload(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('application/x-simpleStem-song');
+}
+
+// Stub: legacy code calls renderSidebarSetlist / _cacheSavedSetlistMeta;
+// keep them as no-ops so the call sites don't crash. The Setlist tab
+// continues to use the old flat 'setlist' planner independently.
+function renderSidebarSetlist() { renderGigSidebar(); }
+function _cacheSavedSetlistMeta() { /* gig sidebar doesn't depend on flat setlists */ }
+
 const SIDEBAR_SETLIST_NAME_KEY = 'simpleStem.activeSetlistName';
 
+// Legacy sidebar bootstrap kept as a no-op; superseded by setupGigSidebar.
 function setupSidebarSetlistPanel() {
   const toggleBtn = document.getElementById('setlist-side-toggle');
   const modeBtn = document.getElementById('setlist-side-mode');

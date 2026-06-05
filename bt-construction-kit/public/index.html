@@ -122,39 +122,36 @@
         </div><!-- /rollup-body -->
       </section>
 
-      <!-- Setlist rollup — quick management of the active setlist -->
-      <section class="setlist-side-panel rollup" id="setlist-rollup">
-        <button class="rollup-header" id="setlist-rollup-header" aria-expanded="true" type="button">
-          <i data-lucide="clipboard-list"></i>
-          <span class="rollup-title">Setlist</span>
-          <span class="rollup-count" id="setlist-side-count">0</span>
+      <!-- Gig rollup — the unit you actually plan for. A gig contains 1-4
+           setlists (rendered as nested rollups inside this one). Sidebar
+           shows ONLY the active gig — not every gig you've ever made.
+           Switch between gigs via the picker, duplicate the whole gig
+           to start a new one with the same songs. -->
+      <section class="gig-side-panel rollup" id="gig-rollup">
+        <button class="rollup-header" id="gig-rollup-header" aria-expanded="true" type="button">
+          <i data-lucide="calendar-clock"></i>
+          <span class="rollup-title">Gig:</span>
+          <span class="rollup-title-active" id="gig-side-name">Untitled</span>
+          <span class="rollup-count" id="gig-side-count">0</span>
           <i data-lucide="chevron-down" class="rollup-caret"></i>
         </button>
         <div class="rollup-body">
-          <!-- +/- to toggle current song's membership in the active setlist -->
-          <button id="setlist-side-toggle" class="setlist-side-toggle" title="Add the currently loaded song to this setlist" disabled>
-            <i data-lucide="plus"></i> <span id="setlist-side-toggle-label">Add current song</span>
-          </button>
-
-          <!-- Sync/manual badge + the active setlist's name. YTSYNC click opens
-               the source YouTube playlist; MANUAL click is a no-op. Name stays
-               'Untitled' until the user types one in the create field below. -->
-          <button class="setlist-side-mode" id="setlist-side-mode" type="button" title="">
-            <span class="sl-badge sl-manual">MANUAL</span>
-            <span class="setlist-side-name" id="setlist-side-name">Untitled</span>
-          </button>
-
-          <!-- Expanded song list (manual mode only) -->
-          <div class="setlist-side-songs" id="setlist-side-songs"></div>
-
-          <!-- Create-new-setlist control: typing a name then '+' activates it -->
-          <div class="setlist-side-create">
-            <input type="text" id="setlist-side-new" class="glass-input" placeholder="New setlist name…" maxlength="60" autocomplete="off">
-            <button id="setlist-side-new-btn" class="filter-btn" title="Activate this name as a new setlist" disabled>
-              <i data-lucide="plus"></i>
-            </button>
+          <!-- Gig controls: switch / new / duplicate / delete -->
+          <div class="gig-side-controls">
+            <select id="gig-picker" class="glass-select" title="Switch to a different gig"></select>
+            <button id="gig-new-btn" class="btn-icon" title="Create a new gig"><i data-lucide="plus"></i></button>
+            <button id="gig-dup-btn" class="btn-icon" title="Duplicate this gig (copies all setlists)"><i data-lucide="copy"></i></button>
+            <button id="gig-del-btn" class="btn-icon" title="Delete this gig" disabled><i data-lucide="trash-2"></i></button>
           </div>
-          <div class="setlist-side-hint" id="setlist-side-hint"></div>
+
+          <!-- Setlists (1-4) live here; each is a nested .gig-setlist rollup -->
+          <div id="gig-setlists" class="gig-setlists"></div>
+
+          <!-- Add a new setlist to this gig (disabled when already at 4) -->
+          <button id="gig-add-setlist-btn" class="setlist-side-toggle" disabled>
+            <i data-lucide="plus"></i> <span>Add a setlist (max 4)</span>
+          </button>
+          <div class="setlist-side-hint" id="gig-side-hint"></div>
         </div>
       </section>
 

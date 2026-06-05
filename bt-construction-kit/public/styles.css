@@ -2719,6 +2719,81 @@ input:checked + .slider-round:before {
 .rollup-body { padding: 4px 2px 0; }
 .rollup[data-collapsed="true"] .rollup-body { display: none; }
 
+/* ===== Gig side panel (sits below Library Analytics in sidebar) =====
+   Replaces the single-setlist sidebar with a Gig → 1-4 Setlists hierarchy.
+   Switching gigs is via the picker; each setlist is a nested rollup with
+   its own +/- toggle, song list, drag-reorder, and drag-between siblings. */
+.gig-side-controls {
+  display: flex; gap: 4px; align-items: center;
+  margin-bottom: 10px;
+}
+.gig-side-controls select { flex: 1; padding: 4px 8px; font-size: 0.75rem; }
+.gig-side-controls .btn-icon {
+  width: 28px; height: 28px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 6px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted); cursor: pointer;
+}
+.gig-side-controls .btn-icon i { width: 14px; height: 14px; }
+.gig-side-controls .btn-icon:hover:not(:disabled) { color: var(--text-main); border-color: var(--border-active); }
+.gig-side-controls .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.gig-setlists { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+
+.gig-setlist {
+  background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;
+  overflow: hidden;
+}
+.gig-setlist[data-drop-target="true"] { border-color: var(--color-green); box-shadow: var(--glow-green); }
+.gig-setlist-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; cursor: pointer;
+  background: var(--bg-card-hover);
+}
+.gig-setlist-head:hover { background: var(--border-color); }
+.gig-setlist-title-input {
+  flex: 1; background: transparent; border: none;
+  font-weight: 700; font-size: 0.8rem; color: var(--text-main);
+  padding: 2px 0; outline: none; min-width: 0;
+}
+.gig-setlist-title-input:focus { background: rgba(255,255,255,0.5); }
+.gig-setlist-count {
+  font-size: 0.7rem; font-variant-numeric: tabular-nums;
+  background: var(--bg-dark); color: var(--text-muted);
+  border-radius: 10px; padding: 1px 7px;
+}
+.gig-setlist-caret { transition: transform 0.18s ease; flex-shrink: 0; }
+.gig-setlist[data-open="false"] .gig-setlist-caret { transform: rotate(-90deg); }
+.gig-setlist[data-open="false"] .gig-setlist-body { display: none; }
+.gig-setlist-del {
+  background: transparent; border: none; color: var(--text-dim); cursor: pointer;
+  padding: 0 4px; font-size: 14px;
+}
+.gig-setlist-del:hover { color: var(--color-red); }
+
+.gig-setlist-body { padding: 6px 8px 8px; }
+.gig-setlist-toggle {
+  width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 5px 10px;
+  background: var(--color-green); color: #fff;
+  border: 1px solid #2e8b57; border-radius: 6px;
+  font-family: inherit; font-size: 0.72rem; font-weight: 700;
+  cursor: pointer; margin-bottom: 6px;
+}
+.gig-setlist-toggle:hover:not(:disabled) { background: #27a25b; }
+.gig-setlist-toggle:disabled { opacity: 0.45; cursor: not-allowed; background: var(--bg-card); color: var(--text-muted); border-color: var(--border-color); }
+.gig-setlist-toggle.remove { background: var(--color-red); border-color: #c0392b; }
+.gig-setlist-toggle.remove:hover:not(:disabled) { background: #c0392b; }
+.gig-setlist-toggle i { width: 12px; height: 12px; }
+
+.gig-setlist-songs { display: flex; flex-direction: column; gap: 3px; min-height: 4px; }
+.gig-setlist-songs:empty::after {
+  content: 'Drop a song here, or load one and hit +';
+  display: block;
+  font-size: 0.68rem; color: var(--text-dim);
+  padding: 6px 4px; text-align: center;
+}
+
 /* ===== Setlist side panel (sits below Library Analytics in sidebar) ===== */
 .setlist-side-toggle {
   width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px;

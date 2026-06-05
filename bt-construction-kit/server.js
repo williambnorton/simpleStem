@@ -93,6 +93,7 @@ const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
+const GIGS_DIR     = `${SIMPLE_STEM_ROOT}/GIGS`;
 
 // Comprehensive list of known artists in this library for intelligent parsing
 const KNOWN_ARTISTS = [
@@ -1578,6 +1579,151 @@ app.post('/api/logic-restem/unlock', (req, res) => {
     const stderr = (e.stderr && e.stderr.toString()) || '';
     res.status(500).json({ error: `Unlock failed: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}` });
   }
+});
+
+// ── Gigs CRUD ───────────────────────────────────────────────────────────────
+// A 'gig' groups 1-4 setlists together as the unit you actually plan for —
+// e.g. June 15 Concert = [Opening Set, Main Set, Encore]. Setlists are
+// stored INLINE inside the gig file (not referenced) so duplicating a gig
+// duplicates its setlists too; that's the workflow the user described
+// ("duplicate a gig and modify the new gig's setlists").
+//
+// File shape: GIGS/<slug>.json
+//   {
+//     "title": "June 15 Concert",
+//     "created_at": "...", "updated_at": "...",
+//     "setlists": [
+//       { "title": "Set 1", "songs": [{ "song_base": "..." }, ...] },
+//       ...
+//     ]
+//   }
+//
+// Slug rule: same as setlists — title slugified to filesystem-safe ASCII.
+function gigSlug(title) {
+  return String(title || '').replace(/[^A-Za-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+}
+function readGig(slug) {
+  const file = path.join(GIGS_DIR, `${slug}.json`);
+  if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) return null;
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return null; }
+}
+function writeGig(slug, body) {
+  if (!fs.existsSync(GIGS_DIR)) fs.mkdirSync(GIGS_DIR, { recursive: true });
+  fs.writeFileSync(path.join(GIGS_DIR, `${slug}.json`), JSON.stringify(body, null, 2) + '\n');
+}
+function validateGig(body) {
+  if (!body || typeof body !== 'object') return 'body required';
+  if (!body.title || typeof body.title !== 'string') return 'title required';
+  if (!Array.isArray(body.setlists)) return 'setlists must be an array';
+  if (body.setlists.length > 4) return 'a gig can have at most 4 setlists';
+  for (const sl of body.setlists) {
+    if (!sl || typeof sl !== 'object') return 'each setlist must be an object';
+    if (typeof sl.title !== 'string') return 'each setlist needs a title';
+    if (!Array.isArray(sl.songs)) return 'each setlist needs songs[]';
+  }
+  return null;
+}
+
+app.get('/api/gigs', (req, res) => {
+  if (!fs.existsSync(GIGS_DIR)) return res.json({ gigs: [] });
+  const out = [];
+  for (const f of fs.readdirSync(GIGS_DIR)) {
+    if (!f.endsWith('.json')) continue;
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(GIGS_DIR, f), 'utf8'));
+      const setlists = Array.isArray(d.setlists) ? d.setlists : [];
+      out.push({
+        slug: f.replace(/\.json$/i, ''),
+        title: d.title || f.replace(/\.json$/i, ''),
+        setlist_count: setlists.length,
+        song_count: setlists.reduce((n, sl) => n + (sl.songs ? sl.songs.length : 0), 0),
+        created_at: d.created_at || null,
+        updated_at: d.updated_at || null,
+      });
+    } catch (e) { /* skip unreadable */ }
+  }
+  out.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  res.json({ gigs: out });
+});
+
+app.get('/api/gigs/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const gig = readGig(slug);
+  if (!gig) return res.status(404).json({ error: 'gig not found' });
+  res.json({ slug, ...gig });
+});
+
+app.post('/api/gigs', (req, res) => {
+  const body = req.body || {};
+  const err = validateGig(body);
+  if (err) return res.status(400).json({ error: err });
+  const slug = gigSlug(body.title);
+  if (!slug) return res.status(400).json({ error: 'title produced an empty slug' });
+  const file = path.join(GIGS_DIR, `${slug}.json`);
+  if (fs.existsSync(file)) return res.status(409).json({ error: 'a gig with that title already exists' });
+  // Always start with at least one setlist so the UI has something to render
+  const setlists = body.setlists.length ? body.setlists : [{ title: 'Set 1', songs: [] }];
+  const now = new Date().toISOString();
+  writeGig(slug, { title: body.title, created_at: now, updated_at: now, setlists });
+  res.json({ ok: true, slug });
+});
+
+app.put('/api/gigs/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const existing = readGig(slug);
+  if (!existing) return res.status(404).json({ error: 'gig not found' });
+  const body = req.body || {};
+  // PUT is full-replace of the editable fields (title + setlists).
+  const err = validateGig({ title: body.title || existing.title, setlists: body.setlists });
+  if (err) return res.status(400).json({ error: err });
+  const newSlug = body.title && body.title !== existing.title ? gigSlug(body.title) : slug;
+  const updated = {
+    title: body.title || existing.title,
+    created_at: existing.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    setlists: body.setlists,
+  };
+  if (newSlug !== slug) {
+    // Title (and thus filename) changed. Refuse if the new slug collides;
+    // otherwise rename atomically.
+    const newFile = path.join(GIGS_DIR, `${newSlug}.json`);
+    if (fs.existsSync(newFile)) return res.status(409).json({ error: 'a gig with that title already exists' });
+    writeGig(newSlug, updated);
+    fs.rmSync(path.join(GIGS_DIR, `${slug}.json`), { force: true });
+    return res.json({ ok: true, slug: newSlug, renamed_from: slug });
+  }
+  writeGig(slug, updated);
+  res.json({ ok: true, slug });
+});
+
+app.post('/api/gigs/:slug/duplicate', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const src = readGig(slug);
+  if (!src) return res.status(404).json({ error: 'gig not found' });
+  const newTitle = (req.body && req.body.newTitle && String(req.body.newTitle).trim()) ||
+    `${src.title} (copy)`;
+  const newSlug = gigSlug(newTitle);
+  if (!newSlug) return res.status(400).json({ error: 'newTitle produced an empty slug' });
+  const newFile = path.join(GIGS_DIR, `${newSlug}.json`);
+  if (fs.existsSync(newFile)) return res.status(409).json({ error: 'a gig with that title already exists' });
+  const now = new Date().toISOString();
+  // Deep clone the setlists so the copy doesn't share references with the source.
+  const setlists = (src.setlists || []).map(sl => ({
+    title: sl.title,
+    songs: (sl.songs || []).map(s => ({ song_base: s.song_base })),
+  }));
+  writeGig(newSlug, { title: newTitle, created_at: now, updated_at: now, setlists });
+  res.json({ ok: true, slug: newSlug, source_slug: slug });
+});
+
+app.delete('/api/gigs/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const file = path.join(GIGS_DIR, `${slug}.json`);
+  if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'gig not found' });
+  }
+  fs.rmSync(file, { force: true });
+  res.json({ ok: true, slug });
 });
 
 // Fallback to serve index.html for spa behavior
