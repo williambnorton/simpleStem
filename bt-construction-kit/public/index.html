@@ -72,10 +72,14 @@
         <div id="queue-status" class="queue-status"></div>
       </section>
 
-      <!-- Instrumentation Stats Panel (Library Analytics) -->
-      <section class="stats-panel">
-        <h3 class="panel-title"><i data-lucide="bar-chart-3"></i> Library Analytics</h3>
-        
+      <!-- Instrumentation Stats Panel (Library Analytics) — collapsible -->
+      <section class="stats-panel rollup" id="analytics-rollup">
+        <button class="rollup-header" id="analytics-rollup-header" aria-expanded="false" type="button">
+          <i data-lucide="bar-chart-3"></i>
+          <span class="rollup-title">Library Analytics</span>
+          <i data-lucide="chevron-down" class="rollup-caret"></i>
+        </button>
+        <div class="rollup-body">
         <div class="stats-grid">
           <div class="stat-card glass-card hover-glow">
             <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
@@ -115,8 +119,43 @@
             </div>
           </div>
         </div>
+        </div><!-- /rollup-body -->
       </section>
-      
+
+      <!-- Setlist rollup — quick management of the active setlist -->
+      <section class="setlist-side-panel rollup" id="setlist-rollup">
+        <button class="rollup-header" id="setlist-rollup-header" aria-expanded="true" type="button">
+          <i data-lucide="clipboard-list"></i>
+          <span class="rollup-title">Setlist:</span>
+          <span class="rollup-title-active" id="setlist-side-name">Untitled</span>
+          <span class="rollup-count" id="setlist-side-count">0</span>
+          <i data-lucide="chevron-down" class="rollup-caret"></i>
+        </button>
+        <div class="rollup-body">
+          <!-- +/- to toggle current song's membership in the active setlist -->
+          <button id="setlist-side-toggle" class="setlist-side-toggle" title="Add the currently loaded song to this setlist" disabled>
+            <i data-lucide="plus"></i> <span id="setlist-side-toggle-label">Add current song</span>
+          </button>
+
+          <!-- Sync/manual badge — sync click opens YouTube playlist; manual click expands -->
+          <button class="setlist-side-mode" id="setlist-side-mode" type="button" title="Click to expand / open">
+            <span class="sl-badge sl-manual">MANUAL</span>
+          </button>
+
+          <!-- Expanded song list (manual mode only) -->
+          <div class="setlist-side-songs" id="setlist-side-songs"></div>
+
+          <!-- Create-new-setlist control: typing a name then '+' activates it -->
+          <div class="setlist-side-create">
+            <input type="text" id="setlist-side-new" class="glass-input" placeholder="New setlist name…" maxlength="60" autocomplete="off">
+            <button id="setlist-side-new-btn" class="filter-btn" title="Activate this name as a new setlist" disabled>
+              <i data-lucide="plus"></i>
+            </button>
+          </div>
+          <div class="setlist-side-hint" id="setlist-side-hint"></div>
+        </div>
+      </section>
+
       <div class="sidebar-footer">
         <i data-lucide="folder" class="info-icon"></i>
         <span>~/ClaudeDrive/simpleStem</span>

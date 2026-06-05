@@ -202,6 +202,8 @@ window.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   setupDrumLoopsTab();
   setupGigMode();
+  setupRollups();
+  setupSidebarSetlistPanel();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -219,6 +221,232 @@ window.addEventListener('DOMContentLoaded', () => {
     ae.addEventListener('stalled', () => console.log(`[audio:${chan}] stalled`));
   });
 });
+
+// ── Sidebar rollups (Library Analytics, Setlist) ──────────────────────────
+// Generic click-to-collapse pattern. The header has aria-expanded;
+// localStorage remembers it between sessions so the sidebar starts where the
+// user last left it.
+function setupRollups() {
+  document.querySelectorAll('.rollup').forEach(roll => {
+    const header = roll.querySelector('.rollup-header');
+    if (!header) return;
+    const key = `simpleStem.rollup.${roll.id || header.textContent.trim()}`;
+    let stored = null;
+    try { stored = localStorage.getItem(key); } catch (e) {}
+    // Default: analytics collapsed (user asked for it), setlist expanded.
+    const defaultOpen = roll.id !== 'analytics-rollup';
+    const open = stored == null ? defaultOpen : stored === '1';
+    apply(open);
+    header.addEventListener('click', () => apply(!isOpen()));
+    function isOpen() { return header.getAttribute('aria-expanded') === 'true'; }
+    function apply(o) {
+      header.setAttribute('aria-expanded', o ? 'true' : 'false');
+      roll.setAttribute('data-collapsed', o ? 'false' : 'true');
+      try { localStorage.setItem(key, o ? '1' : '0'); } catch (e) {}
+    }
+  });
+}
+
+// ── Sidebar setlist panel ─────────────────────────────────────────────────
+// Quick-access setlist controls in the left sidebar. Mirrors the active
+// `setlist` array used by the existing planner — adds/removes go through
+// addToSetlist / removeFromSetlist so the planner tab stays in sync.
+const SIDEBAR_SETLIST_NAME_KEY = 'simpleStem.activeSetlistName';
+
+function setupSidebarSetlistPanel() {
+  const toggleBtn = document.getElementById('setlist-side-toggle');
+  const modeBtn = document.getElementById('setlist-side-mode');
+  const songsEl = document.getElementById('setlist-side-songs');
+  const newInput = document.getElementById('setlist-side-new');
+  const newBtn = document.getElementById('setlist-side-new-btn');
+  const hintEl = document.getElementById('setlist-side-hint');
+  if (!toggleBtn || !modeBtn || !songsEl || !newInput || !newBtn) return;
+
+  // Restore active name from localStorage (separate from the planner's name
+  // field — the sidebar shows whichever was active last)
+  let activeName = '';
+  try { activeName = localStorage.getItem(SIDEBAR_SETLIST_NAME_KEY) || ''; } catch (e) {}
+  if (activeName && els.setlistName && !els.setlistName.value) {
+    els.setlistName.value = activeName;
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    if (!currentSong) return;
+    if (setlist.some(item => item.id === currentSong.id)) {
+      removeFromSetlist(currentSong.id);
+    } else {
+      addToSetlist(currentSong);
+    }
+    renderSidebarSetlist();
+  });
+
+  modeBtn.addEventListener('click', () => {
+    const meta = getActiveSetlistMeta();
+    if (meta.isSync && meta.url) {
+      window.open(meta.url, '_blank', 'noopener');
+    } else {
+      songsEl.classList.toggle('expanded');
+    }
+  });
+
+  // Filesystem-safe: ASCII alnum + space + _ - .; convert spaces to _ later
+  const VALID_NAME_RE = /^[A-Za-z0-9 _.\-]{1,60}$/;
+  const validateNewName = () => {
+    const v = newInput.value.trim();
+    if (!v) {
+      newBtn.disabled = true;
+      hintEl.textContent = '';
+      hintEl.classList.remove('err');
+    } else if (!VALID_NAME_RE.test(v)) {
+      newBtn.disabled = true;
+      hintEl.textContent = 'Letters, numbers, spaces, _ - . only';
+      hintEl.classList.add('err');
+    } else {
+      newBtn.disabled = false;
+      hintEl.textContent = 'Press + to activate as a new setlist';
+      hintEl.classList.remove('err');
+    }
+  };
+  newInput.addEventListener('input', validateNewName);
+  newInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !newBtn.disabled) newBtn.click();
+  });
+  newBtn.addEventListener('click', () => {
+    const v = newInput.value.trim();
+    if (!VALID_NAME_RE.test(v)) return;
+    activateNewSetlist(v);
+    newInput.value = '';
+    validateNewName();
+  });
+
+  validateNewName();
+  renderSidebarSetlist();
+}
+
+function activateNewSetlist(name) {
+  if (setlist.length && !confirm(`Replace the current setlist with a new one named "${name}"?`)) return;
+  setlist = [];
+  if (els.setlistName) els.setlistName.value = name;
+  try { localStorage.setItem(SIDEBAR_SETLIST_NAME_KEY, name); } catch (e) {}
+  saveSetlistToLocalStorage();
+  renderSetlist();
+  updateLibraryCheckboxes();
+  renderSidebarSetlist();
+}
+
+// Active setlist metadata: name + sync vs manual + youtube playlist url
+// (sync detection: if a saved setlist with this name exists and its origin is
+// 'playlist', this is a sync; otherwise manual).
+let _savedSetlistMetaCache = [];
+function getActiveSetlistMeta() {
+  const name = (els.setlistName && els.setlistName.value.trim()) ||
+               (function () { try { return localStorage.getItem(SIDEBAR_SETLIST_NAME_KEY) || ''; } catch (e) { return ''; } })();
+  const match = _savedSetlistMetaCache.find(s => s.title === name);
+  return {
+    name: name || 'Untitled',
+    isSync: !!(match && match.origin === 'playlist'),
+    url: (match && match.source_url) || null,
+  };
+}
+
+function renderSidebarSetlist() {
+  const nameEl   = document.getElementById('setlist-side-name');
+  const countEl  = document.getElementById('setlist-side-count');
+  const toggleBtn = document.getElementById('setlist-side-toggle');
+  const toggleLabel = document.getElementById('setlist-side-toggle-label');
+  const modeBtn = document.getElementById('setlist-side-mode');
+  const songsEl = document.getElementById('setlist-side-songs');
+  if (!nameEl || !countEl || !toggleBtn || !modeBtn || !songsEl) return;
+
+  const meta = getActiveSetlistMeta();
+  nameEl.textContent = meta.name;
+  countEl.textContent = setlist.length;
+
+  // Toggle button reflects current song's membership in active setlist
+  if (!currentSong) {
+    toggleBtn.disabled = true;
+    toggleBtn.classList.remove('remove');
+    toggleLabel.textContent = 'Load a song first';
+    toggleBtn.querySelector('i').setAttribute('data-lucide', 'plus');
+  } else {
+    toggleBtn.disabled = false;
+    const inSetlist = setlist.some(item => item.id === currentSong.id);
+    toggleBtn.classList.toggle('remove', inSetlist);
+    toggleLabel.textContent = inSetlist ? 'Remove current song' : 'Add current song';
+    toggleBtn.querySelector('i').setAttribute('data-lucide', inSetlist ? 'minus' : 'plus');
+  }
+
+  // Mode badge: YTSYNC (red) for synced playlists, MANUAL (yellow) otherwise
+  const badge = modeBtn.querySelector('.sl-badge');
+  if (meta.isSync) {
+    badge.className = 'sl-badge sl-yt';
+    badge.textContent = 'YTSYNC';
+    modeBtn.title = meta.url ? 'YouTube-synced — click to open the source playlist' : 'YouTube-synced';
+  } else {
+    badge.className = 'sl-badge sl-manual';
+    badge.textContent = 'MANUAL';
+    modeBtn.title = 'Manual setlist — click to expand the song list';
+  }
+
+  // Expanded songs list (only meaningful for manual setlists; sync rebuilds
+  // from the playlist on every sync pass)
+  songsEl.innerHTML = setlist.map((item, i) => `
+    <div class="sls-row" draggable="true" data-id="${escapeHtml(item.setlistItemId)}">
+      <span class="sls-grip">⋮⋮</span>
+      <span class="sls-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
+      <span class="sls-artist">${escapeHtml(item.artist || '')}</span>
+      <button class="sls-del" title="Remove from setlist" data-id="${escapeHtml(item.setlistItemId)}">×</button>
+    </div>
+  `).join('');
+  songsEl.querySelectorAll('.sls-del').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      removeSetlistItemById(b.dataset.id);
+      renderSidebarSetlist();
+    });
+  });
+  attachSidebarDragHandlers(songsEl);
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// Lightweight drag-reorder for the sidebar song list (the planner tab has
+// its own richer drag handling; this is a focused alternative for users who
+// want to reorder without switching tabs).
+function attachSidebarDragHandlers(container) {
+  let draggingId = null;
+  container.querySelectorAll('.sls-row').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      draggingId = row.dataset.id;
+      row.classList.add('sls-drag');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => row.classList.remove('sls-drag'));
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!draggingId || row.dataset.id === draggingId) return;
+      const rect = row.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > (rect.height / 2);
+      const fromIdx = setlist.findIndex(s => s.setlistItemId === draggingId);
+      const toIdxRaw = setlist.findIndex(s => s.setlistItemId === row.dataset.id);
+      if (fromIdx < 0 || toIdxRaw < 0) return;
+      const toIdx = after ? toIdxRaw + 1 : toIdxRaw;
+      const [moved] = setlist.splice(fromIdx, 1);
+      const insertAt = toIdx > fromIdx ? toIdx - 1 : toIdx;
+      setlist.splice(insertAt, 0, moved);
+      saveSetlistToLocalStorage();
+      renderSetlist();
+      renderSidebarSetlist();
+    });
+  });
+}
+
+// Hook: keep the sidebar panel in sync when the saved-setlists list refreshes
+// (so YTSYNC/MANUAL detection works after a setlist sync pass).
+function _cacheSavedSetlistMeta(setlists) {
+  _savedSetlistMetaCache = setlists || [];
+  renderSidebarSetlist();
+}
 
 // ── Gig Mode ──────────────────────────────────────────────────────────────
 // A header toggle the user flips before walking on stage. While on:
@@ -1182,6 +1410,9 @@ function loadSong(song, opts) {
 
   // Render variant picker (Source: STEMS / -V-G-B / -V-G / DO ...)
   renderVariantPicker(song);
+  // Refresh sidebar setlist toggle (+/- depends on whether currentSong is
+  // in the active setlist).
+  if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
 
   els.trackTitle.textContent = song.title;
   els.trackArtist.textContent = song.artist;
@@ -1927,6 +2158,8 @@ async function loadSetlistsList() {
       els.setlistsList.innerHTML = '<span class="setlists-empty">No saved SetLists yet.</span>';
       return;
     }
+    // Cache saved-setlist metadata for the sidebar panel (YTSYNC detection)
+    if (typeof _cacheSavedSetlistMeta === 'function') _cacheSavedSetlistMeta(lists);
     els.setlistsList.innerHTML = '';
     lists.forEach(sl => {
       const row = document.createElement('div');
@@ -2102,19 +2335,20 @@ function humanBytes(n) {
 function addToSetlist(song) {
   // Avoid double adds
   if (setlist.some(item => item.id === song.id)) return;
-  
+
   // Generate uniquely scheduled setlist item
   const setlistItem = {
     ...song,
     setlistItemId: `setlist-${song.id}-${Date.now()}`
   };
-  
+
   setlist.push(setlistItem);
   saveSetlistToLocalStorage();
   renderSetlist();
-  
+
   // Highlight row checkbox
   updateLibraryCheckboxes();
+  if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
 }
 
 function removeFromSetlist(songId) {
@@ -2122,6 +2356,7 @@ function removeFromSetlist(songId) {
   saveSetlistToLocalStorage();
   renderSetlist();
   updateLibraryCheckboxes();
+  if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
 }
 
 function removeSetlistItemById(setlistItemId) {
