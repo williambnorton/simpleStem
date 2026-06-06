@@ -134,14 +134,18 @@ queues behind the current song.
 
 ## Conventions
 
-- **Shell snippets pasted into zsh:** never put `#` comments on the same
-  line as a command. zsh defaults to `no_interactive_comments`, so the
-  `#` and everything after it get passed as positional arguments and
-  produce confusing "does not match any" / "command not found" errors.
-  If commentary is needed, put it on its own line *above* the command,
-  or render it as prose outside the code block. Multi-line code blocks
-  with one comment line followed by the command are fine; same-line
-  trailing comments are not.
+- **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
+  block, in any form, in any position.** No same-line trailing comments
+  (`git push origin main # pushes the fix`), no leading comment lines
+  (`# pull first`), no separator banners. zsh defaults to
+  `no_interactive_comments`, and even when the comment is on its own
+  line some shells/clients trim leading whitespace strangely or the
+  user mass-pastes the block and the comment lines split mid-token.
+  The only safe shape for paste-targeted code blocks is plain commands.
+  If the commands need explanation, put it as PROSE OUTSIDE the code
+  block (above or below). This is non-negotiable — bare `bash` examples
+  in the docs are fine to comment, but ANYTHING the user is meant to
+  copy-paste into their terminal is comment-free.
 
 - **Slug**: lowercase, spaces → `_`, drop anything but `[a-z0-9_-]`. Song files
   are `<slug>.json`; setlist entries are `NN_<slug>.json` (zero-padded order).
