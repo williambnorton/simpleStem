@@ -550,7 +550,7 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  grid-template-columns: 320px 1fr 84px;
+  grid-template-columns: 380px 1fr 84px;
   height: 100vh;
   width: 100vw;
 }
@@ -2792,6 +2792,43 @@ input:checked + .slider-round:before {
   display: block;
   font-size: 0.68rem; color: var(--text-dim);
   padding: 6px 4px; text-align: center;
+}
+
+/* Per-setlist transport: ⏮ ⏹ ▶ ⏭ + position 'N / total' label. While this
+   setlist is the one playing, the row glows green and the play icon flips
+   to pause (toggles the master player play/pause). */
+.gig-setlist-transport {
+  display: flex; align-items: center; gap: 4px;
+  margin-bottom: 6px;
+  padding: 4px 2px;
+  border-radius: 6px;
+}
+.gig-setlist-transport.playing { background: rgba(46, 204, 113, 0.10); }
+.gig-setlist-transport .ss-tr {
+  width: 26px; height: 26px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted); cursor: pointer;
+  padding: 0;
+  transition: var(--transition-smooth);
+}
+.gig-setlist-transport .ss-tr i { width: 13px; height: 13px; }
+.gig-setlist-transport .ss-tr:hover { color: var(--text-main); border-color: var(--border-active); }
+.gig-setlist-transport.playing .ss-tr-play { background: var(--color-green); color: #fff; border-color: #2e8b57; }
+.gig-setlist-transport .ss-tr-pos {
+  margin-left: auto;
+  font-size: 0.7rem; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The currently-playing setlist's container + its currently-playing song
+   row get a soft green highlight so the user always knows where they
+   are in the sequence. */
+.gig-setlist.playing { border-color: rgba(46, 204, 113, 0.55); box-shadow: 0 0 10px rgba(46, 204, 113, 0.15); }
+.sls-row.playing {
+  background: rgba(46, 204, 113, 0.10);
+  border: 1px solid rgba(46, 139, 87, 0.45);
 }
 
 /* Ghost preview row — only shown in the ACTIVE setlist while a song is

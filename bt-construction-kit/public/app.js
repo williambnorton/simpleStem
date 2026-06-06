@@ -263,8 +263,12 @@ function setupRollups() {
 // setlist to reorder.
 
 let activeGig = null;             // { slug, title, setlists: [...] } — live edited
-let activeSetlistIdx = 0;          // which setlist the bare 'Add current song' +/- adds to
+let activeSetlistIdx = 0;          // which setlist the ghost-row + adds to
 let gigSaveTimer = null;
+// Sequential-playback state: when a setlist is playing through, these point
+// at which setlist + which song are live. null/null when no setlist is playing.
+let gigPlayingSetlistIdx = null;
+let gigPlayingSongIdx = null;
 
 const GIG_ACTIVE_SLUG_KEY = 'simpleStem.activeGigSlug';
 
@@ -347,6 +351,97 @@ function precacheActiveGig() {
     .then(r => r.json())
     .then(d => console.log(`[gig precache] ${activeGig.slug}: queued ${d.songs} songs`))
     .catch(err => console.warn('[gig precache] failed to start:', err.message));
+}
+
+// ── Sequential setlist playback ───────────────────────────────────────────
+// Press ▶ on a setlist → load + play song 0, advance to next on song-end,
+// loop until ⏹ or end of setlist. ⏭/⏮ skip without waiting. The player
+// area stays visible the whole time so the stem mixer is reachable.
+
+// Choose a variant for setlist playback. Prefer STEMS so the mixer comes
+// up and the user can ride the faders mid-song; fall back to the
+// -V-G m4a (preferredPlayVariant) when the song has no stems.
+function setlistPlayVariant(merged) {
+  const stems = merged.variants.find(v => v.type === 'stems');
+  return stems || preferredPlayVariant(merged);
+}
+
+function findMergedForBase(base) {
+  return mergedLibrary.find(m => {
+    const sv = m.variants.find(v => v.type === 'stems');
+    return sv && sv.folderName === base;
+  });
+}
+
+function ensurePlayerVisible() {
+  const sect = els.playerHeroSection;
+  if (sect && sect.classList.contains('player-collapsed') && els.btnCollapsePlayer) {
+    els.btnCollapsePlayer.click();
+  }
+}
+
+function playGigSetlistFromStart(setlistIdx) {
+  if (!activeGig || !activeGig.setlists[setlistIdx]) return;
+  if (!activeGig.setlists[setlistIdx].songs.length) {
+    alert('That setlist is empty.');
+    return;
+  }
+  gigPlayingSetlistIdx = setlistIdx;
+  gigPlayingSongIdx = -1;
+  ensurePlayerVisible();
+  advanceGigSetlistPlayback();
+}
+
+function advanceGigSetlistPlayback() {
+  if (gigPlayingSetlistIdx == null) return;
+  const sl = activeGig && activeGig.setlists[gigPlayingSetlistIdx];
+  if (!sl) { stopGigSetlistPlayback(); return; }
+  const nextIdx = gigPlayingSongIdx + 1;
+  if (nextIdx >= sl.songs.length) {
+    stopGigSetlistPlayback();
+    return;
+  }
+  loadGigSetlistSong(gigPlayingSetlistIdx, nextIdx);
+}
+
+function gigSetlistJump(setlistIdx, delta) {
+  // Skip ⏭ / ⏮ in this same setlist. If nothing is currently playing, ⏭ starts
+  // from song 0 and ⏮ does nothing.
+  if (!activeGig || !activeGig.setlists[setlistIdx]) return;
+  const sl = activeGig.setlists[setlistIdx];
+  if (gigPlayingSetlistIdx !== setlistIdx) {
+    if (delta > 0) playGigSetlistFromStart(setlistIdx);
+    return;
+  }
+  const target = (gigPlayingSongIdx == null ? 0 : gigPlayingSongIdx) + delta;
+  if (target < 0 || target >= sl.songs.length) return;
+  loadGigSetlistSong(setlistIdx, target);
+}
+
+function loadGigSetlistSong(setlistIdx, songIdx) {
+  const sl = activeGig.setlists[setlistIdx];
+  const entry = sl && sl.songs[songIdx];
+  if (!entry) { stopGigSetlistPlayback(); return; }
+  const merged = findMergedForBase(entry.song_base);
+  if (!merged) {
+    // Song not in library — skip ahead instead of stalling
+    console.warn(`[setlist play] ${entry.song_base} not in library; skipping`);
+    gigPlayingSongIdx = songIdx;
+    advanceGigSetlistPlayback();
+    return;
+  }
+  gigPlayingSetlistIdx = setlistIdx;
+  gigPlayingSongIdx = songIdx;
+  ensurePlayerVisible();
+  loadSong(setlistPlayVariant(merged), { autoplay: true });
+  renderGigSidebar();
+}
+
+function stopGigSetlistPlayback() {
+  gigPlayingSetlistIdx = null;
+  gigPlayingSongIdx = null;
+  stopAudio();
+  renderGigSidebar();
 }
 
 async function onGigNew() {
@@ -470,6 +565,7 @@ function renderOneGigSetlist(sl, idx) {
 
   const head = document.createElement('div');
   head.className = 'gig-setlist-head';
+  const isPlayingThisSetlist = gigPlayingSetlistIdx === idx;
   head.innerHTML = `
     <i data-lucide="list-music" style="width:14px;height:14px;"></i>
     <input class="gig-setlist-title-input" type="text" value="${escapeHtml(sl.title)}" maxlength="40" />
@@ -477,6 +573,7 @@ function renderOneGigSetlist(sl, idx) {
     <button class="gig-setlist-del" title="Remove this setlist from the gig">×</button>
     <i data-lucide="chevron-down" class="gig-setlist-caret" style="width:14px;height:14px;"></i>
   `;
+  if (isPlayingThisSetlist) wrap.classList.add('playing');
   head.addEventListener('click', e => {
     if (e.target.closest('.gig-setlist-title-input') || e.target.closest('.gig-setlist-del')) return;
     activeSetlistIdx = idx;
@@ -504,9 +601,40 @@ function renderOneGigSetlist(sl, idx) {
   const body = document.createElement('div');
   body.className = 'gig-setlist-body';
 
-  // No per-setlist toggle button — adding happens via the ghost preview row's
-  // green + (on the active setlist) or by dragging from another setlist; the
+  // No per-setlist add/remove toggle — adding happens via the ghost preview
+  // row's green + (active setlist) or by dragging from another setlist; the
   // × on each song row handles remove.
+
+  // Transport: ⏮ ⏹ ▶ ⏭ to drive sequential playback of this setlist.
+  // ▶ starts from song 0 (or resumes if this setlist is the one playing);
+  // song-ended advances to next automatically (see handleMasterTrackEnded).
+  const transport = document.createElement('div');
+  transport.className = 'gig-setlist-transport' + (isPlayingThisSetlist ? ' playing' : '');
+  transport.innerHTML = `
+    <button class="ss-tr ss-tr-prev" title="Previous song"><i data-lucide="skip-back"></i></button>
+    <button class="ss-tr ss-tr-stop" title="Stop"><i data-lucide="square"></i></button>
+    <button class="ss-tr ss-tr-play" title="Play this setlist from the start"><i data-lucide="${isPlayingThisSetlist ? 'pause' : 'play'}"></i></button>
+    <button class="ss-tr ss-tr-next" title="Next song"><i data-lucide="skip-forward"></i></button>
+    <span class="ss-tr-pos">${isPlayingThisSetlist && gigPlayingSongIdx != null ? `${gigPlayingSongIdx + 1} / ${sl.songs.length}` : ''}</span>
+  `;
+  transport.querySelector('.ss-tr-play').addEventListener('click', e => {
+    e.stopPropagation();
+    if (isPlayingThisSetlist) togglePlayPause();
+    else playGigSetlistFromStart(idx);
+  });
+  transport.querySelector('.ss-tr-stop').addEventListener('click', e => {
+    e.stopPropagation();
+    stopGigSetlistPlayback();
+  });
+  transport.querySelector('.ss-tr-next').addEventListener('click', e => {
+    e.stopPropagation();
+    gigSetlistJump(idx, +1);
+  });
+  transport.querySelector('.ss-tr-prev').addEventListener('click', e => {
+    e.stopPropagation();
+    gigSetlistJump(idx, -1);
+  });
+  body.appendChild(transport);
 
   // Songs list
   const songsEl = document.createElement('div');
@@ -520,6 +648,7 @@ function renderOneGigSetlist(sl, idx) {
     const artist = (merged && merged.artist) || '';
     const row = document.createElement('div');
     row.className = 'sls-row';
+    if (isPlayingThisSetlist && gigPlayingSongIdx === songIdx) row.classList.add('playing');
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
@@ -2066,9 +2195,15 @@ function handleMasterTrackEnded() {
   } else {
     // Regular song end
     stopAudio();
-    
-    // Advance to next song in Setlist if playing setlist
-    playNextInSetlist();
+
+    // Gig setlist auto-advance: if we're in setlist-playback mode, jump to
+    // the next song in that setlist. Otherwise fall through to the legacy
+    // flat-setlist planner (Setlist tab).
+    if (gigPlayingSetlistIdx != null) {
+      advanceGigSetlistPlayback();
+    } else {
+      playNextInSetlist();
+    }
   }
 }
 
