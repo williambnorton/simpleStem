@@ -2813,6 +2813,11 @@ input:checked + .slider-round:before {
   padding: 0;
   transition: var(--transition-smooth);
 }
+/* Play + Stop are the primary controls — make them noticeably wider so
+   they're easier to hit and visually anchor the strip. ⏮ and ⏭ stay
+   compact since they're secondary skip buttons. */
+.gig-setlist-transport .ss-tr-play,
+.gig-setlist-transport .ss-tr-stop { width: 44px; }
 .gig-setlist-transport .ss-tr i { width: 13px; height: 13px; }
 .gig-setlist-transport .ss-tr:hover { color: var(--text-main); border-color: var(--border-active); }
 .gig-setlist-transport.playing .ss-tr-play { background: var(--color-green); color: #fff; border-color: #2e8b57; }
