@@ -23,3 +23,7 @@ bt-construction-kit/library_cache.json
 .probe_write
 ARCHIVE_*/
 SETLISTS/registry.json
+
+# Local-only binaries that shouldn't be tracked
+rem-*.tar.gz
+*.tar.gz
