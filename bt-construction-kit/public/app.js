@@ -418,6 +418,29 @@ function gigSetlistJump(setlistIdx, delta) {
   loadGigSetlistSong(setlistIdx, target);
 }
 
+// ⏮ specifically — mirror the convention every media player uses: if more
+// than a couple of seconds into the current song, restart THIS song. Only
+// when near the beginning does it actually skip back to the prior song.
+function gigSetlistPrev(setlistIdx) {
+  const RESTART_THRESHOLD_SEC = 3;
+  if (gigPlayingSetlistIdx === setlistIdx) {
+    const livePos = (() => {
+      for (const ch of CHANNELS) {
+        const ae = audioElements[ch];
+        if (ae && audioHasSrc(ae)) return ae.currentTime || 0;
+      }
+      return 0;
+    })();
+    if (livePos > RESTART_THRESHOLD_SEC) {
+      Object.values(audioElements).forEach(el => {
+        if (audioHasSrc(el)) { try { el.currentTime = 0; } catch (e) {} }
+      });
+      return;
+    }
+  }
+  gigSetlistJump(setlistIdx, -1);
+}
+
 function loadGigSetlistSong(setlistIdx, songIdx) {
   const sl = activeGig.setlists[setlistIdx];
   const entry = sl && sl.songs[songIdx];
@@ -632,7 +655,7 @@ function renderOneGigSetlist(sl, idx) {
   });
   transport.querySelector('.ss-tr-prev').addEventListener('click', e => {
     e.stopPropagation();
-    gigSetlistJump(idx, -1);
+    gigSetlistPrev(idx);
   });
   body.appendChild(transport);
 
@@ -666,7 +689,11 @@ function renderOneGigSetlist(sl, idx) {
     });
     row.addEventListener('click', e => {
       if (e.target.closest('.sls-del') || e.target.closest('.sls-grip')) return;
-      if (merged) loadSong(preferredPlayVariant(merged));
+      if (!merged) return;
+      // Click a setlist row → start playing the setlist FROM that song.
+      // The auto-advance handler picks up from here, walking through the
+      // rest of the setlist in order until ⏹ or end-of-setlist.
+      loadGigSetlistSong(idx, songIdx);
     });
     songsEl.appendChild(row);
   });

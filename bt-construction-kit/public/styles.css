@@ -558,7 +558,7 @@ select {
 /* ===== Right rail: full-height master volume ===== */
 .master-vol-rail {
   display: flex; flex-direction: column; align-items: center;
-  height: 100%; padding: 16px 8px;
+  height: 100%; padding: 16px 4px;
   border-left: 1px solid var(--border-color);
   gap: 12px;
 }
@@ -570,21 +570,78 @@ select {
   writing-mode: vertical-rl; transform: rotate(180deg);
   letter-spacing: 2px; font-size: 0.7rem; font-weight: 700; color: var(--text-dim);
 }
-/* The track fills all remaining vertical space; the range input is rotated
-   to run vertically and stretched to the track height. */
+/* Master volume fader — vertical pill thumb on a green gradient track. The
+   range input itself is rotated via writing-mode so up = louder; we then
+   style the track (::-webkit-slider-runnable-track) and the thumb
+   (::-webkit-slider-thumb) so it actually looks like a fader instead of
+   the browser's default tiny dot. */
 .master-vol-track {
   flex: 1 1 auto; width: 100%; position: relative;
   display: flex; align-items: center; justify-content: center;
+  padding: 8px 0;
 }
 .master-vol-slider {
-  -webkit-appearance: slider-vertical;   /* native vertical where supported */
+  -webkit-appearance: none;
+  appearance: none;
   writing-mode: vertical-lr;
-  direction: rtl;                        /* up = louder */
-  width: 14px;
+  direction: rtl;
+  width: 36px;
   height: 100%;
+  background: transparent;
   cursor: pointer;
-  accent-color: var(--color-green);      /* themed fill on supporting browsers */
+  outline: none;
 }
+/* Track (the rail the thumb slides on). Gradient hints louder-at-top. */
+.master-vol-slider::-webkit-slider-runnable-track {
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to top, rgba(46, 139, 87, 0.15), var(--color-green));
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+.master-vol-slider::-moz-range-track {
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to top, rgba(46, 139, 87, 0.15), var(--color-green));
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+/* Thumb — a substantial horizontal pill (looks like a mixer fader cap),
+   white-to-grey gradient, soft shadow, glow on hover. The negative
+   margin-left centers it on the 8px track. */
+.master-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  border: 1px solid var(--border-active);
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  cursor: grab;
+  margin-left: -12px;
+  transition: box-shadow 0.15s ease;
+}
+.master-vol-slider::-moz-range-thumb {
+  width: 32px;
+  height: 18px;
+  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  border: 1px solid var(--border-active);
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  cursor: grab;
+  transition: box-shadow 0.15s ease;
+}
+.master-vol-slider:hover::-webkit-slider-thumb,
+.master-vol-slider:active::-webkit-slider-thumb {
+  box-shadow: 0 0 12px rgba(46, 204, 113, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.master-vol-slider:hover::-moz-range-thumb,
+.master-vol-slider:active::-moz-range-thumb {
+  box-shadow: 0 0 12px rgba(46, 204, 113, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.master-vol-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+.master-vol-slider:active::-moz-range-thumb { cursor: grabbing; }
 
 /* Sidebar Styling */
 .sidebar {
