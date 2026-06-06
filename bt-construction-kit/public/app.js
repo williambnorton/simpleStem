@@ -4,6 +4,7 @@
 let songLibrary = [];   // raw entries from server (one per file/folder)
 let mergedLibrary = []; // grouped: one entry per song with .variants array
 let filteredLibrary = []; // filtered view of mergedLibrary
+let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let setlist = []; // Array of song items in setlist
 let currentSong = null;
 let currentMode = 'full'; // 'full' or 'loop' or 'outro'
@@ -219,6 +220,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRollups();
   setupGigSidebar();
   setupRoutingUI();
+  setupFormatFilters();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -1706,7 +1708,18 @@ function applyFilters() {
       matchesBpm = false;
     }
 
-    return matchesQuery && matchesFormat && matchesKey && matchesBpm;
+    // Format-column variant filters: OR semantics — if any chip is active,
+    // require the song to have at least one of the chips' variants.
+    let matchesVariantChips = true;
+    const activeChips = Object.entries(formatVariantFilters).filter(([, v]) => v).map(([k]) => k);
+    if (activeChips.length) {
+      matchesVariantChips = activeChips.some(code => {
+        if (code === 'STEMS') return song.variants.some(v => v.type === 'stems');
+        return song.variants.some(v => v.type === 'm4a' && v.variantCode === code);
+      });
+    }
+
+    return matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips;
   });
   
   els.countLabel.textContent = `Found ${filteredLibrary.length} tracks matching filters`;
@@ -1774,11 +1787,17 @@ function initAudioCtx() {
 
 // ── Multi-channel routing helpers ─────────────────────────────────────────
 
+// Routing matrix v2: a flat sorted list of selected output channel indices
+// per stem. `routingMatrix[chan] = [0, 1]` means "stereo to Out 1-2".
+// `[0, 1, 2, 3, 4, 5]` means "6 channels selected; alternate L/R" — L goes
+// to even-positioned entries (0, 2, 4), R goes to odd-positioned (1, 3, 5),
+// so the selection [0..5] fans L→1,3,5 and R→2,4,6. Single-channel selection
+// sums L+R to mono. Lets the user click any combination of channels and get
+// a sensible result.
 function loadRoutingMatrix() {
-  // Default: every stem to outputs 0-1 (plain stereo).
   routingMatrix = {};
   Object.keys(audioElements).forEach(ch => {
-    routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+    routingMatrix[ch] = [0, 1];
   });
   try {
     const raw = localStorage.getItem(ROUTING_STORAGE_KEY);
@@ -1786,23 +1805,13 @@ function loadRoutingMatrix() {
     const stored = JSON.parse(raw);
     Object.keys(audioElements).forEach(ch => {
       if (Array.isArray(stored[ch])) {
-        // Clamp any saved channel indices to the device's current channel count
         routingMatrix[ch] = stored[ch]
-          .map(r => ({
-            lOut: clampChannel(r.lOut),
-            rOut: clampChannel(r.rOut),
-          }))
-          .filter(r => r.lOut != null || r.rOut != null);
-        if (!routingMatrix[ch].length) routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+          .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < outputChannelCount)
+          .sort((a, b) => a - b);
+        if (!routingMatrix[ch].length) routingMatrix[ch] = [0, 1];
       }
     });
   } catch (e) {}
-}
-
-function clampChannel(idx) {
-  if (idx == null || idx < 0) return null;
-  if (idx >= outputChannelCount) return null;
-  return idx;
 }
 
 function saveRoutingMatrix() {
@@ -1811,52 +1820,74 @@ function saveRoutingMatrix() {
 
 function applyRouting() {
   if (!masterMerger || !stripNodes) return;
-  // Disconnect every splitter then reconnect per current routing matrix.
   Object.values(stripNodes).forEach(s => {
     try { s.splitter.disconnect(); } catch (e) {}
   });
   Object.entries(routingMatrix).forEach(([chan, routes]) => {
     const s = stripNodes[chan];
-    if (!s) return;
-    routes.forEach(r => {
-      try {
-        if (r.lOut != null && r.lOut < outputChannelCount) s.splitter.connect(masterMerger, 0, r.lOut);
-        if (r.rOut != null && r.rOut < outputChannelCount) s.splitter.connect(masterMerger, 1, r.rOut);
-      } catch (e) { console.warn('[routing]', chan, r, e.message); }
+    if (!s || !routes.length) return;
+    const sorted = [...routes].sort((a, b) => a - b);
+    if (sorted.length === 1) {
+      // Single channel selected → fold L+R into that channel as mono sum.
+      const out = sorted[0];
+      if (out < outputChannelCount) {
+        try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
+        try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
+      }
+    } else {
+      // ≥2 channels: even-positioned selections receive L, odd-positioned
+      // receive R. Selection [0,1,2,3,4,5] → L→0,2,4 / R→1,3,5 — exactly the
+      // "three amps per side from 6 AUX channels" pattern.
+      sorted.forEach((out, i) => {
+        if (out >= outputChannelCount) return;
+        try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
+      });
+    }
+  });
+}
+
+function toggleStripChannel(chan, channelIdx) {
+  const current = routingMatrix[chan] || [];
+  const filtered = current.filter(c => c !== channelIdx);
+  if (filtered.length === current.length) filtered.push(channelIdx);
+  filtered.sort((a, b) => a - b);
+  routingMatrix[chan] = filtered;
+  saveRoutingMatrix();
+  applyRouting();
+  renderRoutingGrids();
+}
+
+function presetSpreadToSixAux() {
+  Object.keys(audioElements).forEach(ch => {
+    routingMatrix[ch] = [0, 1, 2, 3, 4, 5].filter(i => i < outputChannelCount);
+  });
+  saveRoutingMatrix();
+  applyRouting();
+  renderRoutingGrids();
+}
+
+// ── Format-column variant filters ────────────────────────────────────────
+// STEM / -V / -V-G / -V-G-B / DO toggle pills in the FORMAT header.
+// Active → solid green. Multi-select with OR (show songs that have any
+// of the selected variants). Click an active button to turn it off.
+function setupFormatFilters() {
+  document.querySelectorAll('.ff-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      formatVariantFilters[code] = !formatVariantFilters[code];
+      btn.classList.toggle('active', formatVariantFilters[code]);
+      filterLibrary();
     });
   });
 }
 
-function setStripRoutes(chan, routes) {
-  routingMatrix[chan] = routes.slice();
-  saveRoutingMatrix();
-  applyRouting();
-  renderRoutingButtons();
-}
-
-// Preset: "Spread to 6 AUX" — every stem's L lands on outputs 0,2,4 and R on
-// 1,3,5. Lets the XR18 fan the stereo image to three amps per side via three
-// stereo aux sends. Idempotent — call again to re-apply.
-function presetSpreadToSixAux() {
-  Object.keys(audioElements).forEach(ch => {
-    routingMatrix[ch] = [
-      { lOut: 0, rOut: 1 },
-      { lOut: 2, rOut: 3 },
-      { lOut: 4, rOut: 5 },
-    ].filter(r => r.lOut < outputChannelCount && r.rOut < outputChannelCount);
-  });
-  saveRoutingMatrix();
-  applyRouting();
-  renderRoutingButtons();
-}
-
 function presetStereoMain() {
   Object.keys(audioElements).forEach(ch => {
-    routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+    routingMatrix[ch] = [0, 1];
   });
   saveRoutingMatrix();
   applyRouting();
-  renderRoutingButtons();
+  renderRoutingGrids();
 }
 
 // ── Routing UI ────────────────────────────────────────────────────────────
@@ -1903,18 +1934,35 @@ function injectMixerHeaderInfo() {
 function injectStripRoutingButtons() {
   if (outputChannelCount <= 2) return;
   document.querySelectorAll('.channel-strip').forEach(strip => {
-    if (strip.querySelector('.strip-routing-btn')) return;
+    if (strip.querySelector('.strip-routing-grid')) return;
     const chan = stripChannelName(strip);
     if (!chan) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'strip-routing';
-    wrap.dataset.chan = chan;
-    wrap.innerHTML = `<button class="strip-routing-btn" type="button">…</button>`;
-    wrap.querySelector('.strip-routing-btn').addEventListener('click', e => {
-      e.stopPropagation();
-      openRoutingPopover(chan, e.currentTarget);
+    const grid = document.createElement('div');
+    grid.className = 'strip-routing-grid';
+    grid.dataset.chan = chan;
+    // 3 rows × 6 cols = 18 channel buttons. Click each to toggle. Selected
+    // buttons appear solid green; unselected are outline. Below the grid a
+    // tiny line shows the resolved L/R routing for debugging the alternating
+    // rule ("L→1,3,5  R→2,4,6").
+    let html = '';
+    for (let i = 0; i < 18; i++) {
+      if (i >= outputChannelCount) {
+        html += `<button class="srg-btn" disabled title="Device only has ${outputChannelCount} channels"></button>`;
+      } else {
+        html += `<button class="srg-btn" data-ch="${i}">${i + 1}</button>`;
+      }
+    }
+    grid.innerHTML = `
+      <div class="srg-grid">${html}</div>
+      <div class="srg-summary" data-chan="${chan}"></div>
+    `;
+    grid.querySelectorAll('.srg-btn[data-ch]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleStripChannel(chan, parseInt(btn.dataset.ch, 10));
+      });
     });
-    strip.appendChild(wrap);
+    strip.appendChild(grid);
   });
 }
 
@@ -1925,73 +1973,31 @@ function stripChannelName(strip) {
   return null;
 }
 
-function renderRoutingButtons() {
-  document.querySelectorAll('.strip-routing').forEach(wrap => {
-    const chan = wrap.dataset.chan;
-    const btn = wrap.querySelector('.strip-routing-btn');
+function renderRoutingGrids() {
+  document.querySelectorAll('.strip-routing-grid').forEach(grid => {
+    const chan = grid.dataset.chan;
     const routes = routingMatrix[chan] || [];
-    if (!routes.length) {
-      btn.textContent = 'unrouted';
-      btn.classList.add('unrouted');
-    } else {
-      btn.classList.remove('unrouted');
-      btn.textContent = routes.length === 1
-        ? `Out ${routes[0].lOut + 1}-${routes[0].rOut + 1}`
-        : `${routes.length} routes`;
-    }
-  });
-}
-
-function openRoutingPopover(chan, anchorBtn) {
-  // Close any existing popover first
-  document.querySelectorAll('.routing-popover').forEach(p => p.remove());
-  const popover = document.createElement('div');
-  popover.className = 'routing-popover';
-  const pairs = Math.floor(outputChannelCount / 2);
-  const current = routingMatrix[chan] || [];
-  let html = `<div class="rp-header">Route <b>${chan}</b> to</div>`;
-  for (let i = 0; i < pairs; i++) {
-    const lOut = i * 2;
-    const rOut = i * 2 + 1;
-    const checked = current.some(r => r.lOut === lOut && r.rOut === rOut);
-    html += `
-      <label class="rp-row">
-        <input type="checkbox" data-l="${lOut}" data-r="${rOut}" ${checked ? 'checked' : ''}>
-        <span>Out ${lOut + 1}-${rOut + 1}</span>
-      </label>`;
-  }
-  html += `<div class="rp-foot"><button class="rp-close">Done</button></div>`;
-  popover.innerHTML = html;
-
-  const rect = anchorBtn.getBoundingClientRect();
-  popover.style.left = `${Math.max(8, rect.left - 80)}px`;
-  popover.style.top = `${rect.bottom + 4}px`;
-  document.body.appendChild(popover);
-
-  popover.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const lOut = parseInt(cb.dataset.l, 10);
-      const rOut = parseInt(cb.dataset.r, 10);
-      let routes = (routingMatrix[chan] || []).filter(r => !(r.lOut === lOut && r.rOut === rOut));
-      if (cb.checked) routes.push({ lOut, rOut });
-      // Always-sorted by lOut so the button label is stable
-      routes.sort((a, b) => a.lOut - b.lOut);
-      setStripRoutes(chan, routes);
+    grid.querySelectorAll('.srg-btn[data-ch]').forEach(btn => {
+      const ch = parseInt(btn.dataset.ch, 10);
+      btn.classList.toggle('active', routes.includes(ch));
     });
+    const sum = grid.querySelector('.srg-summary');
+    if (sum) sum.textContent = summarizeRouting(routes);
   });
-  popover.querySelector('.rp-close').addEventListener('click', () => popover.remove());
-
-  // Click outside closes
-  setTimeout(() => {
-    const closeOnOutside = (e) => {
-      if (!popover.contains(e.target)) {
-        popover.remove();
-        document.removeEventListener('click', closeOnOutside);
-      }
-    };
-    document.addEventListener('click', closeOnOutside);
-  }, 0);
 }
+
+function summarizeRouting(routes) {
+  if (!routes || !routes.length) return 'unrouted';
+  const sorted = [...routes].sort((a, b) => a - b);
+  if (sorted.length === 1) return `mono → Out ${sorted[0] + 1}`;
+  const ls = []; const rs = [];
+  sorted.forEach((o, i) => (i % 2 === 0 ? ls : rs).push(o + 1));
+  return `L→${ls.join(',')}   R→${rs.join(',')}`;
+}
+
+// Alias: legacy call sites still use renderRoutingButtons; route them to the
+// new grid renderer.
+function renderRoutingButtons() { renderRoutingGrids(); }
 
 // Load song into the mixer
 function loadSong(song, opts) {

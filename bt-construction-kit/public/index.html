@@ -466,7 +466,16 @@
               <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-type">Format</div>
+              <div class="col-type">
+                <span class="col-label">Format</span>
+                <span class="format-filter-row" id="format-filter-row">
+                  <button class="ff-btn" data-code="STEMS" title="Show only songs with stems available">STEM</button>
+                  <button class="ff-btn" data-code="-V" title="Show only songs with -V available">-V</button>
+                  <button class="ff-btn" data-code="-V-G" title="Show only songs with -V-G available">-V-G</button>
+                  <button class="ff-btn" data-code="-V-G-B" title="Show only songs with -V-G-B available">-V-G-B</button>
+                  <button class="ff-btn" data-code="DO" title="Show only songs with DO available">DO</button>
+                </span>
+              </div>
               <div class="col-action">Action</div>
             </div>
             

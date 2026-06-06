@@ -2743,6 +2743,32 @@ input:checked + .slider-round:before {
 .update-btn:hover { filter: brightness(1.08); }
 .update-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
 
+/* ===== Format header filter toggles =====
+   Off: white text on the dark header background. On: solid green. Multi-
+   select with OR semantics (show songs that have any of the selected
+   variants). Clicking the same button again turns it off. */
+.col-type .col-label {
+  display: block; font-size: 0.85em; margin-bottom: 4px;
+}
+.format-filter-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.ff-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 3px 7px;
+  background: #14192b; color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.ff-btn:hover { border-color: var(--color-green); }
+.ff-btn.active {
+  background: var(--color-green); color: #fff;
+  border-color: #2e8b57;
+}
+
 /* ===== Multi-channel routing UI ===== */
 .routing-info {
   display: flex; align-items: center; gap: 8px; margin-left: auto;
@@ -2755,46 +2781,42 @@ input:checked + .slider-round:before {
 .routing-tag.stereo-only { background: var(--bg-dark); color: var(--text-muted); }
 .routing-info .btn-secondary { padding: 4px 10px; font-size: 0.72rem; }
 
-.strip-routing {
-  margin-top: 6px; padding: 4px 0; display: flex; justify-content: center;
+/* Per-strip routing grid: 3 rows × 6 cols = 18 channel buttons. Each
+   button is one XR18 output channel. Active → solid green; inactive →
+   dashed outline. Below the grid a tiny summary line shows the resolved
+   L/R routing so the alternating rule is visible. */
+.strip-routing-grid {
+  margin-top: 8px; padding: 6px 4px;
+  border-top: 1px solid var(--border-color);
 }
-.strip-routing-btn {
+.strip-routing-grid .srg-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+.strip-routing-grid .srg-btn {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px; font-weight: 700;
-  padding: 3px 8px;
-  background: var(--bg-card); color: var(--text-main);
-  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 3px 0;
+  background: transparent; color: var(--text-muted);
+  border: 1px dashed var(--border-color); border-radius: 4px;
   cursor: pointer;
   transition: var(--transition-smooth);
 }
-.strip-routing-btn:hover { background: var(--bg-card-hover); border-color: var(--color-green); color: var(--color-green); }
-.strip-routing-btn.unrouted { color: var(--text-dim); border-style: dashed; }
-
-.routing-popover {
-  position: fixed; z-index: 5000;
-  background: var(--bg-card);
-  border: 1px solid var(--border-active);
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
-  padding: 10px 12px;
-  min-width: 180px;
-  max-height: 380px; overflow-y: auto;
+.strip-routing-grid .srg-btn:hover:not(:disabled) {
+  border-style: solid; border-color: var(--color-green); color: var(--color-green);
 }
-.routing-popover .rp-header { font-size: 0.78rem; font-weight: 700; margin-bottom: 8px; color: var(--text-main); }
-.routing-popover .rp-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 0; font-size: 0.78rem; cursor: pointer;
-}
-.routing-popover .rp-row input { cursor: pointer; }
-.routing-popover .rp-foot {
-  margin-top: 8px; padding-top: 8px;
-  border-top: 1px solid var(--border-color);
-  text-align: right;
-}
-.routing-popover .rp-close {
-  font-size: 0.72rem; padding: 4px 12px;
+.strip-routing-grid .srg-btn.active {
   background: var(--color-green); color: #fff;
-  border: 1px solid #2e8b57; border-radius: 5px; cursor: pointer;
+  border: 1px solid #2e8b57;
+}
+.strip-routing-grid .srg-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.strip-routing-grid .srg-summary {
+  margin-top: 5px;
+  font-size: 0.65rem; color: var(--text-dim);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-height: 0.9rem;
 }
 
 /* ===== Sidebar rollup pattern (Library Analytics, Setlist) =====
