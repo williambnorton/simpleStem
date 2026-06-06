@@ -1581,6 +1581,75 @@ app.post('/api/logic-restem/unlock', (req, res) => {
   }
 });
 
+// Precache every audio file for every song across every setlist in a gig.
+// 'Every audio file' means: all WAVs in STEMS/<base>/ + all m4a variants in
+// M4A/ whose filename starts with <base>_. The point is that when Gig Mode
+// is on, NOTHING in the active gig should ever require a Drive fetch — every
+// song row, every variant chip, every drum loop, every loop-mix m4a is
+// already on local disk. Fire-and-forget; the client polls cache state.
+app.post('/api/precache/gig/:slug', (req, res) => {
+  const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
+  const file = path.join(GIGS_DIR, `${slug}.json`);
+  if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ error: 'gig not found' });
+  }
+  let gig;
+  try { gig = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+
+  // Flatten unique bases across all the gig's setlists. Same base in multiple
+  // setlists is normal (and what the user explicitly wanted) — only precache once.
+  const bases = new Set();
+  for (const sl of (gig.setlists || [])) {
+    for (const s of (sl.songs || [])) {
+      if (s.song_base) bases.add(s.song_base);
+    }
+  }
+  res.json({ status: 'precaching', gig: slug, songs: bases.size });
+
+  (async () => {
+    const t0 = Date.now();
+    let wavs = 0, m4as = 0, errors = 0;
+    for (const base of bases) {
+      // Every WAV in STEMS/<base>/ — that's source.wav, the 6 stems, plus all
+      // *_loop*.wav files. Comprehensive: the whole song folder gets mirrored.
+      const folder = path.join(STEMS_DIR, base);
+      try {
+        if (fs.existsSync(folder)) {
+          for (const f of (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'))) {
+            try {
+              await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
+              wavs++;
+            } catch (e) { errors++; }
+          }
+          // Mark the folder as cached so isStemsFolderCached() lights the chip.
+          try {
+            await fsp.mkdir(path.join(AUDIO_CACHE_STEMS, base), { recursive: true });
+            await fsp.writeFile(
+              path.join(AUDIO_CACHE_STEMS, base, '.cached'),
+              JSON.stringify({ at: new Date().toISOString(), via: 'gig-precache' })
+            );
+          } catch (e) {}
+        }
+      } catch (e) { errors++; }
+      // Every m4a in M4A/ whose filename starts with <base>_ — that catches
+      // all four variant mixdowns AND any loop m4as for that song.
+      try {
+        if (fs.existsSync(M4A_DIR)) {
+          for (const f of (await fsp.readdir(M4A_DIR))) {
+            if (!f.startsWith(`${base}_`) || !f.toLowerCase().endsWith('.m4a')) continue;
+            try {
+              await ensureCachedAsync(path.join(M4A_DIR, f), path.join(AUDIO_CACHE_M4A, f));
+              m4as++;
+            } catch (e) { errors++; }
+          }
+        }
+      } catch (e) { errors++; }
+    }
+    console.log(`[gig precache] ${slug}: ${wavs} wavs + ${m4as} m4as across ${bases.size} songs in ${Math.round((Date.now()-t0)/1000)}s (errors: ${errors})`);
+  })();
+});
+
 // ── Gigs CRUD ───────────────────────────────────────────────────────────────
 // A 'gig' groups 1-4 setlists together as the unit you actually plan for —
 // e.g. June 15 Concert = [Opening Set, Main Set, Encore]. Setlists are

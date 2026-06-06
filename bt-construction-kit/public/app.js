@@ -329,11 +329,24 @@ async function loadActiveGig(slug) {
     activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
     try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
     renderGigSidebar();
+    // If Gig Mode is already on, precache this gig immediately. (If the user
+    // toggles Gig Mode later, the toggle handler will fire it then.)
+    if (document.body.classList.contains('gig-mode')) {
+      precacheActiveGig();
+    }
   } catch (e) {
     alert(`Couldn't load gig: ${e.message}`);
     activeGig = null;
     renderGigSidebar();
   }
+}
+
+function precacheActiveGig() {
+  if (!activeGig || !activeGig.slug) return;
+  fetch(`/api/precache/gig/${encodeURIComponent(activeGig.slug)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => console.log(`[gig precache] ${activeGig.slug}: queued ${d.songs} songs`))
+    .catch(err => console.warn('[gig precache] failed to start:', err.message));
 }
 
 async function onGigNew() {
@@ -404,6 +417,11 @@ async function persistActiveGig() {
       try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, data.slug); } catch (e) {}
       await refreshGigList();
       document.getElementById('gig-picker').value = data.slug;
+    }
+    // If Gig Mode is on, re-precache so newly added songs land in cache too.
+    // The server skips files already cached, so this is cheap on no-op saves.
+    if (document.body.classList.contains('gig-mode')) {
+      precacheActiveGig();
     }
   } catch (e) {
     console.warn('[gig save]', e.message);
@@ -486,32 +504,9 @@ function renderOneGigSetlist(sl, idx) {
   const body = document.createElement('div');
   body.className = 'gig-setlist-body';
 
-  // +/- toggle for current song relative to THIS setlist
-  const toggle = document.createElement('button');
-  toggle.className = 'gig-setlist-toggle';
-  const inThis = currentSong && sl.songs.some(s => s.song_base === songBaseOf(currentSong));
-  if (!currentSong) {
-    toggle.disabled = true;
-    toggle.innerHTML = '<i data-lucide="plus"></i> <span>Load a song to add</span>';
-  } else if (inThis) {
-    toggle.classList.add('remove');
-    toggle.innerHTML = `<i data-lucide="minus"></i> <span>Remove from "${escapeHtml(sl.title)}"</span>`;
-  } else {
-    toggle.innerHTML = `<i data-lucide="plus"></i> <span>Add to "${escapeHtml(sl.title)}"</span>`;
-  }
-  toggle.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!currentSong) return;
-    const base = songBaseOf(currentSong);
-    if (!base) { alert('This song has no stems folder yet, so it has no song_base to track.'); return; }
-    activeSetlistIdx = idx;
-    const at = sl.songs.findIndex(s => s.song_base === base);
-    if (at >= 0) sl.songs.splice(at, 1);
-    else sl.songs.push({ song_base: base });
-    renderGigSidebar();
-    scheduleGigSave();
-  });
-  body.appendChild(toggle);
+  // No per-setlist toggle button — adding happens via the ghost preview row's
+  // green + (on the active setlist) or by dragging from another setlist; the
+  // × on each song row handles remove.
 
   // Songs list
   const songsEl = document.createElement('div');
@@ -695,6 +690,12 @@ function setupGigMode() {
     // applied/cleared based on current cache state.
     if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
       renderSongList();
+    }
+    // Going on while a gig is loaded: precache the whole gig so nothing
+    // can spin during the show. Fire-and-forget; the server returns
+    // immediately and works in the background.
+    if (on && activeGig && activeGig.slug) {
+      precacheActiveGig();
     }
   };
   btn.addEventListener('click', () => apply(!document.body.classList.contains('gig-mode')));
@@ -1249,21 +1250,12 @@ function renderLibrary() {
     const formatCell = document.createElement('div');
     formatCell.className = 'song-format-cell';
 
-    // "Cached / ready" badge — song plays instantly when clicked. Lights up
-    // when EITHER stems are fully cached OR the -V-G m4a is cached.
+    // Cache state is communicated entirely via the per-variant format chips:
+    // solid green = cached, dashed outline = not yet. The redundant
+    // 'READY' / 'STEMS' purple cached-chip used to sit here; removed because
+    // the per-row chip set already says everything that chip did. (The stems
+    // variant gets its own green 'STEMS' format-chip below.)
     const stemsVariant = merged.variants.find(v => v.type === 'stems');
-    const vgM4aCached = merged.variants.find(v => v.type === 'm4a' && v.variantCode === '-V-G' && v.cached);
-    const stemsCached = stemsVariant && stemsVariant.cached;
-    if (stemsCached || vgM4aCached) {
-      const ready = document.createElement('span');
-      ready.className = 'cached-chip' + (stemsCached ? ' cached-chip-stems' : '');
-      ready.title = stemsCached
-        ? 'Stems cached locally — instant full-mix playback'
-        : 'M4A cached locally — instant backing-track playback';
-      const label = stemsCached ? 'STEMS' : 'READY';
-      ready.innerHTML = `<i data-lucide="zap" style="width:10px;height:10px;"></i> ${label}`;
-      formatCell.appendChild(ready);
-    }
 
     merged.variants.forEach(v => {
       const chip = document.createElement('button');
