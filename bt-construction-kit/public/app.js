@@ -28,6 +28,20 @@ let analyserNode = null;
 let masterGainNode = null;
 let trackSources = {}; // trackKey -> MediaElementAudioSourceNode
 
+// Multi-channel output routing (XR18 + similar interfaces).
+// When the system audio device exposes more than 2 output channels (the XR18
+// presents 18 USB returns), each stem channel can be routed independently to
+// one or more output pairs. A 'route' is { lOut, rOut } describing the stereo
+// destination channels (0-indexed). Multiple routes per stem fan the same
+// source to multiple amp/aux destinations — exactly what the XR18-aux-per-amp
+// setup wants.
+let stripNodes = {};            // stem → { stripGain, splitter } (post-source)
+let masterMerger = null;        // ChannelMergerNode with maxChannelCount inputs
+let outputChannelCount = 2;     // detected from destination.maxChannelCount
+let routingMatrix = {};         // stem → [{ lOut, rOut }, ...]
+const ROUTING_STORAGE_KEY = 'simpleStem.routingMatrix.v1';
+const ROUTING_MULTI_KEY    = 'simpleStem.routingMultiOn';
+
 // HTML5 Audio Elements
 const audioElements = {
   vocals: new Audio(),
@@ -204,6 +218,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupGigMode();
   setupRollups();
   setupGigSidebar();
+  setupRoutingUI();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -1701,28 +1716,281 @@ function applyFilters() {
 // Initialize Web Audio graph
 function initAudioCtx() {
   if (audioCtx) return;
-  
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+
+  // Probe the OS audio device's output channel count. XR18 selected as the
+  // system output reports 18. Anything > 2 unlocks the multi-channel routing
+  // UI; <= 2 falls back to plain stereo (everything → channels 0-1).
+  outputChannelCount = audioCtx.destination.maxChannelCount || 2;
+  if (outputChannelCount > 2) {
+    try {
+      audioCtx.destination.channelCount = outputChannelCount;
+      audioCtx.destination.channelCountMode = 'explicit';
+      audioCtx.destination.channelInterpretation = 'discrete';
+    } catch (e) {
+      // Some browsers reject explicit multi-channel; fall back to stereo.
+      console.warn('[audio] destination multi-channel setup rejected:', e.message);
+      outputChannelCount = 2;
+    }
+  }
+
   analyserNode = audioCtx.createAnalyser();
   analyserNode.fftSize = 256;
-  
+
+  // ChannelMerger accumulates every routed signal; one input per output
+  // channel. Stem sources connect into specific input indices to land on
+  // specific physical channels.
+  masterMerger = audioCtx.createChannelMerger(outputChannelCount);
+
   masterGainNode = audioCtx.createGain();
-  // Respect the master-volume slider's current position rather than forcing 1.0,
-  // so the graph initializes at whatever level the user has set.
   if (els.masterVol) currentMasterVolume = parseFloat(els.masterVol.value);
   masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
 
-  masterGainNode.connect(analyserNode);
-  analyserNode.connect(audioCtx.destination);
-  
+  // Graph: [stem sources] → splitter → masterMerger → analyser → masterGain → destination
+  masterMerger.connect(analyserNode);
+  analyserNode.connect(masterGainNode);
+  masterGainNode.connect(audioCtx.destination);
+
   Object.keys(audioElements).forEach(chan => {
     const ae = audioElements[chan];
     const source = audioCtx.createMediaElementSource(ae);
-    source.connect(masterGainNode);
+    const stripGain = audioCtx.createGain();  // pre-split gain (mute/solo
+                                              // applied via ae.volume; this
+                                              // is a placeholder for future
+                                              // per-strip routing gain).
+    const splitter = audioCtx.createChannelSplitter(2);
+    source.connect(stripGain);
+    stripGain.connect(splitter);
+    stripNodes[chan] = { source, stripGain, splitter };
     trackSources[chan] = source;
   });
-  
+
+  loadRoutingMatrix();
+  applyRouting();
+
   initVisualizer(analyserNode);
+}
+
+// ── Multi-channel routing helpers ─────────────────────────────────────────
+
+function loadRoutingMatrix() {
+  // Default: every stem to outputs 0-1 (plain stereo).
+  routingMatrix = {};
+  Object.keys(audioElements).forEach(ch => {
+    routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+  });
+  try {
+    const raw = localStorage.getItem(ROUTING_STORAGE_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    Object.keys(audioElements).forEach(ch => {
+      if (Array.isArray(stored[ch])) {
+        // Clamp any saved channel indices to the device's current channel count
+        routingMatrix[ch] = stored[ch]
+          .map(r => ({
+            lOut: clampChannel(r.lOut),
+            rOut: clampChannel(r.rOut),
+          }))
+          .filter(r => r.lOut != null || r.rOut != null);
+        if (!routingMatrix[ch].length) routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+      }
+    });
+  } catch (e) {}
+}
+
+function clampChannel(idx) {
+  if (idx == null || idx < 0) return null;
+  if (idx >= outputChannelCount) return null;
+  return idx;
+}
+
+function saveRoutingMatrix() {
+  try { localStorage.setItem(ROUTING_STORAGE_KEY, JSON.stringify(routingMatrix)); } catch (e) {}
+}
+
+function applyRouting() {
+  if (!masterMerger || !stripNodes) return;
+  // Disconnect every splitter then reconnect per current routing matrix.
+  Object.values(stripNodes).forEach(s => {
+    try { s.splitter.disconnect(); } catch (e) {}
+  });
+  Object.entries(routingMatrix).forEach(([chan, routes]) => {
+    const s = stripNodes[chan];
+    if (!s) return;
+    routes.forEach(r => {
+      try {
+        if (r.lOut != null && r.lOut < outputChannelCount) s.splitter.connect(masterMerger, 0, r.lOut);
+        if (r.rOut != null && r.rOut < outputChannelCount) s.splitter.connect(masterMerger, 1, r.rOut);
+      } catch (e) { console.warn('[routing]', chan, r, e.message); }
+    });
+  });
+}
+
+function setStripRoutes(chan, routes) {
+  routingMatrix[chan] = routes.slice();
+  saveRoutingMatrix();
+  applyRouting();
+  renderRoutingButtons();
+}
+
+// Preset: "Spread to 6 AUX" — every stem's L lands on outputs 0,2,4 and R on
+// 1,3,5. Lets the XR18 fan the stereo image to three amps per side via three
+// stereo aux sends. Idempotent — call again to re-apply.
+function presetSpreadToSixAux() {
+  Object.keys(audioElements).forEach(ch => {
+    routingMatrix[ch] = [
+      { lOut: 0, rOut: 1 },
+      { lOut: 2, rOut: 3 },
+      { lOut: 4, rOut: 5 },
+    ].filter(r => r.lOut < outputChannelCount && r.rOut < outputChannelCount);
+  });
+  saveRoutingMatrix();
+  applyRouting();
+  renderRoutingButtons();
+}
+
+function presetStereoMain() {
+  Object.keys(audioElements).forEach(ch => {
+    routingMatrix[ch] = [{ lOut: 0, rOut: 1 }];
+  });
+  saveRoutingMatrix();
+  applyRouting();
+  renderRoutingButtons();
+}
+
+// ── Routing UI ────────────────────────────────────────────────────────────
+// Injects a routing button into each channel strip (`Out 1-2` / `Outs 1-2,3-4`).
+// Click → popover with one checkbox per output pair (1-2 ... 17-18). Toggling
+// re-applies routing immediately so the user can hear it.
+function setupRoutingUI() {
+  // The first user click on the page is what we wait on; AudioContext requires
+  // a gesture before it'll show maxChannelCount, so the routing UI doesn't
+  // populate until we know how many channels we have. Re-render on each load.
+  document.addEventListener('click', maybeInitRoutingUI, { once: false });
+}
+
+let routingUIReady = false;
+function maybeInitRoutingUI() {
+  if (routingUIReady || !audioCtx || !masterMerger) return;
+  routingUIReady = true;
+  injectMixerHeaderInfo();
+  injectStripRoutingButtons();
+  renderRoutingButtons();
+}
+
+function injectMixerHeaderInfo() {
+  const header = document.querySelector('.mixer-header');
+  if (!header || header.querySelector('.routing-info')) return;
+  const info = document.createElement('div');
+  info.className = 'routing-info';
+  if (outputChannelCount <= 2) {
+    info.innerHTML = `<span class="routing-tag stereo-only">Stereo only · device gives ${outputChannelCount} channel${outputChannelCount === 1 ? '' : 's'}</span>`;
+  } else {
+    info.innerHTML = `
+      <span class="routing-tag multi">${outputChannelCount} ch out</span>
+      <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
+      <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
+    `;
+  }
+  header.appendChild(info);
+  const ps = header.querySelector('.routing-preset-stereo');
+  const pS = header.querySelector('.routing-preset-spread');
+  if (ps) ps.addEventListener('click', presetStereoMain);
+  if (pS) pS.addEventListener('click', presetSpreadToSixAux);
+}
+
+function injectStripRoutingButtons() {
+  if (outputChannelCount <= 2) return;
+  document.querySelectorAll('.channel-strip').forEach(strip => {
+    if (strip.querySelector('.strip-routing-btn')) return;
+    const chan = stripChannelName(strip);
+    if (!chan) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'strip-routing';
+    wrap.dataset.chan = chan;
+    wrap.innerHTML = `<button class="strip-routing-btn" type="button">…</button>`;
+    wrap.querySelector('.strip-routing-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      openRoutingPopover(chan, e.currentTarget);
+    });
+    strip.appendChild(wrap);
+  });
+}
+
+function stripChannelName(strip) {
+  for (const ch of Object.keys(audioElements)) {
+    if (strip.classList.contains(`${ch}-strip`)) return ch;
+  }
+  return null;
+}
+
+function renderRoutingButtons() {
+  document.querySelectorAll('.strip-routing').forEach(wrap => {
+    const chan = wrap.dataset.chan;
+    const btn = wrap.querySelector('.strip-routing-btn');
+    const routes = routingMatrix[chan] || [];
+    if (!routes.length) {
+      btn.textContent = 'unrouted';
+      btn.classList.add('unrouted');
+    } else {
+      btn.classList.remove('unrouted');
+      btn.textContent = routes.length === 1
+        ? `Out ${routes[0].lOut + 1}-${routes[0].rOut + 1}`
+        : `${routes.length} routes`;
+    }
+  });
+}
+
+function openRoutingPopover(chan, anchorBtn) {
+  // Close any existing popover first
+  document.querySelectorAll('.routing-popover').forEach(p => p.remove());
+  const popover = document.createElement('div');
+  popover.className = 'routing-popover';
+  const pairs = Math.floor(outputChannelCount / 2);
+  const current = routingMatrix[chan] || [];
+  let html = `<div class="rp-header">Route <b>${chan}</b> to</div>`;
+  for (let i = 0; i < pairs; i++) {
+    const lOut = i * 2;
+    const rOut = i * 2 + 1;
+    const checked = current.some(r => r.lOut === lOut && r.rOut === rOut);
+    html += `
+      <label class="rp-row">
+        <input type="checkbox" data-l="${lOut}" data-r="${rOut}" ${checked ? 'checked' : ''}>
+        <span>Out ${lOut + 1}-${rOut + 1}</span>
+      </label>`;
+  }
+  html += `<div class="rp-foot"><button class="rp-close">Done</button></div>`;
+  popover.innerHTML = html;
+
+  const rect = anchorBtn.getBoundingClientRect();
+  popover.style.left = `${Math.max(8, rect.left - 80)}px`;
+  popover.style.top = `${rect.bottom + 4}px`;
+  document.body.appendChild(popover);
+
+  popover.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const lOut = parseInt(cb.dataset.l, 10);
+      const rOut = parseInt(cb.dataset.r, 10);
+      let routes = (routingMatrix[chan] || []).filter(r => !(r.lOut === lOut && r.rOut === rOut));
+      if (cb.checked) routes.push({ lOut, rOut });
+      // Always-sorted by lOut so the button label is stable
+      routes.sort((a, b) => a.lOut - b.lOut);
+      setStripRoutes(chan, routes);
+    });
+  });
+  popover.querySelector('.rp-close').addEventListener('click', () => popover.remove());
+
+  // Click outside closes
+  setTimeout(() => {
+    const closeOnOutside = (e) => {
+      if (!popover.contains(e.target)) {
+        popover.remove();
+        document.removeEventListener('click', closeOnOutside);
+      }
+    };
+    document.addEventListener('click', closeOnOutside);
+  }, 0);
 }
 
 // Load song into the mixer

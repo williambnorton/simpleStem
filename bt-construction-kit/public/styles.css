@@ -2743,6 +2743,60 @@ input:checked + .slider-round:before {
 .update-btn:hover { filter: brightness(1.08); }
 .update-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
 
+/* ===== Multi-channel routing UI ===== */
+.routing-info {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+}
+.routing-tag {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 6px;
+}
+.routing-tag.multi { background: var(--color-green); color: #fff; }
+.routing-tag.stereo-only { background: var(--bg-dark); color: var(--text-muted); }
+.routing-info .btn-secondary { padding: 4px 10px; font-size: 0.72rem; }
+
+.strip-routing {
+  margin-top: 6px; padding: 4px 0; display: flex; justify-content: center;
+}
+.strip-routing-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px;
+  background: var(--bg-card); color: var(--text-main);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.strip-routing-btn:hover { background: var(--bg-card-hover); border-color: var(--color-green); color: var(--color-green); }
+.strip-routing-btn.unrouted { color: var(--text-dim); border-style: dashed; }
+
+.routing-popover {
+  position: fixed; z-index: 5000;
+  background: var(--bg-card);
+  border: 1px solid var(--border-active);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  padding: 10px 12px;
+  min-width: 180px;
+  max-height: 380px; overflow-y: auto;
+}
+.routing-popover .rp-header { font-size: 0.78rem; font-weight: 700; margin-bottom: 8px; color: var(--text-main); }
+.routing-popover .rp-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 0.78rem; cursor: pointer;
+}
+.routing-popover .rp-row input { cursor: pointer; }
+.routing-popover .rp-foot {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  text-align: right;
+}
+.routing-popover .rp-close {
+  font-size: 0.72rem; padding: 4px 12px;
+  background: var(--color-green); color: #fff;
+  border: 1px solid #2e8b57; border-radius: 5px; cursor: pointer;
+}
+
 /* ===== Sidebar rollup pattern (Library Analytics, Setlist) =====
    Click the header to expand/collapse the body. Caret rotates 180° when
    collapsed. State persisted via aria-expanded so JS can save/restore. */
