@@ -401,6 +401,33 @@ else
     --max-loops 4
 fi
 
+# 3b) Encode each stem to m4a so the browser-side mixer can stream them
+#     directly (a stem WAV is ~30-50 MB; the same content at 256k AAC is
+#     ~5-8 MB — major cache + Drive sync win). The WAVs are kept by default
+#     so loop_detect / post_process can be re-run. Set DELETE_STEM_WAVS=1
+#     when invoking stem.sh to remove the WAVs after encoding (saves disk;
+#     the m4as are sufficient for normal stem-mixer use).
+for stem in vocals drums bass other piano guitar; do
+  stem_wav="$OUT_DIR/${stem}.wav"
+  stem_m4a="$OUT_DIR/${stem}.m4a"
+  [[ -f "$stem_wav" ]] || continue
+  if [[ -f "$stem_m4a" ]]; then
+    echo ">> ${stem}.m4a present, skipping."
+    continue
+  fi
+  echo ">> Encoding ${stem}.m4a (AAC 256k from ${stem}.wav)"
+  ffmpeg -y -loglevel error -i "$stem_wav" -c:a aac -b:a 256k "$stem_m4a"
+done
+
+if [[ "${DELETE_STEM_WAVS:-0}" == "1" ]]; then
+  for stem in vocals drums bass other piano guitar; do
+    if [[ -f "$OUT_DIR/${stem}.m4a" && -f "$OUT_DIR/${stem}.wav" ]]; then
+      rm -f "$OUT_DIR/${stem}.wav"
+    fi
+  done
+  echo ">> Deleted stem WAVs (DELETE_STEM_WAVS=1)."
+fi
+
 # 4) Mixdown loops: detect the most-repeated sections (from source.wav) and tile
 #    them out of EACH m4a mixdown (-V, -V-G, -V-G-B, DO), up to 4 per mixdown.
 #    Output: M4A/<base>_<variant>_loop<i>_<bars>bars.m4a

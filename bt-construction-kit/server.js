@@ -246,16 +246,24 @@ function scanStems() {
     const folderPath = path.join(STEMS_DIR, folder);
     const filesInFolder = fs.readdirSync(folderPath);
 
-    // Identify standard stems
+    // Identify standard stems. Prefer m4a over wav so the cache + Drive sync
+    // burden stays small (m4a is ~1/6 the size and the browser plays it
+    // natively). Falls back to wav for songs ingested before the m4a stem
+    // step landed in stem.sh.
+    const pickStem = (name) => {
+      if (filesInFolder.includes(`${name}.m4a`)) return `${name}.m4a`;
+      if (filesInFolder.includes(`${name}.wav`)) return `${name}.wav`;
+      return null;
+    };
     const stems = {
-      vocals: filesInFolder.includes('vocals.wav') ? `vocals.wav` : null,
-      drums: filesInFolder.includes('drums.wav') ? `drums.wav` : null,
-      bass: filesInFolder.includes('bass.wav') ? `bass.wav` : null,
-      guitar: filesInFolder.includes('guitar.wav') ? `guitar.wav` : null,
-      piano: filesInFolder.includes('piano.wav') ? `piano.wav` : null,
-      other: filesInFolder.includes('other.wav') ? `other.wav` : null,
-      rhythm: filesInFolder.includes('bass+drums.wav') ? `bass+drums.wav` : null,
-      source: filesInFolder.includes('source.wav') ? `source.wav` : null,
+      vocals: pickStem('vocals'),
+      drums:  pickStem('drums'),
+      bass:   pickStem('bass'),
+      guitar: pickStem('guitar'),
+      piano:  pickStem('piano'),
+      other:  pickStem('other'),
+      rhythm: pickStem('bass+drums'),
+      source: pickStem('source'),
     };
 
     // Find loop files (e.g. drums_loop1_83bars.m4a; legacy .wav also accepted)
@@ -720,8 +728,8 @@ function pruneCache() {
       if (fs.existsSync(AUDIO_CACHE_STEMS)) for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
         const folder = path.join(AUDIO_CACHE_STEMS, d);
         try {
-          const wavs = fs.readdirSync(folder).filter(f => f.endsWith('.wav'));
-          if (wavs.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
+          const stems = fs.readdirSync(folder).filter(f => /\.(wav|m4a)$/i.test(f));
+          if (stems.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
         } catch (e) {}
       }
       console.log(`[cache] pruned ${removed} stem file(s) to keep STEMS cache under ${Math.round(CACHE_CAP_BYTES/1e9)}GB (m4a never pruned)`);
@@ -973,7 +981,7 @@ app.post('/api/precache/stems/:song', (req, res) => {
     const t0 = Date.now();
     try {
       let copied = 0;
-      const files = (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'));
+      const files = (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f));
       for (const f of files) {
         // Awaiting each copy yields to other handlers between files. For
         // even more concurrency we could Promise.all, but serial keeps
@@ -1014,7 +1022,7 @@ app.post('/api/precache/setlist/:slug', (req, res) => {
       const folder = path.join(STEMS_DIR, base);
       try {
         if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'))) {
+          for (const f of (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f))) {
             await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
           }
         }
@@ -1616,7 +1624,7 @@ app.post('/api/precache/gig/:slug', (req, res) => {
       const folder = path.join(STEMS_DIR, base);
       try {
         if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => f.toLowerCase().endsWith('.wav'))) {
+          for (const f of (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f))) {
             try {
               await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
               wavs++;
