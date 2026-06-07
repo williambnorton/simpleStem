@@ -16,15 +16,22 @@
 let canvas = null;
 let ctx = null;
 let analyser = null;             // kept for back-compat with initVisualizer signature
-let waveformPeaks = null;        // Float32Array of [0..1] amplitudes
+// Per-stem peaks for stems songs: key → Float32Array(PEAK_BUCKETS). For m4a
+// tracks the key is '__m4a__' and there's only one entry. Each frame we
+// combine only the entries whose underlying audio element has volume > 0.01,
+// so soloing drums shows only the drums envelope, muting bass drops the bass
+// contribution, and so on — the visual matches what's audible.
+let stemPeaks = new Map();
+let stemPeaksRequestId = 0;      // monotonic; cancels older decodes
 let waveformDuration = 0;
-let waveformUrl = null;          // url whose peaks are currently displayed
 let waveformLoading = false;
+let waveformError = false;
 let animationFrameId = null;
 let canvasBorderBeatClass = 'pulse-active';
 let beatInterval = null;
 
 const PEAK_BUCKETS = 1500;
+const AUDIBLE_THRESHOLD = 0.01;
 
 function initVisualizer(analyserNode) {
   canvas = document.getElementById('visualizer-canvas');
@@ -69,45 +76,56 @@ function resizeCanvas() {
   ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
 }
 
-// Called from app.js whenever a song is loaded. `url` is the audio URL
-// (the m4a variant currently in the player; we use this as the source of
-// truth for the waveform). Computing peaks is async; loading state is
-// rendered as a faint placeholder until the buffer arrives.
-async function setWaveformSource(url) {
-  if (!ctx || !url || url === waveformUrl) return;
-  waveformUrl = url;
-  waveformPeaks = null;
+// Called from app.js when a song is loaded. `sources` is a map of key →
+// audio URL. For stems songs it's {vocals: url, drums: url, ...} and the
+// visualizer combines whichever stems are audible per frame; for m4a
+// tracks the map has a single '__m4a__' key.
+async function setWaveformStems(sources) {
+  if (!ctx) return;
+  // Cancel any in-flight decodes from the previous song.
+  const requestId = ++stemPeaksRequestId;
+  stemPeaks = new Map();
+  waveformDuration = 0;
+  waveformError = false;
   waveformLoading = true;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`fetch ${res.status}`);
-    const arrayBuffer = await res.arrayBuffer();
-    // Build a one-shot AudioContext just for decoding — keeps us from
-    // touching whatever audio graph the player is currently running.
-    const Ctor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    // Decode requires a regular (online) AudioContext, but we don't need
-    // to play it — just decodeAudioData. The simpleStem app already has an
-    // AudioContext open by this point; reuse it via window.appAudioCtx if
-    // exposed, else make a transient one.
-    const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await new Promise((resolve, reject) => {
-      // Both callback and promise forms work; the promise form is the
-      // newer API but older Safari needs the callback form.
-      try {
-        const p = ac.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
-        if (p && typeof p.then === 'function') p.then(resolve, reject);
-      } catch (e) { reject(e); }
-    });
-    if (waveformUrl !== url) return;   // a newer song was loaded mid-decode
-    waveformDuration = buf.duration;
-    waveformPeaks = computePeaks(buf, PEAK_BUCKETS);
-  } catch (e) {
-    console.warn('[visualizer] peaks failed for', url, e.message);
-    waveformPeaks = null;
-    waveformDuration = 0;
-  } finally {
+
+  const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
+  const entries = Object.entries(sources || {});
+  if (!entries.length) {
     waveformLoading = false;
+    return;
   }
+
+  // Decode every source in parallel; first one to complete also seeds the
+  // duration (every stem has the same length).
+  await Promise.all(entries.map(async ([key, url]) => {
+    if (!url) return;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const arrayBuffer = await res.arrayBuffer();
+      const buf = await new Promise((resolve, reject) => {
+        try {
+          const p = ac.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+          if (p && typeof p.then === 'function') p.then(resolve, reject);
+        } catch (e) { reject(e); }
+      });
+      if (requestId !== stemPeaksRequestId) return;  // newer song loaded
+      if (!waveformDuration) waveformDuration = buf.duration;
+      stemPeaks.set(key, computePeaks(buf, PEAK_BUCKETS));
+    } catch (e) {
+      console.warn('[visualizer] peaks failed for', key, url, e.message);
+    }
+  }));
+
+  if (requestId !== stemPeaksRequestId) return;
+  waveformLoading = false;
+  if (!stemPeaks.size) waveformError = true;
+}
+
+// Back-compat wrapper for the old single-source API.
+function setWaveformSource(url) {
+  return setWaveformStems({ __m4a__: url });
 }
 
 function computePeaks(buf, bucketCount) {
@@ -147,28 +165,34 @@ function draw() {
   const height = canvas.height / window.devicePixelRatio;
   ctx.clearRect(0, 0, width, height);
 
-  if (waveformLoading) {
+  if (waveformLoading && stemPeaks.size === 0) {
     drawPlaceholder(width, height, 'analyzing waveform…');
     return;
   }
-  if (!waveformPeaks) {
+  if (waveformError || stemPeaks.size === 0) {
     drawPlaceholder(width, height, '');
     return;
   }
 
-  // Mirror waveform: peaks drawn upward from the centerline AND downward,
-  // colored with the same purple → cyan → green gradient the old EQ used,
-  // so the visual identity is preserved.
+  // Combine the peaks of currently-audible stems. For m4a tracks there's
+  // only one ('__m4a__') and the audible-check is trivially true. For
+  // stems tracks each strip's audio element volume reflects mute / solo /
+  // fader, so peeking at `volume > AUDIBLE_THRESHOLD` tells us what the
+  // user can actually hear. We weight each stem's peaks by its volume so
+  // pulling a fader down dims the visualization too, not just lops it off.
+  const combined = combineAudiblePeaks();
+
+  // Mirror waveform: peaks drawn from the centerline outward.
   const grad = ctx.createLinearGradient(0, height, 0, 0);
   grad.addColorStop(0, 'rgba(156, 39, 176, 0.85)');
   grad.addColorStop(0.5, 'rgba(0, 188, 212, 0.85)');
   grad.addColorStop(1, 'rgba(46, 204, 113, 0.85)');
 
-  const bucketW = width / waveformPeaks.length;
+  const bucketW = width / combined.length;
   const half = height / 2;
   ctx.fillStyle = grad;
-  for (let i = 0; i < waveformPeaks.length; i++) {
-    const p = waveformPeaks[i];
+  for (let i = 0; i < combined.length; i++) {
+    const p = combined[i];
     const barH = p * (height * 0.9);
     const x = i * bucketW;
     const w = Math.max(0.6, bucketW - 0.3);
@@ -191,6 +215,31 @@ function draw() {
     ctx.lineTo(playedX, height);
     ctx.stroke();
   }
+}
+
+// Walks the per-stem peaks, weighting each by its current audible volume
+// (so dragging a fader down dims that stem's contribution). For each bucket
+// the result is the sum of weighted contributions, clamped to [0,1].
+function combineAudiblePeaks() {
+  const out = new Float32Array(PEAK_BUCKETS);
+  const audio = window.audioElements;
+  for (const [key, peaks] of stemPeaks) {
+    let weight;
+    if (key === '__m4a__') {
+      // M4A mode plays through the 'drums' carrier; same audible check.
+      const ae = audio && audio.drums;
+      weight = (ae && ae.volume > AUDIBLE_THRESHOLD) ? ae.volume : 0;
+    } else {
+      const ae = audio && audio[key];
+      weight = (ae && ae.volume > AUDIBLE_THRESHOLD) ? ae.volume : 0;
+    }
+    if (weight <= 0) continue;
+    for (let i = 0; i < peaks.length; i++) {
+      const v = peaks[i] * weight;
+      if (v > out[i]) out[i] = v;     // use max so stems don't sum past 1
+    }
+  }
+  return out;
 }
 
 function drawPlaceholder(width, height, label) {
@@ -274,5 +323,6 @@ function stopBeatingVisualizer() {
   if (c) c.classList.remove(canvasBorderBeatClass);
 }
 
-// Expose hook for app.js to use.
+// Expose hooks for app.js to use.
 window.setWaveformSource = setWaveformSource;
+window.setWaveformStems  = setWaveformStems;

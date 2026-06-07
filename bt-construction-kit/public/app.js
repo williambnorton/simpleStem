@@ -21,7 +21,7 @@ let stretchCycles = 2; // 2, 4, 8, 'infinite'
 let isStretching = false;
 let stretchCycleCount = 0;
 let stretchTimer = null;
-let currentMasterVolume = 1.0;
+let currentMasterVolume = 0.75;
 
 // Web Audio API variables
 let audioCtx = null;
@@ -2072,17 +2072,22 @@ function loadSong(song, opts) {
   // Refresh sidebar setlist toggle (+/- depends on whether currentSong is
   // in the active setlist).
   if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
-  // Recompute the waveform peaks for the visualizer. For stems songs, use
-  // one representative stem (drums — usually the loudest envelope); for
-  // m4a tracks the file itself is the right source.
-  if (typeof window.setWaveformSource === 'function') {
-    let waveUrl = null;
+  // Recompute waveform peaks for the visualizer. For stems songs we send
+  // EVERY stem's URL so the visualizer can decode each one and combine
+  // only the currently-audible ones on each render frame (so mute/solo
+  // /fader changes are reflected in the envelope). For m4a tracks there's
+  // a single source.
+  if (typeof window.setWaveformStems === 'function') {
     if (song.type === 'm4a' && song.fileName) {
-      waveUrl = `/api/audio/m4a/${encodeURIComponent(song.fileName)}`;
-    } else if (song.type === 'stems' && song.folderName && song.stems && song.stems.drums) {
-      waveUrl = `/api/audio/stems/${song.folderName}/${song.stems.drums}`;
+      window.setWaveformStems({ __m4a__: `/api/audio/m4a/${encodeURIComponent(song.fileName)}` });
+    } else if (song.type === 'stems' && song.folderName && song.stems) {
+      const sources = {};
+      for (const ch of CHANNELS) {
+        const fn = song.stems[ch];
+        if (fn) sources[ch] = `/api/audio/stems/${song.folderName}/${fn}`;
+      }
+      if (Object.keys(sources).length) window.setWaveformStems(sources);
     }
-    if (waveUrl) window.setWaveformSource(waveUrl);
   }
 
   els.trackTitle.textContent = song.title;
