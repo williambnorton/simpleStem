@@ -94,6 +94,14 @@ const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
 const GIGS_DIR     = `${SIMPLE_STEM_ROOT}/GIGS`;
+// Drive-side authoritative catalog (Librarian writes; Performer reads).
+// When present + fresh, the portal uses this as the library source instead
+// of walking STEMS/ and M4A/ directories, which avoids Drive stalls.
+const CATALOG_DRIVE_PATH = `${SIMPLE_STEM_ROOT}/CATALOG.json`;
+// Local-disk mirror — copied from CATALOG_DRIVE_PATH whenever it changes
+// (fs.watch). Library serving reads ONLY this path so Drive never sits in
+// the request hot path.
+const CATALOG_LOCAL_MIRROR = path.join(os.homedir(), '.simpleStem-catalog', 'CATALOG.json');
 
 // Comprehensive list of known artists in this library for intelligent parsing
 const KNOWN_ARTISTS = [
@@ -229,22 +237,30 @@ function parseSongMetadata(rawName, isFolder = false) {
 /**
  * Scan the STEMS directory and return metadata of available stems and loops.
  */
-function scanStems() {
+async function scanStems() {
   if (!fs.existsSync(STEMS_DIR)) {
     console.warn(`Stems directory not found: ${STEMS_DIR}`);
     return [];
   }
 
   const results = [];
-  const folders = fs.readdirSync(STEMS_DIR).filter(file => {
-    if (/ \(\d+\)$/.test(file)) return false;   // skip ' (1)' duplicate copies
-    const fullPath = path.join(STEMS_DIR, file);
-    return fs.statSync(fullPath).isDirectory();
-  });
+  // Async readdir + per-entry stat so Drive stalls don't lock up the
+  // event loop. Each await yields, letting audio-stream requests and
+  // other handlers interleave between filesystem calls.
+  const dirents = await fsp.readdir(STEMS_DIR, { withFileTypes: true });
+  const folders = dirents
+    .filter(d => d.isDirectory() && !/ \(\d+\)$/.test(d.name))
+    .map(d => d.name);
 
   for (const folder of folders) {
     const folderPath = path.join(STEMS_DIR, folder);
-    const filesInFolder = fs.readdirSync(folderPath);
+    let filesInFolder;
+    try {
+      filesInFolder = await fsp.readdir(folderPath);
+    } catch (e) {
+      console.warn(`[scan] could not read ${folderPath}:`, e.message);
+      continue;
+    }
 
     // Identify standard stems. Prefer m4a over wav so the cache + Drive sync
     // burden stays small (m4a is ~1/6 the size and the browser plays it
@@ -360,18 +376,25 @@ function scanStems() {
  * If a matching STEMS folder exists, inherits title/artist/bpm/key/duration
  * from its metadata.json (avoids re-running ffprobe and gives accurate data).
  */
-function scanM4a(stemsByKey) {
+async function scanM4a(stemsByKey) {
   if (!fs.existsSync(M4A_DIR)) {
     console.warn(`M4A directory not found: ${M4A_DIR}`);
     return [];
   }
-
-  const files = fs.readdirSync(M4A_DIR).filter(file => {
-    if (/ \(\d+\)\.m4a$/i.test(file)) return false;        // skip ' (1)' duplicate downloads
-    if (/[_ ]loop\d+[_ ]\d+bars\.m4a$/i.test(file)) return false;  // skip loop artifacts — surfaced inside the player, not as library rows
-    const fullPath = path.join(M4A_DIR, file);
-    return fs.statSync(fullPath).isFile() && file.endsWith('.m4a');
-  });
+  // Async readdir with type filtering via Dirent — saves a per-file stat()
+  // round-trip on Drive, where every stat is expensive.
+  let dirents;
+  try {
+    dirents = await fsp.readdir(M4A_DIR, { withFileTypes: true });
+  } catch (e) {
+    console.warn(`[scan] could not read ${M4A_DIR}:`, e.message);
+    return [];
+  }
+  const files = dirents
+    .filter(d => d.isFile() && d.name.toLowerCase().endsWith('.m4a'))
+    .filter(d => !/ \(\d+\)\.m4a$/i.test(d.name))                      // skip ' (1)' duplicate downloads
+    .filter(d => !/[_ ]loop\d+[_ ]\d+bars\.m4a$/i.test(d.name))        // skip loop artifacts
+    .map(d => d.name);
 
   // Known variant suffixes appended after artist (e.g. Foo_Artist_-V-G-B.m4a).
   // Strip these BEFORE title/artist parsing, then label the variant.
@@ -468,11 +491,11 @@ function pickUniqueSongs(allSongs) {
   return [...byKey.values()];
 }
 
-function buildLibraryData() {
-  const stems = scanStems();
+async function buildLibraryData() {
+  const stems = await scanStems();
   const stemsByKey = {};
   for (const s of stems) stemsByKey[s.folderName] = s;
-  const m4as = scanM4a(stemsByKey);
+  const m4as = await scanM4a(stemsByKey);
   const allSongs = [...stems, ...m4as];
 
   // Stats are computed from unique songs (one entry per title+artist), not raw
@@ -515,8 +538,31 @@ function refreshLibraryCache(reason, force) {
   libraryRefreshing = true;
   const t0 = Date.now();
   return new Promise(resolve => {
-    setImmediate(() => {
+    setImmediate(async () => {
       try {
+        // Layer 2: if the Librarian's CATALOG.json is present and fresh,
+        // use it as the library source instead of walking the directories.
+        // Read from the LOCAL MIRROR (Layer 3) — never from Drive in the
+        // request path. The mirror is kept in sync by watchCatalogMirror.
+        try {
+          const fromCatalog = await tryLoadFromCatalog();
+          if (fromCatalog) {
+            libraryCache = {
+              scannedAt: fromCatalog.scannedAt || new Date().toISOString(),
+              checkedAt: new Date().toISOString(),
+              sourceMtimes: fromCatalog.sourceMtimes || {},
+              codeVersion: BOOT_VERSION,
+              source: 'catalog',
+              data: fromCatalog.data,
+            };
+            try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
+            console.log(`[lib] loaded from CATALOG.json (${reason}) — ${fromCatalog.data.songs.length} songs`);
+            return;
+          }
+        } catch (e) {
+          console.warn('[lib] catalog read failed, falling back to scan:', e.message);
+        }
+
         const currentMtimes = getSourceMtimes();
         const prevMtimes = (libraryCache && libraryCache.sourceMtimes) || {};
         // Compare both source-dir mtimes AND the parser version. If the code
@@ -537,7 +583,7 @@ function refreshLibraryCache(reason, force) {
           return;
         }
 
-        const data = buildLibraryData();
+        const data = await buildLibraryData();
         libraryCache = {
           scannedAt: new Date().toISOString(),
           checkedAt: new Date().toISOString(),
@@ -566,6 +612,63 @@ try {
     console.log(`[lib] hydrated cache from disk — ${libraryCache.data.songs.length} songs (scanned ${libraryCache.scannedAt})`);
   }
 } catch (e) { console.warn('[lib] failed to hydrate cache:', e.message); }
+
+// ── Layer 2 + 3: CATALOG.json read path + local mirror ──────────────────
+// Library serving prefers a Librarian-built CATALOG.json over walking
+// STEMS/ + M4A/. To keep Drive out of the request hot path entirely, we
+// maintain a local mirror at CATALOG_LOCAL_MIRROR copied from
+// CATALOG_DRIVE_PATH whenever it changes. The portal reads ONLY the
+// local mirror.
+//
+// CATALOG.json shape (what the Librarian writes):
+//   { "scannedAt":"…ISO…", "sourceMtimes":{…}, "data":{stats, songs:[…]} }
+
+async function tryLoadFromCatalog() {
+  if (!fs.existsSync(CATALOG_LOCAL_MIRROR)) return null;
+  const raw = await fsp.readFile(CATALOG_LOCAL_MIRROR, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!parsed || !parsed.data || !Array.isArray(parsed.data.songs)) return null;
+  return parsed;
+}
+
+// Copy CATALOG.json from Drive → local mirror. Cheap: one ~200KB file.
+// Skips when sizes match to avoid pointless copies during Drive sync churn.
+function mirrorCatalogOnce(reason) {
+  try {
+    if (!fs.existsSync(CATALOG_DRIVE_PATH)) return;
+    const srcStat = fs.statSync(CATALOG_DRIVE_PATH);
+    const mirrorDir = path.dirname(CATALOG_LOCAL_MIRROR);
+    if (!fs.existsSync(mirrorDir)) fs.mkdirSync(mirrorDir, { recursive: true });
+    let needsCopy = true;
+    if (fs.existsSync(CATALOG_LOCAL_MIRROR)) {
+      const dstStat = fs.statSync(CATALOG_LOCAL_MIRROR);
+      if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) needsCopy = false;
+    }
+    if (needsCopy) {
+      fs.copyFileSync(CATALOG_DRIVE_PATH, CATALOG_LOCAL_MIRROR);
+      console.log(`[catalog] mirror updated (${reason}) — ${Math.round(srcStat.size / 1024)} KB`);
+      // Trigger a library refresh so the in-memory cache catches up.
+      refreshLibraryCache('catalog-mirror-updated', true);
+    }
+  } catch (e) {
+    console.warn('[catalog] mirror failed:', e.message);
+  }
+}
+
+// Initial mirror + watcher. fs.watch on Drive paths is sometimes flaky
+// (the platform may not fire events from the Drive client), so we also
+// poll every 60 seconds as a belt-and-suspenders backup. Both are cheap.
+mirrorCatalogOnce('startup');
+try {
+  if (fs.existsSync(path.dirname(CATALOG_DRIVE_PATH))) {
+    fs.watch(path.dirname(CATALOG_DRIVE_PATH), (event, fname) => {
+      if (fname === 'CATALOG.json') mirrorCatalogOnce('fs.watch');
+    });
+  }
+} catch (e) {
+  console.warn('[catalog] fs.watch setup failed:', e.message);
+}
+setInterval(() => mirrorCatalogOnce('poll'), 60 * 1000);
 
 // Kick off a refresh on startup (background) and every hour after
 refreshLibraryCache('startup');
@@ -628,9 +731,9 @@ app.get('/api/library', async (req, res) => {
 
 // Old inline endpoint replaced by the cached version above. The block below
 // remains only to keep variable scope tidy for the catch-all at the bottom.
-app.get('/api/library-uncached', (req, res) => {
+app.get('/api/library-uncached', async (req, res) => {
   try {
-    const data = buildLibraryData();
+    const data = await buildLibraryData();
     res.json(data);
   } catch (error) {
     console.error('Error scanning library:', error);

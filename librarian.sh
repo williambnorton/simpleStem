@@ -29,8 +29,8 @@ RUN="$BASE/.run"                            # runtime state stays with the code
 QUEUE="$DATA/STEM_QUEUE"
 INCOMING="$DATA/INCOMING_WEBLOC"
 STEMS="$DATA/STEMS"
-CATALOG_INTERVAL="${CATALOG_INTERVAL:-86400}"   # seconds between catalog passes
-SERVICES="watcher cataloger"
+CATALOG_INTERVAL="${CATALOG_INTERVAL:-3600}"   # seconds between catalog passes (hourly)
+SERVICES="watcher cataloger catalogwatch"
 mkdir -p "$RUN"
 
 pidfile() { echo "$RUN/lib-$1.pid"; }
@@ -58,9 +58,20 @@ start_cmd() {
   case "$1" in
     watcher)   echo "exec '$BASE/webloc_watch.sh'" ;;
     cataloger) local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
-               # Daily pass: sync registered playlists → SetLists FIRST (this may
+               # Hourly pass: sync registered playlists → SetLists FIRST (this may
                # drop weblocs the watcher then ingests), then rebuild the catalog.
+               # The Performer's portal reads CATALOG.json instead of walking
+               # the directories, so this rebuild is the one that keeps the
+               # library view fresh on every Performer.
                echo "while true; do '$py' '$BASE/setlist_sync.py'; '$py' '$BASE/catalog.py'; sleep $CATALOG_INTERVAL; done" ;;
+    catalogwatch)
+               # Push-driven trigger: fswatch STEMS/ + M4A/ for file
+               # additions/deletions and rebuild the catalog immediately so
+               # the Performer sees newly-stemmed songs without waiting for
+               # the hourly cron. Coalesced 5s so a single ingest doesn't
+               # fire 20 rebuilds.
+               local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
+               echo "exec fswatch -r --latency 5 --event Created --event Renamed --event Removed '$STEMS' '$DATA/M4A' | xargs -n1 -I{} '$py' '$BASE/catalog.py'" ;;
   esac
 }
 
