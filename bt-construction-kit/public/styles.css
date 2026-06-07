@@ -550,33 +550,12 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  grid-template-columns: var(--sidebar-width, 760px) 6px 1fr 84px;
+  /* Sidebar set wide enough to comfortably show ~50 chars of song title
+     in the gig setlist rows. If your titles still truncate, bump this. */
+  grid-template-columns: 800px 1fr 84px;
   height: 100vh;
   width: 100vw;
 }
-
-/* Sidebar splitter — sits between the sidebar grid column and the main
-   content. Drag to resize; double-click to reset to 760px default. */
-.sidebar-splitter {
-  background: var(--border-color);
-  cursor: col-resize;
-  position: relative;
-  transition: background 0.15s ease;
-}
-.sidebar-splitter::before {
-  content: '';
-  position: absolute;
-  top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 2px; height: 30px;
-  background: var(--text-dim);
-  border-radius: 1px;
-}
-.sidebar-splitter:hover { background: var(--color-purple); }
-.sidebar-splitter:hover::before { background: #fff; }
-.sidebar-splitter.dragging { background: var(--color-purple); }
-body.splitter-dragging { cursor: col-resize; user-select: none; }
-body.splitter-dragging * { cursor: col-resize !important; pointer-events: none; }
-body.splitter-dragging .sidebar-splitter { pointer-events auto; }
 
 /* ===== Right rail: full-height master volume ===== */
 .master-vol-rail {
@@ -1339,12 +1318,32 @@ body.splitter-dragging .sidebar-splitter { pointer-events auto; }
   border: 1px solid var(--border-color);
   border-radius: 12px;
   overflow: hidden;
+  width: 100%;
+  margin: 0 0 8px 0;     /* tucks the bottom edge against the timeline below */
 }
 
 .visualizer-canvas {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* "Visualizer" badge in the upper-right of the canvas area */
+.visualizer-label {
+  position: absolute;
+  top: 8px; right: 12px;
+  z-index: 2;
+  pointer-events: none;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px 8px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
 }
 
 .player-wave-overlay {
@@ -2009,7 +2008,7 @@ body.splitter-dragging .sidebar-splitter { pointer-events auto; }
   display: grid;
   grid-template-columns: 50px 2fr 1.5fr 1fr 0.7fr 1.6fr 90px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
   cursor: pointer;
   font-size: 14px;
@@ -2700,8 +2699,21 @@ input:checked + .slider-round:before {
 }
 
 /* ── Add-from-YouTube queue (portal queueing) ─────────────────────────── */
-.add-yt-section { margin: 0.5rem 0 1rem; }
-.add-yt-section .search-box { margin-bottom: 0.4rem; }
+.add-yt-section { margin: 0.5rem 0 1rem; display: flex; flex-direction: column; gap: 6px; }
+.add-yt-section .search-box { margin-bottom: 0; }
+/* + Add button under the URL input — full-width below */
+.add-yt-btn {
+  width: 100%;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 12px;
+  background: var(--color-green); color: #fff;
+  border: 1px solid #2e8b57; border-radius: 8px;
+  font-family: inherit; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.add-yt-btn:hover { background: #27a25b; border-color: #1e7e3a; }
+.add-yt-btn i { width: 14px; height: 14px; }
 #btn-enqueue { white-space: nowrap; }
 .queue-status { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.2rem; font-size: 0.8rem; }
 .queue-chip {

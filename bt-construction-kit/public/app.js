@@ -222,7 +222,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRoutingUI();
   setupFormatFilters();
   setupClickTrack();
-  setupSidebarSplitter();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -2002,25 +2001,52 @@ function clickSchedulerTick() {
   requestAnimationFrame(clickSchedulerTick);
   if (!audioCtx || !masterGainNode) return;
 
-  // Pick the audio element that's currently driving playback. For stems
-  // songs every channel has the same currentTime so any one works; for
-  // m4a the drums element is the carrier.
+  // Pick the audio element that's currently driving playback.
   let songTime = null;
   for (const ch of CHANNELS) {
     const ae = audioElements[ch];
     if (ae && ae.src && !ae.paused) { songTime = ae.currentTime; break; }
   }
-  if (songTime == null) return;   // not playing → no clicks
+  if (songTime == null) return;
 
-  // Seek detection: if the song time jumped backwards, we crossed beats
-  // we've already 'scheduled'. Reset so future beats fire again.
+  // Seek detection: if the song time jumped backwards, reset our
+  // 'already-scheduled' cursor so future events fire again.
   if (songTime < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
   clickLastSongTime = songTime;
 
-  const bpm = (currentSong && currentSong.practiceBpm) || 120;
-  const beatSec = 60 / bpm;
   const LOOKAHEAD_SEC = 0.2;
 
+  // Onset-based scheduling: the visualizer detected actual amplitude
+  // spikes in the song; each one is a transient (drum hit, vocal
+  // attack, etc) and gets a click. Falls back to BPM grid when onsets
+  // aren't computed yet or are too sparse to be useful.
+  const onsets = window.songOnsetTimes;
+  const useOnsets = Array.isArray(onsets) && onsets.length > 16;
+
+  if (useOnsets) {
+    // Binary-search for the next onset >= songTime
+    let lo = 0, hi = onsets.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (onsets[mid] < songTime) lo = mid + 1; else hi = mid;
+    }
+    for (let i = lo; i < onsets.length && onsets[i] < songTime + LOOKAHEAD_SEC; i++) {
+      if (i > clickLastScheduledBeat) {
+        const delay = onsets[i] - songTime;
+        if (delay >= -0.01) {
+          // Treat every 4th onset as a 'downbeat' so the click has rhythmic
+          // texture even when the spikes are unevenly spaced.
+          fireClickAt(audioCtx.currentTime + Math.max(delay, 0), i % 4 === 0);
+        }
+        clickLastScheduledBeat = i;
+      }
+    }
+    return;
+  }
+
+  // Fallback: BPM grid (original behavior)
+  const bpm = (currentSong && currentSong.practiceBpm) || 120;
+  const beatSec = 60 / bpm;
   let beatIdx = Math.floor(songTime / beatSec);
   while (beatIdx * beatSec < songTime + LOOKAHEAD_SEC) {
     if (beatIdx > clickLastScheduledBeat) {

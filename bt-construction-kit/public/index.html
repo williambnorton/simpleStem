@@ -41,24 +41,17 @@
           <button id="clear-search" class="btn-icon" style="display: none;"><i data-lucide="x"></i></button>
         </div>
         
-        <div class="filter-controls">
-          <div class="filter-row">
-            <button id="btn-filter-all" class="filter-btn active">All</button>
-            <button id="btn-filter-stems" class="filter-btn"><i data-lucide="sliders"></i> Stems</button>
-            <button id="btn-filter-m4a" class="filter-btn"><i data-lucide="music-4"></i> M4As</button>
-          </div>
-          
-          <div class="advanced-filters">
-            <select id="filter-key" class="glass-select">
-              <option value="">Any Key</option>
-            </select>
-            <select id="filter-bpm" class="glass-select">
-              <option value="">Any Tempo</option>
-              <option value="slow">Slow (&lt; 90 BPM)</option>
-              <option value="medium">Medium (90-125 BPM)</option>
-              <option value="fast">Fast (&gt; 125 BPM)</option>
-            </select>
-          </div>
+        <!-- Sidebar filter pills + key/tempo dropdowns removed (06/2026) —
+             FORMAT-column toggles in the library header are the primary
+             filters now; the search box above covers the rest. The hidden
+             elements below preserve the IDs so legacy event listeners
+             (filterLibrary etc.) don't crash; CSS hides them. -->
+        <div class="filter-controls" style="display:none;">
+          <button id="btn-filter-all" class="filter-btn active"></button>
+          <button id="btn-filter-stems" class="filter-btn"></button>
+          <button id="btn-filter-m4a" class="filter-btn"></button>
+          <select id="filter-key"><option value=""></option></select>
+          <select id="filter-bpm"><option value=""></option></select>
         </div>
       </section>
 
@@ -67,8 +60,8 @@
         <div class="search-box glass-input">
           <i data-lucide="youtube" class="search-icon"></i>
           <input type="text" id="yt-url" placeholder="Paste YouTube URL…" title="Paste a YouTube video, playlist, or chaptered album URL to add to the library" autocomplete="off">
-          <button id="btn-enqueue" class="filter-btn"><i data-lucide="plus"></i> Add</button>
         </div>
+        <button id="btn-enqueue" class="add-yt-btn"><i data-lucide="plus"></i> Add</button>
         <div id="queue-status" class="queue-status"></div>
       </section>
 
@@ -227,6 +220,7 @@
 
           <!-- Mid Panel: Visualizer & Timeline Player -->
           <div class="player-visualization-area">
+            <span class="visualizer-label">Visualizer</span>
             <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
             
             <div class="player-wave-overlay">
@@ -574,11 +568,6 @@
       </div><!-- /tab-container -->
 
     </main>
-
-    <!-- Draggable splitter between sidebar and main content. Drag to resize;
-         width persists in localStorage so it survives reloads. Double-click
-         to reset to default. -->
-    <div id="sidebar-splitter" class="sidebar-splitter" title="Drag to resize the left pane · double-click to reset"></div>
 
     <!-- Right rail: full-height master volume -->
     <aside class="master-vol-rail glass">

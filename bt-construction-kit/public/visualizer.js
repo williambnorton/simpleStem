@@ -121,6 +121,44 @@ async function setWaveformStems(sources) {
   if (requestId !== stemPeaksRequestId) return;
   waveformLoading = false;
   if (!stemPeaks.size) waveformError = true;
+
+  // Onset detection: walk the combined-peaks envelope and find local rises
+  // that exceed a threshold with minimum spacing. Each rise is a 'spike'
+  // — likely a drum hit, vocal attack, or other transient. The click
+  // scheduler reads these as the times to fire clicks, so the click
+  // genuinely follows the song's musical accents instead of the BPM grid.
+  window.songOnsetTimes = computeOnsetTimes();
+  // Also republish the BPM hint so the click scheduler can fall back when
+  // onsets are sparse.
+  window.songOnsetCount = window.songOnsetTimes ? window.songOnsetTimes.length : 0;
+}
+
+function computeOnsetTimes() {
+  if (!stemPeaks.size || !waveformDuration) return null;
+  // Build a combined peaks envelope using max-of-stems (mute/solo state
+  // doesn't matter here; we want the song's underlying structure).
+  const N = PEAK_BUCKETS;
+  const env = new Float32Array(N);
+  for (const peaks of stemPeaks.values()) {
+    for (let i = 0; i < N; i++) if (peaks[i] > env[i]) env[i] = peaks[i];
+  }
+  // Local-rise detection: spike[i] = env[i] - env[i-1]. Pick indices where
+  // the rise is above THRESHOLD and at least MIN_SPACING buckets from the
+  // last accepted index.
+  const RISE_THRESHOLD = 0.18;
+  const MIN_SPACING_MS = 110;            // can't fire two clicks in <110ms
+  const bucketsPerSec = N / waveformDuration;
+  const minSpacingBuckets = Math.ceil(bucketsPerSec * (MIN_SPACING_MS / 1000));
+  const onsets = [];
+  let lastIdx = -minSpacingBuckets;
+  for (let i = 1; i < N; i++) {
+    const rise = env[i] - env[i - 1];
+    if (rise > RISE_THRESHOLD && (i - lastIdx) >= minSpacingBuckets) {
+      onsets.push((i / N) * waveformDuration);
+      lastIdx = i;
+    }
+  }
+  return onsets;
 }
 
 // Back-compat wrapper for the old single-source API.
