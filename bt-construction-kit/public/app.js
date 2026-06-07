@@ -221,6 +221,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupGigSidebar();
   setupRoutingUI();
   setupFormatFilters();
+  setupClickTrack();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -1764,6 +1765,25 @@ function initAudioCtx() {
   if (els.masterVol) currentMasterVolume = parseFloat(els.masterVol.value);
   masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
 
+  // BUG that audited the user's "channels 3-18 are silent" complaint:
+  // every intermediate node defaults to channelCount = 2 + interpretation
+  // = 'speakers', so an 18-channel signal entering the analyser was being
+  // DOWNMIXED to stereo before it ever reached the destination, no matter
+  // what destination.channelCount said. Force each intermediate node to
+  // pass the full multi-channel signal through:
+  if (outputChannelCount > 2) {
+    for (const node of [analyserNode, masterGainNode]) {
+      try {
+        node.channelCount = outputChannelCount;
+        node.channelCountMode = 'explicit';
+        node.channelInterpretation = 'discrete';
+      } catch (e) {
+        console.warn('[audio] could not set multi-channel on intermediate:', e.message);
+      }
+    }
+  }
+  console.log(`[audio] graph initialized — outputChannelCount=${outputChannelCount}, destination.channelCount=${audioCtx.destination.channelCount}, maxChannelCount=${audioCtx.destination.maxChannelCount}`);
+
   // Graph: [stem sources] → splitter → masterMerger → analyser → masterGain → destination
   masterMerger.connect(analyserNode);
   analyserNode.connect(masterGainNode);
@@ -1868,6 +1888,67 @@ function presetSpreadToSixAux() {
   saveRoutingMatrix();
   applyRouting();
   renderRoutingGrids();
+}
+
+// ── Click track ──────────────────────────────────────────────────────────
+// Sample-accurate metronome: schedules short triangle-wave clicks at
+// 60/bpm-second intervals. First beat of every bar is pitched higher so
+// the user can hear bar boundaries (4/4 assumed; see lib-common.sh and
+// CLAUDE.md gotchas — same assumption as elsewhere). Routes through the
+// same master graph as the stems so master volume + per-channel routing
+// + multi-channel output all apply.
+let clickEnabled = false;
+let clickIntervalId = null;
+let clickBeatCount = 0;
+
+function setupClickTrack() {
+  const btn = document.getElementById('btn-click-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    clickEnabled = !clickEnabled;
+    btn.classList.toggle('active', clickEnabled);
+    if (clickEnabled) startClickTrack();
+    else stopClickTrack();
+  });
+}
+
+function startClickTrack() {
+  initAudioCtx();
+  stopClickTrack();
+  const bpm = (currentSong && currentSong.practiceBpm) || 120;
+  const beatMs = 60000 / bpm;
+  clickBeatCount = 0;
+  const tick = () => {
+    if (!clickEnabled || !audioCtx) return;
+    fireClick(clickBeatCount % 4 === 0);
+    clickBeatCount++;
+  };
+  tick();
+  clickIntervalId = setInterval(tick, beatMs);
+}
+
+function stopClickTrack() {
+  if (clickIntervalId) clearInterval(clickIntervalId);
+  clickIntervalId = null;
+}
+
+function fireClick(downbeat) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.value = downbeat ? 1800 : 1200;
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(downbeat ? 0.35 : 0.22, t + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  osc.connect(gain);
+  // Route through master gain so the click obeys master volume; goes
+  // straight to destination on channels 0-1 (stereo summed) so it always
+  // reaches the user's monitor regardless of stem channel routing.
+  gain.connect(masterGainNode);
+  osc.start(t);
+  osc.stop(t + 0.08);
 }
 
 // ── Format-column variant filters ────────────────────────────────────────
