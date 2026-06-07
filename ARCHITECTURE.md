@@ -260,27 +260,157 @@ is already in Drive, and the portal serves from the on-disk
 
 `CATALOG.json` is the authoritative library index: title, artist, BPM,
 key, available renditions (stems + each m4a variant), status per song.
-It is **derived data** (rebuilt from `STEMS/` and `M4A/` on every poll),
-which means it belongs in Drive next to the data it indexes — not in
-the git repo. Authoritative path:
+It is **derived data** (rebuilt from `STEMS/` and `M4A/` by the
+Librarian), which means it belongs in Drive next to the data it indexes
+— not in the git repo. Authoritative path:
 
 ```
 ~/ClaudeDrive/simpleStem/CATALOG.json
 ```
 
-The Librarian's `catalog.py` rebuilds it on its daily pass (and on
-demand via `librarian.sh catalog`). The Performer reads it from the
-same Drive path to render the portal library without having to scan
-hundreds of song directories itself. Drive sync propagates updates
-across the two machines transparently — no `git pull` needed for
-catalog changes.
+### Producer / consumer split
 
-> Implementation note: `catalog.py` and the portal currently still
-> point at the code-repo root for `CATALOG.json`. Migrating both to
-> the Drive path is on the open-items list below. Until that's done,
-> the portal scans `STEMS/` and `M4A/` directly each request (cached
-> in memory) — slower than reading the index, but functionally
-> correct.
+`CATALOG.json` is the single contract between two row shapers — the
+**Producer** (`catalog.py` on the Librarian) and the **Consumer** (the
+portal's `tryLoadFromCatalog` on the Performer). Both sides must agree
+on the row format, byte-for-byte.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant LIB as Librarian (mini)
+    participant DRIVE as Google Drive
+    participant LMIR as ~/.simpleStem-catalog/<br/>(Performer local mirror)
+    participant PERF as Performer portal
+
+    Note over LIB: catalog.py runs hourly +<br/>on fswatch event (STEMS/ or M4A/)
+    LIB->>LIB: scan STEMS/ + M4A/
+    LIB->>LIB: build canonical rows<br/>(stems entry + m4a entries per song)
+    LIB->>DRIVE: write CATALOG.json
+    DRIVE-->>PERF: sync notifies (fs.watch event)
+    PERF->>LMIR: copy from Drive to local mirror
+    Note over PERF: refreshLibraryCache picks it up
+    PERF->>LMIR: read mirror (NEVER Drive in request path)
+    PERF-->>PERF: serve /api/library from cache
+
+    Note over PERF: at boot:<br/>runCatalogConformanceCheck
+    PERF->>LIB: (compare catalog row vs live scan)<br/>logs DRIFT if mismatched
+```
+
+### Layered freeze prevention
+
+Three layers cooperate to keep Drive's sync icon spinning without
+freezing the portal:
+
+1. **Async scan fallback (`scanStems` / `scanM4a`)** — when the
+   catalog isn't usable, the portal still falls back to walking the
+   directories, but via `fs.promises.readdir` with `Dirent` types so
+   the event loop yields between filesystem calls. A 30-second Drive
+   stall during scan no longer locks up audio streaming.
+
+2. **CATALOG.json as primary source** — when present and well-shaped,
+   the portal reads the catalog instead of walking directories. ~200KB
+   file, one read, fully avoids the per-folder filesystem traversal.
+
+3. **Local mirror at `~/.simpleStem-catalog/CATALOG.json`** — copied
+   from Drive on startup, on `fs.watch` events on the Drive folder,
+   and on a 60-second poll. Library serving reads ONLY this local
+   mirror — Drive is never in the request path. A mirror update fires
+   a `refreshLibraryCache` so the in-memory cache catches up.
+
+### Canonical row shape
+
+```json
+{
+  "generated_at": "...ISO UTC...",
+  "source_mtimes": { "stems": "...", "m4a": "..." },
+  "data": {
+    "stats": { "totalSongs": 224, "totalFiles": 1100, "totalStems": 224,
+               "totalM4as": 876, "artistCount": 95,
+               "bpmDistribution": { "slow": 18, "medium": 91, "fast": 110, "unknown": 5 },
+               "keyDistribution": { "D major": 32, "A minor": 12, "..." : 0 } },
+    "songs": [
+      {
+        "id": "stem-Harvest_Moon_Neil_Young",
+        "type": "stems",
+        "variantCode": "STEMS",
+        "variantLabel": "Multitrack Stems",
+        "folderName": "Harvest_Moon_Neil_Young",
+        "title": "Harvest Moon",
+        "artist": "Neil Young",
+        "practiceBpm": 112.7,
+        "key": "D major",
+        "keySignature": "2 sharps",
+        "stems": { "vocals": "vocals.m4a", "drums": "drums.m4a",
+                   "bass": "bass.m4a", "guitar": "guitar.m4a",
+                   "piano": "piano.m4a", "other": "other.m4a",
+                   "rhythm": "bass+drums.wav", "source": "source.wav" },
+        "loops": [],
+        "duration": 300,
+        "cached": false,
+        "logicProjectName": null,
+        "stats": { "stemCount": 6, "loopCount": 0 }
+      },
+      {
+        "id": "m4a-Harvest_Moon_Neil_Young_-V-G.m4a",
+        "type": "m4a",
+        "fileName": "Harvest_Moon_Neil_Young_-V-G.m4a",
+        "title": "Harvest Moon",
+        "artist": "Neil Young",
+        "practiceBpm": 112.7,
+        "key": "D major",
+        "duration": 300,
+        "cached": false,
+        "variantCode": "-V-G",
+        "variantLabel": "No Vocals/Guitar"
+      }
+    ]
+  }
+}
+```
+
+`songs` is a **flat list**: one `stems` row per `STEMS/<base>/`, plus
+one `m4a` row per non-loop file in `M4A/`. Both row shapers — JS
+`scanStems`/`scanM4a` and Python `catalog.py` — produce identically
+shaped rows for the same source data.
+
+### Conformance check (drift guard)
+
+On portal startup, `runCatalogConformanceCheck` takes the first stems
+row from the catalog, runs a live `scanStems` for that same folder,
+and compares the canonical fields (`title`, `artist`, `practiceBpm`,
+`key`, `keySignature`, `duration`, `logicProjectName`). Differences
+log:
+
+```
+[catalog-conformance] DRIFT detected on <base>:
+  title: catalog="Old Title" vs live="New Title"
+  → either update catalog.py or scanStems to match
+```
+
+The portal keeps working — the catalog data is served either way —
+but DRIFT is the signal to update one side. The two row shapers must
+agree, and this check is the early warning.
+
+### Schedule (Librarian)
+
+`librarian.sh` runs three long-running services:
+
+| Service | What | Triggered by |
+|---|---|---|
+| `watcher` | `webloc_watch.sh` — ingest dropped YouTube URLs | `fswatch` on `INCOMING_WEBLOC/` |
+| `cataloger` | `catalog.py` loop | hourly (`CATALOG_INTERVAL=3600`) |
+| `catalogwatch` | `catalog.py` reactive trigger | `fswatch -r --latency 5` on `STEMS/` and `M4A/` |
+
+The reactive `catalogwatch` rebuilds within ~5 seconds of any file
+add or delete in the stems or m4a directories, so the Performer sees
+newly-stemmed songs without waiting for the hourly cron. The 5-second
+coalesce window means a single ingest (which writes a bunch of files
+in rapid succession) fires one rebuild, not twenty.
+
+`./librarian.sh catalog` runs `catalog.py` once on demand — useful
+for verifying a change to the producer before letting the
+schedule pick it up.
 
 ---
 

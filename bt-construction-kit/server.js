@@ -662,6 +662,51 @@ function mirrorCatalogOnce(reason) {
   }
 }
 
+// Conformance check: with catalog.py producing the canonical shape and the
+// portal expecting the SAME shape, drift between the Python row builder and
+// the JS row builder would silently break the library. On startup we take
+// one catalog row, live-scan that same folder, and compare key fields. Any
+// difference logs a [catalog-conformance] warning. Lightweight (one folder
+// scan). The portal still works fine even when drift is detected — the
+// catalog data is served; the warning is the early signal to update either
+// side. Best run after a few seconds so initial decode finishes first.
+async function runCatalogConformanceCheck() {
+  setTimeout(async () => {
+    try {
+      const parsed = await tryLoadFromCatalog();
+      if (!parsed) {
+        console.log('[catalog-conformance] no CATALOG.json present; skipping check');
+        return;
+      }
+      const catalogStems = parsed.data.songs.find(s => s.type === 'stems');
+      if (!catalogStems) return;
+      const liveStems = await scanStems();
+      const liveEntry = liveStems.find(s => s.folderName === catalogStems.folderName);
+      if (!liveEntry) {
+        console.warn(`[catalog-conformance] live scan can't find ${catalogStems.folderName}`);
+        return;
+      }
+      const fields = ['title', 'artist', 'practiceBpm', 'key', 'keySignature', 'duration', 'logicProjectName'];
+      const drift = [];
+      for (const f of fields) {
+        const a = catalogStems[f];
+        const b = liveEntry[f];
+        if (a !== b && !(a == null && b == null)) {
+          drift.push(`${f}: catalog="${a}" vs live="${b}"`);
+        }
+      }
+      if (drift.length) {
+        console.warn(`[catalog-conformance] DRIFT detected on ${catalogStems.folderName}:\n  ${drift.join('\n  ')}\n  → either update catalog.py or scanStems to match`);
+      } else {
+        console.log(`[catalog-conformance] ${catalogStems.folderName} catalog row matches live scan ✓`);
+      }
+    } catch (e) {
+      console.warn('[catalog-conformance] check failed:', e.message);
+    }
+  }, 5000);
+}
+runCatalogConformanceCheck();
+
 // Initial mirror + watcher. fs.watch on Drive paths is sometimes flaky
 // (the platform may not fire events from the Drive client), so we also
 // poll every 60 seconds as a belt-and-suspenders backup. Both are cheap.

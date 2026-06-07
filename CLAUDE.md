@@ -132,6 +132,26 @@ Add a song from the portal's "Add from YouTube" box (or drop a `.webloc` into
 m4a`. Demucs is ~10–25 min/song on CPU; that's expected — a new request just
 queues behind the current song.
 
+## CATALOG.json is the library API contract
+
+The portal's library is served from `~/ClaudeDrive/simpleStem/CATALOG.json`
+(via a local mirror at `~/.simpleStem-catalog/CATALOG.json` — Drive is
+NEVER in the request hot path). Two row shapers produce the same
+canonical row format:
+
+- **Producer**: `catalog.py` on the Librarian
+- **Consumer (fallback)**: `scanStems` / `scanM4a` in `bt-construction-kit/server.js`
+
+Both must agree byte-for-byte on the row shape. A boot-time
+`runCatalogConformanceCheck` walks one row through both shapers and
+logs `[catalog-conformance] DRIFT` when they disagree.
+
+**If you touch the row format on either side, update the other side
+in the same PR.** The shape is documented in detail in
+`ARCHITECTURE.md > CATALOG.json — the shared index` (and in the
+matching brief `prompts/librarian_catalog_canonical_shape.md` for the
+Librarian Claude).
+
 ## Conventions
 
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
