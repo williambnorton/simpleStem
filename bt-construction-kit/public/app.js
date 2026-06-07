@@ -222,6 +222,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRoutingUI();
   setupFormatFilters();
   setupClickTrack();
+  setupSidebarSplitter();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -1917,16 +1918,69 @@ function presetSpreadToSixAux() {
   renderRoutingGrids();
 }
 
+// ── Sidebar splitter ──────────────────────────────────────────────────────
+// Drag the 6px bar between the sidebar and the main content to resize the
+// left pane. Width persists in localStorage. Double-click to reset to the
+// 760px default. Bounded [280, 1000] so the layout can never break.
+const SIDEBAR_WIDTH_KEY = 'simpleStem.sidebarWidth';
+const SIDEBAR_WIDTH_DEFAULT = 760;
+const SIDEBAR_WIDTH_MIN = 280;
+const SIDEBAR_WIDTH_MAX = 1000;
+
+function setupSidebarSplitter() {
+  const splitter = document.getElementById('sidebar-splitter');
+  if (!splitter) return;
+  let saved = SIDEBAR_WIDTH_DEFAULT;
+  try { saved = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || `${SIDEBAR_WIDTH_DEFAULT}`, 10); } catch (e) {}
+  applySidebarWidth(saved);
+
+  let dragging = false;
+  splitter.addEventListener('mousedown', (e) => {
+    dragging = true;
+    splitter.classList.add('dragging');
+    document.body.classList.add('splitter-dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    applySidebarWidth(e.clientX);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('dragging');
+    document.body.classList.remove('splitter-dragging');
+    // Persist final width
+    const w = parseInt(document.documentElement.style.getPropertyValue('--sidebar-width') || `${SIDEBAR_WIDTH_DEFAULT}`, 10);
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch (e) {}
+  });
+  splitter.addEventListener('dblclick', () => {
+    applySidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_WIDTH_DEFAULT)); } catch (e) {}
+  });
+}
+
+function applySidebarWidth(px) {
+  const clamped = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, px));
+  document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
+}
+
 // ── Click track ──────────────────────────────────────────────────────────
-// Sample-accurate metronome: schedules short triangle-wave clicks at
-// 60/bpm-second intervals. First beat of every bar is pitched higher so
-// the user can hear bar boundaries (4/4 assumed; see lib-common.sh and
-// CLAUDE.md gotchas — same assumption as elsewhere). Routes through the
-// same master graph as the stems so master volume + per-channel routing
-// + multi-channel output all apply.
+// Song-synced metronome. Replaces the old setInterval-driven version that
+// drifted from the actual playback timeline. New approach:
+//   - rAF poll reads audioElement.currentTime every frame
+//   - look-ahead window (200ms) — for each beat in that window we haven't
+//     scheduled yet, schedule an oscillator click at the matching
+//     AudioContext.currentTime + offset
+//   - silent while song is paused; re-syncs after a seek (lastScheduledBeat
+//     resets when currentTime jumps backward)
+//
+// Result: every audible click lands ON one of the vertical beat markers
+// drawn on the waveform. Easy for a musician to replace the studio drums
+// in their head by playing along with the visual + audible grid.
 let clickEnabled = false;
-let clickIntervalId = null;
-let clickBeatCount = 0;
+let clickLastScheduledBeat = -1;
+let clickLastSongTime = 0;
 
 function setupClickTrack() {
   const btn = document.getElementById('btn-click-toggle');
@@ -1934,48 +1988,68 @@ function setupClickTrack() {
   btn.addEventListener('click', () => {
     clickEnabled = !clickEnabled;
     btn.classList.toggle('active', clickEnabled);
-    if (clickEnabled) startClickTrack();
-    else stopClickTrack();
+    if (clickEnabled) {
+      initAudioCtx();
+      clickLastScheduledBeat = -1;
+      clickLastSongTime = 0;
+      clickSchedulerTick();
+    }
   });
 }
 
-function startClickTrack() {
-  initAudioCtx();
-  stopClickTrack();
+function clickSchedulerTick() {
+  if (!clickEnabled) return;
+  requestAnimationFrame(clickSchedulerTick);
+  if (!audioCtx || !masterGainNode) return;
+
+  // Pick the audio element that's currently driving playback. For stems
+  // songs every channel has the same currentTime so any one works; for
+  // m4a the drums element is the carrier.
+  let songTime = null;
+  for (const ch of CHANNELS) {
+    const ae = audioElements[ch];
+    if (ae && ae.src && !ae.paused) { songTime = ae.currentTime; break; }
+  }
+  if (songTime == null) return;   // not playing → no clicks
+
+  // Seek detection: if the song time jumped backwards, we crossed beats
+  // we've already 'scheduled'. Reset so future beats fire again.
+  if (songTime < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
+  clickLastSongTime = songTime;
+
   const bpm = (currentSong && currentSong.practiceBpm) || 120;
-  const beatMs = 60000 / bpm;
-  clickBeatCount = 0;
-  const tick = () => {
-    if (!clickEnabled || !audioCtx) return;
-    fireClick(clickBeatCount % 4 === 0);
-    clickBeatCount++;
-  };
-  tick();
-  clickIntervalId = setInterval(tick, beatMs);
+  const beatSec = 60 / bpm;
+  const LOOKAHEAD_SEC = 0.2;
+
+  let beatIdx = Math.floor(songTime / beatSec);
+  while (beatIdx * beatSec < songTime + LOOKAHEAD_SEC) {
+    if (beatIdx > clickLastScheduledBeat) {
+      const beatTime = beatIdx * beatSec;
+      const delay = beatTime - songTime;
+      if (delay >= -0.01) {
+        fireClickAt(audioCtx.currentTime + Math.max(delay, 0), beatIdx % 4 === 0);
+      }
+      clickLastScheduledBeat = beatIdx;
+    }
+    beatIdx++;
+  }
 }
 
-function stopClickTrack() {
-  if (clickIntervalId) clearInterval(clickIntervalId);
-  clickIntervalId = null;
-}
-
-function fireClick(downbeat) {
-  if (!audioCtx) return;
-  const t = audioCtx.currentTime;
+function fireClickAt(when, downbeat) {
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'triangle';
   osc.frequency.value = downbeat ? 1800 : 1200;
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(downbeat ? 0.35 : 0.22, t + 0.002);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  gain.gain.setValueAtTime(0, when);
+  gain.gain.linearRampToValueAtTime(downbeat ? 0.35 : 0.22, when + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
   osc.connect(gain);
-  // Route through master gain so the click obeys master volume; goes
-  // straight to destination on channels 0-1 (stereo summed) so it always
-  // reaches the user's monitor regardless of stem channel routing.
+  // Route through master gain so the click obeys master volume; lands on
+  // outputs 0-1 regardless of stem channel routing so the click always
+  // reaches the monitor mix.
   gain.connect(masterGainNode);
-  osc.start(t);
-  osc.stop(t + 0.08);
+  osc.start(when);
+  osc.stop(when + 0.08);
 }
 
 // ── Format-column variant filters ────────────────────────────────────────
@@ -2175,6 +2249,8 @@ function loadSong(song, opts) {
   els.playerIdle.style.display = 'none';
   els.playerActive.style.display = 'block';
 
+  // Expose currentSong for the visualizer (beat-grid uses song.practiceBpm).
+  window.currentSong = song;
   // Render variant picker (Source: STEMS / -V-G-B / -V-G / DO ...)
   renderVariantPicker(song);
   // Refresh sidebar setlist toggle (+/- depends on whether currentSong is
@@ -3637,8 +3713,14 @@ function setupEventListeners() {
     });
     applyMixerVolumes();
     saveMixerState();
+    // Reset Faders is the "back to normal" button — also pull every stem's
+    // multi-channel routing back to stereo (chans 1+2) so unusual aux
+    // spreads from earlier experiments don't keep silencing the main mix.
+    if (typeof presetStereoMain === 'function' && outputChannelCount > 2) {
+      presetStereoMain();
+    }
   });
-  
+
   [els.loopMixBoth, els.loopMixDrums, els.loopMixBass].forEach(btn => {
     btn.addEventListener('click', () => {
       [els.loopMixBoth, els.loopMixDrums, els.loopMixBass].forEach(b => b.classList.remove('active'));

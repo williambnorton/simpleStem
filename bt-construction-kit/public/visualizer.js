@@ -199,6 +199,27 @@ function draw() {
     ctx.fillRect(x, half - barH / 2, w, barH);
   }
 
+  // Beat grid — vertical markers at every beat boundary computed from the
+  // current song's BPM. Downbeats (every 4 in 4/4) get a brighter, thicker
+  // line so bars are visible. This is what the click track aligns to —
+  // visual and audible beat reinforce each other for practice.
+  const bpm = (window.currentSong && window.currentSong.practiceBpm) || null;
+  if (bpm && waveformDuration > 0) {
+    const beatSec = 60 / bpm;
+    const totalBeats = Math.floor(waveformDuration / beatSec);
+    // Skip beat 0 (left edge is its own boundary); start at 1.
+    for (let i = 1; i <= totalBeats; i++) {
+      const x = (i * beatSec / waveformDuration) * width;
+      const isDownbeat = i % 4 === 0;
+      ctx.strokeStyle = isDownbeat ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.07)';
+      ctx.lineWidth = isDownbeat ? 1.5 : 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+  }
+
   // Played portion gets a brighter overlay — like a progress fill.
   const playedX = getPlayheadPxX(width);
   if (playedX > 0) {

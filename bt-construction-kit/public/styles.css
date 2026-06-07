@@ -550,10 +550,33 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  grid-template-columns: 760px 1fr 84px;
+  grid-template-columns: var(--sidebar-width, 760px) 6px 1fr 84px;
   height: 100vh;
   width: 100vw;
 }
+
+/* Sidebar splitter — sits between the sidebar grid column and the main
+   content. Drag to resize; double-click to reset to 760px default. */
+.sidebar-splitter {
+  background: var(--border-color);
+  cursor: col-resize;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.sidebar-splitter::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 2px; height: 30px;
+  background: var(--text-dim);
+  border-radius: 1px;
+}
+.sidebar-splitter:hover { background: var(--color-purple); }
+.sidebar-splitter:hover::before { background: #fff; }
+.sidebar-splitter.dragging { background: var(--color-purple); }
+body.splitter-dragging { cursor: col-resize; user-select: none; }
+body.splitter-dragging * { cursor: col-resize !important; pointer-events: none; }
+body.splitter-dragging .sidebar-splitter { pointer-events auto; }
 
 /* ===== Right rail: full-height master volume ===== */
 .master-vol-rail {
