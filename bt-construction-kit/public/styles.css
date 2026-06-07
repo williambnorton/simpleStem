@@ -550,7 +550,7 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  grid-template-columns: 380px 1fr 84px;
+  grid-template-columns: 760px 1fr 84px;
   height: 100vh;
   width: 100vw;
 }
@@ -1664,7 +1664,7 @@ select {
 }
 
 .fader-track {
-  height: 140px;
+  height: 180px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1672,34 +1672,62 @@ select {
   justify-content: center;
 }
 
-/* Vertical Range Sliders Hack */
+/* Vertical stem faders — wide, gradient-tracked, with a substantial pill
+   thumb that takes its color from the channel (vocals pink, drums green,
+   bass blue, etc). The slider is rotated 90° so geometry below is in the
+   "horizontal" frame the input sees before rotation. */
 .vertical-slider {
   -webkit-appearance: none;
   appearance: none;
   transform: rotate(-90deg);
-  width: 110px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.06);
+  width: 160px;
+  height: 8px;
+  border-radius: 6px;
+  background: linear-gradient(to right,
+              rgba(255, 255, 255, 0.04),
+              rgba(255, 255, 255, 0.22));
+  border: 1px solid rgba(0, 0, 0, 0.18);
   outline: none;
   cursor: pointer;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .vertical-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  transition: var(--transition-smooth);
+  width: 36px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.7),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  cursor: grab;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
 }
+.vertical-slider::-moz-range-thumb {
+  width: 36px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.7),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  cursor: grab;
+}
+.vertical-slider:hover::-webkit-slider-thumb,
+.vertical-slider:active::-webkit-slider-thumb { transform: scale(1.04); }
+.vertical-slider:active::-webkit-slider-thumb { cursor: grabbing; }
 
-.vocals-strip .vertical-slider::-webkit-slider-thumb { background: var(--color-pink); box-shadow: var(--glow-pink); }
-.drums-strip .vertical-slider::-webkit-slider-thumb { background: var(--color-green); box-shadow: var(--glow-green); }
-.bass-strip .vertical-slider::-webkit-slider-thumb { background: var(--color-blue); box-shadow: var(--glow-blue); }
-.other-strip .vertical-slider::-webkit-slider-thumb { background: var(--color-orange); box-shadow: 0 0 10px rgba(255, 152, 0, 0.6); }
-.guitar-strip .vertical-slider::-webkit-slider-thumb { background: var(--color-yellow); box-shadow: 0 0 10px rgba(241, 196, 15, 0.6); }
-.piano-strip  .vertical-slider::-webkit-slider-thumb { background: var(--color-purple); box-shadow: var(--glow-purple); }
+/* Per-channel accent glow on the thumb */
+.vocals-strip .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(233, 30, 99, 0.55); }
+.drums-strip  .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(46, 204, 113, 0.55); }
+.bass-strip   .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(41, 128, 185, 0.55); }
+.guitar-strip .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(241, 196, 15, 0.55); }
+.piano-strip  .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(156, 39, 176, 0.55); }
+.other-strip  .vertical-slider::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(0,0,0,.15), 0 0 14px rgba(255, 152, 0, 0.55); }
 
 .fader-value {
   font-size: 11px;

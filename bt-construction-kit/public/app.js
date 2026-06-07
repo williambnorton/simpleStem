@@ -1731,6 +1731,10 @@ function initAudioCtx() {
   if (audioCtx) return;
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+  // Expose for the visualizer (waveform peaks decode reuses this context
+  // rather than spinning up its own).
+  window.appAudioCtx = audioCtx;
+  window.audioElements = audioElements;
 
   // Probe the OS audio device's output channel count. XR18 selected as the
   // system output reports 18. Anything > 2 unlocks the multi-channel routing
@@ -2068,6 +2072,18 @@ function loadSong(song, opts) {
   // Refresh sidebar setlist toggle (+/- depends on whether currentSong is
   // in the active setlist).
   if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
+  // Recompute the waveform peaks for the visualizer. For stems songs, use
+  // one representative stem (drums — usually the loudest envelope); for
+  // m4a tracks the file itself is the right source.
+  if (typeof window.setWaveformSource === 'function') {
+    let waveUrl = null;
+    if (song.type === 'm4a' && song.fileName) {
+      waveUrl = `/api/audio/m4a/${encodeURIComponent(song.fileName)}`;
+    } else if (song.type === 'stems' && song.folderName && song.stems && song.stems.drums) {
+      waveUrl = `/api/audio/stems/${song.folderName}/${song.stems.drums}`;
+    }
+    if (waveUrl) window.setWaveformSource(waveUrl);
+  }
 
   els.trackTitle.textContent = song.title;
   els.trackArtist.textContent = song.artist;
