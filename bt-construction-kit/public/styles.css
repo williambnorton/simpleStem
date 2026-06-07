@@ -2307,6 +2307,19 @@ select {
   border-color: #c0392b;
 }
 
+/* Logic Pro chip — appears after the variant chips when this song has a
+   .logicx project bundle inside its STEMS folder. Yellow to distinguish
+   from the green playback chips and the green drum-loop chips. */
+.format-chip.chip-logic {
+  background: var(--color-yellow);
+  border: 1px solid #c79a08;
+  color: #14192b;
+}
+.format-chip.chip-logic:hover {
+  background: #e6b100;
+  border-color: #a17e06;
+}
+
 /* Per-row drum-loop chips inside the song library (after the DO chip).
    Style matches the other format chips but slightly smaller and shows a
    bars suffix so the drummer can pick a loop length at a glance. */

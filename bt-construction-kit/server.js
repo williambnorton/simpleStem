@@ -282,6 +282,12 @@ async function scanStems() {
       source: pickStem('source'),
     };
 
+    // Logic Pro project bundle (.logicx is a directory). When present, the
+    // library row surfaces a yellow 'Logic' chip that opens it in a fresh
+    // Logic instance so you can re-mix / re-route stems to different XR18
+    // outputs without disturbing whatever Logic is already doing.
+    const logicProjectName = filesInFolder.find(f => f.toLowerCase().endsWith('.logicx')) || null;
+
     // Find loop files (e.g. drums_loop1_83bars.m4a; legacy .wav also accepted)
     const loops = [];
     const loopFiles = filesInFolder.filter(f => f.toLowerCase().includes('loop') && /\.(m4a|wav)$/i.test(f));
@@ -359,6 +365,7 @@ async function scanStems() {
       keySignature: keySignature || null,
       stems: stems,
       cached: isStemsFolderCached(folder),
+      logicProjectName: logicProjectName,
       loops: Object.values(groupedLoops).sort((a, b) => a.loopNum - b.loopNum),
       duration: duration,
       stats: {
@@ -1674,6 +1681,29 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
 
   console.log(`[logic-restem] ${s.b}: lock acquired, kmtrigger URL fired (detached)`);
   res.json({ ok: true, base: s.b, macro: KBM_MACRO_NAME, vars });
+});
+
+// Open the song's Logic Pro project in a FRESH Logic instance. macOS by
+// default brings an existing Logic forward and opens the project there;
+// 'open -n' forces a new process, so the user can have multiple Logic
+// instances running in parallel — different songs, different XR18 output
+// routings, all at once. Endpoint returns immediately; Logic launches in
+// the background.
+app.post('/api/song/:base/open-in-logic', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song folder not found' });
+  const dirents = fs.readdirSync(s.dir);
+  const proj = dirents.find(d => d.toLowerCase().endsWith('.logicx'));
+  if (!proj) return res.status(404).json({ error: 'no .logicx project in this song folder' });
+  const projPath = path.join(s.dir, proj);
+  try {
+    spawn('open', ['-n', '-a', 'Logic Pro', projPath], { detached: true, stdio: 'ignore' }).unref();
+    console.log(`[logic-open] ${s.b}: spawned new Logic Pro for ${proj}`);
+    res.json({ ok: true, project: proj });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Manual lock release — escape hatch for when the macro fails to clear

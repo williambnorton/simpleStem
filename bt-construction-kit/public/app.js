@@ -1453,6 +1453,33 @@ function renderLibrary() {
       formatCell.appendChild(chip);
     });
 
+    // Logic Pro chip — yellow pill that appears when a *.logicx project
+    // bundle is sitting inside this song's STEMS folder. Click → server
+    // runs `open -n -a "Logic Pro" <project>` which spawns a FRESH Logic
+    // instance (different songs, different XR18 output routings, all
+    // running in parallel without clobbering each other).
+    const stemsForLogic = merged.variants.find(v => v.type === 'stems');
+    if (stemsForLogic && stemsForLogic.logicProjectName && stemsForLogic.folderName) {
+      const chip = document.createElement('button');
+      chip.className = 'format-chip chip-logic';
+      chip.title = `Open ${stemsForLogic.logicProjectName} in a new Logic Pro instance`;
+      chip.innerHTML = '<i data-lucide="layers-3" style="width:10px;height:10px;"></i> Logic';
+      chip.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        chip.disabled = true;
+        try {
+          const r = await fetch(`/api/song/${encodeURIComponent(stemsForLogic.folderName)}/open-in-logic`, { method: 'POST' });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || 'failed');
+        } catch (err) {
+          alert(`Couldn't open in Logic: ${err.message}`);
+        } finally {
+          setTimeout(() => { chip.disabled = false; }, 1500);
+        }
+      });
+      formatCell.appendChild(chip);
+    }
+
     // Drum-loop chips — sit immediately AFTER the DO chip (which sorted last
     // among the format chips). Each chip is a tiny green pill labeled "L1 27b"
     // that toggles the drum loop in place. Reuses the same audio element as
