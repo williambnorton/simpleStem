@@ -915,11 +915,23 @@ let drumLoopsAll = [];
 let drumLoopsByBase = new Map();   // songBase → [loops sorted by loopNumber]
 let drumLoopAudio = null;
 let drumLoopPlayingId = null;
+// Per-file cache state. fileName → true (cached) | false (not cached) | 'loading' (currently fetching).
+let loopCacheStatus = new Map();
 // Instrument filter for the Loops tab. Empty Set = show all; otherwise only
 // rows whose .inst is in the set are shown. Same toggle semantics as the
 // FORMAT column filter in the library.
 const INSTRUMENTS = ['drums', 'drumsbass', 'bass', 'guitar', 'piano'];
 let drumLoopInstFilter = new Set();
+// Column sort. key ∈ {'song','bpm','bars','inst'}. Default 'song'.
+let loopSort = { key: 'song', dir: 'asc' };
+// Construction-kit state: which individual instrument chips are currently
+// selected (across all rows). Mix-and-match the drums from one song with
+// the bass from another, then "Add as Combo" drops the set into the
+// sequence as a single concurrent-play entry.
+//   Map<fileName, loopRecord>
+let selectedKitChips = new Map();
+// Currently-playing combo: array of Audio elements playing simultaneously.
+let comboAudios = [];
 
 function setupDrumLoopsTab() {
   const searchEl = document.getElementById('drumloops-search');
@@ -932,6 +944,15 @@ function setupDrumLoopsTab() {
 // the Drum Loops tab and the per-row chips in the Library tab can share
 // the same data without two round-trips.
 async function loadDrumLoops() {
+  const grid = document.getElementById('drumloops-grid');
+  // Loading indicator while the catalog is in flight + while initial cache
+  // status is fetched in parallel.
+  if (grid) grid.innerHTML = `
+    <div class="loops-loading">
+      <div class="spinner"></div>
+      <div>Loading loop catalog from Drive…</div>
+    </div>
+  `;
   try {
     const res = await fetch('/api/drum-loops');
     const data = await res.json();
@@ -941,21 +962,81 @@ async function loadDrumLoops() {
       if (!drumLoopsByBase.has(l.songBase)) drumLoopsByBase.set(l.songBase, []);
       drumLoopsByBase.get(l.songBase).push(l);
     }
-    // Each song's loops are already sorted server-side, but defensively re-sort.
     for (const arr of drumLoopsByBase.values()) arr.sort((a, b) => a.loopNumber - b.loopNumber);
     drumLoopsLoaded = true;
-    const grid = document.getElementById('drumloops-grid');
     const label = document.getElementById('drumloops-count-label');
-    if (label) label.textContent = `${drumLoopsAll.length} drum loops across ${drumLoopsByBase.size} songs`;
+    if (label) label.textContent = `${drumLoopsAll.length} loops across ${drumLoopsByBase.size} songs`;
+    // Kick off cache-state hydration in the background. The first render
+    // shows everything as "uncached"; the hydration call updates the map
+    // and re-renders.
+    hydrateLoopCacheStatus();
     if (grid) renderDrumLoops();
-    // If the library has already rendered, re-render so the new chips show up.
     if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
       renderSongList();
     }
   } catch (e) {
-    const grid = document.getElementById('drumloops-grid');
-    if (grid) grid.innerHTML = `<div class="empty-state">Couldn't load drum loops: ${escapeHtml(e.message)}</div>`;
+    if (grid) grid.innerHTML = `<div class="empty-state">Couldn't load loops: ${escapeHtml(e.message)}</div>`;
   }
+}
+
+// Ask the server which loop files are already in the local audio cache so
+// each pill can be marked "cached" (instant play) vs "uncached" (will spin
+// fetching from Drive on first play). Called once after the catalog loads,
+// and again after each precache POST settles.
+async function hydrateLoopCacheStatus(filenames) {
+  const files = filenames || drumLoopsAll.map(l => l.fileName).filter(Boolean);
+  if (!files.length) return;
+  try {
+    const res = await fetch('/api/loop-cache-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const [f, cached] of Object.entries(data.status || {})) {
+      loopCacheStatus.set(f, !!cached);
+    }
+    renderDrumLoops();
+    renderLoopSequence();
+  } catch (e) { /* cache hydration is best-effort */ }
+}
+
+// Trigger a background copy from Drive into the local cache. Resolves true if
+// the server confirmed the file is now (or already was) cached. Used by
+// loopSeqAdd so any loop dropped into the sequence is on disk before its
+// turn comes up in playback.
+async function precacheLoop(fileName) {
+  if (!fileName) return false;
+  if (loopCacheStatus.get(fileName) === true) return true;
+  loopCacheStatus.set(fileName, 'loading');
+  renderLoopSequence();
+  try {
+    const res = await fetch(`/api/precache/loop/${fileName}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.cached || data.alreadyCached) {
+      loopCacheStatus.set(fileName, true);
+      renderLoopSequence();
+      return true;
+    }
+    // Background fetch queued. Poll until cached.
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const s = await fetch('/api/loop-cache-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: [fileName] }),
+      }).then(r => r.json()).catch(() => null);
+      if (s && s.status && s.status[fileName]) {
+        loopCacheStatus.set(fileName, true);
+        renderLoopSequence();
+        return true;
+      }
+    }
+  } catch (e) { /* fall through */ }
+  loopCacheStatus.set(fileName, false);
+  renderLoopSequence();
+  return false;
 }
 
 // One CARD per song (not per loop). Each card has the song header + a row of
@@ -966,8 +1047,10 @@ function renderDrumLoops() {
   if (!grid) return;
   const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
 
-  // Filter: text query + instrument toggles.
-  let rows = drumLoopsAll.filter(l => {
+  // Default each loop's inst to 'drums' if the server didn't fill it in
+  // (legacy DO_loop rows pre-upgrade).
+  let rows = drumLoopsAll.map(l => Object.assign({ inst: l.inst || 'drums' }, l));
+  rows = rows.filter(l => {
     if (drumLoopInstFilter.size > 0 && !drumLoopInstFilter.has(l.inst)) return false;
     if (!q) return true;
     return (l.title || '').toLowerCase().includes(q) ||
@@ -975,58 +1058,242 @@ function renderDrumLoops() {
            (l.fileName || '').toLowerCase().includes(q);
   });
 
-  // Sort by filename — alphabetical across (inst, bpm, song, bars) all at
-  // once because of the naming convention. Falls back to title for legacy
-  // entries that don't follow the new pattern.
-  rows.sort((a, b) => {
-    const af = a.fileName || a.title || '';
-    const bf = b.fileName || b.title || '';
-    return af.localeCompare(bf);
+  // GROUP by (songSlug or songBase) + bpm + bars. Each group becomes ONE
+  // table row in the construction-kit view, displaying every instrument
+  // available at that (song, bpm, bars). Lets the user click DRUMS from
+  // one row and BASS from another to assemble a combo.
+  // Normalize slug so legacy entries (songBase, mixed case, may end with
+  // "_DO") merge with modern (songSlug, lowercase). Strip trailing _do.
+  const normalizeSlug = (s) => String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_do$/, '');
+  const groups = new Map();
+  for (const l of rows) {
+    // Prefer songBase (the stems folder name) when present — it's shared
+    // between modern LOOPS/ entries and legacy DO_loop entries for the same
+    // song, so the grouping merges both kinds. Fall back to songSlug or
+    // title for entries that don't carry a songBase.
+    const slug = normalizeSlug(l.songBase || l.songSlug || l.title);
+    const key = `${slug}|${l.bpm || 0}|${l.bars}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        songSlug: slug,
+        songBase: l.songBase,
+        title: l.title,
+        artist: l.artist,
+        bpm: l.bpm,
+        bars: l.bars,
+        chips: {},
+      });
+    }
+    groups.get(key).chips[l.inst] = l;
+  }
+  const groupRows = [...groups.values()];
+
+  // Sort groups by selected column.
+  const dir = loopSort.dir === 'desc' ? -1 : 1;
+  const cmpNum = (a, b) => ((a || 0) - (b || 0)) * dir;
+  const cmpStr = (a, b) => (a || '').localeCompare(b || '') * dir;
+  groupRows.sort((a, b) => {
+    switch (loopSort.key) {
+      case 'bpm':   return cmpNum(a.bpm, b.bpm)   || cmpStr(a.title, b.title) || cmpNum(a.bars, b.bars);
+      case 'bars':  return cmpNum(a.bars, b.bars) || cmpStr(a.title, b.title) || cmpNum(a.bpm, b.bpm);
+      case 'song':
+      default:      return cmpStr(a.title, b.title) || cmpNum(a.bpm, b.bpm) || cmpNum(a.bars, b.bars);
+    }
   });
 
-  if (rows.length === 0) {
-    grid.innerHTML = '<div class="empty-state">No loops match.</div>';
-    renderInstrumentFilters();
-    return;
-  }
+  const fmtBpm = (n) => n ? String(n) : '—';
+  const sortIcon = (k) => loopSort.key === k
+    ? (loopSort.dir === 'asc' ? '▲' : '▼')
+    : '↕';
 
-  // Flat single-column list of loop pills. Each pill carries the inst as
-  // a class so CSS can color-code (drums green, bass blue, etc.).
-  const fmtBpm = (n) => n ? `${n} BPM` : '—';
-  grid.innerHTML = `
-    <div class="loops-flatlist">
-      ${rows.map(l => `
-        <button class="loop-pill loop-pill-${escapeHtml(l.inst || 'unknown')}"
-                data-file="${encodeURIComponent(l.fileName)}"
-                data-id="${escapeHtml(l.id)}"
-                data-source="${escapeHtml(l.source || '')}"
-                data-inst="${escapeHtml(l.inst || '')}"
-                data-bars="${l.bars}"
-                data-bpm="${l.bpm || ''}"
-                data-title="${escapeHtml(l.title || '')}"
-                title="${escapeHtml(l.fileName)}">
-          <span class="loop-pill-inst">${escapeHtml((l.inst || '?').toUpperCase())}</span>
-          <span class="loop-pill-bpm">${fmtBpm(l.bpm)}</span>
-          <span class="loop-pill-title">${escapeHtml(l.title || '')}</span>
-          <span class="loop-pill-bars">${l.bars}b</span>
-          <span class="loop-pill-seq-add" title="Add to sequence">+</span>
-        </button>
-      `).join('')}
+  // Construction-kit combo controls. Shows current selection count, BPM
+  // sanity (all selected should share BPM), and buttons to play/clear/add.
+  const sel = [...selectedKitChips.values()];
+  const selBpms = [...new Set(sel.map(l => l.bpm).filter(Boolean))];
+  const selBars = [...new Set(sel.map(l => l.bars).filter(Boolean))];
+  const mismatch = selBpms.length > 1;
+  const comboBar = `
+    <div class="combo-bar${sel.length ? ' active' : ''}${mismatch ? ' mismatch' : ''}">
+      <span class="combo-bar-label">
+        Combo: <strong>${sel.length}</strong> selected
+        ${sel.length ? `· BPM <strong>${selBpms.join(' / ')}</strong> · bars <strong>${selBars.join(' / ')}</strong>` : ''}
+        ${mismatch ? '<span class="combo-warning">⚠ mixed BPM</span>' : ''}
+      </span>
+      <button class="combo-btn combo-btn-play" id="combo-btn-play" ${sel.length ? '' : 'disabled'}>▶ Play Selected</button>
+      <button class="combo-btn combo-btn-add" id="combo-btn-add" ${sel.length ? '' : 'disabled'}>+ Add as Combo</button>
+      <button class="combo-btn combo-btn-clear" id="combo-btn-clear" ${sel.length ? '' : 'disabled'}>Clear</button>
     </div>
   `;
 
-  grid.querySelectorAll('.loop-pill').forEach(btn => {
+  // Column header row.
+  const header = `
+    <div class="loops-table-header kit-header">
+      <button class="lt-col lt-col-bpm lt-sort${loopSort.key === 'bpm' ? ' active' : ''}" data-sort="bpm">
+        BPM <span class="lt-sort-arrow">${sortIcon('bpm')}</span>
+      </button>
+      <button class="lt-col lt-col-song lt-sort${loopSort.key === 'song' ? ' active' : ''}" data-sort="song">
+        SONG <span class="lt-sort-arrow">${sortIcon('song')}</span>
+      </button>
+      <button class="lt-col lt-col-bars lt-sort${loopSort.key === 'bars' ? ' active' : ''}" data-sort="bars">
+        BARS <span class="lt-sort-arrow">${sortIcon('bars')}</span>
+      </button>
+      <div class="lt-col lt-col-chips">INSTRUMENTS (click to add to combo)</div>
+    </div>
+  `;
+
+  if (groupRows.length === 0) {
+    grid.innerHTML = comboBar + header + '<div class="empty-state">No loops match.</div>';
+    renderInstrumentFilters();
+    bindSortHeaderClicks(grid);
+    bindComboBarHandlers(grid);
+    return;
+  }
+
+  const body = groupRows.map(g => {
+    const chipsHtml = INSTRUMENTS.map(inst => {
+      const l = g.chips[inst];
+      if (!l) return `<span class="kit-chip kit-chip-empty">·</span>`;
+      const cs = loopCacheStatus.get(l.fileName);
+      const cacheClass = cs === true ? ' kit-chip-cached'
+                       : cs === 'loading' ? ' kit-chip-loading' : '';
+      const selectedClass = selectedKitChips.has(l.fileName) ? ' kit-chip-selected' : '';
+      return `<button class="kit-chip kit-chip-${escapeHtml(inst)}${cacheClass}${selectedClass}"
+                      data-file="${encodeURIComponent(l.fileName)}"
+                      data-inst="${escapeHtml(inst)}"
+                      data-bpm="${l.bpm || ''}"
+                      data-bars="${l.bars}"
+                      data-source="${escapeHtml(l.source || '')}"
+                      data-title="${escapeHtml(l.title || '')}"
+                      data-id="${escapeHtml(l.id)}"
+                      title="${escapeHtml(l.fileName || '')}">
+                ${escapeHtml(inst.toUpperCase())}
+              </button>`;
+    }).join('');
+    return `
+      <div class="kit-row" data-groupkey="${escapeHtml(g.key)}">
+        <div class="kit-col kit-col-bpm">${fmtBpm(g.bpm)}</div>
+        <div class="kit-col kit-col-song" title="${escapeHtml(g.title || '')}">${escapeHtml(g.title || '')}</div>
+        <div class="kit-col kit-col-bars">${g.bars}</div>
+        <div class="kit-col kit-col-chips">${chipsHtml}</div>
+      </div>
+    `;
+  }).join('');
+
+  grid.innerHTML = comboBar + header + `<div class="kit-list">${body}</div>`;
+
+  // Chip clicks → toggle selection in selectedKitChips. Shift-click = solo play.
+  grid.querySelectorAll('.kit-chip:not(.kit-chip-empty)').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      if (e.target.closest('.loop-pill-seq-add')) {
-        e.stopPropagation();
-        loopSeqAdd(btn);
+      const fileName = decodeURIComponent(btn.dataset.file || '');
+      if (e.shiftKey) {
+        // Shift-click: solo-play this one (existing behavior preserved).
+        toggleDrumLoop(btn);
         return;
       }
-      toggleDrumLoop(btn);
+      if (selectedKitChips.has(fileName)) {
+        selectedKitChips.delete(fileName);
+      } else {
+        selectedKitChips.set(fileName, {
+          id: btn.dataset.id,
+          fileName,
+          source: btn.dataset.source,
+          inst: btn.dataset.inst,
+          bars: Number(btn.dataset.bars) || 0,
+          bpm: Number(btn.dataset.bpm) || 0,
+          title: btn.dataset.title,
+        });
+        // Pre-cache so when they hit Play Selected or Add as Combo, the file
+        // is local.
+        precacheLoop(fileName);
+      }
+      renderDrumLoops();
     });
   });
+
+  bindSortHeaderClicks(grid);
+  bindComboBarHandlers(grid);
   renderInstrumentFilters();
   if (window.lucide) lucide.createIcons();
+}
+
+function bindComboBarHandlers(grid) {
+  const playBtn = grid.querySelector('#combo-btn-play');
+  const addBtn  = grid.querySelector('#combo-btn-add');
+  const clrBtn  = grid.querySelector('#combo-btn-clear');
+  if (playBtn) playBtn.addEventListener('click', playSelectedCombo);
+  if (addBtn)  addBtn.addEventListener('click', addSelectedAsCombo);
+  if (clrBtn)  clrBtn.addEventListener('click', () => {
+    selectedKitChips.clear();
+    stopCombo();
+    renderDrumLoops();
+  });
+}
+
+// Play every chip currently in selectedKitChips simultaneously. Each loop
+// gets its own <audio> with loop=true; they all start at once via Promise.all.
+async function playSelectedCombo() {
+  const loops = [...selectedKitChips.values()];
+  if (!loops.length) return;
+  stopCombo();
+  comboAudios = loops.map(l => {
+    const a = new Audio();
+    a.loop = true;
+    a.src = l.source === 'loops'
+      ? `/api/audio/loop/${l.fileName}`
+      : `/api/audio/m4a/${l.fileName}`;
+    return a;
+  });
+  await Promise.all(comboAudios.map(a => a.play().catch(err => console.warn('[combo] play failed', err))));
+}
+
+function stopCombo() {
+  for (const a of comboAudios) {
+    try { a.pause(); a.currentTime = 0; } catch (e) {}
+  }
+  comboAudios = [];
+}
+
+// Add the current selection as a single COMBO entry in the sequence. Then
+// clear the selection so the user can build the next combo.
+function addSelectedAsCombo() {
+  const loops = [...selectedKitChips.values()];
+  if (!loops.length) return;
+  const rec = {
+    seqKey:    `combo_${Date.now()}`,
+    kind:      'combo',
+    loops:     loops.slice(),
+    bpm:       loops[0].bpm,
+    bars:      loops[0].bars,
+    title:     loops.length === 1 ? loops[0].title : `Combo (${loops.map(l => l.inst).join('+')})`,
+    inst:      'combo',
+    fileName:  loops[0].fileName,
+  };
+  loopSequence.push(rec);
+  selectedKitChips.clear();
+  renderLoopSequence();
+  renderDrumLoops();
+  // Pre-cache every file in the combo so playback never blocks.
+  for (const l of loops) precacheLoop(l.fileName);
+}
+
+function bindSortHeaderClicks(grid) {
+  grid.querySelectorAll('.lt-sort').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.sort;
+      if (loopSort.key === key) {
+        loopSort.dir = loopSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        loopSort.key = key;
+        loopSort.dir = 'asc';
+      }
+      renderDrumLoops();
+    });
+  });
 }
 
 // Render the instrument filter toggle bar above the loop list. Mirrors the
@@ -1038,7 +1305,10 @@ function renderInstrumentFilters() {
   const counts = {};
   for (const i of INSTRUMENTS) counts[i] = 0;
   for (const l of drumLoopsAll) {
-    if (counts[l.inst] !== undefined) counts[l.inst]++;
+    // Default missing inst to 'drums' so legacy DO_loop rows still get
+    // bucketed correctly (matches the same default applied in renderDrumLoops).
+    const inst = l.inst || 'drums';
+    if (counts[inst] !== undefined) counts[inst]++;
   }
   bar.innerHTML = INSTRUMENTS.map(i => {
     const active = drumLoopInstFilter.has(i) ? ' active' : '';
@@ -1119,18 +1389,22 @@ let loopSeqIdx = -1;             // currently-playing index, -1 = stopped
 let loopSeqPlaying = false;
 
 function loopSeqAdd(btn) {
+  const fileName = decodeURIComponent(btn.dataset.file || '');
   const rec = {
     id:        btn.dataset.id,
-    fileName:  btn.dataset.file,
+    fileName,
     source:    btn.dataset.source,
     inst:      btn.dataset.inst,
     bars:      Number(btn.dataset.bars) || 0,
     bpm:       Number(btn.dataset.bpm)  || 0,
     title:     btn.dataset.title,
-    seqKey:    `${btn.dataset.id}_${Date.now()}`,   // unique per add (allow duplicates)
+    seqKey:    `${btn.dataset.id}_${Date.now()}`,
   };
   loopSequence.push(rec);
   renderLoopSequence();
+  // Pre-cache the file in the background so it's local by the time playback
+  // reaches it. Loops in the sequence MUST be cached locally.
+  precacheLoop(fileName);
 }
 
 function loopSeqRemove(seqKey) {
@@ -1166,12 +1440,32 @@ function renderLoopSequence() {
   }
   list.innerHTML = loopSequence.map((l, i) => {
     const playing = (i === loopSeqIdx && loopSeqPlaying) ? ' playing' : '';
+    // For combos, cache state = AND of all files; for single-loop entries,
+    // just this loop's state.
+    const files = l.kind === 'combo' ? l.loops.map(x => x.fileName) : [l.fileName];
+    const statuses = files.map(f => loopCacheStatus.get(f));
+    const allCached = statuses.every(s => s === true);
+    const anyLoading = statuses.some(s => s === 'loading');
+    const cacheClass = allCached ? ' loop-seq-cached'
+                     : anyLoading ? ' loop-seq-caching' : ' loop-seq-uncached';
+    const cacheLabel = allCached ? '●' : anyLoading ? '⏳' : '○';
+    const cacheTitle = allCached ? 'All loops cached locally'
+                     : anyLoading ? 'Caching from Drive…'
+                     : 'Not fully cached yet';
+    // Combo: show multiple instrument badges.
+    let instHtml;
+    if (l.kind === 'combo') {
+      instHtml = l.loops.map(x => `<span class="loop-seq-inst loop-pill-${escapeHtml(x.inst)}">${escapeHtml(x.inst.toUpperCase())}</span>`).join('');
+    } else {
+      instHtml = `<span class="loop-seq-inst loop-pill-${escapeHtml(l.inst)}">${escapeHtml((l.inst || '?').toUpperCase())}</span>`;
+    }
     return `
-      <div class="loop-seq-row${playing}" data-key="${l.seqKey}" draggable="true">
+      <div class="loop-seq-row${playing}${cacheClass}" data-key="${l.seqKey}" draggable="true">
         <span class="loop-seq-num">${i + 1}</span>
-        <span class="loop-seq-inst loop-pill-${escapeHtml(l.inst)}">${escapeHtml((l.inst || '?').toUpperCase())}</span>
+        <span class="loop-seq-insts">${instHtml}</span>
         <span class="loop-seq-title" title="${escapeHtml(l.title || '')}">${escapeHtml(l.title || '')}</span>
-        <span class="loop-seq-meta">${l.bpm || '?'}b · ${l.bars}<span class="dl-bars">b</span></span>
+        <span class="loop-seq-meta">${l.bpm || '?'} · ${l.bars}<span class="dl-bars">b</span></span>
+        <span class="loop-seq-cache" title="${cacheTitle}">${cacheLabel}</span>
         <button class="loop-seq-del" title="Remove">×</button>
       </div>`;
   }).join('');
@@ -1197,27 +1491,29 @@ function loopSeqPlayFrom(i) {
   loopSeqIdx = i;
   loopSeqPlaying = true;
 
-  // Stop any standalone drum-loop playback first to avoid overlap.
   if (drumLoopAudio) {
     drumLoopAudio.pause();
     drumLoopPlayingId = null;
   }
-  // (Re)create the shared audio element. Loop ON by default — Manual mode
-  // relies on the browser's loop=true to repeat. Auto-advance turns loop OFF
-  // for the active record and jumps at the ended event.
-  if (!drumLoopAudio) {
-    drumLoopAudio = new Audio();
-    drumLoopAudio.addEventListener('ended', loopSeqOnEnded);
-  } else {
-    drumLoopAudio.removeEventListener('ended', loopSeqOnEnded);
-    drumLoopAudio.addEventListener('ended', loopSeqOnEnded);
-  }
+  stopCombo();
+
   const autoAdv = !!document.getElementById('loop-seq-autoadvance')?.checked;
-  drumLoopAudio.loop = !autoAdv;
-  drumLoopAudio.src = rec.source === 'loops'
-    ? `/api/audio/loop/${rec.fileName}`
-    : `/api/audio/m4a/${rec.fileName}`;
-  drumLoopAudio.play().catch(err => console.warn('[loop-seq] play failed', err));
+
+  // Combo entries play multiple audios simultaneously. Auto-advance fires
+  // when the FIRST one ends (all loops in a combo share BPM + bars, so they
+  // end together).
+  const loops = rec.kind === 'combo' ? rec.loops : [rec];
+  comboAudios = loops.map(l => {
+    const a = new Audio();
+    a.loop = !autoAdv;
+    a.src = l.source === 'loops'
+      ? `/api/audio/loop/${l.fileName}`
+      : `/api/audio/m4a/${l.fileName}`;
+    return a;
+  });
+  // Wire 'ended' only on the first audio so auto-advance doesn't double-fire.
+  if (comboAudios[0]) comboAudios[0].addEventListener('ended', loopSeqOnEnded);
+  Promise.all(comboAudios.map(a => a.play().catch(err => console.warn('[seq] play failed', err))));
   renderLoopSequence();
 }
 
@@ -1248,6 +1544,7 @@ function loopSeqStop() {
     drumLoopAudio.pause();
     drumLoopAudio.currentTime = 0;
   }
+  stopCombo();
   loopSeqIdx = -1;
   renderLoopSequence();
 }

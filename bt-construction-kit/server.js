@@ -646,12 +646,34 @@ function refreshLibraryCache(reason, force) {
           console.warn('[lib] catalog read failed, falling back to scan:', e.message);
         }
 
+        // Catalog read failed and no catalog present. The fallback below
+        // would walk STEMS/ + M4A/ directly on Drive, which is exactly what
+        // we want to AVOID — every Drive readdir pulls files into Drive
+        // Stream's own local cache (~/Library/Application Support/Google/
+        // DriveFS/) without our control, eating disk. So unless a human has
+        // explicitly opted in with SIMPLE_STEM_ALLOW_SCAN=1, keep whatever
+        // libraryCache we have and return empty if nothing's hydrated.
+        if (process.env.SIMPLE_STEM_ALLOW_SCAN !== '1') {
+          if (libraryCache && libraryCache.data) {
+            console.warn(`[lib] no CATALOG.json available (${reason}). Keeping previously-loaded cache. Set SIMPLE_STEM_ALLOW_SCAN=1 to re-enable Drive scan fallback.`);
+            libraryCache.checkedAt = new Date().toISOString();
+          } else {
+            console.warn(`[lib] no CATALOG.json and no cache. Library is empty until the Librarian writes CATALOG.json. Set SIMPLE_STEM_ALLOW_SCAN=1 to fall back to a Drive scan.`);
+            libraryCache = {
+              scannedAt: new Date().toISOString(),
+              checkedAt: new Date().toISOString(),
+              sourceMtimes: {},
+              codeVersion: BOOT_VERSION,
+              source: 'empty-no-catalog',
+              data: { stats: { totalSongs: 0, totalStems: 0, totalM4as: 0, artistCount: 0, bpmDistribution: { slow: 0, medium: 0, fast: 0, unknown: 0 } }, songs: [] },
+            };
+          }
+          try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
+          return;
+        }
+
         const currentMtimes = getSourceMtimes();
         const prevMtimes = (libraryCache && libraryCache.sourceMtimes) || {};
-        // Compare both source-dir mtimes AND the parser version. If the code
-        // has been updated (parser rules changed, new filters added), we must
-        // re-parse even if the data dirs haven't moved — otherwise the cache
-        // serves stale results forever after a restart.
         const sameMtimes =
           prevMtimes.stems === currentMtimes.stems &&
           prevMtimes.m4a   === currentMtimes.m4a;
@@ -660,12 +682,12 @@ function refreshLibraryCache(reason, force) {
 
         if (unchanged && !force) {
           console.log(`[lib] skipped (${reason}) — source dirs unchanged since ${libraryCache.scannedAt}`);
-          // Touch checkedAt so we know when we last verified
           libraryCache.checkedAt = new Date().toISOString();
           try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
           return;
         }
 
+        console.warn(`[lib] SIMPLE_STEM_ALLOW_SCAN=1 — walking STEMS/ + M4A/ on Drive (${reason})`);
         const data = await buildLibraryData();
         libraryCache = {
           scannedAt: new Date().toISOString(),
@@ -747,6 +769,13 @@ function mirrorCatalogOnce(reason) {
 // catalog data is served; the warning is the early signal to update either
 // side. Best run after a few seconds so initial decode finishes first.
 async function runCatalogConformanceCheck() {
+  // The conformance check live-scans STEMS/<one-folder>/ on Drive to compare
+  // against the catalog row. That's a Drive readdir + stat, which is exactly
+  // what we want to avoid. Gated behind SIMPLE_STEM_ALLOW_SCAN=1.
+  if (process.env.SIMPLE_STEM_ALLOW_SCAN !== '1') {
+    console.log('[catalog-conformance] skipped (SIMPLE_STEM_ALLOW_SCAN not set; no Drive walks)');
+    return;
+  }
   setTimeout(async () => {
     try {
       const parsed = await tryLoadFromCatalog();
@@ -1146,6 +1175,45 @@ app.get('/api/audio/loop/:file', (req, res) => {
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
+// Force-populate the local cache for a single loop file. Returns 202 fast;
+// copying runs in the background. Used by the client when a loop is added
+// to the sequence so playback never blocks on a Drive fetch mid-jam.
+app.post('/api/precache/loop/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(LOOPS_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_LOOPS, file);
+  if (!fs.existsSync(sourcePath)) return res.status(404).json({ ok: false, error: 'not found' });
+  if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
+    return res.json({ ok: true, cached: true, alreadyCached: true });
+  }
+  res.json({ ok: true, cached: false, queued: true });
+  (async () => {
+    try {
+      await ensureCachedAsync(sourcePath, cachePath);
+      console.log(`[precache-loop] ${file} done`);
+    } catch (e) {
+      console.warn(`[precache-loop] ${file} failed:`, e.message);
+    }
+  })();
+});
+
+// Returns the cache state for a list of loop filenames. Body: { files: [...] }.
+// Used by the client to mark pills as cached / not-cached at render time
+// without doing one HEAD per pill.
+app.post('/api/loop-cache-status', express.json(), (req, res) => {
+  const files = Array.isArray(req.body && req.body.files) ? req.body.files : [];
+  const status = {};
+  for (const f of files) {
+    if (typeof f !== 'string' || f.includes('..')) { status[f] = false; continue; }
+    const cachePath = path.join(AUDIO_CACHE_LOOPS, f);
+    try {
+      status[f] = fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0;
+    } catch (e) { status[f] = false; }
+  }
+  res.json({ status });
+});
+
 // Returns true when every wav file we expect for a stems song is present
 // in the local cache with non-zero size. Two-tier fast path:
 //   1. .cached sentinel (written by the bulk precache POST) → instant true.
@@ -1252,10 +1320,28 @@ async function precacheAllM4as() {
     console.warn('[m4a precache] failed:', e.message);
   }
 }
-// Kick off at startup — runs in background, doesn't block server.listen()
-setImmediate(precacheAllM4as);
-// Re-check every hour in case new m4a files were added
-setInterval(precacheAllM4as, 60 * 60 * 1000);
+// Boot-time bulk precache passes are DISABLED. They forced Drive Stream to
+// readdir() every M4A/ and STEMS/ folder on startup which then pulled the
+// touched files into Drive's own local cache (~/Library/Application
+// Support/Google/DriveFS/), burning disk space outside our control.
+//
+// Current policy: cache is filled on demand only.
+//   - First play of any file:  sendCachedAudio() copies that single file
+//     from Drive into ~/.bt-cache/ as a side effect of serving.
+//   - Gig Mode:                explicit per-song precache calls run when
+//     the user enters Gig Mode (already implemented; touches only the
+//     active gig's files, not the whole library).
+//   - Loops added to sequence: precache-on-add hits /api/precache/loop/.
+//
+// Re-enable by setting SIMPLE_STEM_PRECACHE_ALL=1 in the environment — it's
+// here for the original full-library precache use case but off by default.
+if (process.env.SIMPLE_STEM_PRECACHE_ALL === '1') {
+  console.log('[boot] SIMPLE_STEM_PRECACHE_ALL=1 — enabling library-wide precache passes');
+  setImmediate(precacheAllM4as);
+  setInterval(precacheAllM4as, 60 * 60 * 1000);
+} else {
+  console.log('[boot] precacheAllM4as DISABLED (default). Cache fills on demand.');
+}
 
 // Walk every STEMS/<song>/ folder and pull each .m4a stem onto local disk so
 // stem playback never waits on Drive during a gig. Mirrors precacheAllM4as
@@ -1307,8 +1393,15 @@ async function precacheAllStemsM4a() {
     console.warn('[stem precache] failed:', e.message);
   }
 }
-setImmediate(precacheAllStemsM4a);
-setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
+// See the note above precacheAllM4as: full-library stem precache also gated
+// on SIMPLE_STEM_PRECACHE_ALL. Off by default so we don't drag the entire
+// STEMS/ folder through Drive Stream on every boot.
+if (process.env.SIMPLE_STEM_PRECACHE_ALL === '1') {
+  setImmediate(precacheAllStemsM4a);
+  setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
+} else {
+  console.log('[boot] precacheAllStemsM4a DISABLED (default). Stem cache fills on demand.');
+}
 
 // Manual trigger — POST /api/precache/library forces both passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;

@@ -3444,7 +3444,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .loop-seq-row {
   display: grid;
-  grid-template-columns: 22px 64px 1fr auto 22px;
+  grid-template-columns: 22px 60px 1fr auto 18px 22px;
   align-items: center;
   gap: 6px;
   padding: 5px 6px;
@@ -3455,6 +3455,10 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   cursor: pointer;
   transition: var(--transition-smooth);
 }
+.loop-seq-cache { font-size: 14px; text-align: center; line-height: 1; }
+.loop-seq-row.loop-seq-cached    .loop-seq-cache { color: var(--color-green); }
+.loop-seq-row.loop-seq-caching   .loop-seq-cache { color: var(--color-yellow); animation: pulse-glow 1.5s infinite; }
+.loop-seq-row.loop-seq-uncached  .loop-seq-cache { color: var(--text-dim); }
 .loop-seq-row:hover { border-color: var(--border-active); }
 .loop-seq-row.playing { background: rgba(46, 204, 113, 0.12); border-color: rgba(46, 139, 87, 0.55); }
 .loop-seq-num { font-weight: 700; color: var(--color-purple); text-align: center; }
@@ -3475,6 +3479,50 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .loop-seq-del:hover { color: var(--color-red); }
 
 /* Flat loop list (right pane). Color-coded per instrument. */
+/* Table-style header row that lines up with .loop-pill columns. Clicking a
+   header sortable column toggles ascending/descending; an arrow shows the
+   active sort. */
+.loops-table-header {
+  display: grid;
+  grid-template-columns: 70px 60px 1fr 36px 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #14192b;
+  color: #fff;
+  border-radius: 6px 6px 0 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.loops-table-header .lt-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.loops-table-header .lt-col-bars,
+.loops-table-header .lt-col-add { justify-content: center; }
+.loops-table-header .lt-sort {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0;
+}
+.loops-table-header .lt-sort:hover { color: var(--color-cyan); }
+.loops-table-header .lt-sort.active { color: var(--color-cyan); }
+.loops-table-header .lt-sort-arrow { font-size: 10px; opacity: 0.85; }
+
 .loops-flatlist {
   display: flex; flex-direction: column; gap: 4px;
   max-height: 70vh;
@@ -3483,7 +3531,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .loop-pill {
   display: grid;
-  grid-template-columns: 70px 60px 1fr 36px 22px;
+  grid-template-columns: 10px 70px 60px 1fr 36px 22px;
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
@@ -3497,6 +3545,130 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   box-sizing: border-box;
 }
 .loop-pill-title { font-weight: 500; }
+/* Cache state dot in column 1. Empty = grey, loading = pulsing yellow, cached = solid green. */
+.loop-pill-cache-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-dim);
+  display: inline-block;
+}
+.loop-pill-cached .loop-pill-cache-dot { background: var(--color-green); box-shadow: 0 0 6px rgba(46, 204, 113, 0.6); }
+.loop-pill-loading .loop-pill-cache-dot { background: var(--color-yellow); animation: pulse-glow 1.2s infinite; }
+
+/* Big loading splash for the loops list itself (catalog fetch over Drive). */
+.loops-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px;
+  padding: 60px 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.loops-loading .spinner {
+  width: 32px; height: 32px;
+  border: 3px solid rgba(0,0,0,0.1);
+  border-top-color: var(--color-purple);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Construction-kit row layout: BPM | SONG | BARS | INSTRUMENT CHIPS */
+.loops-table-header.kit-header {
+  grid-template-columns: 70px 1fr 50px 360px !important;
+}
+.kit-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 50px 360px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  font-size: 13px;
+}
+.kit-row:hover { border-color: var(--border-active); }
+.kit-col-bpm { font-weight: 700; font-variant-numeric: tabular-nums; }
+.kit-col-song { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kit-col-bars { text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.kit-col-chips {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.kit-chip {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 8px 6px;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  transition: var(--transition-smooth);
+}
+.kit-chip-drums    { background: var(--color-green); color: #fff; }
+.kit-chip-drumsbass{ background: #16a085; color: #fff; }
+.kit-chip-bass     { background: var(--color-blue, #2980b9); color: #fff; }
+.kit-chip-guitar   { background: var(--color-yellow); color: #000; }
+.kit-chip-piano    { background: var(--color-purple); color: #fff; }
+.kit-chip-empty {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-dim);
+  cursor: default;
+}
+.kit-chip:hover:not(.kit-chip-empty) { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+.kit-chip-selected {
+  outline: 3px solid var(--color-cyan);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(0, 188, 212, 0.6);
+}
+
+.kit-list { display: flex; flex-direction: column; gap: 4px; max-height: 65vh; overflow-y: auto; }
+
+/* Combo control bar above the loop list. */
+.combo-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.combo-bar.active {
+  border-color: var(--color-cyan);
+  background: rgba(0, 188, 212, 0.08);
+  box-shadow: 0 0 12px rgba(0, 188, 212, 0.2);
+}
+.combo-bar.mismatch { border-color: var(--color-yellow); background: rgba(241, 196, 15, 0.08); }
+.combo-bar-label { flex: 1; }
+.combo-warning { margin-left: 8px; color: var(--color-yellow); font-weight: 700; }
+.combo-btn {
+  padding: 7px 14px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.3px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: var(--transition-smooth);
+}
+.combo-btn-play  { background: var(--color-cyan); color: #fff; border-color: #00838f; }
+.combo-btn-add   { background: var(--color-green); color: #fff; border-color: #2e8b57; }
+.combo-btn-clear { background: transparent; color: var(--text-muted); border: 1px dashed var(--border-color); }
+.combo-btn:hover:not(:disabled) { box-shadow: 0 0 10px rgba(0,0,0,0.2); }
+.combo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Stack badges in sequence row when entry is a combo. */
+.loop-seq-insts { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.loop-seq-insts .loop-seq-inst {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 9px; font-weight: 800;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
 .loop-pill:hover { border-color: var(--border-active); transform: translateX(2px); }
 .loop-pill.playing {
   background: rgba(46, 204, 113, 0.12);
