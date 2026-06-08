@@ -3345,7 +3345,22 @@ body.gig-mode .song-row.gig-uncached { display: none; }
 body.gig-mode .format-chip:not(.chip-cached):not(.song-drumloop-chip),
 body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: none; }
 
-/* ====== Loops tab — flat list + instrument filters + sequence builder ====== */
+/* ====== Loops tab — flat list + instrument filters + sequence builder ======
+
+   The wrapping #drumloops-grid carried an old `display: grid` with
+   `grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))` from the
+   first Drum-Loops UI (task #24). That sliced the right pane into 220px
+   columns and shrank the single .loops-flatlist child to one column.
+   Override back to block layout so the new flat list spans the full
+   container width.
+*/
+#drumloops-grid {
+  display: block !important;
+  grid-template-columns: none !important;
+  gap: 0 !important;
+}
+
+
 
 .loop-inst-filters {
   display: flex;
@@ -3464,20 +3479,24 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   display: flex; flex-direction: column; gap: 4px;
   max-height: 70vh;
   overflow-y: auto;
+  width: 100%;
 }
 .loop-pill {
   display: grid;
-  grid-template-columns: 80px 70px 1fr auto 22px;
+  grid-template-columns: 70px 60px 1fr 36px 22px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 6px 12px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-card);
   cursor: pointer;
   transition: var(--transition-smooth);
-  font-size: 12px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
 }
+.loop-pill-title { font-weight: 500; }
 .loop-pill:hover { border-color: var(--border-active); transform: translateX(2px); }
 .loop-pill.playing {
   background: rgba(46, 204, 113, 0.12);
