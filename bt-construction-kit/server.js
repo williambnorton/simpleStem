@@ -17,10 +17,11 @@ const PORT = process.env.PORT || 3000;
 function SIMPLE_STEM_ROOT_FOR_VERSION() {
   return process.env.SIMPLE_STEM_ROOT || path.join(os.homedir(), 'ClaudeDrive', 'simpleStem');
 }
-// Version is a BUILD TIMESTAMP in local time, formatted YYMMDD.HHMM, derived
-// from the newest modification time across the code files. No manual bumping:
-// when Drive syncs a newer file to this machine, the on-disk version advances,
-// and the running process (which captured its version at boot) sees the diff.
+// Version is a BUILD TIMESTAMP in local time, formatted V1.MMDDHHMM (8 digits
+// after the dot — month, day, hour, minute) derived from the newest
+// modification time across the code files. No manual bumping: when Drive
+// syncs a newer file to this machine, the on-disk version advances, and the
+// running process (which captured its version at boot) sees the diff.
 function CODE_FILES() {
   const root = SIMPLE_STEM_ROOT_FOR_VERSION();
   return [
@@ -35,8 +36,7 @@ function CODE_FILES() {
 }
 function fmtVersion(d) {
   const p = n => String(n).padStart(2, '0');
-  return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}`
-       + `:${p(d.getHours())}${p(d.getMinutes())}`;
+  return `V1.${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`;
 }
 function readDiskVersion() {
   let newest = 0;
@@ -1117,6 +1117,68 @@ async function precacheAllM4as() {
 setImmediate(precacheAllM4as);
 // Re-check every hour in case new m4a files were added
 setInterval(precacheAllM4as, 60 * 60 * 1000);
+
+// Walk every STEMS/<song>/ folder and pull each .m4a stem onto local disk so
+// stem playback never waits on Drive during a gig. Mirrors precacheAllM4as
+// but for the per-stem files. WAV stems are skipped — we only need the
+// playback-ready m4a copies for the portal. A .cached sentinel is written
+// per folder so the UI can mark rows ready and Gig Mode can hide uncached
+// rows accurately.
+async function precacheAllStemsM4a() {
+  if (!fs.existsSync(STEMS_DIR)) return;
+  const t0 = Date.now();
+  let folders = 0, copied = 0, skipped = 0, failed = 0;
+  try {
+    const songFolders = (await fsp.readdir(STEMS_DIR, { withFileTypes: true }))
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+    console.log(`[stem precache] starting — ${songFolders.length} song folders (4 in parallel)`);
+    await runWithConcurrency(songFolders, 4, async (song) => {
+      try {
+        const src = path.join(STEMS_DIR, song);
+        const dst = path.join(AUDIO_CACHE_STEMS, song);
+        await fsp.mkdir(dst, { recursive: true });
+        const files = (await fsp.readdir(src)).filter(f => /\.m4a$/i.test(f));
+        let localCopied = 0;
+        for (const f of files) {
+          const cachePath = path.join(dst, f);
+          if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
+            skipped++; continue;
+          }
+          try {
+            await ensureCachedAsync(path.join(src, f), cachePath);
+            copied++; localCopied++;
+          } catch (e) { failed++; }
+        }
+        // Per-folder sentinel — flips the UI's READY chip.
+        try {
+          await fsp.writeFile(
+            path.join(dst, '.cached'),
+            JSON.stringify({ at: new Date().toISOString(), files: localCopied })
+          );
+        } catch (e) { /* sentinel best-effort */ }
+        folders++;
+        if (folders % 25 === 0) {
+          console.log(`[stem precache] progress: ${folders}/${songFolders.length} folders`);
+        }
+      } catch (e) { failed++; }
+    });
+    console.log(`[stem precache] done — ${folders} folders, copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+  } catch (e) {
+    console.warn('[stem precache] failed:', e.message);
+  }
+}
+setImmediate(precacheAllStemsM4a);
+setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
+
+// Manual trigger — POST /api/precache/library forces both passes immediately
+// (useful after a big import or when prepping for a gig). Returns 202 fast;
+// the work runs in the background and progress is in the server log.
+app.post('/api/precache/library', (req, res) => {
+  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background' });
+  setImmediate(precacheAllM4as);
+  setImmediate(precacheAllStemsM4a);
+});
 
 // Background pre-fetch — kicks off cache fill for every file in a stems
 // folder without blocking the request. Writes a `.cached` sentinel on

@@ -40,6 +40,13 @@ function initVisualizer(analyserNode) {
   analyser = analyserNode;
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  // The canvas sits inside a flex layout that may finish sizing AFTER init
+  // runs (fonts, web components, layout shift). A ResizeObserver catches any
+  // post-init size change and re-syncs the pixel buffer to the display size,
+  // so the waveform always draws end-to-end of the visible canvas.
+  if (window.ResizeObserver) {
+    new ResizeObserver(resizeCanvas).observe(canvas);
+  }
   startLoop();
 
   // Click / drag to seek. We attach to the canvas itself; the canvas is
@@ -199,6 +206,16 @@ function computePeaks(buf, bucketCount) {
 
 function draw() {
   if (!canvas || !ctx) return;
+  // Buffer-to-display sync: if the CSS-rendered canvas no longer matches the
+  // backing pixel buffer (parent flex finished laying out, window resized,
+  // sidebar collapsed, etc.) re-size before drawing. Cheaper than a global
+  // ResizeObserver and 100% reliable.
+  const rect = canvas.getBoundingClientRect();
+  const expectedW = Math.round(rect.width * window.devicePixelRatio);
+  const expectedH = Math.round(rect.height * window.devicePixelRatio);
+  if (rect.width > 0 && rect.height > 0 && (canvas.width !== expectedW || canvas.height !== expectedH)) {
+    resizeCanvas();
+  }
   const width = canvas.width / window.devicePixelRatio;
   const height = canvas.height / window.devicePixelRatio;
   ctx.clearRect(0, 0, width, height);

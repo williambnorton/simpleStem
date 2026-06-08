@@ -1420,18 +1420,22 @@ function renderLibrary() {
     keyCell.className = 'song-key-cell';
     keyCell.textContent = merged.key || '--';
 
-    // Format chips: one chip per variant, clickable to load that variant
+    // Format chips: 5 fixed slots (STEMS, -V, -V-G, -V-G-B, DO) that line up
+    // column-by-column with the header filter buttons. Missing variants get
+    // an invisible placeholder so the columns stay aligned across rows.
+    // Extras (Logic, drum loops, unknown variant codes) wrap to a second row.
     const formatCell = document.createElement('div');
     formatCell.className = 'song-format-cell';
 
-    // Cache state is communicated entirely via the per-variant format chips:
-    // solid green = cached, dashed outline = not yet. The redundant
-    // 'READY' / 'STEMS' purple cached-chip used to sit here; removed because
-    // the per-row chip set already says everything that chip did. (The stems
-    // variant gets its own green 'STEMS' format-chip below.)
     const stemsVariant = merged.variants.find(v => v.type === 'stems');
 
-    merged.variants.forEach(v => {
+    const SLOT_CODES = ['STEMS', '-V', '-V-G', '-V-G-B', 'DO'];
+    const slotVariant = code => {
+      if (code === 'STEMS') return merged.variants.find(v => v.type === 'stems');
+      return merged.variants.find(v => v.type !== 'stems' && v.variantCode === code);
+    };
+
+    const makeVariantChip = (v) => {
       const chip = document.createElement('button');
       const isStems = v.type === 'stems';
       const cachedCls = v.cached ? ' chip-cached' : '';
@@ -1441,23 +1445,49 @@ function renderLibrary() {
         ? `${v.variantLabel} — cached, plays instantly`
         : `${v.variantLabel} — NOT cached; click will fetch from Drive (may spin during gig)`;
       chip.dataset.variantId = v.id;
-      // Icon doubles as a cache-state signal: play = ready, download = will
-      // fetch. STEMS keeps its slider icon since it's a multi-file variant.
-      const icon = isStems ? 'sliders' : (v.cached ? 'play' : 'download');
+      // Label only — no leading icon. The chip IS the play button; an extra
+      // glyph just steals pixels in the already-narrow Format column. STEMS
+      // is identified by the green pill, m4a variants by their code.
       const label = isStems ? 'STEMS' : v.variantCode;
-      chip.innerHTML = `<i data-lucide="${icon}" style="width:10px;height:10px;"></i> ${label}`;
+      // Keep a download glyph for uncached m4a (signals 'will spin'); other
+      // states render the label only.
+      if (!isStems && !v.cached) {
+        chip.innerHTML = `<i data-lucide="download" style="width:9px;height:9px;"></i> ${label}`;
+      } else {
+        chip.textContent = label;
+      }
       chip.addEventListener('click', e => {
         e.stopPropagation();
-        loadSong(v, { autoplay: true });   // clicking a chip plays immediately
+        loadSong(v, { autoplay: true });
       });
-      formatCell.appendChild(chip);
+      return chip;
+    };
+
+    SLOT_CODES.forEach(code => {
+      const v = slotVariant(code);
+      if (v) {
+        formatCell.appendChild(makeVariantChip(v));
+      } else {
+        const empty = document.createElement('span');
+        empty.className = 'format-chip-empty';
+        formatCell.appendChild(empty);
+      }
     });
 
-    // Logic Pro chip — yellow pill that appears when a *.logicx project
-    // bundle is sitting inside this song's STEMS folder. Click → server
-    // runs `open -n -a "Logic Pro" <project>` which spawns a FRESH Logic
-    // instance (different songs, different XR18 output routings, all
-    // running in parallel without clobbering each other).
+    // Extras row (Logic chip, drum loops, any variant not in the 5 canonical
+    // slots). Spans the full Format column underneath the aligned chips.
+    const extras = document.createElement('div');
+    extras.className = 'format-extras';
+
+    // Unknown m4a variant codes (e.g. 'FULL') that didn't land in a slot
+    merged.variants.forEach(v => {
+      if (v.type === 'stems') return;
+      if (SLOT_CODES.includes(v.variantCode)) return;
+      extras.appendChild(makeVariantChip(v));
+    });
+
+    // Logic Pro chip — yellow pill if a *.logicx project sits in STEMS/.
+    // Click → server spawns a FRESH Logic instance (parallel sessions OK).
     const stemsForLogic = merged.variants.find(v => v.type === 'stems');
     if (stemsForLogic && stemsForLogic.logicProjectName && stemsForLogic.folderName) {
       const chip = document.createElement('button');
@@ -1477,13 +1507,10 @@ function renderLibrary() {
           setTimeout(() => { chip.disabled = false; }, 1500);
         }
       });
-      formatCell.appendChild(chip);
+      extras.appendChild(chip);
     }
 
-    // Drum-loop chips — sit immediately AFTER the DO chip (which sorted last
-    // among the format chips). Each chip is a tiny green pill labeled "L1 27b"
-    // that toggles the drum loop in place. Reuses the same audio element as
-    // the Drum Loops tab so only one loop plays globally at a time.
+    // Drum-loop chips — small green pills "L1 27b" toggle the drum loop.
     const drumSongBase = stemsVariant && stemsVariant.folderName;
     const drumLoops = drumSongBase ? drumLoopsByBase.get(drumSongBase) : null;
     if (drumLoops && drumLoops.length) {
@@ -1500,9 +1527,11 @@ function renderLibrary() {
           e.stopPropagation();
           toggleDrumLoop(chip);
         });
-        formatCell.appendChild(chip);
+        extras.appendChild(chip);
       });
     }
+
+    if (extras.children.length) formatCell.appendChild(extras);
 
     // Action
     const actionCell = document.createElement('div');
@@ -2144,7 +2173,10 @@ function injectMixerHeaderInfo() {
 }
 
 function injectStripRoutingButtons() {
-  if (outputChannelCount <= 2) return;
+  // Always render the 3×6 routing grid so the band can configure stems-to-XR18
+  // routing even when the laptop is currently on the built-in 2-ch output.
+  // Buttons for channels above outputChannelCount are visibly disabled but
+  // remain present — they activate the moment an 18-ch device is plugged in.
   document.querySelectorAll('.channel-strip').forEach(strip => {
     if (strip.querySelector('.strip-routing-grid')) return;
     const chan = stripChannelName(strip);
@@ -2156,13 +2188,20 @@ function injectStripRoutingButtons() {
     // buttons appear solid green; unselected are outline. Below the grid a
     // tiny line shows the resolved L/R routing for debugging the alternating
     // rule ("L→1,3,5  R→2,4,6").
+    // Output channels 11-16 carry the "natural" stem assignment for the band's
+    // XR18 split. Show the SINGLE LETTER instead of the number so each button
+    // is one big, glanceable character: V D B G P O. Channels 1-10 and 17-18
+    // keep their numbers.
+    //   11 → V (Vocals)   12 → D (Drums)   13 → B (Bass)
+    //   14 → G (Guitar)   15 → P (Piano)   16 → O (Other)
+    const CHAN_LETTER = { 11: 'V', 12: 'D', 13: 'B', 14: 'G', 15: 'P', 16: 'O' };
     let html = '';
     for (let i = 0; i < 18; i++) {
-      if (i >= outputChannelCount) {
-        html += `<button class="srg-btn" disabled title="Device only has ${outputChannelCount} channels"></button>`;
-      } else {
-        html += `<button class="srg-btn" data-ch="${i}">${i + 1}</button>`;
-      }
+      const num = i + 1;
+      const letter = CHAN_LETTER[num];
+      const label = letter || `${num}`;
+      const cls = letter ? 'srg-btn srg-letter' : 'srg-btn';
+      html += `<button class="${cls}" data-ch="${i}" title="Output channel ${num}${letter ? ' (' + letter + ' = ' + ({V:'Vocals',D:'Drums',B:'Bass',G:'Guitar',P:'Piano',O:'Other'}[letter]) + ')' : ''}">${label}</button>`;
     }
     grid.innerHTML = `
       <div class="srg-grid">${html}</div>
@@ -2306,6 +2345,20 @@ function loadSong(song, opts) {
   els.activeKey.textContent = song.key || '--';
   if (els.activeKeySignature) {
     els.activeKeySignature.textContent = song.keySignature ? `(${song.keySignature})` : '';
+  }
+  // Drum pattern pill — metadata.drum_pattern is an opaque string the
+  // librarian writes (e.g. "120@96" → BPM 120 on TR-808 pattern 96). Show
+  // it next to BPM/Key only when present; otherwise hide the pill entirely.
+  const drumPillEl = document.getElementById('active-meta-drum');
+  const drumValEl  = document.getElementById('active-drum-value');
+  const drumPattern = song.drum_pattern || song.drumPattern || '';
+  if (drumPillEl && drumValEl) {
+    if (drumPattern) {
+      drumValEl.textContent = drumPattern;
+      drumPillEl.style.display = '';
+    } else {
+      drumPillEl.style.display = 'none';
+    }
   }
   
   // Set all tracks to non-loop browser-wise to prevent wrap stutter
@@ -2993,16 +3046,19 @@ async function checkVersion() {
     const res = await fetch('/api/version');
     if (!res.ok) return;
     const v = await res.json();
-    els.versionRunning.textContent = `v${v.running}`;
-    // Title the app + browser tab "simpleStem vYYMMDD.HHMM"
-    document.title = `simpleStem v${v.running}`;
+    // Version string already carries its own prefix (V1.MMDDHHMM); don't
+    // re-prefix with a lowercase 'v' the way the older YYMMDD:HHMM format did.
+    const stamp = String(v.running || '');
+    const stampAvail = String(v.available || '');
+    els.versionRunning.textContent = stamp;
+    document.title = `simpleStem ${stamp}`;
     const brandV = document.getElementById('brand-version');
-    if (brandV) brandV.textContent = `v${v.running}`;
+    if (brandV) brandV.textContent = stamp;
     if (els.btnUpdate) {
       if (v.updateAvailable) {
         els.btnUpdate.style.display = 'inline-flex';
-        els.btnUpdate.title = `Update available: v${v.running} → v${v.available} (restart to apply)`;
-        if (els.updateLabel) els.updateLabel.textContent = `Update → v${v.available}`;
+        els.btnUpdate.title = `Update available: ${stamp} → ${stampAvail} (restart to apply)`;
+        if (els.updateLabel) els.updateLabel.textContent = `Update → ${stampAvail}`;
       } else {
         els.btnUpdate.style.display = 'none';
       }
@@ -3665,6 +3721,32 @@ function setupEventListeners() {
     }
   }
 
+  // Mixer-only collapse: keep the player section visible (title/BPM/key
+  // remain) but hide the visualizer, timeline, source picker, and faders.
+  // Useful when you've configured the mix and just need a heads-up display.
+  const btnCollapseMixer = document.getElementById('btn-collapse-mixer');
+  if (btnCollapseMixer) {
+    const sect = els.playerHeroSection;
+    const sync = () => {
+      const collapsed = sect && sect.classList.contains('mixer-collapsed');
+      btnCollapseMixer.innerHTML = collapsed
+        ? `<i data-lucide="chevrons-down"></i>`
+        : `<i data-lucide="chevrons-up"></i>`;
+      btnCollapseMixer.title = collapsed ? 'Expand mixer' : 'Collapse mixer (keep title/BPM/key)';
+      if (window.lucide) lucide.createIcons();
+    };
+    btnCollapseMixer.addEventListener('click', () => {
+      if (!sect) return;
+      sect.classList.toggle('mixer-collapsed');
+      localStorage.setItem('bt_mixer_collapsed', sect.classList.contains('mixer-collapsed') ? '1' : '0');
+      sync();
+    });
+    if (localStorage.getItem('bt_mixer_collapsed') === '1' && sect) {
+      sect.classList.add('mixer-collapsed');
+    }
+    sync();
+  }
+
   // Playback speed popover
   if (els.btnSpeedDialog && els.speedPopover) {
     els.btnSpeedDialog.addEventListener('click', (e) => {
@@ -3819,24 +3901,42 @@ function timeAgo(iso) {
   } catch (e) { return ''; }
 }
 
-// Wall clock — "Wed May 27  4:31 PM"
+// Wall clock — animated analog SVG (hour/minute/second hands) plus a small
+// digital readout next to it. Both sit in #player-top-bar at the top-right
+// of the main pane, persistent across idle/active player states.
 function startWallClock() {
-  const el = document.getElementById('wall-clock');
-  if (!el) return;
+  const hourHand = document.getElementById('clock-hour');
+  const minHand  = document.getElementById('clock-min');
+  const secHand  = document.getElementById('clock-sec');
+  const digital  = document.getElementById('analog-clock-digital');
+  // Legacy text element kept hidden — also update it so anything still
+  // reading wall-clock.textContent continues to work.
+  const legacyEl = document.getElementById('wall-clock');
+  if (!hourHand && !legacyEl) return;
   const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const tick = () => {
     const d = new Date();
-    let h = d.getHours();
+    const s = d.getSeconds();
     const m = d.getMinutes();
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12;
-    if (h === 0) h = 12;
-    const mm = m < 10 ? `0${m}` : `${m}`;
-    el.textContent = `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}  ${h}:${mm} ${ampm}`;
+    const h = d.getHours() % 12;
+    // 360° / 12h = 30°/hr; 360/60 = 6°/min and 6°/sec. Add fractional
+    // contributions so the hour/minute hands creep smoothly between ticks.
+    const secAngle  = s * 6;
+    const minAngle  = m * 6 + s * 0.1;
+    const hourAngle = h * 30 + m * 0.5;
+    if (secHand)  secHand.style.transform  = `rotate(${secAngle}deg)`;
+    if (minHand)  minHand.style.transform  = `rotate(${minAngle}deg)`;
+    if (hourHand) hourHand.style.transform = `rotate(${hourAngle}deg)`;
+    const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+    const h12  = h === 0 ? 12 : h;
+    const mm   = m < 10 ? `0${m}` : `${m}`;
+    const text = `${days[d.getDay()]} ${h12}:${mm} ${ampm}`;
+    if (digital) digital.textContent = text;
+    if (legacyEl) legacyEl.textContent = `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}  ${h12}:${mm} ${ampm}`;
   };
   tick();
-  setInterval(tick, 1000 * 15); // refresh every 15s, plenty for minute precision
+  setInterval(tick, 1000); // 1s — animates the seconds hand smoothly
 }
 
 // Utility formattings (secs -> MM:SS)

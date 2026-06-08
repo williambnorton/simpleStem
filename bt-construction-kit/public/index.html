@@ -27,10 +27,9 @@
           <i data-lucide="waves" class="logo-icon glow-purple"></i>
           <span>simpleStem</span>
         </div>
-        <span id="brand-version" class="brand-version" title="Performer version (YYMMDD:HHMM)"></span>
-        <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
-          <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
-        </button>
+        <span id="brand-version" class="brand-version" title="Performer version (V1.MMDDHHMM)"></span>
+        <!-- Gig Mode toggle moved to the persistent top-right bar inside the
+             main content area (next to the clock) — see #player-top-bar. -->
       </div>
       
       <!-- Instant Search & Filters -->
@@ -59,60 +58,11 @@
       <section class="add-yt-section">
         <div class="search-box glass-input">
           <i data-lucide="youtube" class="search-icon"></i>
-          <input type="text" id="yt-url" placeholder="Paste YouTube URL…" title="Paste a YouTube video, playlist, or chaptered album URL to add to the library" autocomplete="off">
+          <input type="text" id="yt-url" placeholder="Paste YouTube URL + Enter…" title="Paste a YouTube video, playlist, or chaptered album URL and press Enter to add" autocomplete="off">
         </div>
-        <button id="btn-enqueue" class="add-yt-btn"><i data-lucide="plus"></i> Add</button>
+        <!-- Add button removed; Enter on the URL field submits (see setupQueueUI). -->
+        <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
         <div id="queue-status" class="queue-status"></div>
-      </section>
-
-      <!-- Instrumentation Stats Panel (Library Analytics) — collapsible -->
-      <section class="stats-panel rollup" id="analytics-rollup">
-        <button class="rollup-header" id="analytics-rollup-header" aria-expanded="false" type="button">
-          <i data-lucide="bar-chart-3"></i>
-          <span class="rollup-title">Library Analytics</span>
-          <i data-lucide="chevron-down" class="rollup-caret"></i>
-        </button>
-        <div class="rollup-body">
-        <div class="stats-grid">
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
-            <span class="stat-label">Total Songs</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-purple" id="stat-total-stems">-</span>
-            <span class="stat-label">Multitrack Stems</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-green" id="stat-total-m4as">-</span>
-            <span class="stat-label">M4A Tracks</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-orange" id="stat-total-artists">-</span>
-            <span class="stat-label">Artists</span>
-          </div>
-        </div>
-        
-        <div class="tempo-dist-card glass-card">
-          <h4 class="sub-title">Tempo Profile</h4>
-          <div class="tempo-bars">
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Slow</span>
-              <div class="bar-container"><div id="tempo-slow-bar" class="bar-fill bg-cyan" style="width: 0%;"></div></div>
-              <span id="tempo-slow-count" class="bar-value">0</span>
-            </div>
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Medium</span>
-              <div class="bar-container"><div id="tempo-medium-bar" class="bar-fill bg-purple" style="width: 0%;"></div></div>
-              <span id="tempo-medium-count" class="bar-value">0</span>
-            </div>
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Fast</span>
-              <div class="bar-container"><div id="tempo-fast-bar" class="bar-fill bg-green" style="width: 0%;"></div></div>
-              <span id="tempo-fast-count" class="bar-value">0</span>
-            </div>
-          </div>
-        </div>
-        </div><!-- /rollup-body -->
       </section>
 
       <!-- Gig rollup — the unit you actually plan for. A gig contains 1-4
@@ -148,6 +98,58 @@
         </div>
       </section>
 
+      <!-- Instrumentation Stats Panel (Library Analytics) — collapsible.
+           Sits at the bottom of the sidebar so the gig + setlists rollup is
+           the first thing the user sees during a performance. -->
+      <section class="stats-panel rollup" id="analytics-rollup">
+        <button class="rollup-header" id="analytics-rollup-header" aria-expanded="false" type="button">
+          <i data-lucide="bar-chart-3"></i>
+          <span class="rollup-title">Library Analytics</span>
+          <i data-lucide="chevron-down" class="rollup-caret"></i>
+        </button>
+        <div class="rollup-body">
+        <div class="stats-grid">
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
+            <span class="stat-label">Total Songs</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-purple" id="stat-total-stems">-</span>
+            <span class="stat-label">Multitrack Stems</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-green" id="stat-total-m4as">-</span>
+            <span class="stat-label">M4A Tracks</span>
+          </div>
+          <div class="stat-card glass-card hover-glow">
+            <span class="stat-num glow-orange" id="stat-total-artists">-</span>
+            <span class="stat-label">Artists</span>
+          </div>
+        </div>
+
+        <div class="tempo-dist-card glass-card">
+          <h4 class="sub-title">Tempo Profile</h4>
+          <div class="tempo-bars">
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Slow</span>
+              <div class="bar-container"><div id="tempo-slow-bar" class="bar-fill bg-cyan" style="width: 0%;"></div></div>
+              <span id="tempo-slow-count" class="bar-value">0</span>
+            </div>
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Medium</span>
+              <div class="bar-container"><div id="tempo-medium-bar" class="bar-fill bg-purple" style="width: 0%;"></div></div>
+              <span id="tempo-medium-count" class="bar-value">0</span>
+            </div>
+            <div class="tempo-bar-wrapper">
+              <span class="bar-label">Fast</span>
+              <div class="bar-container"><div id="tempo-fast-bar" class="bar-fill bg-green" style="width: 0%;"></div></div>
+              <span id="tempo-fast-count" class="bar-value">0</span>
+            </div>
+          </div>
+        </div>
+        </div><!-- /rollup-body -->
+      </section>
+
       <div class="sidebar-footer">
         <i data-lucide="folder" class="info-icon"></i>
         <span>~/ClaudeDrive/simpleStem</span>
@@ -167,6 +169,30 @@
     <!-- Main Content Area: Player dashboard & Song list -->
     <main class="main-content">
       
+      <!-- Persistent top-right bar — Gig Mode + analog clock. Sits above
+           both the idle and active player panes so it's always visible. -->
+      <div id="player-top-bar" class="player-top-bar">
+        <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
+          <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
+        </button>
+        <div class="analog-clock" aria-label="Analog clock" title="Local time">
+          <svg viewBox="0 0 100 100" width="56" height="56" class="analog-clock-svg">
+            <circle cx="50" cy="50" r="48" fill="#14192b" stroke="#0a0e1c" stroke-width="2"/>
+            <g class="clock-ticks" stroke="#aab0c4" stroke-width="1.2" stroke-linecap="round">
+              <line x1="50" y1="6"  x2="50" y2="13"/>
+              <line x1="94" y1="50" x2="87" y2="50"/>
+              <line x1="50" y1="94" x2="50" y2="87"/>
+              <line x1="6"  y1="50" x2="13" y2="50"/>
+            </g>
+            <line id="clock-hour" x1="50" y1="50" x2="50" y2="28" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+            <line id="clock-min"  x1="50" y1="50" x2="50" y2="20" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+            <line id="clock-sec"  x1="50" y1="50" x2="50" y2="16" stroke="#7c4dff" stroke-width="1.4" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+            <circle cx="50" cy="50" r="3" fill="#ffffff"/>
+          </svg>
+          <span id="analog-clock-digital" class="analog-clock-digital">--:--</span>
+        </div>
+      </div>
+
       <!-- Top Section: Active Song Player & Mixer -->
       <section class="player-hero-section glass">
         
@@ -205,10 +231,23 @@
                   <span id="active-key-signature" class="stat-sig"></span>
                 </div>
               </div>
+              <!-- Drum pattern pill — populated when the song's metadata.json
+                   carries a "drum_pattern" field (format "BPM@kit", e.g.
+                   "120@96"). Hidden via JS when the field is missing. -->
+              <div class="meta-stat-pill hover-glow" id="active-meta-drum" style="display:none;">
+                <i data-lucide="drum" class="text-orange"></i>
+                <div>
+                  <span id="active-drum-value" class="stat-val">-</span>
+                  <span class="stat-lbl">Drum</span>
+                </div>
+              </div>
               <button id="btn-collapse-player" class="control-btn hover-glow" title="Collapse player (show more of the song list)">
                 <i data-lucide="chevrons-up"></i>
               </button>
-              <div id="wall-clock" class="wall-clock" title="Local time"></div>
+              <!-- Legacy digital wall-clock — kept for ID/JS continuity but
+                   visually hidden; the analog clock in #player-top-bar
+                   is the real one now. -->
+              <div id="wall-clock" class="wall-clock" title="Local time" style="display:none;"></div>
             </div>
           </div>
           
@@ -218,10 +257,15 @@
             <div id="variant-picker-chips" class="variant-picker-chips"></div>
           </div>
 
-          <!-- Mid Panel: Visualizer & Timeline Player -->
+          <!-- Mid Panel: Visualizer & Timeline Player.
+               The two invisible .time-label spacers mirror the timeline row
+               below so the canvas (and its playhead) align horizontally with
+               the slider thumb. -->
           <div class="player-visualization-area">
             <span class="visualizer-label">Visualizer</span>
+            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
             <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
+            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
             
             <div class="player-wave-overlay">
               <div id="player-buffering-indicator" class="buffering" style="display: none;">
@@ -305,12 +349,18 @@
             <div class="mixer-header">
               <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
               <button id="btn-reset-mixer" class="btn-secondary"><i data-lucide="rotate-ccw"></i> Reset Faders</button>
+              <!-- Collapse-mixer toggle: clicking this shrinks the entire top
+                   pane down to just title / BPM / key / drum-pattern, so the
+                   library and gig sidebar get more room. -->
+              <button id="btn-collapse-mixer" class="btn-secondary" title="Collapse mixer + visualizer; keep only title/BPM/key visible">
+                <i data-lucide="chevrons-up"></i>
+              </button>
             </div>
             
             <div class="faders-container">
               <!-- Vocals Channel -->
               <div class="channel-strip vocals-strip">
-                <div class="channel-header">Vocals</div>
+                <div class="channel-header"><span class="channel-icon text-pink"><i data-lucide="mic"></i></span><span class="channel-name">Vocals</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-vocals" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-vocals">80%</div>
@@ -319,12 +369,11 @@
                   <button id="mute-vocals" class="mute-btn">M</button>
                   <button id="solo-vocals" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-pink"><i data-lucide="mic"></i></div>
               </div>
 
               <!-- Drums Channel -->
               <div class="channel-strip drums-strip">
-                <div class="channel-header">Drums</div>
+                <div class="channel-header"><span class="channel-icon text-green"><i data-lucide="drum"></i></span><span class="channel-name">Drums</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-drums" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-drums">80%</div>
@@ -333,13 +382,12 @@
                   <button id="mute-drums" class="mute-btn">M</button>
                   <button id="solo-drums" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-green"><i data-lucide="drum"></i></div>
                 <div class="channel-loops" data-channel="drums"></div>
               </div>
 
               <!-- Bass Channel -->
               <div class="channel-strip bass-strip">
-                <div class="channel-header">Bass</div>
+                <div class="channel-header"><span class="channel-icon text-blue"><i data-lucide="audio-waveform"></i></span><span class="channel-name">Bass</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-bass" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-bass">80%</div>
@@ -348,13 +396,12 @@
                   <button id="mute-bass" class="mute-btn">M</button>
                   <button id="solo-bass" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-blue"><i data-lucide="audio-waveform"></i></div>
                 <div class="channel-loops" data-channel="bass"></div>
               </div>
 
               <!-- Guitar Channel -->
               <div class="channel-strip guitar-strip">
-                <div class="channel-header">Guitar</div>
+                <div class="channel-header"><span class="channel-icon text-yellow"><i data-lucide="guitar"></i></span><span class="channel-name">Guitar</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-guitar" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-guitar">80%</div>
@@ -363,13 +410,12 @@
                   <button id="mute-guitar" class="mute-btn">M</button>
                   <button id="solo-guitar" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-yellow"><i data-lucide="guitar"></i></div>
                 <div class="channel-loops" data-channel="guitar"></div>
               </div>
 
               <!-- Piano Channel -->
               <div class="channel-strip piano-strip">
-                <div class="channel-header">Piano</div>
+                <div class="channel-header"><span class="channel-icon text-purple"><i data-lucide="piano"></i></span><span class="channel-name">Piano</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-piano" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-piano">80%</div>
@@ -378,13 +424,12 @@
                   <button id="mute-piano" class="mute-btn">M</button>
                   <button id="solo-piano" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-purple"><i data-lucide="piano"></i></div>
                 <div class="channel-loops" data-channel="piano"></div>
               </div>
 
               <!-- Other Channel -->
               <div class="channel-strip other-strip">
-                <div class="channel-header">Other</div>
+                <div class="channel-header"><span class="channel-icon text-orange"><i data-lucide="music"></i></span><span class="channel-name">Other</span></div>
                 <div class="fader-track">
                   <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   <div class="fader-value" id="val-other">80%</div>
@@ -393,7 +438,6 @@
                   <button id="mute-other" class="mute-btn">M</button>
                   <button id="solo-other" class="solo-btn">S</button>
                 </div>
-                <div class="channel-icon text-orange"><i data-lucide="music"></i></div>
               </div>
 
               <!-- Drums Channel loop selector goes on Drums strip too -->
@@ -462,13 +506,12 @@
               <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-type">
-                <span class="col-label">Format</span>
                 <span class="format-filter-row" id="format-filter-row">
-                  <button class="ff-btn" data-code="STEMS" title="Show only songs with stems available">STEM</button>
-                  <button class="ff-btn" data-code="-V" title="Show only songs with -V available">-V</button>
-                  <button class="ff-btn" data-code="-V-G" title="Show only songs with -V-G available">-V-G</button>
-                  <button class="ff-btn" data-code="-V-G-B" title="Show only songs with -V-G-B available">-V-G-B</button>
-                  <button class="ff-btn" data-code="DO" title="Show only songs with DO available">DO</button>
+                  <button class="ff-btn" data-code="STEMS" title="Filter: only songs with stems">STEMS</button>
+                  <button class="ff-btn" data-code="-V" title="Filter: only songs with -V">-V</button>
+                  <button class="ff-btn" data-code="-V-G" title="Filter: only songs with -V-G">-V-G</button>
+                  <button class="ff-btn" data-code="-V-G-B" title="Filter: only songs with -V-G-B">-V-G-B</button>
+                  <button class="ff-btn" data-code="DO" title="Filter: only songs with DO">DO</button>
                 </span>
               </div>
               <div class="col-action">Action</div>

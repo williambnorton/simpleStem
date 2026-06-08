@@ -175,10 +175,16 @@ Librarian Claude).
 - **metadata.json** (the contract between producer and consumer): `title`,
   `artist`, `source_url`, `version`, `duration_sec`, `clip_start_sec`,
   `clip_end_sec`, `bpm`, `key`, `key_signature`, `lyrics_search_url`,
-  `chords_search_url`, `processing{download,separation,mixdowns}`, and for
-  setlist members `playlist_title` + `sequence_number`. **Producer:**
+  `chords_search_url`, `processing{download,separation,mixdowns}`, optional
+  `drum_pattern` (opaque string the portal displays as a pill next to
+  BPM/key — e.g. `"120@96"` for "BPM 120, drum machine pattern 96"), and
+  for setlist members `playlist_title` + `sequence_number`. **Producer:**
   `metadata.py`. **Consumer:** `bt-construction-kit/server.js`. Change both
   together.
+- **Version stamp**: the portal's brand chip displays a build timestamp
+  derived from the newest mtime across the code files, formatted
+  `V1.MMDDHHMM` (e.g. `V1.06071402`). No manual bumping — when Drive syncs
+  newer files to a machine, `BOOT_VERSION` advances on the next restart.
 
 ## Git & sync
 
