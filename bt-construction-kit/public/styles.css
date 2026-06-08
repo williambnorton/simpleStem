@@ -3345,6 +3345,173 @@ body.gig-mode .song-row.gig-uncached { display: none; }
 body.gig-mode .format-chip:not(.chip-cached):not(.song-drumloop-chip),
 body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: none; }
 
+/* ====== Loops tab — flat list + instrument filters + sequence builder ====== */
+
+.loop-inst-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.loop-inst-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  color: var(--text-main);
+}
+.loop-inst-btn:hover:not(:disabled) { border-color: var(--color-green); }
+.loop-inst-btn.active { background: var(--color-green); color: #fff; border-color: #2e8b57; }
+.loop-inst-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.loop-inst-count {
+  font-size: 9px;
+  background: rgba(0,0,0,0.15);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.loop-inst-btn.active .loop-inst-count { background: rgba(255,255,255,0.25); }
+.loop-inst-clear {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  border-radius: 16px;
+  font-size: 11px; font-weight: 700;
+  cursor: pointer;
+}
+.loop-inst-clear:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Two-pane layout: sequence panel left, flat loop list right. */
+.loops-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 14px;
+  padding: 12px 16px;
+  min-height: 360px;
+}
+.loop-sequence-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.loop-sequence-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.loop-sequence-header h3 { margin: 0; font-size: 14px; }
+.loop-sequence-transport {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+.loop-sequence-transport.playing { background: rgba(46, 204, 113, 0.10); }
+.loop-sequence-mode {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.loop-sequence-mode label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+.loop-sequence-list {
+  flex: 1; overflow-y: auto;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.loop-seq-row {
+  display: grid;
+  grid-template-columns: 22px 64px 1fr auto 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.loop-seq-row:hover { border-color: var(--border-active); }
+.loop-seq-row.playing { background: rgba(46, 204, 113, 0.12); border-color: rgba(46, 139, 87, 0.55); }
+.loop-seq-num { font-weight: 700; color: var(--color-purple); text-align: center; }
+.loop-seq-inst {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px; font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: center;
+}
+.loop-seq-title { color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loop-seq-meta { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.loop-seq-del {
+  background: transparent; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 14px;
+  padding: 0 4px;
+}
+.loop-seq-del:hover { color: var(--color-red); }
+
+/* Flat loop list (right pane). Color-coded per instrument. */
+.loops-flatlist {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.loop-pill {
+  display: grid;
+  grid-template-columns: 80px 70px 1fr auto 22px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  font-size: 12px;
+}
+.loop-pill:hover { border-color: var(--border-active); transform: translateX(2px); }
+.loop-pill.playing {
+  background: rgba(46, 204, 113, 0.12);
+  border-color: rgba(46, 139, 87, 0.55);
+}
+.loop-pill-inst {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-align: center;
+  background: #14192b;
+  color: #fff;
+}
+.loop-pill-drums .loop-pill-inst, .loop-pill-drums.loop-inst-btn { background: var(--color-green); }
+.loop-pill-bass  .loop-pill-inst, .loop-pill-bass.loop-inst-btn  { background: var(--color-blue, #2980b9); }
+.loop-pill-drumsbass .loop-pill-inst, .loop-pill-drumsbass.loop-inst-btn { background: #16a085; }
+.loop-pill-guitar .loop-pill-inst, .loop-pill-guitar.loop-inst-btn { background: var(--color-yellow); color: #000; }
+.loop-pill-piano .loop-pill-inst, .loop-pill-piano.loop-inst-btn { background: var(--color-purple); }
+.loop-pill-bpm { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.loop-pill-title { color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loop-pill-bars { font-size: 10px; color: var(--text-muted); }
+.loop-pill-seq-add {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-green); color: #fff;
+  border-radius: 4px;
+  font-weight: 800;
+  cursor: pointer;
+  font-size: 14px;
+}
+.loop-pill-seq-add:hover { box-shadow: 0 0 8px rgba(46, 204, 113, 0.5); }
+
 /* ===== Pending (not-yet-stemmed) setlist rows ===== */
 .setlist-item-pending {
   opacity: 0.55; filter: grayscale(0.6);

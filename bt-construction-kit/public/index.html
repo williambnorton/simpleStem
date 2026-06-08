@@ -581,29 +581,56 @@
         </section>
         </section><!-- /tab-pane:setlist -->
 
-        <!-- Drum Loops tab — library-wide grid of every song's drum-only loops -->
+        <!-- Loops tab — flat catalog of every per-instrument loop, sortable
+             alphabetically, with instrument-filter toggle bar across the top
+             and a sequence-builder sidebar at left mirroring the setlist UI. -->
         <section class="tab-pane" data-tab-pane="drumloops">
           <section class="drumloops-section glass">
             <div class="drumloops-header">
               <div class="title-area">
-                <h2>Drum Loops</h2>
-                <span class="sub" id="drumloops-count-label">Loading drum loops…</span>
+                <h2>Loops</h2>
+                <span class="sub" id="drumloops-count-label">Loading loops…</span>
               </div>
               <div class="drumloops-controls">
                 <div class="search-box glass-input" style="max-width:260px;">
                   <i data-lucide="search" class="search-icon"></i>
-                  <input type="text" id="drumloops-search" placeholder="Search song or artist…" autocomplete="off">
+                  <input type="text" id="drumloops-search" placeholder="Search song, artist, file…" autocomplete="off">
                 </div>
-                <select id="drumloops-sort" class="glass-select" title="Sort drum loops">
-                  <option value="bpm" selected>Sort: BPM Low→High</option>
-                  <option value="song">Sort: Song A→Z</option>
-                  <option value="artist">Sort: Artist A→Z</option>
-                  <option value="bars">Sort: Bars Low→High</option>
+                <select id="drumloops-sort" class="glass-select" title="Sort loops" style="display:none;">
+                  <option value="alpha" selected>Alphabetical</option>
                 </select>
               </div>
             </div>
-            <div id="drumloops-grid" class="drumloops-grid">
-              <div class="loading-state"><div class="spinner"></div><span>Scanning M4A/ for drum loops…</span></div>
+            <!-- Instrument-filter toggle bar. Populated by renderInstrumentFilters(). -->
+            <div id="loop-inst-filters" class="loop-inst-filters"></div>
+            <!-- Two-pane layout: left = loop sequence builder, right = flat loop list. -->
+            <div class="loops-layout">
+              <aside class="loop-sequence-panel" id="loop-sequence-panel">
+                <div class="loop-sequence-header">
+                  <h3>Sequence</h3>
+                  <span id="loop-seq-count" class="rollup-count">0</span>
+                  <button id="loop-seq-clear" class="btn-icon" title="Clear sequence"><i data-lucide="trash-2"></i></button>
+                </div>
+                <div class="loop-sequence-transport" id="loop-sequence-transport">
+                  <button class="ss-tr ss-tr-prev" id="loop-seq-prev" title="Previous loop"><i data-lucide="skip-back"></i></button>
+                  <button class="ss-tr ss-tr-stop" id="loop-seq-stop" title="Stop"><i data-lucide="square"></i></button>
+                  <button class="ss-tr ss-tr-play" id="loop-seq-play" title="Play sequence"><i data-lucide="play"></i></button>
+                  <button class="ss-tr ss-tr-next" id="loop-seq-next" title="Next loop"><i data-lucide="skip-forward"></i></button>
+                  <span id="loop-seq-pos" class="ss-tr-pos"></span>
+                </div>
+                <div class="loop-sequence-mode">
+                  <label title="Auto-advance: next loop fires the instant current loop ends. Manual: current loop plays until you hit Next.">
+                    <input type="checkbox" id="loop-seq-autoadvance" checked>
+                    <span>Auto-advance at end of loop</span>
+                  </label>
+                </div>
+                <div class="loop-sequence-list" id="loop-sequence-list">
+                  <div class="empty-state">Click + on a loop to add it to the sequence.</div>
+                </div>
+              </aside>
+              <div id="drumloops-grid" class="drumloops-grid">
+                <div class="loading-state"><div class="spinner"></div><span>Scanning LOOPS/ folder…</span></div>
+              </div>
             </div>
           </section>
         </section><!-- /tab-pane:drumloops -->

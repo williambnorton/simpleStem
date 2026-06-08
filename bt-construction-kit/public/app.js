@@ -216,6 +216,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupMasterVolume();
   setupTabs();
   setupDrumLoopsTab();
+  setupLoopSequenceUI();
   setupGigMode();
   setupRollups();
   setupGigSidebar();
@@ -914,6 +915,11 @@ let drumLoopsAll = [];
 let drumLoopsByBase = new Map();   // songBase → [loops sorted by loopNumber]
 let drumLoopAudio = null;
 let drumLoopPlayingId = null;
+// Instrument filter for the Loops tab. Empty Set = show all; otherwise only
+// rows whose .inst is in the set are shown. Same toggle semantics as the
+// FORMAT column filter in the library.
+const INSTRUMENTS = ['drums', 'drumsbass', 'bass', 'guitar', 'piano'];
+let drumLoopInstFilter = new Set();
 
 function setupDrumLoopsTab() {
   const searchEl = document.getElementById('drumloops-search');
@@ -959,63 +965,101 @@ function renderDrumLoops() {
   const grid = document.getElementById('drumloops-grid');
   if (!grid) return;
   const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
-  const sortKey = document.getElementById('drumloops-sort')?.value || 'bpm';
 
-  // Build per-song groups from the flat loops list.
-  const byBase = new Map();
-  for (const l of drumLoopsAll) {
-    if (q && !(l.title || '').toLowerCase().includes(q) &&
-            !(l.artist || '').toLowerCase().includes(q)) continue;
-    if (!byBase.has(l.songBase)) {
-      byBase.set(l.songBase, {
-        songBase: l.songBase,
-        title:    l.title,
-        artist:   l.artist,
-        bpm:      l.bpm,
-        loops:    [],
-      });
-    }
-    byBase.get(l.songBase).loops.push(l);
-  }
-  const groups = [...byBase.values()];
-  for (const g of groups) g.loops.sort((a, b) => a.loopNumber - b.loopNumber);
-
-  groups.sort((a, b) => {
-    switch (sortKey) {
-      case 'artist': return (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title);
-      case 'bpm':    return (a.bpm || 9999) - (b.bpm || 9999) || a.title.localeCompare(b.title);
-      case 'bars':   return (a.loops[0]?.bars || 0) - (b.loops[0]?.bars || 0) || a.title.localeCompare(b.title);
-      default:       return a.title.localeCompare(b.title);
-    }
+  // Filter: text query + instrument toggles.
+  let rows = drumLoopsAll.filter(l => {
+    if (drumLoopInstFilter.size > 0 && !drumLoopInstFilter.has(l.inst)) return false;
+    if (!q) return true;
+    return (l.title || '').toLowerCase().includes(q) ||
+           (l.artist || '').toLowerCase().includes(q) ||
+           (l.fileName || '').toLowerCase().includes(q);
   });
 
-  if (groups.length === 0) {
-    grid.innerHTML = '<div class="empty-state">No drum loops match.</div>';
+  // Sort by filename — alphabetical across (inst, bpm, song, bars) all at
+  // once because of the naming convention. Falls back to title for legacy
+  // entries that don't follow the new pattern.
+  rows.sort((a, b) => {
+    const af = a.fileName || a.title || '';
+    const bf = b.fileName || b.title || '';
+    return af.localeCompare(bf);
+  });
+
+  if (rows.length === 0) {
+    grid.innerHTML = '<div class="empty-state">No loops match.</div>';
+    renderInstrumentFilters();
     return;
   }
 
-  grid.innerHTML = groups.map(g => `
-    <div class="drumloop-card" data-base="${escapeHtml(g.songBase)}">
-      <div class="dl-title" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
-      <div class="dl-artist" title="${escapeHtml(g.artist || '')}">${escapeHtml(g.artist || '')}</div>
-      <div class="dl-meta">
-        ${g.bpm ? `<span>${g.bpm} BPM</span>` : '<span>— BPM</span>'}
-        <span>· ${g.loops.length} loop${g.loops.length === 1 ? '' : 's'}</span>
-      </div>
-      <div class="dl-loop-row">
-        ${g.loops.map(l => `
-          <button class="dl-loop-btn" data-file="${encodeURIComponent(l.fileName)}" data-id="${l.id}" data-loopnum="${l.loopNumber}" data-bars="${l.bars}" title="loop${l.loopNumber} · ${l.bars} bars">
-            L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>
-          </button>
-        `).join('')}
-      </div>
+  // Flat single-column list of loop pills. Each pill carries the inst as
+  // a class so CSS can color-code (drums green, bass blue, etc.).
+  const fmtBpm = (n) => n ? `${n} BPM` : '—';
+  grid.innerHTML = `
+    <div class="loops-flatlist">
+      ${rows.map(l => `
+        <button class="loop-pill loop-pill-${escapeHtml(l.inst || 'unknown')}"
+                data-file="${encodeURIComponent(l.fileName)}"
+                data-id="${escapeHtml(l.id)}"
+                data-source="${escapeHtml(l.source || '')}"
+                data-inst="${escapeHtml(l.inst || '')}"
+                data-bars="${l.bars}"
+                data-bpm="${l.bpm || ''}"
+                data-title="${escapeHtml(l.title || '')}"
+                title="${escapeHtml(l.fileName)}">
+          <span class="loop-pill-inst">${escapeHtml((l.inst || '?').toUpperCase())}</span>
+          <span class="loop-pill-bpm">${fmtBpm(l.bpm)}</span>
+          <span class="loop-pill-title">${escapeHtml(l.title || '')}</span>
+          <span class="loop-pill-bars">${l.bars}b</span>
+          <span class="loop-pill-seq-add" title="Add to sequence">+</span>
+        </button>
+      `).join('')}
     </div>
-  `).join('');
+  `;
 
-  grid.querySelectorAll('.dl-loop-btn').forEach(btn => {
-    btn.addEventListener('click', () => toggleDrumLoop(btn));
+  grid.querySelectorAll('.loop-pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      if (e.target.closest('.loop-pill-seq-add')) {
+        e.stopPropagation();
+        loopSeqAdd(btn);
+        return;
+      }
+      toggleDrumLoop(btn);
+    });
   });
+  renderInstrumentFilters();
   if (window.lucide) lucide.createIcons();
+}
+
+// Render the instrument filter toggle bar above the loop list. Mirrors the
+// FORMAT column filters in the library — click an instrument to scope the
+// view to that one (multi-select with OR semantics).
+function renderInstrumentFilters() {
+  const bar = document.getElementById('loop-inst-filters');
+  if (!bar) return;
+  const counts = {};
+  for (const i of INSTRUMENTS) counts[i] = 0;
+  for (const l of drumLoopsAll) {
+    if (counts[l.inst] !== undefined) counts[l.inst]++;
+  }
+  bar.innerHTML = INSTRUMENTS.map(i => {
+    const active = drumLoopInstFilter.has(i) ? ' active' : '';
+    const c = counts[i] || 0;
+    return `<button class="loop-inst-btn loop-pill-${i}${active}" data-inst="${i}" ${c === 0 ? 'disabled' : ''}>
+      ${i.toUpperCase()} <span class="loop-inst-count">${c}</span>
+    </button>`;
+  }).join('') + `<button class="loop-inst-clear" id="loop-inst-clear" ${drumLoopInstFilter.size === 0 ? 'disabled' : ''}>All</button>`;
+  bar.querySelectorAll('.loop-inst-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = btn.dataset.inst;
+      if (drumLoopInstFilter.has(i)) drumLoopInstFilter.delete(i);
+      else drumLoopInstFilter.add(i);
+      renderDrumLoops();
+    });
+  });
+  const clr = bar.querySelector('#loop-inst-clear');
+  if (clr) clr.addEventListener('click', () => {
+    drumLoopInstFilter.clear();
+    renderDrumLoops();
+  });
 }
 
 // Toggle a drum loop on or off. Same audio element is used everywhere drum
@@ -1051,11 +1095,184 @@ function toggleDrumLoop(btn) {
     drumLoopAudio.loop = true;
     drumLoopAudio.addEventListener('ended', () => { drumLoopPlayingId = null; });
   }
-  drumLoopAudio.src = `/api/audio/m4a/${btn.dataset.file}`;
+  // Loops in the new flat LOOPS/ folder are served via /api/audio/loop/.
+  // Legacy DO mixdowns in M4A/ continue to use /api/audio/m4a/. The button
+  // carries its source on a data attribute set when rendered.
+  const isFlatLoop = btn.dataset.source === 'loops';
+  drumLoopAudio.src = isFlatLoop
+    ? `/api/audio/loop/${btn.dataset.file}`
+    : `/api/audio/m4a/${btn.dataset.file}`;
   drumLoopAudio.play().catch(err => console.warn('[drumloop] play failed', err));
   drumLoopPlayingId = id;
   btn.classList.add('playing');
   btn.innerHTML = '■';
+}
+
+// ── Loop sequence construct ──────────────────────────────────────────────
+// Build a playable sequence of loops. Mirrors the setlist sidebar UI: an
+// ordered list with prev / stop / play / next transport. Auto-advance fires
+// the next loop the instant the current one ends (so a 16-bar loop seamlessly
+// jumps to the next loop at bar 17). Manual mode just plays the current loop
+// on repeat until the user clicks Next.
+let loopSequence = [];           // array of loop records ({id, fileName, source, inst, bpm, bars, title})
+let loopSeqIdx = -1;             // currently-playing index, -1 = stopped
+let loopSeqPlaying = false;
+
+function loopSeqAdd(btn) {
+  const rec = {
+    id:        btn.dataset.id,
+    fileName:  btn.dataset.file,
+    source:    btn.dataset.source,
+    inst:      btn.dataset.inst,
+    bars:      Number(btn.dataset.bars) || 0,
+    bpm:       Number(btn.dataset.bpm)  || 0,
+    title:     btn.dataset.title,
+    seqKey:    `${btn.dataset.id}_${Date.now()}`,   // unique per add (allow duplicates)
+  };
+  loopSequence.push(rec);
+  renderLoopSequence();
+}
+
+function loopSeqRemove(seqKey) {
+  const i = loopSequence.findIndex(l => l.seqKey === seqKey);
+  if (i < 0) return;
+  loopSequence.splice(i, 1);
+  if (loopSeqIdx === i) {
+    // removed the one playing — stop or advance
+    loopSeqStop();
+  } else if (loopSeqIdx > i) {
+    loopSeqIdx--;
+  }
+  renderLoopSequence();
+}
+
+function loopSeqClear() {
+  loopSeqStop();
+  loopSequence = [];
+  renderLoopSequence();
+}
+
+function renderLoopSequence() {
+  const list = document.getElementById('loop-sequence-list');
+  const count = document.getElementById('loop-seq-count');
+  const pos = document.getElementById('loop-seq-pos');
+  if (count) count.textContent = String(loopSequence.length);
+  if (pos) pos.textContent = loopSequence.length && loopSeqIdx >= 0
+    ? `${loopSeqIdx + 1} / ${loopSequence.length}` : '';
+  if (!list) return;
+  if (loopSequence.length === 0) {
+    list.innerHTML = '<div class="empty-state">Click + on a loop to add it to the sequence.</div>';
+    return;
+  }
+  list.innerHTML = loopSequence.map((l, i) => {
+    const playing = (i === loopSeqIdx && loopSeqPlaying) ? ' playing' : '';
+    return `
+      <div class="loop-seq-row${playing}" data-key="${l.seqKey}" draggable="true">
+        <span class="loop-seq-num">${i + 1}</span>
+        <span class="loop-seq-inst loop-pill-${escapeHtml(l.inst)}">${escapeHtml((l.inst || '?').toUpperCase())}</span>
+        <span class="loop-seq-title" title="${escapeHtml(l.title || '')}">${escapeHtml(l.title || '')}</span>
+        <span class="loop-seq-meta">${l.bpm || '?'}b · ${l.bars}<span class="dl-bars">b</span></span>
+        <button class="loop-seq-del" title="Remove">×</button>
+      </div>`;
+  }).join('');
+  // Wire row clicks (jump-to-loop) and delete.
+  list.querySelectorAll('.loop-seq-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.loop-seq-del')) return;
+      const key = row.dataset.key;
+      const i = loopSequence.findIndex(l => l.seqKey === key);
+      if (i >= 0) loopSeqPlayFrom(i);
+    });
+    row.querySelector('.loop-seq-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      loopSeqRemove(row.dataset.key);
+    });
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function loopSeqPlayFrom(i) {
+  if (i < 0 || i >= loopSequence.length) return;
+  const rec = loopSequence[i];
+  loopSeqIdx = i;
+  loopSeqPlaying = true;
+
+  // Stop any standalone drum-loop playback first to avoid overlap.
+  if (drumLoopAudio) {
+    drumLoopAudio.pause();
+    drumLoopPlayingId = null;
+  }
+  // (Re)create the shared audio element. Loop ON by default — Manual mode
+  // relies on the browser's loop=true to repeat. Auto-advance turns loop OFF
+  // for the active record and jumps at the ended event.
+  if (!drumLoopAudio) {
+    drumLoopAudio = new Audio();
+    drumLoopAudio.addEventListener('ended', loopSeqOnEnded);
+  } else {
+    drumLoopAudio.removeEventListener('ended', loopSeqOnEnded);
+    drumLoopAudio.addEventListener('ended', loopSeqOnEnded);
+  }
+  const autoAdv = !!document.getElementById('loop-seq-autoadvance')?.checked;
+  drumLoopAudio.loop = !autoAdv;
+  drumLoopAudio.src = rec.source === 'loops'
+    ? `/api/audio/loop/${rec.fileName}`
+    : `/api/audio/m4a/${rec.fileName}`;
+  drumLoopAudio.play().catch(err => console.warn('[loop-seq] play failed', err));
+  renderLoopSequence();
+}
+
+function loopSeqOnEnded() {
+  // Only honored when loop=false (auto-advance mode).
+  loopSeqNext();
+}
+
+function loopSeqNext() {
+  if (loopSequence.length === 0) return;
+  if (loopSeqIdx + 1 >= loopSequence.length) {
+    // wrap to start so the sequence keeps cycling
+    loopSeqPlayFrom(0);
+  } else {
+    loopSeqPlayFrom(loopSeqIdx + 1);
+  }
+}
+
+function loopSeqPrev() {
+  if (loopSequence.length === 0) return;
+  if (loopSeqIdx <= 0) loopSeqPlayFrom(loopSequence.length - 1);
+  else loopSeqPlayFrom(loopSeqIdx - 1);
+}
+
+function loopSeqStop() {
+  loopSeqPlaying = false;
+  if (drumLoopAudio) {
+    drumLoopAudio.pause();
+    drumLoopAudio.currentTime = 0;
+  }
+  loopSeqIdx = -1;
+  renderLoopSequence();
+}
+
+function setupLoopSequenceUI() {
+  const play  = document.getElementById('loop-seq-play');
+  const stop  = document.getElementById('loop-seq-stop');
+  const prev  = document.getElementById('loop-seq-prev');
+  const next  = document.getElementById('loop-seq-next');
+  const clear = document.getElementById('loop-seq-clear');
+  const auto  = document.getElementById('loop-seq-autoadvance');
+  if (play)  play.addEventListener('click', () => {
+    if (loopSeqPlaying) { loopSeqStop(); return; }
+    loopSeqPlayFrom(loopSeqIdx >= 0 ? loopSeqIdx : 0);
+  });
+  if (stop)  stop.addEventListener('click', loopSeqStop);
+  if (prev)  prev.addEventListener('click', loopSeqPrev);
+  if (next)  next.addEventListener('click', loopSeqNext);
+  if (clear) clear.addEventListener('click', () => {
+    if (confirm('Clear the loop sequence?')) loopSeqClear();
+  });
+  if (auto) auto.addEventListener('change', (e) => {
+    if (drumLoopAudio) drumLoopAudio.loop = !e.target.checked;
+  });
+  renderLoopSequence();
 }
 
 // ── Add-from-YouTube queue ────────────────────────────────────────────────

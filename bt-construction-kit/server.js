@@ -90,6 +90,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SIMPLE_STEM_ROOT = process.env.SIMPLE_STEM_ROOT || path.join(os.homedir(), 'ClaudeDrive', 'simpleStem');
 const STEMS_DIR = `${SIMPLE_STEM_ROOT}/STEMS`;
 const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
+// Flat per-instrument loop folder. Filenames follow
+//   <inst>_<bpm-padded-3>_<song-slug>_<bars>bars.m4a
+// e.g. drums_120_mary_janes_last_dance_18bars.m4a
+// Sortable alphabetically = sortable by (inst, BPM, song). Migrated from
+// the older per-song STEMS/<song>/*_loop*.wav layout by migrate_loops.sh
+// and produced directly by stem.sh going forward.
+const LOOPS_DIR = `${SIMPLE_STEM_ROOT}/LOOPS`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
@@ -237,6 +244,50 @@ function parseSongMetadata(rawName, isFolder = false) {
 /**
  * Scan the STEMS directory and return metadata of available stems and loops.
  */
+// Slug used to match a song to its loops in LOOPS/. The migrate_loops.sh
+// script applies the same transform when naming files, so server-side
+// matching is by-equality on this slug.
+function songSlugForLoops(text) {
+  if (!text) return '';
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+// Scan the flat LOOPS/ folder. Returns Map<songSlug, Array<loopRecord>>.
+// loopRecord:
+//   { fileName, inst, bpm, songSlug, bars }
+// inst ∈ {drums, bass, drumsbass, guitar, piano}
+// Filenames not matching the convention are ignored (harmless).
+async function scanLoops() {
+  const bySlug = new Map();
+  if (!fs.existsSync(LOOPS_DIR)) return bySlug;
+  let dirents;
+  try {
+    dirents = await fsp.readdir(LOOPS_DIR);
+  } catch (e) {
+    console.warn(`[scan-loops] could not read ${LOOPS_DIR}:`, e.message);
+    return bySlug;
+  }
+  const re = /^([a-z]+)_(\d{1,4})_(.+)_(\d+)bars\.m4a$/;
+  for (const f of dirents) {
+    if (/ \(\d+\)\.m4a$/i.test(f)) continue;
+    const m = f.match(re);
+    if (!m) continue;
+    const rec = {
+      fileName: f,
+      inst: m[1],
+      bpm: parseInt(m[2], 10),
+      songSlug: m[3],
+      bars: parseInt(m[4], 10),
+    };
+    if (!bySlug.has(rec.songSlug)) bySlug.set(rec.songSlug, []);
+    bySlug.get(rec.songSlug).push(rec);
+  }
+  return bySlug;
+}
+
 async function scanStems() {
   if (!fs.existsSync(STEMS_DIR)) {
     console.warn(`Stems directory not found: ${STEMS_DIR}`);
@@ -500,6 +551,31 @@ function pickUniqueSongs(allSongs) {
 
 async function buildLibraryData() {
   const stems = await scanStems();
+  // Merge in loops from the flat LOOPS/ folder. Match by songSlug computed
+  // from the song's title (or the stems folder name as fallback). Loops
+  // found here are grouped by loopNum and appended to / replace the per-song
+  // loops[] array. This is the modern layout; the per-folder layout in
+  // scanStems still works for backward compatibility (e.g. unmigrated
+  // older folders).
+  const loopsBySlug = await scanLoops();
+  if (loopsBySlug.size > 0) {
+    for (const s of stems) {
+      const slug = songSlugForLoops(s.title || s.folderName);
+      const flat = loopsBySlug.get(slug);
+      if (!flat || !flat.length) continue;
+      // Group by bars (which is the canonical loop identity in the flat
+      // layout — no more numbered loopN). Within a group, each instrument
+      // contributes one file.
+      const byBars = new Map();
+      for (const r of flat) {
+        if (!byBars.has(r.bars)) byBars.set(r.bars, { loopNum: 0, bars: r.bars, files: {}, fromLoopsDir: true });
+        byBars.get(r.bars).files[r.inst] = r.fileName;
+      }
+      const flatLoops = [...byBars.values()].sort((a, b) => a.bars - b.bars);
+      flatLoops.forEach((l, i) => { l.loopNum = i + 1; });
+      s.loops = flatLoops;
+    }
+  }
   const stemsByKey = {};
   for (const s of stems) stemsByKey[s.folderName] = s;
   const m4as = await scanM4a(stemsByKey);
@@ -961,41 +1037,89 @@ app.get('/api/audio/stems/:song/:file', (req, res) => {
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
-// Drum-loops catalog — all *_DO_loopN_Nbars.m4a files in M4A/, with metadata
-// from each loop's parent song (stems folder, m4a base, BPM, key). The library
-// scan filters these out as standalone rows; this endpoint surfaces them
-// specifically for the Drum Loops tab.
+// Loops catalog — surfaces every loop file the portal can play, drawn from
+// two sources merged together:
+//   1) LOOPS/ flat folder (modern). Filename:
+//      <inst>_<bpm-padded-3>_<song-slug>_<bars>bars.m4a
+//      Each row exposes inst (drums|bass|drumsbass|guitar|piano), bpm, bars.
+//   2) M4A/<base>_DO_loop<N>_<bars>bars.m4a (legacy). Drums-only mixdown
+//      that pre-dates the per-instrument layout. Treated as inst='drums'
+//      and retained so old songs keep working in the UI.
+// Sort: alphabetical by filename (so inst, BPM, song all sort naturally).
 app.get('/api/drum-loops', (req, res) => {
-  if (!fs.existsSync(M4A_DIR)) return res.json({ loops: [] });
   const stems = (libraryCache && libraryCache.data && libraryCache.data.songs || [])
     .filter(s => s.type === 'stems');
-  const stemsByBase = new Map(stems.map(s => [s.folderName, s]));
-  // Match: <base>_DO_loop<N>_<bars>bars.m4a   (DO = drums-only mixdown loop)
-  const re = /^(.+?)_DO_loop(\d+)_(\d+)bars\.m4a$/i;
-  const loops = [];
-  for (const f of fs.readdirSync(M4A_DIR)) {
-    if (/ \(\d+\)\.m4a$/i.test(f)) continue;
-    const m = f.match(re);
-    if (!m) continue;
-    const songBase  = m[1];
-    const loopNumber = Number(m[2]);
-    const bars      = Number(m[3]);
-    const parent    = stemsByBase.get(songBase);
-    loops.push({
-      id:        `drumloop-${f}`,
-      fileName:  f,
-      songBase,
-      loopNumber,
-      bars,
-      title:     (parent && parent.title)  || songBase.replace(/_/g, ' '),
-      artist:    (parent && parent.artist) || '',
-      bpm:       parent && parent.practiceBpm || null,
-      key:       parent && parent.key       || null,
-      cached:    isM4aCached(f),
-    });
+  const stemsBySlug = new Map();
+  for (const s of stems) {
+    const slug = songSlugForLoops(s.title || s.folderName);
+    if (slug) stemsBySlug.set(slug, s);
   }
-  loops.sort((a, b) =>
-    a.title.localeCompare(b.title) || a.loopNumber - b.loopNumber);
+  const stemsByBase = new Map(stems.map(s => [s.folderName, s]));
+  const loops = [];
+
+  if (fs.existsSync(LOOPS_DIR)) {
+    const newRe = /^([a-z]+)_(\d{1,4})_(.+)_(\d+)bars\.m4a$/;
+    try {
+      for (const f of fs.readdirSync(LOOPS_DIR)) {
+        if (/ \(\d+\)\.m4a$/i.test(f)) continue;
+        const m = f.match(newRe);
+        if (!m) continue;
+        const inst       = m[1];
+        const bpm        = Number(m[2]);
+        const songSlug   = m[3];
+        const bars       = Number(m[4]);
+        const parent     = stemsBySlug.get(songSlug);
+        loops.push({
+          id:        `loop-${f}`,
+          source:    'loops',
+          fileName:  f,
+          inst,
+          bpm,
+          bars,
+          songSlug,
+          songBase:  (parent && parent.folderName) || songSlug,
+          title:     (parent && parent.title)  || songSlug.replace(/_/g, ' '),
+          artist:    (parent && parent.artist) || '',
+          key:       parent && parent.key       || null,
+        });
+      }
+    } catch (e) {
+      console.warn('[drum-loops] LOOPS/ read failed:', e.message);
+    }
+  }
+
+  if (fs.existsSync(M4A_DIR)) {
+    const legacyRe = /^(.+?)_DO_loop(\d+)_(\d+)bars\.m4a$/i;
+    try {
+      for (const f of fs.readdirSync(M4A_DIR)) {
+        if (/ \(\d+\)\.m4a$/i.test(f)) continue;
+        const m = f.match(legacyRe);
+        if (!m) continue;
+        const songBase  = m[1];
+        const loopNumber = Number(m[2]);
+        const bars       = Number(m[3]);
+        const parent     = stemsByBase.get(songBase);
+        loops.push({
+          id:        `drumloop-${f}`,
+          source:    'm4a-legacy',
+          fileName:  f,
+          inst:      'drums',
+          songBase,
+          loopNumber,
+          bars,
+          bpm:       parent && parent.practiceBpm || null,
+          title:     (parent && parent.title)  || songBase.replace(/_/g, ' '),
+          artist:    (parent && parent.artist) || '',
+          key:       parent && parent.key       || null,
+          cached:    isM4aCached(f),
+        });
+      }
+    } catch (e) {
+      console.warn('[drum-loops] M4A/ read failed:', e.message);
+    }
+  }
+
+  loops.sort((a, b) => a.fileName.localeCompare(b.fileName));
   res.json({ loops, count: loops.length });
 });
 
@@ -1004,6 +1128,21 @@ app.get('/api/audio/m4a/:file', (req, res) => {
   if (file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(M4A_DIR, file);
   const cachePath  = path.join(AUDIO_CACHE_M4A, file);
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+// Serve loop files from the flat LOOPS/ folder. Mirrors the m4a endpoint.
+// Cache key: file basename. Files like
+//   drums_120_mary_janes_last_dance_18bars.m4a
+// land in ~/.bt-cache/LOOPS/<filename> after first play, served from cache
+// thereafter.
+const AUDIO_CACHE_LOOPS = path.join(AUDIO_CACHE_DIR, 'LOOPS');
+try { fs.mkdirSync(AUDIO_CACHE_LOOPS, { recursive: true }); } catch (e) {}
+app.get('/api/audio/loop/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(LOOPS_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_LOOPS, file);
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
