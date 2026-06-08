@@ -3571,13 +3571,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Construction-kit row layout: BPM | SONG | BARS | INSTRUMENT CHIPS */
+/* Loop-library row layout: BPM | KEY | SONG | LOOPS (chips per inst+bars) */
 .loops-table-header.kit-header {
-  grid-template-columns: 70px 1fr 50px 360px !important;
+  grid-template-columns: 60px 80px 1fr 1.5fr !important;
 }
 .kit-row {
   display: grid;
-  grid-template-columns: 70px 1fr 50px 360px;
+  grid-template-columns: 60px 80px 1fr 1.5fr;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -3588,25 +3588,36 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .kit-row:hover { border-color: var(--border-active); }
 .kit-col-bpm { font-weight: 700; font-variant-numeric: tabular-nums; }
+.kit-col-key { font-weight: 600; color: var(--text-muted); }
 .kit-col-song { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kit-col-bars { text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .kit-col-chips {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
 .kit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 11px; font-weight: 800;
-  letter-spacing: 0.6px;
-  padding: 8px 6px;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 5px 7px;
   border: 1.5px solid transparent;
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--bg-card);
   color: var(--text-muted);
   cursor: pointer;
   text-align: center;
   transition: var(--transition-smooth);
+}
+.kit-chip-bars {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.85;
+  background: rgba(0,0,0,0.18);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 .kit-chip-drums    { background: var(--color-green); color: #fff; }
 .kit-chip-drumsbass{ background: #16a085; color: #fff; }

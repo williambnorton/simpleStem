@@ -1058,12 +1058,10 @@ function renderDrumLoops() {
            (l.fileName || '').toLowerCase().includes(q);
   });
 
-  // GROUP by (songSlug or songBase) + bpm + bars. Each group becomes ONE
-  // table row in the construction-kit view, displaying every instrument
-  // available at that (song, bpm, bars). Lets the user click DRUMS from
-  // one row and BASS from another to assemble a combo.
-  // Normalize slug so legacy entries (songBase, mixed case, may end with
-  // "_DO") merge with modern (songSlug, lowercase). Strip trailing _do.
+  // GROUP by song only (one row per song). Each row carries every
+  // (instrument, bars) combination available for that song as a chip.
+  // Normalize slug so modern LOOPS/ entries and legacy DO_loop entries for
+  // the same song collapse together.
   const normalizeSlug = (s) => String(s || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
@@ -1071,25 +1069,23 @@ function renderDrumLoops() {
     .replace(/_do$/, '');
   const groups = new Map();
   for (const l of rows) {
-    // Prefer songBase (the stems folder name) when present — it's shared
-    // between modern LOOPS/ entries and legacy DO_loop entries for the same
-    // song, so the grouping merges both kinds. Fall back to songSlug or
-    // title for entries that don't carry a songBase.
     const slug = normalizeSlug(l.songBase || l.songSlug || l.title);
-    const key = `${slug}|${l.bpm || 0}|${l.bars}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        key,
-        songSlug: slug,
+    if (!groups.has(slug)) {
+      groups.set(slug, {
+        slug,
         songBase: l.songBase,
         title: l.title,
         artist: l.artist,
         bpm: l.bpm,
-        bars: l.bars,
-        chips: {},
+        key: l.key || null,
+        loops: [],
       });
     }
-    groups.get(key).chips[l.inst] = l;
+    const g = groups.get(slug);
+    // Carry the first non-null bpm/key from any loop in the group.
+    if (!g.bpm && l.bpm) g.bpm = l.bpm;
+    if (!g.key && l.key) g.key = l.key;
+    g.loops.push(l);
   }
   const groupRows = [...groups.values()];
 
@@ -1099,10 +1095,10 @@ function renderDrumLoops() {
   const cmpStr = (a, b) => (a || '').localeCompare(b || '') * dir;
   groupRows.sort((a, b) => {
     switch (loopSort.key) {
-      case 'bpm':   return cmpNum(a.bpm, b.bpm)   || cmpStr(a.title, b.title) || cmpNum(a.bars, b.bars);
-      case 'bars':  return cmpNum(a.bars, b.bars) || cmpStr(a.title, b.title) || cmpNum(a.bpm, b.bpm);
+      case 'bpm':   return cmpNum(a.bpm, b.bpm) || cmpStr(a.title, b.title);
+      case 'key':   return cmpStr(a.key, b.key) || cmpStr(a.title, b.title);
       case 'song':
-      default:      return cmpStr(a.title, b.title) || cmpNum(a.bpm, b.bpm) || cmpNum(a.bars, b.bars);
+      default:      return cmpStr(a.title, b.title) || cmpNum(a.bpm, b.bpm);
     }
   });
 
@@ -1136,13 +1132,13 @@ function renderDrumLoops() {
       <button class="lt-col lt-col-bpm lt-sort${loopSort.key === 'bpm' ? ' active' : ''}" data-sort="bpm">
         BPM <span class="lt-sort-arrow">${sortIcon('bpm')}</span>
       </button>
+      <button class="lt-col lt-col-key lt-sort${loopSort.key === 'key' ? ' active' : ''}" data-sort="key">
+        KEY <span class="lt-sort-arrow">${sortIcon('key')}</span>
+      </button>
       <button class="lt-col lt-col-song lt-sort${loopSort.key === 'song' ? ' active' : ''}" data-sort="song">
         SONG <span class="lt-sort-arrow">${sortIcon('song')}</span>
       </button>
-      <button class="lt-col lt-col-bars lt-sort${loopSort.key === 'bars' ? ' active' : ''}" data-sort="bars">
-        BARS <span class="lt-sort-arrow">${sortIcon('bars')}</span>
-      </button>
-      <div class="lt-col lt-col-chips">INSTRUMENTS (click to add to combo)</div>
+      <div class="lt-col lt-col-chips">LOOPS (instrument · bars — click to add to combo)</div>
     </div>
   `;
 
@@ -1155,30 +1151,53 @@ function renderDrumLoops() {
   }
 
   const body = groupRows.map(g => {
-    const chipsHtml = INSTRUMENTS.map(inst => {
-      const l = g.chips[inst];
-      if (!l) return `<span class="kit-chip kit-chip-empty">·</span>`;
-      const cs = loopCacheStatus.get(l.fileName);
-      const cacheClass = cs === true ? ' kit-chip-cached'
-                       : cs === 'loading' ? ' kit-chip-loading' : '';
-      const selectedClass = selectedKitChips.has(l.fileName) ? ' kit-chip-selected' : '';
-      return `<button class="kit-chip kit-chip-${escapeHtml(inst)}${cacheClass}${selectedClass}"
-                      data-file="${encodeURIComponent(l.fileName)}"
-                      data-inst="${escapeHtml(inst)}"
-                      data-bpm="${l.bpm || ''}"
-                      data-bars="${l.bars}"
-                      data-source="${escapeHtml(l.source || '')}"
-                      data-title="${escapeHtml(l.title || '')}"
-                      data-id="${escapeHtml(l.id)}"
-                      title="${escapeHtml(l.fileName || '')}">
-                ${escapeHtml(inst.toUpperCase())}
-              </button>`;
+    // Group this song's loops by instrument. Within each instrument, dedupe
+    // by bar count — modern LOOPS/ entries and legacy DO_loop entries can
+    // both produce a DRUMS 8b for the same song. Prefer the modern entry
+    // (source === 'loops') so the file in the LOOPS/ folder is used.
+    const byInst = {};
+    for (const l of g.loops) {
+      const inst = l.inst || 'drums';
+      if (!byInst[inst]) byInst[inst] = new Map();
+      const existing = byInst[inst].get(l.bars);
+      if (!existing || (l.source === 'loops' && existing.source !== 'loops')) {
+        byInst[inst].set(l.bars, l);
+      }
+    }
+    // Convert each instrument's Map → sorted array by bars ascending.
+    for (const inst of Object.keys(byInst)) {
+      byInst[inst] = [...byInst[inst].values()].sort((a, b) => (a.bars || 0) - (b.bars || 0));
+    }
+
+    // Render in canonical INSTRUMENTS order so columns line up across rows.
+    const chipsHtml = INSTRUMENTS.flatMap(inst => {
+      const loops = byInst[inst] || [];
+      if (!loops.length) return [];
+      return loops.map(l => {
+        const cs = loopCacheStatus.get(l.fileName);
+        const cacheClass = cs === true ? ' kit-chip-cached'
+                         : cs === 'loading' ? ' kit-chip-loading' : '';
+        const selectedClass = selectedKitChips.has(l.fileName) ? ' kit-chip-selected' : '';
+        return `<button class="kit-chip kit-chip-${escapeHtml(inst)}${cacheClass}${selectedClass}"
+                        data-file="${encodeURIComponent(l.fileName)}"
+                        data-inst="${escapeHtml(inst)}"
+                        data-bpm="${l.bpm || ''}"
+                        data-bars="${l.bars}"
+                        data-key="${escapeHtml(l.key || '')}"
+                        data-source="${escapeHtml(l.source || '')}"
+                        data-title="${escapeHtml(l.title || '')}"
+                        data-id="${escapeHtml(l.id)}"
+                        title="${escapeHtml(l.fileName || '')}">
+                  <span class="kit-chip-label">${escapeHtml(inst.toUpperCase())}</span>
+                  <span class="kit-chip-bars">${l.bars}b</span>
+                </button>`;
+      });
     }).join('');
     return `
-      <div class="kit-row" data-groupkey="${escapeHtml(g.key)}">
+      <div class="kit-row" data-groupkey="${escapeHtml(g.slug)}">
         <div class="kit-col kit-col-bpm">${fmtBpm(g.bpm)}</div>
+        <div class="kit-col kit-col-key">${escapeHtml(g.key || '—')}</div>
         <div class="kit-col kit-col-song" title="${escapeHtml(g.title || '')}">${escapeHtml(g.title || '')}</div>
-        <div class="kit-col kit-col-bars">${g.bars}</div>
         <div class="kit-col kit-col-chips">${chipsHtml}</div>
       </div>
     `;
