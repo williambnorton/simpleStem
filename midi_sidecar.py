@@ -37,8 +37,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 try:
     import mido
 except ImportError:
-    print("ERROR: mido + python-rtmidi required:", file=sys.stderr)
-    print("  pip3 install mido python-rtmidi", file=sys.stderr)
+    print("ERROR: mido + python-rtmidi required.", file=sys.stderr)
+    print("On macOS with Homebrew Python (PEP 668), inject into the demucs", file=sys.stderr)
+    print("pipx venv instead of system pip:", file=sys.stderr)
+    print("    pipx inject demucs mido python-rtmidi", file=sys.stderr)
+    print("Or, if you prefer a dedicated venv:", file=sys.stderr)
+    print("    python3 -m venv ~/.simpleStem-midi-venv", file=sys.stderr)
+    print("    ~/.simpleStem-midi-venv/bin/pip install mido python-rtmidi", file=sys.stderr)
     sys.exit(1)
 
 PORT = 5555

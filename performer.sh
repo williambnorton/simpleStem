@@ -68,10 +68,34 @@ find_node() {
 }
 NODE_BIN="$(find_node)"
 
+# Pick a Python that has `mido` installed. The MIDI sidecar imports mido +
+# python-rtmidi, and Homebrew's Python rejects system-wide installs (PEP 668).
+# Prefer the demucs pipx venv (where librosa etc. live) — that's where the
+# user would inject mido via `pipx inject demucs mido python-rtmidi`. Fall
+# back to other reasonable candidates.
+find_python_with_mido() {
+  local candidates=(
+    "$HOME/.local/pipx/venvs/demucs/bin/python3"
+    "$HOME/.local/pipx/venvs/demucs/bin/python"
+    "/opt/homebrew/bin/python3"
+    "/usr/local/bin/python3"
+    "python3"
+  )
+  local p
+  for p in "${candidates[@]}"; do
+    if command -v "$p" >/dev/null 2>&1 && "$p" -c 'import mido' 2>/dev/null; then
+      command -v "$p"
+      return
+    fi
+  done
+  echo ""
+}
+PYTHON_MIDI="$(find_python_with_mido)"
+
 start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
-    midi)   echo "exec python3 '$BASE/midi_sidecar.py'" ;;
+    midi)   echo "exec '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
     server) echo "cd '$BASE/bt-construction-kit' && exec '${NODE_BIN:-node}' server.js" ;;
   esac
 }
@@ -90,6 +114,11 @@ kill_tree() {
 preflight() {
   [[ -n "$NODE_BIN" ]] && echo "  node: $NODE_BIN" \
     || echo "  ! node not found in PATH or common locations — install Node for the portal" >&2
+  if [[ -n "$PYTHON_MIDI" ]]; then
+    echo "  midi python: $PYTHON_MIDI"
+  else
+    echo "  ! no Python with 'mido' found — run:  pipx inject demucs mido python-rtmidi" >&2
+  fi
   command -v demucs >/dev/null 2>&1 || echo "  ! demucs not found — 'pipx install demucs' (the laptop does the rendering)" >&2
   command -v yt-dlp >/dev/null 2>&1 || echo "  ! yt-dlp not found — needed when a song isn't cached yet" >&2
   command -v ffmpeg >/dev/null 2>&1 || echo "  ! ffmpeg not found — 'brew install ffmpeg'" >&2
