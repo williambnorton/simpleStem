@@ -1588,7 +1588,8 @@ app.get('/api/setlists', (req, res) => {
     for (const f of fs.readdirSync(SETLISTS_DIR)) {
       if (!f.endsWith('.json') || f === 'registry.json') continue;
       try {
-        const d = JSON.parse(fs.readFileSync(path.join(SETLISTS_DIR, f), 'utf8'));
+        const d = readJsonCached(path.join(SETLISTS_DIR, f));
+        if (!d) continue;
         // Cache-ready count: how many of this setlist's songs have a fully
         // cached stems folder on local disk. Drives the 'ready/total' badge
         // in the saved-setlists panel so the user can see at a glance which
@@ -1624,11 +1625,9 @@ app.get('/api/setlists/:slug', (req, res) => {
   if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
     return res.status(404).json({ error: 'setlist not found' });
   }
-  try {
-    res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const d = readJsonCached(file);
+  if (!d) return res.status(500).json({ error: 'parse failed' });
+  res.json(d);
 });
 
 // Delete a MANUAL setlist. Refuses to delete a playlist-origin one — those are
@@ -1646,6 +1645,7 @@ app.delete('/api/setlists/:slug', (req, res) => {
       return res.status(409).json({ error: 'that setlist is playlist-synced; delete its source playlist instead' });
     }
     fs.rmSync(file, { force: true });
+    invalidateCachedFile(file);
     res.json({ ok: true, slug });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1680,6 +1680,7 @@ app.post('/api/setlists', (req, res) => {
       songs: songs.map((sb, i) => ({ position: i + 1, song_base: sb })),
     };
     fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n');
+    invalidateCachedFile(file);
     res.json({ ok: true, slug });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2151,14 +2152,57 @@ app.post('/api/precache/gig/:slug', (req, res) => {
 function gigSlug(title) {
   return String(title || '').replace(/[^A-Za-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 }
+
+// ── In-memory cache for GIGS/ and SETLISTS/ ──────────────────────────────────
+// Drive FUSE makes readdirSync + readFileSync on these dirs surprisingly slow.
+// Both dirs hold tiny JSON files so we keep ALL of them in memory and refresh
+// per-file lazily on read (mtime check) instead of walking Drive each request.
+// Eager-load at startup so the first /api/gigs request after boot is hot.
+const fileCache = new Map();  // path -> { mtimeMs, data }
+
+function readJsonCached(file) {
+  try {
+    const st = fs.statSync(file);
+    const hit = fileCache.get(file);
+    if (hit && hit.mtimeMs === st.mtimeMs) return hit.data;
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fileCache.set(file, { mtimeMs: st.mtimeMs, data });
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function invalidateCachedFile(file) { fileCache.delete(file); }
+
+function eagerLoadJsonDir(dir) {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.json') || f === 'registry.json') continue;
+    if (readJsonCached(path.join(dir, f))) n++;
+  }
+  return n;
+}
+
+// Kick off the warm-up at startup. Both calls run synchronously but only
+// once; subsequent requests reuse the in-memory copies.
+setImmediate(() => {
+  const g = eagerLoadJsonDir(GIGS_DIR);
+  const s = eagerLoadJsonDir(SETLISTS_DIR);
+  console.log(`[cache] warmed GIGS=${g} SETLISTS=${s}`);
+});
+
 function readGig(slug) {
   const file = path.join(GIGS_DIR, `${slug}.json`);
   if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return null; }
+  return readJsonCached(file);
 }
 function writeGig(slug, body) {
   if (!fs.existsSync(GIGS_DIR)) fs.mkdirSync(GIGS_DIR, { recursive: true });
-  fs.writeFileSync(path.join(GIGS_DIR, `${slug}.json`), JSON.stringify(body, null, 2) + '\n');
+  const file = path.join(GIGS_DIR, `${slug}.json`);
+  fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n');
+  invalidateCachedFile(file);
 }
 function validateGig(body) {
   if (!body || typeof body !== 'object') return 'body required';
@@ -2179,7 +2223,8 @@ app.get('/api/gigs', (req, res) => {
   for (const f of fs.readdirSync(GIGS_DIR)) {
     if (!f.endsWith('.json')) continue;
     try {
-      const d = JSON.parse(fs.readFileSync(path.join(GIGS_DIR, f), 'utf8'));
+      const d = readJsonCached(path.join(GIGS_DIR, f));
+      if (!d) continue;
       const setlists = Array.isArray(d.setlists) ? d.setlists : [];
       out.push({
         slug: f.replace(/\.json$/i, ''),
@@ -2238,7 +2283,9 @@ app.put('/api/gigs/:slug', (req, res) => {
     const newFile = path.join(GIGS_DIR, `${newSlug}.json`);
     if (fs.existsSync(newFile)) return res.status(409).json({ error: 'a gig with that title already exists' });
     writeGig(newSlug, updated);
-    fs.rmSync(path.join(GIGS_DIR, `${slug}.json`), { force: true });
+    const oldFile = path.join(GIGS_DIR, `${slug}.json`);
+    fs.rmSync(oldFile, { force: true });
+    invalidateCachedFile(oldFile);
     return res.json({ ok: true, slug: newSlug, renamed_from: slug });
   }
   writeGig(slug, updated);
@@ -2272,6 +2319,7 @@ app.delete('/api/gigs/:slug', (req, res) => {
     return res.status(404).json({ error: 'gig not found' });
   }
   fs.rmSync(file, { force: true });
+  invalidateCachedFile(file);
   res.json({ ok: true, slug });
 });
 

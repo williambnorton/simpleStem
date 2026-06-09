@@ -321,12 +321,38 @@ function setupGigSidebar() {
 // origin === 'playlist' (created by setlist_sync.py from a YouTube playlist).
 const YOUTUBE_SYNC_GIG_SLUG = '__youtube_sync__';
 
+// localStorage warm-cache keys. We paint the sidebar from these before the
+// server responds so the picker feels instant. Then we revalidate against
+// /api/gigs and /api/setlists in the background and re-render if anything
+// changed. Cached entries are tiny (one summary line per gig/setlist).
+const GIGS_CACHE_KEY     = 'bt_gigs_summary_v1';
+const SETLISTS_CACHE_KEY = 'bt_setlists_summary_v1';
+const GIG_DETAIL_CACHE_PREFIX     = 'bt_gig_detail_v1_';
+const SETLIST_DETAIL_CACHE_PREFIX = 'bt_setlist_detail_v1_';
+
+function readCache(key) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
+  catch (e) { return null; }
+}
+function writeCache(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+}
+
 // Fetch /api/gigs and populate the picker. Returns the slug to load on init
 // (last-used from localStorage if it still exists, else the most-recently-
 // updated one, else null). ALSO prepends a synthetic "YouTube Sync" gig if
 // any playlist-origin setlists exist in /api/setlists.
 async function refreshGigList() {
   const picker = document.getElementById('gig-picker');
+  // ── Warm-cache pass: paint immediately from localStorage so the sidebar
+  // doesn't flash empty while the server reply lands. The cached lists are
+  // just the summary rows /api/gigs and /api/setlists return, so painting
+  // them is identical to painting the live response.
+  const cachedGigs = readCache(GIGS_CACHE_KEY);
+  const cachedSetlists = readCache(SETLISTS_CACHE_KEY);
+  if (cachedGigs || cachedSetlists) {
+    paintGigPicker(cachedGigs || [], (cachedSetlists || []).filter(s => s.origin === 'playlist'));
+  }
   try {
     const [gigRes, setlistRes] = await Promise.all([
       fetch('/api/gigs').catch(() => null),
@@ -336,45 +362,53 @@ async function refreshGigList() {
     const setlistData = setlistRes ? await setlistRes.json() : { setlists: [] };
     const gigs = gigData.gigs || [];
     const playlistSetlists = (setlistData.setlists || []).filter(s => s.origin === 'playlist');
+    // Stash for the next page load.
+    writeCache(GIGS_CACHE_KEY, gigs);
+    writeCache(SETLISTS_CACHE_KEY, setlistData.setlists || []);
 
-    // Synthetic "YouTube Sync" pseudo-gig comes first if any playlist-origin
-    // setlists exist. Picker entry is read-only — JS guards against the
-    // add/delete/duplicate buttons writing to it (see loadActiveGig).
-    const options = [];
-    if (playlistSetlists.length) {
-      options.push(
-        `<option value="${YOUTUBE_SYNC_GIG_SLUG}">YouTube Sync (${playlistSetlists.length})</option>`
-      );
-    }
-    for (const g of gigs) {
-      options.push(`<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`);
-    }
-    picker.innerHTML = options.length
-      ? options.join('')
-      : '<option value="">— no gigs yet —</option>';
-
-    let initial = null;
-    try { initial = localStorage.getItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
-    const slugExists = (s) =>
-      s === YOUTUBE_SYNC_GIG_SLUG && playlistSetlists.length > 0
-        ? true
-        : gigs.some(g => g.slug === s);
-    if (initial && slugExists(initial)) {
-      picker.value = initial;
-    } else if (playlistSetlists.length) {
-      picker.value = YOUTUBE_SYNC_GIG_SLUG;
-      initial = YOUTUBE_SYNC_GIG_SLUG;
-    } else if (gigs.length) {
-      picker.value = gigs[0].slug;
-      initial = gigs[0].slug;
-    } else {
-      initial = null;
-    }
-    return initial;
+    return paintGigPicker(gigs, playlistSetlists);
   } catch (e) {
-    picker.innerHTML = '<option value="">(error)</option>';
+    if (!picker.options.length) picker.innerHTML = '<option value="">(error)</option>';
     return null;
   }
+}
+
+// Render the gig picker from gigs + playlist setlist summaries. Returns the
+// slug that should be loaded as the initial active gig (last-used → first
+// gig → null). Shared between the warm-cache pass and the live response.
+function paintGigPicker(gigs, playlistSetlists) {
+  const picker = document.getElementById('gig-picker');
+  const options = [];
+  if (playlistSetlists.length) {
+    options.push(
+      `<option value="${YOUTUBE_SYNC_GIG_SLUG}">YouTube Sync (${playlistSetlists.length})</option>`
+    );
+  }
+  for (const g of gigs) {
+    options.push(`<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`);
+  }
+  picker.innerHTML = options.length
+    ? options.join('')
+    : '<option value="">— no gigs yet —</option>';
+
+  let initial = null;
+  try { initial = localStorage.getItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
+  const slugExists = (s) =>
+    s === YOUTUBE_SYNC_GIG_SLUG && playlistSetlists.length > 0
+      ? true
+      : gigs.some(g => g.slug === s);
+  if (initial && slugExists(initial)) {
+    picker.value = initial;
+  } else if (playlistSetlists.length) {
+    picker.value = YOUTUBE_SYNC_GIG_SLUG;
+    initial = YOUTUBE_SYNC_GIG_SLUG;
+  } else if (gigs.length) {
+    picker.value = gigs[0].slug;
+    initial = gigs[0].slug;
+  } else {
+    initial = null;
+  }
+  return initial;
 }
 
 // Build the synthetic YouTube Sync gig by fetching each playlist setlist's
@@ -393,7 +427,7 @@ async function loadYoutubeSyncGig() {
     try {
       const r = await fetch(`/api/setlists/${encodeURIComponent(s.slug)}`);
       const d = await r.json();
-      return {
+      const obj = {
         title: d.title || s.title || s.slug,
         slug:  s.slug,
         songs: Array.isArray(d.songs) ? d.songs : [],
@@ -401,8 +435,12 @@ async function loadYoutubeSyncGig() {
         source_url: s.source_url || d.source_url || null,
         synced_at:  s.synced_at  || d.synced_at  || null,
       };
+      writeCache(SETLIST_DETAIL_CACHE_PREFIX + s.slug, obj);
+      return obj;
     } catch (e) {
-      return null;
+      // Fall back to the cached copy if the live fetch fails (network drop,
+      // server restart). Keeps the synthetic gig usable offline.
+      return readCache(SETLIST_DETAIL_CACHE_PREFIX + s.slug) || null;
     }
   }));
   return {
@@ -436,6 +474,19 @@ async function loadActiveGig(slug) {
     }
     return;
   }
+  // Warm-cache pass: if we have the full gig from last session, paint it
+  // first. Then the live fetch replaces the data — usually it matches and
+  // re-render is a no-op visually.
+  const cachedGig = readCache(GIG_DETAIL_CACHE_PREFIX + slug);
+  if (cachedGig) {
+    activeGig = cachedGig;
+    if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
+      activeGig.setlists = [{ title: 'Set 1', songs: [] }];
+    }
+    activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
+    openSetlistIdxs = new Set([0]);
+    renderGigSidebar();
+  }
   try {
     const res = await fetch(`/api/gigs/${encodeURIComponent(slug)}`);
     if (!res.ok) throw new Error((await res.json()).error || 'load failed');
@@ -447,14 +498,17 @@ async function loadActiveGig(slug) {
     // Fresh gig load → expand the first setlist by default; collapse the rest.
     openSetlistIdxs = new Set([0]);
     try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
+    writeCache(GIG_DETAIL_CACHE_PREFIX + slug, activeGig);
     renderGigSidebar();
     if (document.body.classList.contains('gig-mode')) {
       precacheActiveGig();
     }
   } catch (e) {
-    alert(`Couldn't load gig: ${e.message}`);
-    activeGig = null;
-    renderGigSidebar();
+    if (!cachedGig) {
+      alert(`Couldn't load gig: ${e.message}`);
+      activeGig = null;
+      renderGigSidebar();
+    }
   }
 }
 
