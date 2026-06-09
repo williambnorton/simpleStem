@@ -152,6 +152,70 @@ in the same PR.** The shape is documented in detail in
 matching brief `prompts/librarian_catalog_canonical_shape.md` for the
 Librarian Claude).
 
+## Gig → Setlist → Song — the live-use hierarchy
+
+The portal organizes a performance around three nested levels. Treat
+this as load-bearing; the sidebar UI mirrors it, the URLs follow it,
+the file layout follows it.
+
+```
+Gig            (1)
+ └─ Setlist    (1–4 per gig, ordered, sequential in time)
+     └─ Song   (1+ per setlist, ordered, sequential in time)
+         └─ Stems + synchronized timeline (BPM, key, MIDI automation)
+```
+
+### Where each level lives on disk
+
+| Level | Lives in | Owner | Editable from portal? |
+|---|---|---|---|
+| **Gig** (real) | `GIGS/<slug>.json` — top-level `{title, setlists:[...]}`. Setlists are EMBEDDED inside the gig file. | The user via the gig sidebar. | Yes — gig CRUD via `/api/gigs`. |
+| **Setlist** (standalone) | `SETLISTS/<slug>.json` — top-level `{title, origin, songs:[...]}`. `origin` is either `'manual'` (user-created in the planner) or `'playlist'` (sync'd from a YouTube playlist by `setlist_sync.py`). | `'manual'` → the user. `'playlist'` → `setlist_sync.py`. | `'manual'`: yes via `POST /api/setlists`. `'playlist'`: NO — re-sync overwrites changes. |
+| **Song** | `STEMS/<song_base>/metadata.json` + the stems/m4a files. | Pipeline (`webloc_watch` → `metadata.py` → `stem.sh`). | Per-song metadata + MIDI automation timeline editable via `/api/song/:base/automation`. |
+
+### Two visibility surfaces for standalone setlists
+
+The gig sidebar shows the active gig's setlists. To make standalone
+setlists reachable without forcing the user to first add them to a real
+gig, the portal exposes them via two **synthetic pseudo-gigs** that
+live ONLY on the client (no `GIGS/` file):
+
+- **`__youtube_sync__`** — "YouTube Sync" — aggregates every setlist
+  where `origin === 'playlist'`. Read-only: editing buttons disabled,
+  `scheduleGigSave` is a no-op, because `setlist_sync.py` would
+  overwrite changes on the next playlist refresh.
+- **`__manual_setlists__`** — "Manual Setlists" — aggregates every
+  setlist where `origin === 'manual'`. Editable: per-setlist title and
+  song-list edits are persisted via `POST /api/setlists` (one POST
+  per modified setlist via `persistManualSetlists()` in `app.js`).
+
+Both pseudo-gigs appear at the top of the gig picker before any real
+gig. Real gigs (Joyce, Sunday_Practice, …) follow.
+
+### Song timeline + MIDI automation
+
+A song carries a synchronized timeline in its `metadata.json` under an
+`automation` array. Each event has `{t, device, type, channel, ...}`
+and is fired as the playhead crosses its timestamp during playback.
+The browser POSTs each event to `/api/midi/send`, which proxies to
+`midi_sidecar.py` (Python daemon on `:5555`) which hits the actual
+MIDI port via `mido`.
+
+Devices supported in v1: **Helix** (channel 4 by default, USB-C),
+**Logic Pro** (via IAC Driver bus), **XR18** (USB). The sidecar
+matches port names by case-insensitive substring, so the substring
+"helix" hits "Helix Native" / "HX Stomp" / whatever the OS calls it.
+
+Events are stored as Program Change or Control Change for v1. Ramps
+(continuous fader rides) are not implemented; each event is one-shot.
+Editor is the yellow lane below the visualizer in the portal.
+
+### Time-of-day scheduling (planned)
+
+Songs carry `duration_sec` in metadata. Setlist projected start/end
+times are computed by summing durations from a gig-level "start time"
+field. This is NOT YET WIRED — see the roadmap.
+
 ## Conventions
 
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code

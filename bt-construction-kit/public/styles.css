@@ -3297,6 +3297,43 @@ input:checked + .slider-round:before {
   border: 1px solid rgba(46, 139, 87, 0.45);
 }
 
+/* Gig → Setlist → Song hierarchy — visually distinct levels.
+   Level 1 (Gig): the calendar-clock card title itself.
+   Level 2 (Setlists): indented + thin left rule, list-music icon.
+   Level 3 (Songs):    further indented under their parent setlist.
+   The rules colour-code level so the structure reads at a glance. */
+.gig-setlists {
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(127, 137, 153, 0.35);
+}
+.gig-setlist {
+  position: relative;
+  margin-bottom: 10px;
+}
+.gig-setlist::before {
+  content: "";
+  position: absolute;
+  left: -10px; top: 14px;
+  width: 8px; height: 0;
+  border-top: 2px solid rgba(127, 137, 153, 0.35);
+}
+.gig-setlist-songs {
+  margin-left: 12px;
+  padding-left: 8px;
+  border-left: 1px dashed rgba(127, 137, 153, 0.4);
+}
+.sls-row {
+  position: relative;
+}
+.sls-row::before {
+  content: "";
+  position: absolute;
+  left: -8px; top: 50%;
+  width: 6px; height: 0;
+  border-top: 1px dashed rgba(127, 137, 153, 0.4);
+}
+
 /* The "active" setlist — the one that is ready to play (where the ghost
    preview row lives and where new song-adds land). Distinct from .playing:
    active = selected, playing = currently sounding. A blue accent on the

@@ -484,6 +484,71 @@ so existence checks line up.
 prefix. Each member's `metadata.json` carries `playlist_title` and
 `sequence_number`.
 
+### Gig → Setlist → Song hierarchy
+
+The portal organizes a performance as `Gig → Setlist → Song → Stems +
+Timeline`. The data layout follows the hierarchy:
+
+- **Gig** (real): `GIGS/<slug>.json` — `{title, setlists:[...]}` with
+  setlists embedded. CRUD via `/api/gigs[/:slug]`. 1–4 setlists per gig,
+  ordered, sequential in time.
+- **Setlist** (standalone): `SETLISTS/<slug>.json` —
+  `{title, origin, songs:[...]}`. `origin` is `'manual'` or `'playlist'`.
+  Playlist setlists are owned by `setlist_sync.py`; manual ones are
+  user-created via `POST /api/setlists`.
+- **Song**: `STEMS/<song_base>/metadata.json` + stems + m4a mixdowns.
+  Carries duration, BPM, key, AND an `automation` array of MIDI events
+  fired during playback (see "MIDI automation" below).
+
+The portal exposes **two synthetic pseudo-gigs** on the client side so
+standalone setlists are reachable without first attaching them to a
+real gig:
+
+- `__youtube_sync__` ("YouTube Sync") — read-only aggregator of every
+  `origin: 'playlist'` setlist.
+- `__manual_setlists__` ("Manual Setlists") — editable aggregator of
+  every `origin: 'manual'` setlist. Edits persist by POSTing each
+  modified setlist to `/api/setlists` (replace-or-create).
+
+Both pseudo-gigs are pinned at the top of the gig picker. Real gigs
+follow. Neither pseudo-gig writes a `GIGS/<slug>.json`.
+
+### Per-song MIDI automation
+
+A song's `metadata.json` may carry an `automation` array — MIDI events
+that fire as the playhead crosses their timestamps during playback.
+Shape:
+
+```json
+"automation": [
+  { "t": 23.5,  "device": "helix", "type": "pc", "channel": 4, "program": 17, "label": "Big Lead" },
+  { "t": 89.2,  "device": "logic", "type": "cc", "channel": 3, "controller": 7, "value": 110 },
+  { "t": 184.0, "device": "logic", "type": "cc", "channel": 3, "controller": 7, "value": 80 }
+]
+```
+
+Read/write via `GET /api/song/:base/automation` and `PUT /api/song/:base/automation`.
+The portal's editor is the yellow lane below the visualizer canvas.
+
+At playback time the client's 30 Hz dispatcher reads the master audio
+element's `currentTime`, finds events between the last tick and now,
+and POSTs each to `/api/midi/send` — the server proxies that to
+`midi_sidecar.py` (Python HTTP daemon on `127.0.0.1:5555`) which
+opens the MIDI port via `mido` and sends the message. The sidecar
+matches port names by case-insensitive substring (so "helix" hits
+"Helix Native"/"HX Stomp"/etc.).
+
+Device → port mapping the portal sends today:
+
+| Device | Port-name substring | Typical connection |
+|---|---|---|
+| Helix | `helix` | USB-C direct, default MIDI channel 4 |
+| Logic Pro | `IAC` | IAC Driver Bus (Audio MIDI Setup), Logic listens |
+| XR18 | `XR18` | USB direct |
+
+Sidecar lifecycle is managed by `performer.sh` (`SERVICES="runner midi server"`).
+Install deps with `pipx inject demucs mido python-rtmidi`.
+
 ---
 
 ## Code map
