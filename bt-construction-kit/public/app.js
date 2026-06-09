@@ -2677,32 +2677,99 @@ function setupRoutingUI() {
 
 let routingUIReady = false;
 function maybeInitRoutingUI() {
-  if (routingUIReady || !audioCtx || !masterMerger) return;
-  routingUIReady = true;
+  if (!audioCtx || !masterMerger) return;
+  if (!routingUIReady) {
+    routingUIReady = true;
+    injectStripRoutingButtons();
+    renderRoutingButtons();
+  }
+  // Always re-render the header info — channel count may have changed since
+  // last init (e.g. user plugged in the XR18 mid-session). injectMixerHeaderInfo
+  // is idempotent and now self-syncs outputChannelCount from the live
+  // destination.channelCount.
   injectMixerHeaderInfo();
-  injectStripRoutingButtons();
-  renderRoutingButtons();
 }
 
 function injectMixerHeaderInfo() {
   const header = document.querySelector('.mixer-header');
-  if (!header || header.querySelector('.routing-info')) return;
-  const info = document.createElement('div');
-  info.className = 'routing-info';
+  if (!header) return;
+  // Always re-render — channel count can change after the initial init if
+  // the user plugged in a multi-channel device after the audio context
+  // started, or if they hit the re-probe button.
+  let info = header.querySelector('.routing-info');
+  if (!info) {
+    info = document.createElement('div');
+    info.className = 'routing-info';
+    header.appendChild(info);
+  }
+  // Re-read the destination channel count live, then sync the module-scope
+  // variable so the rest of the routing code (applyRouting, etc.) sees the
+  // current truth.
+  const liveCount = (audioCtx && audioCtx.destination && audioCtx.destination.channelCount) || outputChannelCount || 2;
+  if (liveCount !== outputChannelCount) {
+    outputChannelCount = liveCount;
+  }
   if (outputChannelCount <= 2) {
-    info.innerHTML = `<span class="routing-tag stereo-only">Stereo only · device gives ${outputChannelCount} channel${outputChannelCount === 1 ? '' : 's'}</span>`;
+    info.innerHTML = `
+      <button class="routing-tag stereo-only routing-reprobe" title="Click to re-probe the audio device for available channels">
+        Stereo only · device gives ${outputChannelCount} channel${outputChannelCount === 1 ? '' : 's'} · click to re-probe
+      </button>
+    `;
   } else {
     info.innerHTML = `
-      <span class="routing-tag multi">${outputChannelCount} ch out</span>
+      <button class="routing-tag multi routing-reprobe" title="Click to re-probe the audio device for available channels">${outputChannelCount} ch out · re-probe</button>
       <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
       <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
     `;
   }
-  header.appendChild(info);
-  const ps = header.querySelector('.routing-preset-stereo');
-  const pS = header.querySelector('.routing-preset-spread');
+  const ps = info.querySelector('.routing-preset-stereo');
+  const pS = info.querySelector('.routing-preset-spread');
+  const reprobe = info.querySelector('.routing-reprobe');
   if (ps) ps.addEventListener('click', presetStereoMain);
   if (pS) pS.addEventListener('click', presetSpreadToSixAux);
+  if (reprobe) reprobe.addEventListener('click', reprobeAudioDevice);
+}
+
+// Force the audio context to re-evaluate the destination's maximum channel
+// count, set destination.channelCount accordingly, and re-render the routing
+// UI. Use this after plugging in a new audio device (XR18, etc.) so the
+// portal picks it up without a full page reload.
+async function reprobeAudioDevice() {
+  if (!audioCtx) {
+    console.warn('[reprobe] no audio context yet — click play once first');
+    return;
+  }
+  try {
+    const mx = audioCtx.destination.maxChannelCount || 2;
+    // Try to bump the destination channel count to whatever the device says
+    // it can do. This is the moment Web Audio normally only sets at graph
+    // creation; setting it again here forces the runtime to re-allocate
+    // output buffers if the device changed.
+    if (mx > 2) {
+      try { audioCtx.destination.channelCount = mx; }
+      catch (e) { console.warn('[reprobe] destination.channelCount set failed:', e.message); }
+    }
+    outputChannelCount = audioCtx.destination.channelCount || 2;
+    // Re-sync intermediate nodes so they don't downmix to stereo.
+    if (outputChannelCount > 2) {
+      for (const node of [analyserNode, masterGainNode]) {
+        if (!node) continue;
+        try {
+          node.channelCount = outputChannelCount;
+          node.channelCountMode = 'explicit';
+          node.channelInterpretation = 'discrete';
+        } catch (e) { /* ignore */ }
+      }
+    }
+    // Re-render the badge AND the routing button grids (the latter will
+    // show more buttons live if more channels just became available).
+    injectMixerHeaderInfo();
+    applyRouting();
+    renderRoutingGrids();
+    console.log(`[reprobe] device now ${outputChannelCount} channels`);
+  } catch (e) {
+    console.warn('[reprobe] failed:', e.message);
+  }
 }
 
 function injectStripRoutingButtons() {

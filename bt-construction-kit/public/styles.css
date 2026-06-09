@@ -3000,10 +3000,26 @@ input:checked + .slider-round:before {
 }
 .routing-tag {
   font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 6px;
+  padding: 4px 10px; border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  letter-spacing: 0.3px;
 }
-.routing-tag.multi { background: var(--color-green); color: #fff; }
-.routing-tag.stereo-only { background: var(--bg-dark); color: var(--text-muted); }
+.routing-tag.multi { background: var(--color-green); color: #fff; border-color: #2e8b57; }
+.routing-tag.stereo-only {
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+.routing-tag.routing-reprobe {
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.routing-tag.routing-reprobe:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
+  border-color: var(--color-cyan);
+}
 .routing-info .btn-secondary { padding: 4px 10px; font-size: 0.72rem; }
 
 /* Per-strip routing grid: 3 rows × 6 cols = 18 channel buttons. Each
