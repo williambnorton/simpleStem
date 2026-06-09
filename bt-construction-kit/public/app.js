@@ -378,11 +378,13 @@ function precacheActiveGig() {
 // area stays visible the whole time so the stem mixer is reachable.
 
 // Choose a variant for setlist playback. Prefer STEMS so the mixer comes
-// up and the user can ride the faders mid-song; fall back to the
-// -V-G m4a (preferredPlayVariant) when the song has no stems.
+// Used to hard-default to STEMS when present; now defers to whatever the
+// user last picked (preferredPlayVariant reads bt_last_variant_code from
+// localStorage). So if you're playing the setlist in -V-G mode, the next
+// song auto-advances in -V-G; if you switched to STEMS, the next stays
+// in STEMS.
 function setlistPlayVariant(merged) {
-  const stems = merged.variants.find(v => v.type === 'stems');
-  return stems || preferredPlayVariant(merged);
+  return preferredPlayVariant(merged);
 }
 
 function findMergedForBase(base) {
@@ -2133,20 +2135,69 @@ function renderLibrary() {
 // ── Master volume (full-height right-rail slider) ──────────────────────────
 function setupMasterVolume() {
   if (!els.masterVol) return;
-  const apply = () => {
+  // Restore from localStorage on load so the master ride survives reload.
+  try {
+    const saved = localStorage.getItem('bt_master_volume');
+    if (saved !== null) {
+      const sv = parseFloat(saved);
+      if (Number.isFinite(sv) && sv >= 0 && sv <= 1) {
+        els.masterVol.value = sv;
+      }
+    }
+  } catch (e) {}
+  const apply = (persist) => {
     const v = parseFloat(els.masterVol.value);
     currentMasterVolume = v;
-    // 1) Web Audio master gain (when the graph is active)…
     if (masterGainNode && audioCtx) {
       masterGainNode.gain.setValueAtTime(v, audioCtx.currentTime);
     }
-    // 2) …AND the per-element volume path (the reliable one) — recompute every
-    //    element's volume with the new master multiplier.
     applyMixerVolumes();
     if (els.masterVolPct) els.masterVolPct.textContent = `${Math.round(v * 100)}%`;
+    if (persist) {
+      try { localStorage.setItem('bt_master_volume', String(v)); } catch (e) {}
+    }
   };
-  els.masterVol.addEventListener('input', apply);
-  apply();   // initialize label + apply
+  els.masterVol.addEventListener('input', () => apply(true));
+  apply(false);   // initialize label + apply without persisting (no change yet)
+}
+
+// ── Playhead persistence ────────────────────────────────────────────────
+// Save the playback position every couple of seconds while playing AND on
+// stop/pause. Keyed by song.id so each track resumes where you left it. On
+// load, if a saved time exists for the song being loaded, seek there once
+// the audio elements are ready.
+let _playheadSaveTimer = null;
+function savePlayhead() {
+  if (!currentSong) return;
+  const elArr = Object.values(audioElements).filter(a => audioHasSrc(a));
+  if (!elArr.length) return;
+  const t = elArr[0].currentTime;
+  if (!Number.isFinite(t) || t < 0.1) return;
+  try {
+    const raw = localStorage.getItem('bt_playheads') || '{}';
+    const map = JSON.parse(raw);
+    map[currentSong.id] = t;
+    // Cap the map at 200 entries so it doesn't grow forever.
+    const keys = Object.keys(map);
+    if (keys.length > 200) {
+      for (let i = 0; i < keys.length - 200; i++) delete map[keys[i]];
+    }
+    localStorage.setItem('bt_playheads', JSON.stringify(map));
+  } catch (e) {}
+}
+function restorePlayhead(songId) {
+  try {
+    const map = JSON.parse(localStorage.getItem('bt_playheads') || '{}');
+    return typeof map[songId] === 'number' ? map[songId] : 0;
+  } catch (e) { return 0; }
+}
+function startPlayheadSaver() {
+  if (_playheadSaveTimer) return;
+  _playheadSaveTimer = setInterval(savePlayhead, 2500);
+}
+function stopPlayheadSaverAndFlush() {
+  if (_playheadSaveTimer) { clearInterval(_playheadSaveTimer); _playheadSaveTimer = null; }
+  savePlayhead();
 }
 
 // ── Per-song options menu (metadata / re-fetch / delete) ───────────────────
@@ -2996,6 +3047,31 @@ function loadSong(song, opts) {
   Object.values(audioElements).forEach(ae => {
     ae.loop = false;
   });
+
+  // Restore last-saved playhead for this song. Hooks loadedmetadata once on
+  // the first track that gets a src so we know its duration is known and
+  // currentTime assignment will stick. Falls back to 0 (start) when there's
+  // no saved value or the saved time exceeds the loaded duration.
+  const restoreTo = restorePlayhead(song.id);
+  if (restoreTo > 0) {
+    let restored = false;
+    Object.values(audioElements).forEach(ae => {
+      if (restored || !audioHasSrc(ae)) return;
+      const onMeta = () => {
+        if (restored) return;
+        const target = Math.min(restoreTo, (ae.duration || 0) - 0.5);
+        if (target > 0) {
+          Object.values(audioElements).forEach(other => {
+            if (audioHasSrc(other)) other.currentTime = target;
+          });
+        }
+        restored = true;
+        ae.removeEventListener('loadedmetadata', onMeta);
+      };
+      ae.addEventListener('loadedmetadata', onMeta);
+      if (ae.readyState >= 1) onMeta();   // already loaded
+    });
+  }
   
   if (song.type === 'stems') {
     els.trackType.textContent = 'STEMS';
@@ -3481,6 +3557,7 @@ function togglePlayPause() {
     els.btnPlay.innerHTML = `<i data-lucide="play"></i>`;
     clearInterval(syncInterval);
     stopBeatingVisualizer();
+    stopPlayheadSaverAndFlush();
   } else {
     const masterTime = activeElements[0].currentTime;
     activeElements.forEach(ae => {
@@ -3489,9 +3566,10 @@ function togglePlayPause() {
     });
     isPlaying = true;
     els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
-    
+
     startSyncLoop();
     startBeatingVisualizer(currentSong.practiceBpm || 100);
+    startPlayheadSaver();
   }
   
   applyMixerVolumes();
@@ -3504,6 +3582,8 @@ function stopAudio() {
   els.btnPlay.innerHTML = `<i data-lucide="play"></i>`;
   clearInterval(syncInterval);
   stopBeatingVisualizer();
+  // Persist final playhead before audios get torn down + ;src cleared below.
+  stopPlayheadSaverAndFlush();
 
   // Abort any in-flight loop/audio fetches so a slow Drive read doesn't
   // keep blocking the UI after Stop is pressed. See abortInFlightFetches

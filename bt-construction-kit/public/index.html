@@ -169,12 +169,10 @@
     <!-- Main Content Area: Player dashboard & Song list -->
     <main class="main-content">
       
-      <!-- Persistent top-right bar — Gig Mode + analog clock. Sits above
-           both the idle and active player panes so it's always visible. -->
+      <!-- Persistent top-right bar — analog clock only. Gig Mode was moved
+           next to the STEMS/M4A badge in the player header (see
+           .track-meta-left in index.html). -->
       <div id="player-top-bar" class="player-top-bar">
-        <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
-          <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
-        </button>
         <div class="analog-clock" aria-label="Analog clock" title="Local time">
           <svg viewBox="0 0 100 100" width="56" height="56" class="analog-clock-svg">
             <circle cx="50" cy="50" r="48" fill="#14192b" stroke="#0a0e1c" stroke-width="2"/>
@@ -211,7 +209,12 @@
           <!-- Master Header Details -->
           <div class="track-header">
             <div class="track-meta-left">
-              <span id="active-track-type" class="badge">STEMS</span>
+              <div class="track-badge-row">
+                <span id="active-track-type" class="badge">STEMS</span>
+                <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
+                  <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
+                </button>
+              </div>
               <h1 id="active-track-title" class="track-title">Song Title</h1>
               <p id="active-track-artist" class="track-artist">Artist Name</p>
             </div>

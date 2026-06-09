@@ -3099,6 +3099,22 @@ input:checked + .slider-round:before {
   border-color: #000;
 }
 
+/* Channels 17-18 are the XR18's effects-return / spare pair. Tied together
+   with a single black border around the pair so they read as one unit.
+   data-ch="16" gets a left+top+bottom border; data-ch="17" gets right+top+
+   bottom; the join between them is left invisible so the two cells look
+   like one bordered group. */
+.strip-routing-grid .srg-btn[data-ch="16"] {
+  border: 1.5px solid #000;
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+}
+.strip-routing-grid .srg-btn[data-ch="17"] {
+  border: 1.5px solid #000;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
 /* Channels 11-16 show a single big letter (V/D/B/G/P/O) instead of the
    number. Bigger, bolder so the letter reads at a glance from across the
    room while still fitting the same 26px button slot. */
@@ -3373,12 +3389,22 @@ input:checked + .slider-round:before {
   font-variant-numeric: tabular-nums; margin-left: 0;
 }
 
+/* Track header badge row — STEMS/M4A badge next to Gig Mode chip. */
+.track-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
 /* ===== Gig Mode toggle (brand area) =====
-   Sits to the RIGHT of the simpleStem title (margin-left:auto pushes it).
+   Now lives in the track-badge-row next to the STEMS/M4A pill so the
+   "what mode is loaded" + "are we in Gig Mode" status read together at a
+   glance in the upper-left of the player.
    Off → muted outline. On → glowing red so it's impossible to forget
    you're in stage mode. */
 .gig-mode-toggle {
-  margin-left: auto;
+  margin-left: 0;
   margin-top: 0;
   padding: 4px 10px;
   display: inline-flex; align-items: center; gap: 5px;
