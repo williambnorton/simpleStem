@@ -311,22 +311,54 @@ function setupGigSidebar() {
   });
 }
 
+// Synthetic gig slug used for the playlist-sync setlists. This is a virtual
+// gig that lives only on the client — it aggregates every setlist whose
+// origin === 'playlist' (created by setlist_sync.py from a YouTube playlist).
+const YOUTUBE_SYNC_GIG_SLUG = '__youtube_sync__';
+
 // Fetch /api/gigs and populate the picker. Returns the slug to load on init
 // (last-used from localStorage if it still exists, else the most-recently-
-// updated one, else null).
+// updated one, else null). ALSO prepends a synthetic "YouTube Sync" gig if
+// any playlist-origin setlists exist in /api/setlists.
 async function refreshGigList() {
   const picker = document.getElementById('gig-picker');
   try {
-    const res = await fetch('/api/gigs');
-    const data = await res.json();
-    const gigs = data.gigs || [];
-    picker.innerHTML = gigs.length
-      ? gigs.map(g => `<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`).join('')
+    const [gigRes, setlistRes] = await Promise.all([
+      fetch('/api/gigs').catch(() => null),
+      fetch('/api/setlists').catch(() => null),
+    ]);
+    const gigData = gigRes ? await gigRes.json() : { gigs: [] };
+    const setlistData = setlistRes ? await setlistRes.json() : { setlists: [] };
+    const gigs = gigData.gigs || [];
+    const playlistSetlists = (setlistData.setlists || []).filter(s => s.origin === 'playlist');
+
+    // Synthetic "YouTube Sync" pseudo-gig comes first if any playlist-origin
+    // setlists exist. Picker entry is read-only — JS guards against the
+    // add/delete/duplicate buttons writing to it (see loadActiveGig).
+    const options = [];
+    if (playlistSetlists.length) {
+      options.push(
+        `<option value="${YOUTUBE_SYNC_GIG_SLUG}">YouTube Sync (${playlistSetlists.length})</option>`
+      );
+    }
+    for (const g of gigs) {
+      options.push(`<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`);
+    }
+    picker.innerHTML = options.length
+      ? options.join('')
       : '<option value="">— no gigs yet —</option>';
+
     let initial = null;
     try { initial = localStorage.getItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
-    if (initial && gigs.some(g => g.slug === initial)) {
+    const slugExists = (s) =>
+      s === YOUTUBE_SYNC_GIG_SLUG && playlistSetlists.length > 0
+        ? true
+        : gigs.some(g => g.slug === s);
+    if (initial && slugExists(initial)) {
       picker.value = initial;
+    } else if (playlistSetlists.length) {
+      picker.value = YOUTUBE_SYNC_GIG_SLUG;
+      initial = YOUTUBE_SYNC_GIG_SLUG;
     } else if (gigs.length) {
       picker.value = gigs[0].slug;
       initial = gigs[0].slug;
@@ -340,8 +372,65 @@ async function refreshGigList() {
   }
 }
 
+// Build the synthetic YouTube Sync gig by fetching each playlist setlist's
+// full JSON and stitching them into a gig-shaped object that the existing
+// renderer can swallow.
+async function loadYoutubeSyncGig() {
+  let summaries = [];
+  try {
+    const r = await fetch('/api/setlists');
+    const d = await r.json();
+    summaries = (d.setlists || []).filter(s => s.origin === 'playlist');
+  } catch (e) {
+    return { slug: YOUTUBE_SYNC_GIG_SLUG, title: 'YouTube Sync', setlists: [], readOnly: true, synthetic: true };
+  }
+  const setlistObjs = await Promise.all(summaries.map(async (s) => {
+    try {
+      const r = await fetch(`/api/setlists/${encodeURIComponent(s.slug)}`);
+      const d = await r.json();
+      return {
+        title: d.title || s.title || s.slug,
+        slug:  s.slug,
+        songs: Array.isArray(d.songs) ? d.songs : [],
+        origin: 'playlist',
+        source_url: s.source_url || d.source_url || null,
+        synced_at:  s.synced_at  || d.synced_at  || null,
+      };
+    } catch (e) {
+      return null;
+    }
+  }));
+  return {
+    slug: YOUTUBE_SYNC_GIG_SLUG,
+    title: 'YouTube Sync',
+    readOnly: true,
+    synthetic: true,
+    setlists: setlistObjs.filter(Boolean),
+  };
+}
+
 async function loadActiveGig(slug) {
   if (!slug) { activeGig = null; renderGigSidebar(); return; }
+  // Synthetic "YouTube Sync" gig — built client-side from playlist setlists.
+  if (slug === YOUTUBE_SYNC_GIG_SLUG) {
+    try {
+      activeGig = await loadYoutubeSyncGig();
+      if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
+        activeGig.setlists = [{ title: '(no playlist setlists yet)', songs: [] }];
+      }
+      activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
+      try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
+      renderGigSidebar();
+      if (document.body.classList.contains('gig-mode')) {
+        precacheActiveGig();
+      }
+    } catch (e) {
+      console.warn('[youtube-sync] failed to build synthetic gig:', e.message);
+      activeGig = null;
+      renderGigSidebar();
+    }
+    return;
+  }
   try {
     const res = await fetch(`/api/gigs/${encodeURIComponent(slug)}`);
     if (!res.ok) throw new Error((await res.json()).error || 'load failed');
@@ -352,8 +441,6 @@ async function loadActiveGig(slug) {
     activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
     try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
     renderGigSidebar();
-    // If Gig Mode is already on, precache this gig immediately. (If the user
-    // toggles Gig Mode later, the toggle handler will fire it then.)
     if (document.body.classList.contains('gig-mode')) {
       precacheActiveGig();
     }
@@ -537,6 +624,11 @@ async function onGigDelete() {
 
 function scheduleGigSave() {
   if (!activeGig || !activeGig.slug) return;
+  // The YouTube Sync synthetic gig is read-only — playlist setlists are owned
+  // by setlist_sync.py. Persisting would either fail (the slug doesn't map
+  // to a real gig file) or, worse, accidentally overwrite a real gig if some
+  // slug collision happened.
+  if (activeGig.readOnly || activeGig.synthetic) return;
   if (gigSaveTimer) clearTimeout(gigSaveTimer);
   gigSaveTimer = setTimeout(persistActiveGig, 600);
 }
@@ -588,9 +680,20 @@ function renderGigSidebar() {
 
   nameEl.textContent = activeGig.title;
   countEl.textContent = activeGig.setlists.length;
-  dupBtn.disabled = false;
-  delBtn.disabled = false;
-  addBtn.disabled = activeGig.setlists.length >= 4;
+  // Synthetic YouTube Sync gig is read-only — disable mutation buttons. The
+  // setlists themselves are owned by setlist_sync.py and re-synced on each
+  // playlist refresh, so changes the user makes here wouldn't survive.
+  const ro = !!activeGig.readOnly;
+  dupBtn.disabled = ro;
+  delBtn.disabled = ro;
+  addBtn.disabled = ro || activeGig.setlists.length >= 4;
+  if (ro) {
+    dupBtn.title = 'YouTube Sync gig is read-only (synced from playlists)';
+    delBtn.title = 'YouTube Sync gig is read-only (synced from playlists)';
+    addBtn.title = 'YouTube Sync gig is read-only (synced from playlists)';
+  } else {
+    dupBtn.title = ''; delBtn.title = ''; addBtn.title = '';
+  }
 
   setlistsEl.innerHTML = '';
   activeGig.setlists.forEach((sl, idx) => {
@@ -3106,7 +3209,9 @@ function loadSong(song, opts) {
 
     // Enable Outro stretch controls if loops exist
     if (song.loops && song.loops.length > 0) {
-      els.loopsContainer.style.display = 'block';
+      // Synced Jam Loops pane is disabled — loops are managed in the Loop
+      // Library tab now. Keep the section hidden regardless of song.loops.
+      els.loopsContainer.style.display = 'none';
       document.querySelector('.stretch-outro-card').style.opacity = '1';
       document.querySelector('.stretch-outro-card').style.pointerEvents = 'auto';
       renderLoopButtons(song.loops);

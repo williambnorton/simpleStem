@@ -169,28 +169,6 @@
     <!-- Main Content Area: Player dashboard & Song list -->
     <main class="main-content">
       
-      <!-- Persistent top-right bar — analog clock only. Gig Mode was moved
-           next to the STEMS/M4A badge in the player header (see
-           .track-meta-left in index.html). -->
-      <div id="player-top-bar" class="player-top-bar">
-        <div class="analog-clock" aria-label="Analog clock" title="Local time">
-          <svg viewBox="0 0 100 100" width="56" height="56" class="analog-clock-svg">
-            <circle cx="50" cy="50" r="48" fill="#14192b" stroke="#0a0e1c" stroke-width="2"/>
-            <g class="clock-ticks" stroke="#aab0c4" stroke-width="1.2" stroke-linecap="round">
-              <line x1="50" y1="6"  x2="50" y2="13"/>
-              <line x1="94" y1="50" x2="87" y2="50"/>
-              <line x1="50" y1="94" x2="50" y2="87"/>
-              <line x1="6"  y1="50" x2="13" y2="50"/>
-            </g>
-            <line id="clock-hour" x1="50" y1="50" x2="50" y2="28" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-            <line id="clock-min"  x1="50" y1="50" x2="50" y2="20" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-            <line id="clock-sec"  x1="50" y1="50" x2="50" y2="16" stroke="#7c4dff" stroke-width="1.4" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-            <circle cx="50" cy="50" r="3" fill="#ffffff"/>
-          </svg>
-          <span id="analog-clock-digital" class="analog-clock-digital">--:--</span>
-        </div>
-      </div>
-
       <!-- Top Section: Active Song Player & Mixer -->
       <section class="player-hero-section glass">
         
@@ -219,6 +197,25 @@
               <p id="active-track-artist" class="track-artist">Artist Name</p>
             </div>
             <div class="track-meta-right">
+              <!-- Layout order: [analog clock] [BPM] [KEY] [tall digital clock]
+                   The analog clock sits leftmost; the digital clock pill
+                   matches the height of BPM/Key but is wider for the date
+                   + time. -->
+              <div class="analog-clock" aria-label="Analog clock" title="Local time">
+                <svg viewBox="0 0 100 100" width="56" height="56" class="analog-clock-svg">
+                  <circle cx="50" cy="50" r="48" fill="#14192b" stroke="#0a0e1c" stroke-width="2"/>
+                  <g class="clock-ticks" stroke="#aab0c4" stroke-width="1.2" stroke-linecap="round">
+                    <line x1="50" y1="6"  x2="50" y2="13"/>
+                    <line x1="94" y1="50" x2="87" y2="50"/>
+                    <line x1="50" y1="94" x2="50" y2="87"/>
+                    <line x1="6"  y1="50" x2="13" y2="50"/>
+                  </g>
+                  <line id="clock-hour" x1="50" y1="50" x2="50" y2="28" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+                  <line id="clock-min"  x1="50" y1="50" x2="50" y2="20" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+                  <line id="clock-sec"  x1="50" y1="50" x2="50" y2="16" stroke="#7c4dff" stroke-width="1.4" stroke-linecap="round" style="transform-origin:50px 50px;"/>
+                  <circle cx="50" cy="50" r="3" fill="#ffffff"/>
+                </svg>
+              </div>
               <div class="meta-stat-pill hover-glow" id="active-meta-bpm">
                 <i data-lucide="activity" class="text-purple"></i>
                 <div>
@@ -234,9 +231,6 @@
                   <span id="active-key-signature" class="stat-sig"></span>
                 </div>
               </div>
-              <!-- Drum pattern pill — populated when the song's metadata.json
-                   carries a "drum_pattern" field (format "BPM@kit", e.g.
-                   "120@96"). Hidden via JS when the field is missing. -->
               <div class="meta-stat-pill hover-glow" id="active-meta-drum" style="display:none;">
                 <i data-lucide="drum" class="text-orange"></i>
                 <div>
@@ -244,12 +238,16 @@
                   <span class="stat-lbl">Drum</span>
                 </div>
               </div>
+              <!-- Tall digital clock pill — date + time stacked. Matches the
+                   height of the BPM/Key pills via the .meta-stat-pill class
+                   so the row stays flush. -->
+              <div id="analog-clock-digital-wrap" class="meta-stat-pill digital-clock-pill" title="Local time">
+                <span id="analog-clock-digital" class="digital-clock-text">--:--</span>
+              </div>
               <button id="btn-collapse-player" class="control-btn hover-glow" title="Collapse player (show more of the song list)">
                 <i data-lucide="chevrons-up"></i>
               </button>
-              <!-- Legacy digital wall-clock — kept for ID/JS continuity but
-                   visually hidden; the analog clock in #player-top-bar
-                   is the real one now. -->
+              <!-- Legacy hidden wall-clock kept for ID/JS continuity. -->
               <div id="wall-clock" class="wall-clock" title="Local time" style="display:none;"></div>
             </div>
           </div>
@@ -447,8 +445,11 @@
             </div>
           </div>
 
-          <!-- Loop Jam Section (Dynamically shown when Stems have loop segments) -->
-          <div id="loops-container" class="loops-section glass-card" style="display: none;">
+          <!-- Loop Jam Section — disabled. The new Loop Library tab is the
+               canonical place for loops; this pane shouldn't auto-appear
+               for stems songs anymore. Hidden via inline style; left in DOM
+               in case any JS still queries for #loops-container. -->
+          <div id="loops-container" class="loops-section glass-card" style="display: none !important;">
             <div class="loops-header">
               <h3 class="section-title"><i data-lucide="repeat-2"></i> Synced Jam Loops</h3>
               <span class="loop-subtitle">Loop segments mapped across stems</span>

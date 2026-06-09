@@ -422,36 +422,34 @@ select {
   border-color: #4a148c !important;
 }
 
-/* ====== Persistent top-right bar (Gig Mode + Analog Clock) ====== */
-.player-top-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: absolute;
-  top: 8px;
-  right: 96px; /* clear the right rail (master volume) */
-  z-index: 20;
-}
+/* Analog clock now lives inside .track-meta-right, to the left of the
+   BPM/Key/Digital pills. */
 .analog-clock {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
 }
 .analog-clock-svg { display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.25)); }
-.analog-clock-digital {
+
+/* Digital clock pill — same dark background and border as BPM/Key pills,
+   stacked text. Wider to fit a longer date+time string. */
+.digital-clock-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px !important;
+  min-width: 110px !important;
+}
+.digital-clock-text {
+  color: #ffffff;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-main);
-  letter-spacing: 0.04em;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  min-width: 88px;
-  text-align: right;
+  line-height: 1;
+  text-align: center;
 }
 .main-content { position: relative; }
-/* Gig Mode pinned in the top-bar should not inherit the sidebar-only spacing
-   rules; reset margins so it sits flush next to the clock. */
-.player-top-bar .gig-mode-toggle { margin: 0; }
 
 /* Wall clock in the upper right of the player header — compact. */
 .wall-clock {
