@@ -3297,6 +3297,19 @@ input:checked + .slider-round:before {
   border: 1px solid rgba(46, 139, 87, 0.45);
 }
 
+/* The "active" setlist — the one that is ready to play (where the ghost
+   preview row lives and where new song-adds land). Distinct from .playing:
+   active = selected, playing = currently sounding. A blue accent on the
+   header keeps it visible while collapsed; .playing's green border still
+   wins on the wrapper when both are true. */
+.gig-setlist.active .gig-setlist-head {
+  background: rgba(79, 156, 240, 0.18);
+  box-shadow: inset 3px 0 0 0 rgba(79, 156, 240, 0.85);
+}
+.gig-setlist.active .gig-setlist-title-input {
+  color: var(--text-main);
+}
+
 /* Ghost preview row — only shown in the ACTIVE setlist while a song is
    loaded but not yet added. Muted text shows 'this song would land here';
    the prominent green + makes the next gesture obvious. Dashed border

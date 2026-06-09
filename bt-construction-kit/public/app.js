@@ -284,6 +284,11 @@ function setupRollups() {
 let activeGig = null;             // { slug, title, setlists: [...] } — live edited
 let activeSetlistIdx = 0;          // which setlist the ghost-row + adds to
 let gigSaveTimer = null;
+// Expansion state for setlists in the sidebar. Tracks which idxs are open so
+// the user can keep multiple setlists open at once and the open/closed state
+// survives re-renders (drag, edit, etc.). Reset to {0} on each gig load so
+// the first setlist starts expanded.
+let openSetlistIdxs = new Set([0]);
 // Sequential-playback state: when a setlist is playing through, these point
 // at which setlist + which song are live. null/null when no setlist is playing.
 let gigPlayingSetlistIdx = null;
@@ -439,6 +444,8 @@ async function loadActiveGig(slug) {
       activeGig.setlists = [{ title: 'Set 1', songs: [] }];
     }
     activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
+    // Fresh gig load → expand the first setlist by default; collapse the rest.
+    openSetlistIdxs = new Set([0]);
     try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
     renderGigSidebar();
     if (document.body.classList.contains('gig-mode')) {
@@ -496,6 +503,10 @@ function playGigSetlistFromStart(setlistIdx) {
   }
   gigPlayingSetlistIdx = setlistIdx;
   gigPlayingSongIdx = -1;
+  // Playing this setlist makes it the active one in the sidebar, and we
+  // ensure it's expanded so the user can watch the song-row highlight move.
+  activeSetlistIdx = setlistIdx;
+  openSetlistIdxs.add(setlistIdx);
   ensurePlayerVisible();
   advanceGigSetlistPlayback();
 }
@@ -704,7 +715,7 @@ function renderGigSidebar() {
 }
 
 function renderOneGigSetlist(sl, idx) {
-  const open = idx === activeSetlistIdx;
+  const open = openSetlistIdxs.has(idx);
   const wrap = document.createElement('div');
   wrap.className = 'gig-setlist';
   wrap.dataset.setlistIdx = String(idx);
@@ -713,6 +724,7 @@ function renderOneGigSetlist(sl, idx) {
   const head = document.createElement('div');
   head.className = 'gig-setlist-head';
   const isPlayingThisSetlist = gigPlayingSetlistIdx === idx;
+  const isActiveSetlist = idx === activeSetlistIdx;
   head.innerHTML = `
     <i data-lucide="list-music" style="width:14px;height:14px;"></i>
     <input class="gig-setlist-title-input" type="text" value="${escapeHtml(sl.title)}" maxlength="40" />
@@ -721,10 +733,25 @@ function renderOneGigSetlist(sl, idx) {
     <i data-lucide="chevron-down" class="gig-setlist-caret" style="width:14px;height:14px;"></i>
   `;
   if (isPlayingThisSetlist) wrap.classList.add('playing');
+  // .active = the "ready to play" setlist (where ghost-row appears, where
+  // adds land). When something is actually playing, .playing wins visually.
+  if (isActiveSetlist) wrap.classList.add('active');
   head.addEventListener('click', e => {
     if (e.target.closest('.gig-setlist-title-input') || e.target.closest('.gig-setlist-del')) return;
-    activeSetlistIdx = idx;
-    wrap.dataset.open = wrap.dataset.open === 'true' ? 'false' : 'true';
+    // Click behavior:
+    //   1. If this setlist isn't the active one  → make it active AND ensure
+    //      it's expanded. (No close-others; multiple may stay open.)
+    //   2. If this setlist IS already the active one → toggle its open/closed
+    //      state. We never let the active setlist auto-collapse — if the user
+    //      collapses the active one, it stays active; another click reopens.
+    if (activeSetlistIdx !== idx) {
+      activeSetlistIdx = idx;
+      openSetlistIdxs.add(idx);
+    } else {
+      if (openSetlistIdxs.has(idx)) openSetlistIdxs.delete(idx);
+      else openSetlistIdxs.add(idx);
+    }
+    renderGigSidebar();
   });
   const titleInput = head.querySelector('.gig-setlist-title-input');
   titleInput.addEventListener('input', e => {
