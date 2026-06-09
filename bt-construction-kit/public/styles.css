@@ -3863,3 +3863,110 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 /* clickable metadata links (lyrics/chords/source URLs) */
 .song-modal-table .meta-link { color: var(--color-blue); text-decoration: underline; word-break: break-all; }
 .song-modal-table .meta-link:hover { color: var(--color-purple); }
+
+/* ── MIDI automation lane + modal ────────────────────────────────────────── */
+/* The lane sits on top of the visualizer canvas, full-width, ~18px tall. We
+   absolutely-position it inside the existing .player-wave-overlay parent. */
+.midi-lane {
+  position: absolute;
+  left: 0; right: 0; bottom: -22px;
+  height: 18px;
+  cursor: crosshair;
+  background: linear-gradient(to bottom, rgba(255,200,80,0.04), rgba(255,200,80,0.10));
+  border-top: 1px solid rgba(255, 200, 80, 0.18);
+  border-bottom: 1px solid rgba(255, 200, 80, 0.18);
+  z-index: 5;
+}
+.midi-lane:hover { background: linear-gradient(to bottom, rgba(255,200,80,0.10), rgba(255,200,80,0.20)); }
+.midi-lane-markers { position: absolute; inset: 0; pointer-events: none; }
+.midi-event-marker {
+  position: absolute;
+  top: 1px; bottom: 1px;
+  width: 8px;
+  margin-left: -4px;
+  background: var(--color-yellow, #f4c430);
+  border: 1px solid #000;
+  border-radius: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 4px rgba(255, 200, 80, 0.6);
+}
+.midi-event-marker.fired { background: var(--color-green, #2ecc71); }
+.midi-event-marker:hover { transform: scaleX(1.6); z-index: 2; }
+.midi-event-marker .midi-event-tip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #111;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.midi-event-marker:hover .midi-event-tip { opacity: 1; }
+
+/* Modal */
+.midi-modal {
+  position: fixed; inset: 0;
+  z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+}
+.midi-modal-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+.midi-modal-card {
+  position: relative;
+  background: var(--bg-card, #1f2128);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 20px;
+  width: 360px;
+  max-width: 90vw;
+  color: var(--text-main, #eee);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+.midi-modal-card h3 { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.midi-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.midi-row label { font-size: 12px; color: var(--text-dim, #aaa); }
+.midi-row input, .midi-row select {
+  background: var(--bg-card-hover, #292c33);
+  border: 1px solid var(--border-color, #333);
+  color: var(--text-main, #eee);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.midi-modal-buttons {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 16px;
+}
+.midi-modal-buttons .spacer { flex: 1; }
+.midi-modal-buttons button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border-color, #333);
+}
+.midi-modal-buttons button.ghost { background: transparent; color: var(--text-main, #eee); }
+.midi-modal-buttons button.ghost.danger { color: #e74c3c; border-color: rgba(231,76,60,0.4); }
+.midi-modal-buttons button.primary {
+  background: var(--color-blue, #4f9cf0);
+  color: #fff; border-color: transparent;
+}
+.midi-modal-status { margin-top: 10px; font-size: 11px; min-height: 14px; color: var(--text-dim, #aaa); }
+.midi-modal-status.error { color: #e74c3c; }
+.midi-modal-status.ok { color: var(--color-green, #2ecc71); }

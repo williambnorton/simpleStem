@@ -223,6 +223,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRoutingUI();
   setupFormatFilters();
   setupClickTrack();
+  setupMidiUI();
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -3194,6 +3195,9 @@ function loadSong(song, opts) {
 
   // Expose currentSong for the visualizer (beat-grid uses song.practiceBpm).
   window.currentSong = song;
+  // Load this song's MIDI automation so the lane shows its markers and the
+  // dispatcher fires events during playback.
+  loadAutomationForSong(songBaseOf(song));
   // Render variant picker (Source: STEMS / -V-G-B / -V-G / DO ...)
   renderVariantPicker(song);
   // Refresh sidebar setlist toggle (+/- depends on whether currentSong is
@@ -4818,4 +4822,277 @@ function formatTime(secs) {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+// ── MIDI automation ─────────────────────────────────────────────────────────
+// Per-song MIDI events that fire as the playhead crosses their timestamps.
+// Events live in the song's metadata.json under .automation. The portal lets
+// the user click on the lane below the visualizer to drop new events; a small
+// modal lets them pick Program Change / CC, channel, value, etc. At playback
+// time a 30Hz polling loop reads the master audio element's currentTime and
+// posts any newly-crossed events to /api/midi/send → midi_sidecar.py → wire.
+//
+// Device → port-name mapping. The sidecar matches by substring (case
+// insensitive) against the OS's MIDI output ports. The Helix shows up as
+// "HX Stomp" / "Helix" / "Helix Native" on USB-C. Logic Pro receives via
+// the IAC Driver bus the user has set up in Audio MIDI Setup. XR18 shows up
+// as "XR18" over USB.
+const MIDI_PORT_FOR_DEVICE = { helix: 'helix', logic: 'IAC', xr18: 'XR18' };
+
+let automationEvents      = [];   // [{t, device, type, channel, ..., label, fired}]
+let automationLastTime    = 0;    // for forward-only event firing
+let automationDispatchTimer = null;
+let automationEditingIdx  = null; // null = adding; otherwise index into events
+let automationCurrentBase = null; // which song's events we're showing
+
+async function loadAutomationForSong(songBase) {
+  automationCurrentBase = songBase;
+  automationLastTime = 0;
+  if (!songBase) { automationEvents = []; renderAutomationLane(); return; }
+  try {
+    const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`);
+    const d = await r.json();
+    automationEvents = (d.automation || []).map(e => ({ ...e, fired: false }));
+  } catch (e) {
+    automationEvents = [];
+  }
+  renderAutomationLane();
+}
+
+async function saveAutomationForSong(songBase, events) {
+  // Strip the transient `fired` flag before sending.
+  const clean = events.map(({ fired, ...rest }) => rest);
+  const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ automation: clean }),
+  });
+  if (!r.ok) throw new Error((await r.json()).error || 'save failed');
+  const d = await r.json();
+  automationEvents = (d.automation || []).map(e => ({ ...e, fired: false }));
+  renderAutomationLane();
+}
+
+function songDurationSec() {
+  // Try the master audio first (most accurate), fall back to currentSong's
+  // duration field. Returns 0 if we don't know yet.
+  try {
+    const tracks = Object.keys(audioElements || {}).filter(k => audioHasSrc(audioElements[k]));
+    if (tracks.length) {
+      const d = audioElements[tracks[0]].duration;
+      if (d && isFinite(d) && d > 0) return d;
+    }
+  } catch (e) {}
+  if (currentSong && currentSong.duration_sec) return currentSong.duration_sec;
+  return 0;
+}
+
+function renderAutomationLane() {
+  const lane = document.getElementById('midi-lane');
+  const markers = document.getElementById('midi-lane-markers');
+  if (!lane || !markers) return;
+  markers.innerHTML = '';
+  const dur = songDurationSec();
+  if (!dur) return;
+  automationEvents.forEach((e, idx) => {
+    const pct = (e.t / dur) * 100;
+    if (pct < 0 || pct > 100) return;
+    const node = document.createElement('div');
+    node.className = 'midi-event-marker' + (e.fired ? ' fired' : '');
+    node.style.left = pct + '%';
+    node.dataset.idx = String(idx);
+    const summary = e.type === 'pc'
+      ? `PC ${e.program} ch${e.channel}`
+      : `CC ${e.controller}=${e.value} ch${e.channel}`;
+    const tip = `${e.label ? e.label + ' · ' : ''}${e.device || ''} ${summary} @ ${e.t.toFixed(2)}s`;
+    node.innerHTML = `<span class="midi-event-tip">${escapeHtml(tip)}</span>`;
+    node.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openMidiModal(idx);
+    });
+    markers.appendChild(node);
+  });
+}
+
+function currentPlayheadSec() {
+  try {
+    const tracks = Object.keys(audioElements || {}).filter(k => audioHasSrc(audioElements[k]));
+    if (tracks.length) return audioElements[tracks[0]].currentTime || 0;
+  } catch (e) {}
+  // Fall back to slider position scaled by known duration
+  const dur = songDurationSec();
+  const pct = parseFloat(document.getElementById('player-timeline').value) || 0;
+  return (pct / 100) * dur;
+}
+
+function openMidiModal(idx) {
+  const modal = document.getElementById('midi-modal');
+  if (!modal) return;
+  automationEditingIdx = (idx === null || idx === undefined) ? null : idx;
+  let e;
+  if (automationEditingIdx === null) {
+    e = {
+      t: currentPlayheadSec(),
+      device: 'helix', type: 'pc', channel: 4,
+      program: 0, controller: 7, value: 100, label: '',
+    };
+    document.getElementById('midi-modal-title').textContent = 'Add MIDI Event';
+    document.getElementById('midi-btn-delete').style.display = 'none';
+  } else {
+    e = automationEvents[automationEditingIdx];
+    document.getElementById('midi-modal-title').textContent = 'Edit MIDI Event';
+    document.getElementById('midi-btn-delete').style.display = 'inline-block';
+  }
+  document.getElementById('midi-f-time').value     = Number(e.t || 0).toFixed(2);
+  document.getElementById('midi-f-device').value   = e.device || 'helix';
+  document.getElementById('midi-f-type').value     = e.type   || 'pc';
+  document.getElementById('midi-f-channel').value  = e.channel || 4;
+  document.getElementById('midi-f-program').value  = e.program ?? 0;
+  document.getElementById('midi-f-controller').value = e.controller ?? 7;
+  document.getElementById('midi-f-value').value    = e.value ?? 100;
+  document.getElementById('midi-f-label').value    = e.label || '';
+  midiModalTypeChanged();
+  modal.style.display = 'flex';
+  document.getElementById('midi-modal-status').textContent = '';
+  document.getElementById('midi-modal-status').className = 'midi-modal-status';
+}
+
+function closeMidiModal() {
+  const m = document.getElementById('midi-modal');
+  if (m) m.style.display = 'none';
+  automationEditingIdx = null;
+}
+
+function midiModalTypeChanged() {
+  const t = document.getElementById('midi-f-type').value;
+  document.querySelectorAll('.midi-row-pc').forEach(n => n.style.display = t === 'pc' ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-cc').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
+}
+
+function readMidiModalForm() {
+  const type = document.getElementById('midi-f-type').value;
+  const out = {
+    t: parseFloat(document.getElementById('midi-f-time').value) || 0,
+    device: document.getElementById('midi-f-device').value,
+    type,
+    channel: parseInt(document.getElementById('midi-f-channel').value, 10) || 1,
+    label: document.getElementById('midi-f-label').value.trim(),
+  };
+  if (type === 'pc') {
+    out.program = parseInt(document.getElementById('midi-f-program').value, 10) || 0;
+  } else if (type === 'cc') {
+    out.controller = parseInt(document.getElementById('midi-f-controller').value, 10) || 0;
+    out.value      = parseInt(document.getElementById('midi-f-value').value, 10) || 0;
+  }
+  return out;
+}
+
+async function sendMidiNow(event) {
+  // Translate device key → port substring the sidecar can match.
+  const portNeedle = MIDI_PORT_FOR_DEVICE[event.device] || event.device || '';
+  const body = { port: portNeedle, type: event.type, channel: event.channel };
+  if (event.type === 'pc') body.program = event.program;
+  else if (event.type === 'cc') { body.controller = event.controller; body.value = event.value; }
+  const r = await fetch('/api/midi/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+function setupMidiUI() {
+  const lane = document.getElementById('midi-lane');
+  if (!lane) return;
+  lane.addEventListener('click', (e) => {
+    if (e.target.closest('.midi-event-marker')) return;
+    const r = lane.getBoundingClientRect();
+    const pct = (e.clientX - r.left) / r.width;
+    const dur = songDurationSec();
+    if (!dur) return;
+    const t = Math.max(0, Math.min(dur, pct * dur));
+    openMidiModal(null);
+    document.getElementById('midi-f-time').value = t.toFixed(2);
+  });
+
+  document.getElementById('midi-f-type').addEventListener('change', midiModalTypeChanged);
+  document.getElementById('midi-btn-cancel').addEventListener('click', closeMidiModal);
+  document.querySelector('#midi-modal .midi-modal-backdrop').addEventListener('click', closeMidiModal);
+
+  document.getElementById('midi-btn-save').addEventListener('click', async () => {
+    const ev = readMidiModalForm();
+    if (automationEditingIdx === null) automationEvents.push(ev);
+    else automationEvents[automationEditingIdx] = ev;
+    try {
+      if (!automationCurrentBase) throw new Error('no song loaded');
+      await saveAutomationForSong(automationCurrentBase, automationEvents);
+      closeMidiModal();
+    } catch (err) {
+      const s = document.getElementById('midi-modal-status');
+      s.textContent = 'Save failed: ' + err.message;
+      s.className = 'midi-modal-status error';
+    }
+  });
+
+  document.getElementById('midi-btn-delete').addEventListener('click', async () => {
+    if (automationEditingIdx === null) return;
+    automationEvents.splice(automationEditingIdx, 1);
+    try {
+      if (!automationCurrentBase) throw new Error('no song loaded');
+      await saveAutomationForSong(automationCurrentBase, automationEvents);
+      closeMidiModal();
+    } catch (err) {
+      const s = document.getElementById('midi-modal-status');
+      s.textContent = 'Save failed: ' + err.message;
+      s.className = 'midi-modal-status error';
+    }
+  });
+
+  document.getElementById('midi-btn-test').addEventListener('click', async () => {
+    const ev = readMidiModalForm();
+    const s = document.getElementById('midi-modal-status');
+    try {
+      const r = await sendMidiNow(ev);
+      if (r.ok) {
+        s.textContent = `sent to ${r.sent_to}`;
+        s.className = 'midi-modal-status ok';
+      } else {
+        s.textContent = `error: ${r.error || 'unknown'}` +
+          (r.available ? ` (ports: ${r.available.join(', ') || 'none'})` : '');
+        s.className = 'midi-modal-status error';
+      }
+    } catch (err) {
+      s.textContent = `send failed: ${err.message}`;
+      s.className = 'midi-modal-status error';
+    }
+  });
+
+  // Playhead-driven dispatcher. 30 Hz is enough for tight cueing without
+  // hammering the sidecar. Re-renders the lane only when an event fires (so
+  // the marker turns green). Seek-back resets `fired` flags for events past
+  // the new position so they fire again when crossed.
+  automationDispatchTimer = setInterval(() => {
+    if (!automationEvents.length) return;
+    let masterAe = null;
+    try {
+      const tracks = Object.keys(audioElements || {}).filter(k => audioHasSrc(audioElements[k]));
+      if (tracks.length) masterAe = audioElements[tracks[0]];
+    } catch (e) {}
+    if (!masterAe || masterAe.paused) return;
+    const now = masterAe.currentTime;
+    if (now + 0.05 < automationLastTime) {
+      automationEvents.forEach(e => { if (e.t >= now) e.fired = false; });
+      renderAutomationLane();
+    }
+    let anyFired = false;
+    for (const e of automationEvents) {
+      if (!e.fired && e.t > automationLastTime && e.t <= now) {
+        sendMidiNow(e).catch(err => console.warn('[midi] send failed:', err));
+        e.fired = true;
+        anyFired = true;
+      }
+    }
+    automationLastTime = now;
+    if (anyFired) renderAutomationLane();
+  }, 33);
 }

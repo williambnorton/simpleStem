@@ -1754,6 +1754,94 @@ app.get('/api/song/:base/metadata', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Per-song MIDI automation ────────────────────────────────────────────────
+// The portal lets the user click on a song's waveform to drop MIDI events at
+// specific times (Program Changes to the Helix, fader CCs to the XR18, etc.).
+// Events live inside the song's metadata.json under an `automation` array
+// sorted by timestamp. Stored shape (per event):
+//   { t: <seconds>, device: "helix"|"logic"|"xr18", type: "pc"|"cc",
+//     channel: 1..16, program: 0..127, controller: 0..127, value: 0..127,
+//     label: "Big Lead" }
+app.get('/api/song/:base/automation', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.json({ base: s.b, automation: [] });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    res.json({ base: s.b, automation: Array.isArray(meta.automation) ? meta.automation : [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/song/:base/automation', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const events = req.body && req.body.automation;
+  if (!Array.isArray(events)) return res.status(400).json({ error: 'need { automation: [...] }' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    // Sort by timestamp so the dispatcher can walk forward without sorting
+    // each tick. Clamp + validate basic fields; reject obviously bad rows.
+    const clean = events
+      .filter(e => e && typeof e.t === 'number' && e.t >= 0)
+      .map(e => ({
+        t: Math.round(e.t * 1000) / 1000,
+        device: String(e.device || '').slice(0, 32),
+        type: String(e.type || '').slice(0, 16),
+        channel: Math.max(1, Math.min(16, parseInt(e.channel, 10) || 1)),
+        ...(e.type === 'pc' ? { program: Math.max(0, Math.min(127, parseInt(e.program, 10) || 0)) } : {}),
+        ...(e.type === 'cc' ? {
+          controller: Math.max(0, Math.min(127, parseInt(e.controller, 10) || 0)),
+          value:      Math.max(0, Math.min(127, parseInt(e.value, 10) || 0)),
+        } : {}),
+        label: String(e.label || '').slice(0, 60),
+      }))
+      .sort((a, b) => a.t - b.t);
+    meta.automation = clean;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, automation: clean });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── MIDI sidecar proxy ──────────────────────────────────────────────────────
+// The sidecar (midi_sidecar.py) runs on :5555. We proxy here so the client
+// stays same-origin and gets a friendly error when the sidecar is down.
+const MIDI_SIDECAR_URL = process.env.MIDI_SIDECAR_URL || 'http://127.0.0.1:5555';
+
+async function sidecarFetch(path, init) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2000);
+  try {
+    const r = await fetch(`${MIDI_SIDECAR_URL}${path}`, { ...init, signal: ctrl.signal });
+    const body = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, body };
+  } finally { clearTimeout(t); }
+}
+
+app.get('/api/midi/ports', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/ports');
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message, available: [] });
+  }
+});
+
+app.post('/api/midi/send', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    });
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
 // Hard delete a song: remove its STEMS folder, its M4A files, and its cache.
 // Body must include { confirm: "<base>" } matching the song id — a deliberate
 // guard against accidental deletes. This is NOT reversible.

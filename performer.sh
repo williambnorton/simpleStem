@@ -25,7 +25,7 @@ RUN="$BASE/.run"                            # runtime state stays with the code
 QUEUE="$DATA/STEM_QUEUE"
 STEMS="$DATA/STEMS"
 PORT="${PORT:-3000}"            # portal port (server.js reads $PORT too)
-SERVICES="runner server"
+SERVICES="runner midi server"
 mkdir -p "$RUN"
 
 # Version = newest mtime across the code files, formatted YYMMDD.HHMM (local).
@@ -71,6 +71,7 @@ NODE_BIN="$(find_node)"
 start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
+    midi)   echo "exec python3 '$BASE/midi_sidecar.py'" ;;
     server) echo "cd '$BASE/bt-construction-kit' && exec '${NODE_BIN:-node}' server.js" ;;
   esac
 }
@@ -195,6 +196,11 @@ case "${1:-}" in
     else
       start_one runner
     fi
+    # MIDI sidecar: small Python daemon on :5555 that fires MIDI messages to
+    # the Helix / XR18 / Logic during song-timeline automation. Safe to restart
+    # — opens devices lazily on first send.
+    stop_one midi
+    start_one midi
     # Server: stateless, so always restart it fresh for a clean port.
     stop_one server
     start_one server
