@@ -2875,14 +2875,26 @@ function injectStripRoutingButtons() {
     // keep their numbers.
     //   11 → V (Vocals)   12 → D (Drums)   13 → B (Bass)
     //   14 → G (Guitar)   15 → P (Piano)   16 → O (Other)
-    const CHAN_LETTER = { 11: 'V', 12: 'D', 13: 'B', 14: 'G', 15: 'P', 16: 'O' };
+    // Channels 1-2 are the stereo main L/R pair. Channels 11-16 are the
+    // natural per-instrument outs on the XR18 split. All others stay
+    // numeric. The single-letter labels render bold via .srg-letter.
+    const CHAN_LETTER = {
+      1: 'L', 2: 'R',
+      11: 'V', 12: 'D', 13: 'B', 14: 'G', 15: 'P', 16: 'O'
+    };
+    const LETTER_MEANS = {
+      L: 'Stereo Left', R: 'Stereo Right',
+      V: 'Vocals', D: 'Drums', B: 'Bass',
+      G: 'Guitar', P: 'Piano', O: 'Other',
+    };
     let html = '';
     for (let i = 0; i < 18; i++) {
       const num = i + 1;
       const letter = CHAN_LETTER[num];
       const label = letter || `${num}`;
       const cls = letter ? 'srg-btn srg-letter' : 'srg-btn';
-      html += `<button class="${cls}" data-ch="${i}" title="Output channel ${num}${letter ? ' (' + letter + ' = ' + ({V:'Vocals',D:'Drums',B:'Bass',G:'Guitar',P:'Piano',O:'Other'}[letter]) + ')' : ''}">${label}</button>`;
+      const title = `Output channel ${num}${letter ? ' (' + letter + ' = ' + LETTER_MEANS[letter] + ')' : ''}`;
+      html += `<button class="${cls}" data-ch="${i}" title="${title}">${label}</button>`;
     }
     grid.innerHTML = `
       <div class="srg-grid">${html}</div>
