@@ -1666,11 +1666,33 @@ function renderQueue(q) {
 // Used by: library row click, inline play button on each row, sidebar
 // setlist song click. Format chips and the variant picker still load
 // their explicit variant.
+// Pick which variant to play when the user clicks a song row or moves to
+// the next setlist song. Honors the user's last explicit choice if possible
+// (persisted in localStorage as `bt_last_variant_code`) so switching songs
+// keeps the same mode — e.g. always stay in STEMS, or always play -V-G.
 function preferredPlayVariant(merged) {
   if (!merged || !merged.variants) return merged && merged.primary;
-  const byCode = code => merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
+  const byCode = code => {
+    if (code === 'STEMS') return merged.variants.find(v => v.type === 'stems');
+    return merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
+  };
+  let lastCode = null;
+  try { lastCode = localStorage.getItem('bt_last_variant_code'); } catch (e) {}
+  if (lastCode) {
+    const match = byCode(lastCode);
+    if (match) return match;
+  }
   return byCode('-V-G') || byCode('-V-G-B') || byCode('-V') ||
          byCode('FULL')  || merged.primary;
+}
+
+// Remember the variant code each time the user explicitly loads a song so
+// the next preferredPlayVariant() call honors that choice.
+function rememberLastVariantCode(v) {
+  if (!v) return;
+  const code = v.type === 'stems' ? 'STEMS' : v.variantCode;
+  if (!code) return;
+  try { localStorage.setItem('bt_last_variant_code', code); } catch (e) {}
 }
 
 // Stemming progress bar (e.g. "Stemming 5/9").
@@ -2862,6 +2884,7 @@ function renderRoutingButtons() { renderRoutingGrids(); }
 function loadSong(song, opts) {
   opts = opts || {};
   initAudioCtx();
+  rememberLastVariantCode(song);
 
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
@@ -3085,14 +3108,13 @@ function loadSong(song, opts) {
 
 // Variant picker inside the player. Lets the user switch between STEMS and
 // any M4A variants of the same song without going back to the library.
+// Drum-loop chips that used to live here are gone — loops are managed in
+// the Loop Library tab where the cache state is explicit.
 function renderVariantPicker(currentVariant) {
   const picker = document.getElementById('variant-picker');
   const chipsEl = document.getElementById('variant-picker-chips');
   if (!picker || !chipsEl) return;
 
-  // Find the merged record that contains this variant. Drum-loop "variants"
-  // are synthetic — they're not in mergedLibrary — so when one is currently
-  // loaded, fall back to the parent song stored on the variant itself.
   let merged = mergedLibrary.find(m => m.variants.some(v => v.id === currentVariant.id));
   if (!merged && currentVariant.parentBase) {
     merged = mergedLibrary.find(m => {
@@ -3100,12 +3122,7 @@ function renderVariantPicker(currentVariant) {
       return sv && sv.folderName === currentVariant.parentBase;
     });
   }
-  // Decide whether we have anything to show: regular variants, OR drum loops
-  // that we can append even when there's only one regular variant.
-  const stemsVar = merged && merged.variants.find(v => v.type === 'stems');
-  const songBase = stemsVar && stemsVar.folderName;
-  const drumLoops = songBase ? (drumLoopsByBase.get(songBase) || []) : [];
-  if (!merged || (merged.variants.length <= 1 && drumLoops.length === 0)) {
+  if (!merged || merged.variants.length <= 1) {
     picker.style.display = 'none';
     return;
   }
@@ -3124,37 +3141,6 @@ function renderVariantPicker(currentVariant) {
       ? `${v.variantLabel} — cached, plays instantly`
       : `${v.variantLabel} — NOT cached; click will fetch from Drive`;
     btn.addEventListener('click', () => loadSong(v));
-    chipsEl.appendChild(btn);
-  });
-
-  // Drum-loop chips: come AFTER all the regular variants. Each chip is a
-  // synthetic m4a-style variant that loadSong can swallow whole — it carries
-  // the loop's filename so the audio path routes through the drums element,
-  // and an isDrumLoop flag so loadSong auto-engages the loop toggle (the
-  // whole point of clicking a drum-loop chip is for it to repeat forever).
-  drumLoops.forEach(l => {
-    const btn = document.createElement('button');
-    const synth = {
-      id:           `drumloop-variant-${l.id}`,
-      type:         'm4a',
-      fileName:     l.fileName,
-      title:        merged.title,
-      artist:       merged.artist,
-      practiceBpm:  merged.practiceBpm,
-      originalBpm:  merged.originalBpm,
-      key:          merged.key,
-      keySignature: merged.keySignature,
-      duration:     null,
-      variantCode:  `L${l.loopNumber}`,
-      variantLabel: `Drum loop ${l.loopNumber} · ${l.bars} bars`,
-      parentBase:   songBase,
-      isDrumLoop:   true,
-    };
-    const isActive = currentVariant.id === synth.id;
-    btn.className = `variant-chip chip-drumloop ${isActive ? 'chip-active' : ''}`;
-    btn.innerHTML = `<i data-lucide="drum" style="width:12px;height:12px;"></i> L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>`;
-    btn.title = `Drum loop ${l.loopNumber} · ${l.bars} bars — plays through the main player; loop button is auto-engaged so it repeats forever`;
-    btn.addEventListener('click', () => loadSong(synth, { autoplay: true }));
     chipsEl.appendChild(btn);
   });
 
