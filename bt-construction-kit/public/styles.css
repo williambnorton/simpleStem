@@ -3058,20 +3058,64 @@ input:checked + .slider-round:before {
   border: 1px solid #2e8b57;
 }
 .strip-routing-grid .srg-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+
+/* Channels 1-2 are the stereo main outs. Background-tinted GREEN with a
+   black border so they read as "the safe stereo path" at a glance. */
+.strip-routing-grid .srg-btn[data-ch="0"],
+.strip-routing-grid .srg-btn[data-ch="1"] {
+  background: rgba(46, 204, 113, 0.22);
+  border: 1.5px solid #000;
+  color: var(--text-main);
+}
+.strip-routing-grid .srg-btn[data-ch="0"].active,
+.strip-routing-grid .srg-btn[data-ch="1"].active {
+  background: var(--color-green);
+  color: #fff;
+  border-color: #000;
+}
+
+/* Channels 11-16 are the natural per-instrument outs (V/D/B/G/P/O) on
+   the XR18 split. Yellow background + black border to signal "instrument
+   output channel". The .srg-letter rule below still controls the letter
+   weight/color when these are picked. */
+.strip-routing-grid .srg-btn[data-ch="10"],
+.strip-routing-grid .srg-btn[data-ch="11"],
+.strip-routing-grid .srg-btn[data-ch="12"],
+.strip-routing-grid .srg-btn[data-ch="13"],
+.strip-routing-grid .srg-btn[data-ch="14"],
+.strip-routing-grid .srg-btn[data-ch="15"] {
+  background: rgba(241, 196, 15, 0.25);
+  border: 1.5px solid #000;
+  color: var(--text-main);
+}
+.strip-routing-grid .srg-btn[data-ch="10"].active,
+.strip-routing-grid .srg-btn[data-ch="11"].active,
+.strip-routing-grid .srg-btn[data-ch="12"].active,
+.strip-routing-grid .srg-btn[data-ch="13"].active,
+.strip-routing-grid .srg-btn[data-ch="14"].active,
+.strip-routing-grid .srg-btn[data-ch="15"].active {
+  background: var(--color-yellow);
+  color: #000;
+  border-color: #000;
+}
+
 /* Channels 11-16 show a single big letter (V/D/B/G/P/O) instead of the
    number. Bigger, bolder so the letter reads at a glance from across the
    room while still fitting the same 26px button slot. */
 .strip-routing-grid .srg-btn.srg-letter {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
-  color: var(--color-green);
-}
-.strip-routing-grid .srg-btn.srg-letter:hover:not(:disabled) {
-  color: var(--color-green);
+  color: #000;
 }
 .strip-routing-grid .srg-btn.srg-letter.active {
-  color: #fff;
+  color: #000;
 }
+
+/* The .channel-loops row used to hold the 1/2/3/4 per-strip drum-loop
+   buttons that fetched from Drive on click. We disabled the rendering
+   in renderChannelLoopButtons; hide the now-empty container so the strip
+   isn't padded by an invisible row. */
+.channel-loops { display: none !important; }
 .strip-routing-grid .srg-summary {
   margin-top: 5px;
   font-size: 0.65rem; color: var(--text-dim);

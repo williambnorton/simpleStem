@@ -1011,21 +1011,24 @@ async function precacheLoop(fileName) {
   if (loopCacheStatus.get(fileName) === true) return true;
   loopCacheStatus.set(fileName, 'loading');
   renderLoopSequence();
+  // Capture the current AbortController so Stop can cancel us mid-poll.
+  const signal = driveFetchAbort.signal;
   try {
-    const res = await fetch(`/api/precache/loop/${fileName}`, { method: 'POST' });
+    const res = await fetch(`/api/precache/loop/${fileName}`, { method: 'POST', signal });
     const data = await res.json();
     if (data.cached || data.alreadyCached) {
       loopCacheStatus.set(fileName, true);
       renderLoopSequence();
       return true;
     }
-    // Background fetch queued. Poll until cached.
     for (let i = 0; i < 30; i++) {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       await new Promise(r => setTimeout(r, 1000));
       const s = await fetch('/api/loop-cache-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: [fileName] }),
+        signal,
       }).then(r => r.json()).catch(() => null);
       if (s && s.status && s.status[fileName]) {
         loopCacheStatus.set(fileName, true);
@@ -1033,8 +1036,13 @@ async function precacheLoop(fileName) {
         return true;
       }
     }
-  } catch (e) { /* fall through */ }
-  loopCacheStatus.set(fileName, false);
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      console.log('[precacheLoop] cancelled by Stop:', fileName);
+    }
+  }
+  // Don't downgrade a cached entry just because the poll bailed out.
+  if (loopCacheStatus.get(fileName) !== true) loopCacheStatus.set(fileName, false);
   renderLoopSequence();
   return false;
 }
@@ -3153,44 +3161,17 @@ function renderVariantPicker(currentVariant) {
   lucide.createIcons();
 }
 
-// Per-channel inline loop buttons (drums/bass/guitar/piano).
-// Clicking a number on a channel: plays ONLY that instrument's loop for that
-// segment. Clicking the active one again exits loop mode back to full song.
+// Per-channel inline loop buttons used to sit on each strip (1 2 3 4) and
+// triggered Drive-side loop fetches that caused spinning-disk stalls during
+// playback. We now DISABLE this row entirely — loops are managed only from
+// the Loop Library tab (where the cache-on-add behavior makes spinning
+// unavoidable until the file is on local disk). The .channel-loops divs
+// stay in the DOM for layout continuity but receive no buttons.
 function renderChannelLoopButtons(loops) {
   LOOP_CAPABLE_CHANNELS.forEach(chan => {
     const container = document.querySelector(`.channel-loops[data-channel="${chan}"]`);
-    if (!container) return;
-    container.innerHTML = '';
-
-    const loopsForChan = loops.filter(l => l.files && l.files[chan]);
-    if (loopsForChan.length === 0) return;
-
-    loopsForChan.sort((a, b) => a.loopNum - b.loopNum).forEach(l => {
-      const btn = document.createElement('button');
-      btn.className = 'channel-loop-btn';
-      btn.textContent = l.loopNum;
-      btn.title = `Loop ${l.loopNum} (${l.bars} bars) — ${chan} only`;
-      btn.dataset.channel = chan;
-      btn.dataset.loopNum = l.loopNum;
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const alreadyActive = currentMode === 'loop' && activeLoopNum === l.loopNum && activeLoopMix === chan;
-        if (alreadyActive) {
-          loadSong(currentSong); // exit loop mode
-        } else {
-          activeLoopMix = chan;
-          // Sync the top mix-type buttons (which only know 'both'/'drums'/'bass')
-          [els.loopMixBoth, els.loopMixDrums, els.loopMixBass].forEach(b => b && b.classList.remove('active'));
-          if (chan === 'drums' && els.loopMixDrums) els.loopMixDrums.classList.add('active');
-          else if (chan === 'bass' && els.loopMixBass) els.loopMixBass.classList.add('active');
-          playLoopSegment(l.loopNum);
-        }
-        updateChannelLoopButtonStates();
-      });
-      container.appendChild(btn);
-    });
+    if (container) container.innerHTML = '';
   });
-  updateChannelLoopButtonStates();
 }
 
 function updateChannelLoopButtonStates() {
@@ -3537,18 +3518,46 @@ function stopAudio() {
   els.btnPlay.innerHTML = `<i data-lucide="play"></i>`;
   clearInterval(syncInterval);
   stopBeatingVisualizer();
-  
+
+  // Abort any in-flight loop/audio fetches so a slow Drive read doesn't
+  // keep blocking the UI after Stop is pressed. See abortInFlightFetches
+  // for what gets cancelled.
+  abortInFlightFetches();
+
   Object.values(audioElements).forEach(ae => {
-    ae.pause();
-    ae.currentTime = 0;
+    try {
+      ae.pause();
+      ae.currentTime = 0;
+      // Clearing the src tears down any pending HTTP request the element
+      // had open — the browser cancels rather than waits for Drive to
+      // finish responding.
+      ae.removeAttribute('src');
+      ae.load();
+    } catch (e) { /* ignore */ }
   });
-  
+
+  // Stop any combo-of-loops playback from the Loop Library sequence.
+  stopCombo();
+  if (drumLoopAudio) {
+    try { drumLoopAudio.pause(); drumLoopAudio.removeAttribute('src'); drumLoopAudio.load(); }
+    catch (e) {}
+    drumLoopPlayingId = null;
+  }
+
   els.timeline.value = 0;
   els.timelineFill.style.width = '0%';
   els.timeCurrent.textContent = '0:00';
-  
+
   applyMixerVolumes();
   lucide.createIcons();
+}
+
+// AbortController shared by precache + cache-status fetches so a single
+// Stop press can cancel everything Drive-bound that's still in flight.
+let driveFetchAbort = new AbortController();
+function abortInFlightFetches() {
+  try { driveFetchAbort.abort(); } catch (e) {}
+  driveFetchAbort = new AbortController();
 }
 
 // Click timeline to seek
