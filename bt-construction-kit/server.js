@@ -1798,20 +1798,29 @@ app.put('/api/song/:base/automation', (req, res) => {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
     // Sort by timestamp so the dispatcher can walk forward without sorting
     // each tick. Clamp + validate basic fields; reject obviously bad rows.
+    const VALID_STEMS = new Set(['vocals','drums','bass','guitar','piano','other']);
     const clean = events
-      .filter(e => e && typeof e.t === 'number' && e.t >= 0)
-      .map(e => ({
-        t: Math.round(e.t * 1000) / 1000,
-        device: String(e.device || '').slice(0, 32),
-        type: String(e.type || '').slice(0, 16),
-        channel: Math.max(1, Math.min(16, parseInt(e.channel, 10) || 1)),
-        ...(e.type === 'pc' ? { program: Math.max(0, Math.min(127, parseInt(e.program, 10) || 0)) } : {}),
-        ...(e.type === 'cc' ? {
-          controller: Math.max(0, Math.min(127, parseInt(e.controller, 10) || 0)),
-          value:      Math.max(0, Math.min(127, parseInt(e.value, 10) || 0)),
-        } : {}),
-        label: String(e.label || '').slice(0, 60),
-      }))
+      .filter(e => e && typeof e.t === 'number' && e.t >= 0 && typeof e.type === 'string')
+      .map(e => {
+        const base = {
+          t: Math.round(e.t * 1000) / 1000,
+          type: String(e.type).slice(0, 16),
+          label: String(e.label || '').slice(0, 60),
+        };
+        if (e.type === 'pc' || e.type === 'cc') {
+          base.device  = String(e.device || '').slice(0, 32);
+          base.channel = Math.max(1, Math.min(16, parseInt(e.channel, 10) || 1));
+          if (e.type === 'pc') {
+            base.program = Math.max(0, Math.min(127, parseInt(e.program, 10) || 0));
+          } else {
+            base.controller = Math.max(0, Math.min(127, parseInt(e.controller, 10) || 0));
+            base.value      = Math.max(0, Math.min(127, parseInt(e.value, 10) || 0));
+          }
+        } else if (e.type === 'mute' || e.type === 'unmute') {
+          base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
+        }
+        return base;
+      })
       .sort((a, b) => a.t - b.t);
     meta.automation = clean;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');

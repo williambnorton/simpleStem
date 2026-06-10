@@ -3919,17 +3919,31 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker {
   position: absolute;
   top: 1px; bottom: 1px;
-  width: 8px;
-  margin-left: -4px;
-  background: var(--color-yellow, #f4c430);
+  /* Wider so the type letter fits — 16px gives a clean square at the lane's
+     ~18px height. Color is set by an evt-* class. */
+  width: 16px;
+  margin-left: -8px;
   border: 1px solid #000;
   border-radius: 2px;
   cursor: pointer;
   pointer-events: auto;
-  box-shadow: 0 0 4px rgba(255, 200, 80, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
 }
-.midi-event-marker.fired { background: var(--color-green, #2ecc71); }
-.midi-event-marker:hover { transform: scaleX(1.6); z-index: 2; }
+.midi-event-marker .midi-event-letter { display: block; pointer-events: none; }
+.midi-event-marker.evt-midi   { background: var(--color-yellow, #f4c430); box-shadow: 0 0 4px rgba(255, 200, 80, 0.6); }
+.midi-event-marker.evt-mute   { background: #e74c3c; color: #fff; box-shadow: 0 0 4px rgba(231, 76, 60, 0.6); }
+.midi-event-marker.evt-unmute { background: #2ecc71; color: #111; box-shadow: 0 0 4px rgba(46, 204, 113, 0.6); }
+.midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
+.midi-event-marker.fired { outline: 1px solid rgba(255,255,255,0.7); }
+.midi-event-marker:hover { transform: scale(1.4); z-index: 2; }
 .midi-event-marker .midi-event-tip {
   position: absolute;
   bottom: 100%;

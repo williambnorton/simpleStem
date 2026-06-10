@@ -693,8 +693,25 @@
     <div class="midi-row">
       <label>Type</label>
       <select id="midi-f-type">
-        <option value="pc">Program Change</option>
-        <option value="cc">Control Change (CC)</option>
+        <optgroup label="MIDI">
+          <option value="pc">Program Change</option>
+          <option value="cc">Control Change (CC)</option>
+        </optgroup>
+        <optgroup label="Stem PlaybackAction">
+          <option value="mute">Mute stem</option>
+          <option value="unmute">Unmute stem</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="midi-row midi-row-stem" style="display:none;">
+      <label>Stem</label>
+      <select id="midi-f-stem">
+        <option value="vocals">V — Vocals</option>
+        <option value="drums">D — Drums</option>
+        <option value="bass">B — Bass</option>
+        <option value="guitar">G — Guitar</option>
+        <option value="piano">P — Piano</option>
+        <option value="other">O — Other</option>
       </select>
     </div>
     <div class="midi-row">

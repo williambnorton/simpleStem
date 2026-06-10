@@ -224,6 +224,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupFormatFilters();
   setupClickTrack();
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
+  try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -4954,6 +4955,38 @@ function songDurationSec() {
   return 0;
 }
 
+// Map stem name → block letter shown on a mute/unmute marker.
+const STEM_LETTER = { vocals: 'V', drums: 'D', bass: 'B', guitar: 'G', piano: 'P', other: 'O' };
+const LETTER_STEM = Object.fromEntries(Object.entries(STEM_LETTER).map(([k,v]) => [v.toLowerCase(), k]));
+
+// What single letter does this event display on its marker?
+//   PC / CC → M (MIDI)
+//   mute / unmute → V/D/B/G/P/O for the affected stem
+//   fade → F
+function eventTypeLetter(e) {
+  if (e.type === 'mute' || e.type === 'unmute') return STEM_LETTER[e.stem] || '?';
+  if (e.type === 'fade') return 'F';
+  return 'M';
+}
+
+// CSS class suffix so the marker can be color-coded by type.
+function eventClass(e) {
+  if (e.type === 'mute')   return 'evt-mute';
+  if (e.type === 'unmute') return 'evt-unmute';
+  if (e.type === 'fade')   return 'evt-fade';
+  return 'evt-midi';
+}
+
+// One-line description for the tooltip.
+function eventSummary(e) {
+  if (e.type === 'pc')      return `MIDI PC ${e.program} ch${e.channel} → ${e.device || '?'}`;
+  if (e.type === 'cc')      return `MIDI CC ${e.controller}=${e.value} ch${e.channel} → ${e.device || '?'}`;
+  if (e.type === 'mute')    return `MUTE ${e.stem}`;
+  if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
+  if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
+  return e.type || 'event';
+}
+
 function renderAutomationLane() {
   const lane = document.getElementById('midi-lane');
   const markers = document.getElementById('midi-lane-markers');
@@ -4965,14 +4998,12 @@ function renderAutomationLane() {
     const pct = (e.t / dur) * 100;
     if (pct < 0 || pct > 100) return;
     const node = document.createElement('div');
-    node.className = 'midi-event-marker' + (e.fired ? ' fired' : '');
+    node.className = `midi-event-marker ${eventClass(e)}` + (e.fired ? ' fired' : '');
     node.style.left = pct + '%';
     node.dataset.idx = String(idx);
-    const summary = e.type === 'pc'
-      ? `PC ${e.program} ch${e.channel}`
-      : `CC ${e.controller}=${e.value} ch${e.channel}`;
-    const tip = `${e.label ? e.label + ' · ' : ''}${e.device || ''} ${summary} @ ${e.t.toFixed(2)}s`;
-    node.innerHTML = `<span class="midi-event-tip">${escapeHtml(tip)}</span>`;
+    const letter = eventTypeLetter(e);
+    const tip = `${e.label ? e.label + ' · ' : ''}${eventSummary(e)} @ ${e.t.toFixed(2)}s`;
+    node.innerHTML = `<span class="midi-event-letter">${letter}</span><span class="midi-event-tip">${escapeHtml(tip)}</span>`;
     node.addEventListener('click', (ev) => {
       ev.stopPropagation();
       openMidiModal(idx);
@@ -5018,6 +5049,8 @@ function openMidiModal(idx) {
   document.getElementById('midi-f-controller').value = e.controller ?? 7;
   document.getElementById('midi-f-value').value    = e.value ?? 100;
   document.getElementById('midi-f-label').value    = e.label || '';
+  const stemSel = document.getElementById('midi-f-stem');
+  if (stemSel) stemSel.value = e.stem || 'vocals';
   midiModalTypeChanged();
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
@@ -5032,26 +5065,116 @@ function closeMidiModal() {
 
 function midiModalTypeChanged() {
   const t = document.getElementById('midi-f-type').value;
+  const isStem = (t === 'mute' || t === 'unmute');
+  // Show/hide the type-specific rows.
   document.querySelectorAll('.midi-row-pc').forEach(n => n.style.display = t === 'pc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-stem').forEach(n => n.style.display = isStem ? 'grid' : 'none');
+  // MIDI-only fields hide for stem actions (no wire involved).
+  document.querySelectorAll('.midi-row').forEach(row => {
+    const lbl = row.querySelector('label')?.textContent;
+    if (!lbl) return;
+    if (isStem && (lbl === 'Device' || lbl === 'Channel')) row.style.display = 'none';
+    else if (!isStem && lbl === 'Device') row.style.display = 'grid';
+    else if (!isStem && lbl === 'Channel') row.style.display = 'grid';
+  });
+  // Label suggestion: prefill for stem actions so the user doesn't have to.
+  if (isStem) {
+    const labelEl = document.getElementById('midi-f-label');
+    const stem = document.getElementById('midi-f-stem')?.value || 'vocals';
+    if (!labelEl.value || /^(mute|unmute) /.test(labelEl.value)) {
+      labelEl.value = `${t} ${stem}`;
+    }
+  }
 }
 
 function readMidiModalForm() {
   const type = document.getElementById('midi-f-type').value;
   const out = {
     t: parseFloat(document.getElementById('midi-f-time').value) || 0,
-    device: document.getElementById('midi-f-device').value,
     type,
-    channel: parseInt(document.getElementById('midi-f-channel').value, 10) || 1,
     label: document.getElementById('midi-f-label').value.trim(),
   };
-  if (type === 'pc') {
-    out.program = parseInt(document.getElementById('midi-f-program').value, 10) || 0;
-  } else if (type === 'cc') {
-    out.controller = parseInt(document.getElementById('midi-f-controller').value, 10) || 0;
-    out.value      = parseInt(document.getElementById('midi-f-value').value, 10) || 0;
+  if (type === 'pc' || type === 'cc') {
+    out.device  = document.getElementById('midi-f-device').value;
+    out.channel = parseInt(document.getElementById('midi-f-channel').value, 10) || 1;
+    if (type === 'pc') {
+      out.program = parseInt(document.getElementById('midi-f-program').value, 10) || 0;
+    } else {
+      out.controller = parseInt(document.getElementById('midi-f-controller').value, 10) || 0;
+      out.value      = parseInt(document.getElementById('midi-f-value').value, 10) || 0;
+    }
+  } else if (type === 'mute' || type === 'unmute') {
+    out.stem = document.getElementById('midi-f-stem').value;
   }
   return out;
+}
+
+// Keyboard shortcut: while a song is loaded, the keys V/D/B/G/P/O drop a
+// stem mute/unmute event at the current playhead and persist immediately.
+// Each press toggles — if the most recent prior event for that stem is a
+// mute, the new one is unmute; otherwise mute.
+async function recordStemToggleAtPlayhead(stem) {
+  if (!automationCurrentBase) return;
+  const t = currentPlayheadSec();
+  // Find the most recent event for this stem at or before now.
+  let lastType = null;
+  for (const e of automationEvents) {
+    if ((e.type === 'mute' || e.type === 'unmute') && e.stem === stem && e.t <= t + 0.01) {
+      lastType = e.type;
+    }
+  }
+  const next = (lastType === 'mute') ? 'unmute' : 'mute';
+  const ev = { t, type: next, stem, label: `${next} ${stem}` };
+  automationEvents.push(ev);
+  try {
+    await saveAutomationForSong(automationCurrentBase, automationEvents);
+  } catch (e) {
+    console.warn('[stem-shortcut] save failed:', e);
+  }
+  // Fire immediately so the audible state matches the dropped marker.
+  fireAutomationEvent(ev).catch(()=>{});
+}
+
+function setupStemHotkeys() {
+  const map = { v: 'vocals', d: 'drums', b: 'bass', g: 'guitar', p: 'piano', o: 'other' };
+  window.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Don't fire when typing in an input/select/textarea/contenteditable.
+    const tgt = e.target;
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
+                tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+    const stem = map[e.key.toLowerCase()];
+    if (!stem) return;
+    if (!automationCurrentBase) return;   // no song loaded → ignore
+    e.preventDefault();
+    recordStemToggleAtPlayhead(stem);
+  });
+}
+
+// Single entry point used by the dispatcher. Routes by type:
+//   pc / cc    → MIDI sidecar (out over wire to Helix/Logic/XR18)
+//   mute       → flip mixerState.muted[stem] on, repaint mute button
+//   unmute     → flip mixerState.muted[stem] off, repaint
+//   fade       → stub for now; ramps come later
+async function fireAutomationEvent(e) {
+  if (e.type === 'mute' || e.type === 'unmute') {
+    const stem = e.stem;
+    if (!stem || !(stem in (mixerState.muted || {}))) return;
+    const want = (e.type === 'mute');
+    if (mixerState.muted[stem] !== want) {
+      mixerState.muted[stem] = want;
+      if (typeof applyMixerVolumes === 'function') applyMixerVolumes();
+      if (typeof saveMixerState === 'function') saveMixerState();
+      const btn = document.getElementById(`mute-${stem}`);
+      if (btn) btn.classList.toggle('active', want);
+    }
+    return;
+  }
+  if (e.type === 'pc' || e.type === 'cc') {
+    return sendMidiNow(e);
+  }
+  // 'fade' is not yet implemented — ramps come in a future iteration.
 }
 
 async function sendMidiNow(event) {
@@ -5154,7 +5277,7 @@ function setupMidiUI() {
     let anyFired = false;
     for (const e of automationEvents) {
       if (!e.fired && e.t > automationLastTime && e.t <= now) {
-        sendMidiNow(e).catch(err => console.warn('[midi] send failed:', err));
+        fireAutomationEvent(e).catch(err => console.warn('[automation] fire failed:', err));
         e.fired = true;
         anyFired = true;
       }
