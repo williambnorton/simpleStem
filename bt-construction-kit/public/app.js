@@ -2281,31 +2281,13 @@ function renderLibrary() {
       return chip;
     };
 
-    SLOT_CODES.forEach(code => {
-      const v = slotVariant(code);
-      if (v) {
-        formatCell.appendChild(makeVariantChip(v));
-      } else {
-        const empty = document.createElement('span');
-        empty.className = 'format-chip-empty';
-        formatCell.appendChild(empty);
-      }
-    });
-
-    // Extras row (Logic chip, drum loops, any variant not in the 5 canonical
-    // slots). Spans the full Format column underneath the aligned chips.
-    const extras = document.createElement('div');
-    extras.className = 'format-extras';
-
-    // Unknown m4a variant codes (e.g. 'FULL') that didn't land in a slot
-    merged.variants.forEach(v => {
-      if (v.type === 'stems') return;
-      if (SLOT_CODES.includes(v.variantCode)) return;
-      extras.appendChild(makeVariantChip(v));
-    });
-
-    // Logic Pro chip — yellow pill if a *.logicx project sits in STEMS/.
-    // Click → server spawns a FRESH Logic instance (parallel sessions OK).
+    // Library rows used to show 5 variant chips (STEMS / -V / -V-G / -V-G-B /
+    // DO) plus drum-loop chips. Every song is now treated as stems and the
+    // mixdowns live only on Drive (EZPerformer reads them), so those chips
+    // were noise — the green STEMS pill on every row, the Lundefined drum
+    // chips for songs whose loops weren't in the cache. All removed.
+    // Only the Logic chip stays, since it's a yellow indicator for a real
+    // sibling artifact (the .logicx project) the user might want to open.
     const stemsForLogic = merged.variants.find(v => v.type === 'stems');
     if (stemsForLogic && stemsForLogic.logicProjectName && stemsForLogic.folderName) {
       const chip = document.createElement('button');
@@ -2325,37 +2307,14 @@ function renderLibrary() {
           setTimeout(() => { chip.disabled = false; }, 1500);
         }
       });
-      extras.appendChild(chip);
+      formatCell.appendChild(chip);
     }
 
-    // Drum-loop chips — small green pills "L1 27b" toggle the drum loop.
-    const drumSongBase = stemsVariant && stemsVariant.folderName;
-    const drumLoops = drumSongBase ? drumLoopsByBase.get(drumSongBase) : null;
-    if (drumLoops && drumLoops.length) {
-      drumLoops.forEach(l => {
-        const chip = document.createElement('button');
-        chip.className = 'format-chip song-drumloop-chip';
-        chip.dataset.id = l.id;
-        chip.dataset.file = encodeURIComponent(l.fileName);
-        const idleLabel = `L${l.loopNumber} <span class="dl-bars">${l.bars}b</span>`;
-        chip.dataset.idleLabel = idleLabel;
-        chip.title = `Drum loop ${l.loopNumber} · ${l.bars} bars — click to play`;
-        chip.innerHTML = idleLabel;
-        chip.addEventListener('click', e => {
-          e.stopPropagation();
-          toggleDrumLoop(chip);
-        });
-        extras.appendChild(chip);
-      });
-    }
-
-    if (extras.children.length) formatCell.appendChild(extras);
-
-    // Action
+    // Action — Load button removed. Clicking the row loads the song (wired
+    // below). Keep the ⋯ menu for song options.
     const actionCell = document.createElement('div');
     actionCell.className = 'col-action';
-    actionCell.innerHTML = `<button class="btn-secondary load-btn" style="padding: 4px 10px;">Load</button>` +
-      `<button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;margin-left:4px;">⋯</button>`;
+    actionCell.innerHTML = `<button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;">⋯</button>`;
     // song_base = the stems folder name (canonical key for the per-song API)
     const stemsVar = merged.variants.find(v => v.type === 'stems');
     const songBase = stemsVar && stemsVar.folderName;
@@ -3457,7 +3416,14 @@ function loadSong(song, opts) {
 // Drum-loop chips that used to live here are gone — loops are managed in
 // the Loop Library tab where the cache state is explicit.
 function renderVariantPicker(currentVariant) {
+  // All songs are stems now — the source picker is retired. Keep the function
+  // (legacy call sites still invoke it) but force the pane hidden and bail.
   const picker = document.getElementById('variant-picker');
+  if (picker) picker.style.display = 'none';
+  return;
+  // The original variant-rendering logic below is unreachable. Left in place
+  // until we're sure no future flow needs to bring it back.
+  // eslint-disable-next-line no-unreachable
   const chipsEl = document.getElementById('variant-picker-chips');
   if (!picker || !chipsEl) return;
 

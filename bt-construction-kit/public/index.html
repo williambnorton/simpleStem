@@ -197,25 +197,8 @@
               <p id="active-track-artist" class="track-artist">Artist Name</p>
             </div>
             <div class="track-meta-right">
-              <!-- Layout order: [analog clock] [BPM] [KEY] [tall digital clock]
-                   The analog clock sits leftmost; the digital clock pill
-                   matches the height of BPM/Key but is wider for the date
-                   + time. -->
-              <div class="analog-clock" aria-label="Analog clock" title="Local time">
-                <svg viewBox="0 0 100 100" width="56" height="56" class="analog-clock-svg">
-                  <circle cx="50" cy="50" r="48" fill="#14192b" stroke="#0a0e1c" stroke-width="2"/>
-                  <g class="clock-ticks" stroke="#aab0c4" stroke-width="1.2" stroke-linecap="round">
-                    <line x1="50" y1="6"  x2="50" y2="13"/>
-                    <line x1="94" y1="50" x2="87" y2="50"/>
-                    <line x1="50" y1="94" x2="50" y2="87"/>
-                    <line x1="6"  y1="50" x2="13" y2="50"/>
-                  </g>
-                  <line id="clock-hour" x1="50" y1="50" x2="50" y2="28" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-                  <line id="clock-min"  x1="50" y1="50" x2="50" y2="20" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-                  <line id="clock-sec"  x1="50" y1="50" x2="50" y2="16" stroke="#7c4dff" stroke-width="1.4" stroke-linecap="round" style="transform-origin:50px 50px;"/>
-                  <circle cx="50" cy="50" r="3" fill="#ffffff"/>
-                </svg>
-              </div>
+              <!-- Layout: [BPM] [KEY] [tall digital clock]. Analog clock
+                   removed — the digital pill carries the time. -->
               <div class="meta-stat-pill hover-glow" id="active-meta-bpm">
                 <i data-lucide="activity" class="text-purple"></i>
                 <div>
