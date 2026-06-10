@@ -959,7 +959,11 @@ try {
 // Only the multi-hundred-MB stem WAVs are bounded: when the STEMS cache exceeds
 // CACHE_CAP_BYTES, evict least-recently-used files until under cap. Never
 // touches source data on Drive — only the ~/.bt-cache mirror.
-const CACHE_CAP_BYTES = Number(process.env.BT_CACHE_CAP_GB || 12) * 1024 * 1024 * 1024;
+// Cache cap applied to the WHOLE ~/.bt-cache tree (STEMS/, M4A/, LOOPS/).
+// Default raised to 50 GB to match Bill's preferred ceiling — with the new
+// "no WAV, no mixdown caching" policy, real usage should plateau ~5–8 GB,
+// so the cap is a safety net, not a daily limit.
+const CACHE_CAP_BYTES = Number(process.env.BT_CACHE_CAP_GB || 50) * 1024 * 1024 * 1024;
 function pruneCache() {
   try {
     const files = [];
@@ -974,7 +978,9 @@ function pruneCache() {
         }
       }
     };
-    walk(AUDIO_CACHE_STEMS);   // STEMS cache ONLY — M4A cache is left untouched
+    // Walk the whole cache, not just STEMS — every cached byte counts toward
+    // the cap now that there's a single ceiling.
+    walk(AUDIO_CACHE_DIR);
     let total = files.reduce((a, f) => a + f.size, 0);
     if (total <= CACHE_CAP_BYTES) return;
     files.sort((a, b) => a.used - b.used);   // oldest-used first
@@ -988,11 +994,11 @@ function pruneCache() {
       if (fs.existsSync(AUDIO_CACHE_STEMS)) for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
         const folder = path.join(AUDIO_CACHE_STEMS, d);
         try {
-          const stems = fs.readdirSync(folder).filter(f => /\.(wav|m4a)$/i.test(f));
+          const stems = fs.readdirSync(folder).filter(f => /\.m4a$/i.test(f));
           if (stems.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
         } catch (e) {}
       }
-      console.log(`[cache] pruned ${removed} stem file(s) to keep STEMS cache under ${Math.round(CACHE_CAP_BYTES/1e9)}GB (m4a never pruned)`);
+      console.log(`[cache] pruned ${removed} file(s) to keep total cache under ${Math.round(CACHE_CAP_BYTES/1e9)}GB`);
     }
   } catch (e) { console.warn('[cache] prune failed:', e.message); }
 }
@@ -1062,7 +1068,13 @@ app.get('/api/audio/stems/:song/:file', (req, res) => {
   const { song, file } = req.params;
   if (song.includes('..') || file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(STEMS_DIR, song, file);
-  const cachePath  = path.join(AUDIO_CACHE_STEMS, song, file);
+  // Cache policy: m4a stems only. WAVs are 6× larger and the mixer prefers
+  // m4a anyway. WAV requests stream directly from Drive — no local copy.
+  if (/\.wav$/i.test(file)) {
+    if (!fs.existsSync(sourcePath)) return res.status(404).send('Audio file not found');
+    return res.sendFile(sourcePath, { dotfiles: 'allow' });
+  }
+  const cachePath = path.join(AUDIO_CACHE_STEMS, song, file);
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
@@ -1156,8 +1168,12 @@ app.get('/api/audio/m4a/:file', (req, res) => {
   const { file } = req.params;
   if (file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(M4A_DIR, file);
-  const cachePath  = path.join(AUDIO_CACHE_M4A, file);
-  sendCachedAudio(req, res, sourcePath, cachePath);
+  // Mixdowns (-V, -V-G, -V-G-B, DO) stream directly from Drive. We rely on
+  // simpleStem's stem-mixer for live use; mixdowns are an offline backup
+  // (EZPerformer reads them from the EZ_*/ folders on Drive, not from here).
+  // No local cache — keeps ~/.bt-cache small and predictable.
+  if (!fs.existsSync(sourcePath)) return res.status(404).send('Audio file not found');
+  res.sendFile(sourcePath, { dotfiles: 'allow' });
 });
 
 // Serve loop files from the flat LOOPS/ folder. Mirrors the m4a endpoint.
@@ -1430,7 +1446,9 @@ app.post('/api/precache/stems/:song', (req, res) => {
     const t0 = Date.now();
     try {
       let copied = 0;
-      const files = (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f));
+      // Cache only m4a stems. WAVs stream directly per the audio endpoint
+      // policy — caching them would balloon ~/.bt-cache by 6x.
+      const files = (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f));
       for (const f of files) {
         // Awaiting each copy yields to other handlers between files. For
         // even more concurrency we could Promise.all, but serial keeps
@@ -1467,24 +1485,20 @@ app.post('/api/precache/setlist/:slug', (req, res) => {
 
   (async () => {
     for (const base of bases) {
-      // stems
+      // Cache only m4a stems — WAVs and mixdowns stream directly per the
+      // audio endpoint policy. Mixdowns are an offline backup that lives on
+      // Drive (EZPerformer reads them there); the portal uses stems.
       const folder = path.join(STEMS_DIR, base);
       try {
         if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f))) {
+          for (const f of (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f))) {
             await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
           }
         }
       } catch (e) {}
-      // m4a variants for this base
-      try {
-        for (const f of (await fsp.readdir(M4A_DIR)).filter(f => f.startsWith(base + '_') && f.endsWith('.m4a'))) {
-          await ensureCachedAsync(path.join(M4A_DIR, f), path.join(AUDIO_CACHE_M4A, f));
-        }
-      } catch (e) {}
     }
     pruneCache();
-    console.log(`[precache setlist] ${slug} done (${bases.length} songs)`);
+    console.log(`[precache setlist] ${slug} done (${bases.length} songs, m4a stems only)`);
   })();
 });
 
@@ -2178,17 +2192,19 @@ app.post('/api/precache/gig/:slug', (req, res) => {
 
   (async () => {
     const t0 = Date.now();
-    let wavs = 0, m4as = 0, errors = 0;
+    let stems = 0, errors = 0;
     for (const base of bases) {
-      // Every WAV in STEMS/<base>/ — that's source.wav, the 6 stems, plus all
-      // *_loop*.wav files. Comprehensive: the whole song folder gets mirrored.
+      // Cache m4a stems only. WAVs (source.wav, *.wav) stream directly from
+      // Drive when requested. Mixdowns (M4A/<base>_*.m4a) also stream
+      // directly — the portal uses simpleStem's stem-mixer for live play
+      // and EZPerformer reads mixdowns from the EZ_*/ Drive folders instead.
       const folder = path.join(STEMS_DIR, base);
       try {
         if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => /\.(wav|m4a)$/i.test(f))) {
+          for (const f of (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f))) {
             try {
               await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
-              wavs++;
+              stems++;
             } catch (e) { errors++; }
           }
           // Mark the folder as cached so isStemsFolderCached() lights the chip.
@@ -2201,21 +2217,12 @@ app.post('/api/precache/gig/:slug', (req, res) => {
           } catch (e) {}
         }
       } catch (e) { errors++; }
-      // Every m4a in M4A/ whose filename starts with <base>_ — that catches
-      // all four variant mixdowns AND any loop m4as for that song.
-      try {
-        if (fs.existsSync(M4A_DIR)) {
-          for (const f of (await fsp.readdir(M4A_DIR))) {
-            if (!f.startsWith(`${base}_`) || !f.toLowerCase().endsWith('.m4a')) continue;
-            try {
-              await ensureCachedAsync(path.join(M4A_DIR, f), path.join(AUDIO_CACHE_M4A, f));
-              m4as++;
-            } catch (e) { errors++; }
-          }
-        }
-      } catch (e) { errors++; }
+      // Mixdowns (M4A/<base>_*.m4a) deliberately skipped — they stream from
+      // Drive on the rare occasion the portal needs them, and EZPerformer
+      // reads them from the EZ_*/ Drive folders. Caching mixdowns added 35 GB
+      // of duplicated audio (4,330 files in M4A/ when only 700 are current).
     }
-    console.log(`[gig precache] ${slug}: ${wavs} wavs + ${m4as} m4as across ${bases.size} songs in ${Math.round((Date.now()-t0)/1000)}s (errors: ${errors})`);
+    console.log(`[gig precache] ${slug}: ${stems} m4a stems across ${bases.size} songs in ${Math.round((Date.now()-t0)/1000)}s (errors: ${errors})`);
   })();
 });
 
