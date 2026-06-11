@@ -5170,10 +5170,11 @@ const SECTION_COLORS = {
   9: { name: 'Tag',    bg: 'rgba(236, 64, 122, 0.18)' },    // light pink
 };
 
-// Render colored bands behind the lane markers. Each section's band runs
-// from the prior section's t (or 0 for the first) to its own t. The final
-// section's color extends to song end.
-function renderSectionBands(markers, dur) {
+// Render section bands + their labels + the draggable black dividers at
+// each section's t (which marks the END of that section). The first
+// section runs from 0 to its t; subsequent sections run from the prior
+// section's t to their own.
+function renderSectionBands(container, dur) {
   const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
   if (!sections.length) return;
   let prevT = 0;
@@ -5183,15 +5184,60 @@ function renderSectionBands(markers, dur) {
     if (!color) { prevT = s.t; continue; }
     const startPct = (prevT / dur) * 100;
     const endPct   = (s.t   / dur) * 100;
+    const widthPct = endPct - startPct;
+    // Colored band with the section name centered inside.
     const band = document.createElement('div');
     band.className = 'automation-section-band';
     band.style.left  = startPct + '%';
-    band.style.width = (endPct - startPct) + '%';
+    band.style.width = widthPct + '%';
     band.style.background = color.bg;
     band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s`;
-    markers.appendChild(band);
+    band.innerHTML = `<span class="automation-section-label">${escapeHtml(color.name)}</span>`;
+    container.appendChild(band);
+    // Black draggable divider at the END of this section.
+    const divider = document.createElement('div');
+    divider.className = 'automation-section-divider';
+    divider.style.left = endPct + '%';
+    divider.dataset.idx = String(i);
+    divider.title = `${color.name} ends at ${s.t.toFixed(2)}s — drag to retime`;
+    attachSectionDividerHandlers(divider, i);
+    container.appendChild(divider);
     prevT = s.t;
   }
+}
+
+// Drag a section's end-position divider horizontally to retime it.
+function attachSectionDividerHandlers(node, idx) {
+  let downX = 0, dragging = false, startTime = 0;
+  const overlay = document.getElementById('automation-overlay');
+  node.addEventListener('mousedown', (ev) => {
+    ev.stopPropagation();
+    downX = ev.clientX;
+    dragging = false;
+    startTime = automationSections[idx]?.t || 0;
+    const onMove = (mv) => {
+      const dx = mv.clientX - downX;
+      if (!dragging && Math.abs(dx) < 3) return;
+      dragging = true;
+      const dur = songDurationSec();
+      const r = overlay.getBoundingClientRect();
+      const newT = Math.max(0, Math.min(dur, startTime + (dx / r.width) * dur));
+      automationSections[idx].t = Math.round(newT * 100) / 100;
+      // Live reposition without rebuilding all DOM — bands re-anchor on mouseup.
+      node.style.left = ((automationSections[idx].t / dur) * 100) + '%';
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (dragging) {
+        automationSections.sort((a, b) => a.t - b.t);
+        renderAutomationLane();
+        markAutomationDirty();
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
 }
 
 // Per-song section markers ({t, color: 1..9}). Loaded alongside automation

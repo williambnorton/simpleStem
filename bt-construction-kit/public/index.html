@@ -193,8 +193,9 @@
                   <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
                 </button>
               </div>
-              <h1 id="active-track-title" class="track-title">Song Title</h1>
-              <p id="active-track-artist" class="track-artist">Artist Name</p>
+              <h1 class="track-title">
+                <span id="active-track-title">Song Title</span><span id="active-track-sep" class="track-sep"> &mdash; </span><span id="active-track-artist">Artist Name</span>
+              </h1>
             </div>
             <div class="track-meta-right">
               <!-- Layout: [BPM] [KEY] [tall digital clock]. Analog clock
@@ -248,32 +249,41 @@
           <div class="player-visualization-area">
             <span class="visualizer-label">Visualizer</span>
             <span class="time-label time-spacer" aria-hidden="true">0:00</span>
-            <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
-            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
-            
-            <div class="player-wave-overlay">
-              <div id="player-buffering-indicator" class="buffering" style="display: none;">
-                <div class="spinner"></div>
-                <span>Buffering Audio...</span>
+            <!-- Canvas + overlays share a positioned wrapper. The wrapper
+                 takes flex:1 in the player-visualization-area's flex row
+                 (between the two time-spacers), so its width MATCHES the
+                 playback slider thumb-travel range exactly. Action markers
+                 inside the overlay inherit that range. -->
+            <div class="canvas-wrap">
+              <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
+              <div class="player-wave-overlay">
+                <div id="player-buffering-indicator" class="buffering" style="display: none;">
+                  <div class="spinner"></div>
+                  <span>Buffering Audio...</span>
+                </div>
+              </div>
+              <div id="automation-overlay" class="automation-overlay">
+                <div id="midi-lane-bands" class="midi-lane-bands"></div>
+                <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
+                  <div id="midi-lane-markers" class="midi-lane-markers"></div>
+                </div>
               </div>
             </div>
-            <!-- Automation overlay sits on top of the visualizer canvas. It
-                 reuses the canvas's horizontal alignment (which already
-                 matches the playback slider exactly), so action markers
-                 drop directly beneath the slider thumb without flex layout
-                 conflicts. Section color bands paint behind the markers. -->
-            <div id="automation-overlay" class="automation-overlay">
-              <div id="midi-lane-bands" class="midi-lane-bands"></div>
-              <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
-                <div id="midi-lane-markers" class="midi-lane-markers"></div>
-              </div>
+            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
+            <!-- Toolbar floats in the top-right corner of the visualization
+                 area so it doesn't steal flex space from the playback
+                 slider below. -->
+            <div class="automation-toolbar" id="midi-lane-toolbar">
+              <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
+              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
+              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
+              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
             </div>
           </div>
           
-          <!-- Progress bar / Timeline. The automation toolbar (counter +
-               SAVE/CLEAR) sits on the right side of this row so the lane
-               itself can stay overlaid on the visualizer with no extra
-               vertical real estate stolen below. -->
+          <!-- Progress bar / Timeline. The slider's flex:1 wrapper claims
+               all remaining horizontal space — the automation toolbar lives
+               inside the visualizer above so this row stays untouched. -->
           <div class="player-timeline-container">
             <span id="time-current" class="time-label">0:00</span>
             <div class="timeline-bar-wrapper">
@@ -281,12 +291,6 @@
               <div id="timeline-progress" class="timeline-fill"></div>
             </div>
             <span id="time-duration" class="time-label">0:00</span>
-            <div class="automation-toolbar" id="midi-lane-toolbar">
-              <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
-              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
-              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
-              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
-            </div>
           </div>
 
           <!-- Main Player Controls Dashboard -->
