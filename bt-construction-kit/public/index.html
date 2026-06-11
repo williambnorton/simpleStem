@@ -276,6 +276,7 @@
             <div class="automation-toolbar" id="midi-lane-toolbar">
               <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
               <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
+              <button id="midi-btn-init-state" class="midi-toolbar-btn" title="Capture the current mixer state (fader levels + mutes) as the song's initial state at t=0">INIT</button>
               <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
               <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
             </div>
@@ -332,25 +333,16 @@
               </div>
             </div>
 
-            <!-- Outro Loop Stretching panel -->
-            <div class="stretch-outro-card glass-card">
-              <div class="stretch-header">
-                <span class="stretch-title"><i data-lucide="expand"></i> Outro Jam Stretch</span>
-                <label class="switch-toggle-label">
-                  <input type="checkbox" id="stretch-toggle">
-                  <span class="slider-round"></span>
-                </label>
-              </div>
-              <div class="stretch-cycles-row" id="stretch-cycles-container" style="opacity: 0.5; pointer-events: none;">
-                <span class="cycles-label">Repeat Last:</span>
-                <button class="cycle-btn active" data-cycles="2">2x</button>
-                <button class="cycle-btn" data-cycles="4">4x</button>
-                <button class="cycle-btn" data-cycles="8">8x</button>
-                <button class="cycle-btn" data-cycles="infinite">∞</button>
-              </div>
-              <div class="stretch-info" id="stretch-info-text">
-                Extend track using the last loop.
-              </div>
+            <!-- Section LOOPER — toggle button. When ON, the playhead loops
+                 between the two section markers that bracket the current
+                 position. When OFF, song plays through normally. Section
+                 markers (1-9 keys) define the loop boundaries. -->
+            <div class="looper-card glass-card">
+              <button id="btn-section-looper" class="looper-btn" type="button" title="Loop the current section (defined by section markers); click again to play through">
+                <i data-lucide="repeat-2"></i>
+                <span class="looper-btn-label">LOOPER</span>
+                <span class="looper-btn-sub" id="looper-section-text">no section</span>
+              </button>
             </div>
           </div>
 

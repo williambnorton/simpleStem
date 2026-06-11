@@ -4023,6 +4023,50 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
 .midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
 
+/* LOOPER button — big toggle that loops the section bracketing the current
+   playhead. Replaces the Outro Jam Stretch panel. */
+.looper-card {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.looper-btn {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(46, 204, 113, 0.08);
+  border: 2px solid rgba(46, 204, 113, 0.35);
+  border-radius: 8px;
+  color: var(--text-main, #eee);
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  padding: 8px 16px;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms;
+}
+.looper-btn:hover { background: rgba(46, 204, 113, 0.16); border-color: rgba(46, 204, 113, 0.55); }
+.looper-btn.active {
+  background: rgba(46, 204, 113, 0.28);
+  border-color: rgba(46, 204, 113, 0.9);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(46, 204, 113, 0.55);
+}
+.looper-btn-label {
+  font-size: 18px; font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.looper-btn-sub {
+  font-size: 11px;
+  color: var(--text-dim, #aaa);
+  font-weight: 600;
+}
+.looper-btn.active .looper-btn-sub { color: rgba(255,255,255,0.85); }
+
 /* Artist on the same line as title at the same font size — replaces the
    previous two-row title/artist layout. The em-dash separator and artist
    inherit the .track-title font sizing because they're inline children. */
@@ -4035,24 +4079,33 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker:hover { transform: translateX(-50%) scale(1.15); z-index: 2; }
 .midi-event-marker:active { cursor: ew-resize; }
 
-/* Toolbar — anchored to the bottom-right of the visualization area. Keeps
-   the slider thumb travel unblocked (the previous top-right placement was
-   intercepting clicks near the end of the song since the right edge of
-   the lane is also the right edge of the slider). */
+/* Toolbar — stacks vertically under the "Visualizer" label in the top-left
+   corner of the visualization area. Keeps the entire waveform + slider
+   travel free for the user. The Visualizer label sits at top:6/left:8 so
+   we anchor at top:24 to slot beneath it. */
 .player-visualization-area .automation-toolbar {
   position: absolute;
-  bottom: 4px; right: 8px;
+  top: 24px; left: 8px;
   z-index: 10;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px;
   color: var(--text-dim, #ddd);
   background: rgba(10, 14, 28, 0.78);
-  padding: 3px 6px;
+  padding: 4px 5px;
   border-radius: 4px;
   pointer-events: auto;
+  min-width: 64px;
+}
+.player-visualization-area .automation-toolbar .midi-toolbar-btn {
+  text-align: center;
+}
+.player-visualization-area .automation-toolbar .midi-lane-counter,
+.player-visualization-area .automation-toolbar .midi-lane-dirty {
+  text-align: center;
 }
 .midi-lane-counter { font-weight: 600; }
 .midi-lane-dirty { color: #f4c430; font-weight: 800; }

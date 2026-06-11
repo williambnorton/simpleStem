@@ -227,6 +227,9 @@ window.addEventListener('DOMContentLoaded', () => {
   setupClickTrack();
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
   try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
+  // Section LOOPER button — toggle the section-loop on/off
+  const looperBtn = document.getElementById('btn-section-looper');
+  if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -3335,14 +3338,14 @@ function loadSong(song, opts) {
       // Synced Jam Loops pane is disabled — loops are managed in the Loop
       // Library tab now. Keep the section hidden regardless of song.loops.
       els.loopsContainer.style.display = 'none';
-      document.querySelector('.stretch-outro-card').style.opacity = '1';
-      document.querySelector('.stretch-outro-card').style.pointerEvents = 'auto';
+      const _so = document.querySelector('.stretch-outro-card');
+      if (_so) { _so.style.opacity = '1'; _so.style.pointerEvents = 'auto'; }
       renderLoopButtons(song.loops);
     } else {
       els.loopsContainer.style.display = 'none';
-      document.querySelector('.stretch-outro-card').style.opacity = '0.5';
-      document.querySelector('.stretch-outro-card').style.pointerEvents = 'none';
-      els.stretchToggle.checked = false;
+      const _so2 = document.querySelector('.stretch-outro-card');
+      if (_so2) { _so2.style.opacity = '0.5'; _so2.style.pointerEvents = 'none'; }
+      if (els.stretchToggle) els.stretchToggle.checked = false;
       stretchActive = false;
       toggleStretchState();
     }
@@ -3614,9 +3617,24 @@ function startSyncLoop() {
   
   syncInterval = setInterval(() => {
     if (!isPlaying) return;
-    
-    const masterTime = masterAe.currentTime;
-    
+
+    let masterTime = masterAe.currentTime;
+
+    // Section LOOPER: when on, snap the playhead back to the loop start
+    // when it crosses the loop end. Boundaries come from automationSections.
+    if (sectionLooperActive && sectionLooperRange) {
+      const { startT, endT } = sectionLooperRange;
+      if (masterTime >= endT - 0.02) {
+        masterAe.currentTime = startT;
+        activeTracks.slice(1).forEach(chan => {
+          try { audioElements[chan].currentTime = startT; } catch (e) {}
+        });
+        automationLastTime = startT;
+        automationEvents.forEach(e => { if (e.t >= startT) e.fired = false; });
+        masterTime = startT;
+      }
+    }
+
     // Update timeline slider
     const progress = (masterTime / masterAe.duration) * 100 || 0;
     els.timeline.value = progress;
@@ -4641,7 +4659,7 @@ function setupEventListeners() {
   });
   
   // Outro Jam Stretch controls
-  els.stretchToggle.addEventListener('change', (e) => {
+  if (els.stretchToggle) els.stretchToggle.addEventListener('change', (e) => {
     stretchActive = e.target.checked;
     toggleStretchState();
   });
@@ -4733,19 +4751,23 @@ function setupEventListeners() {
   // Mixer faders
   CHANNELS.forEach(chan => {
     const fader = document.getElementById(`fader-${chan}`);
+    // `input` fires continuously during a drag — apply the audible change
+    // and update mixerState/UI, but DON'T record an automation event yet.
     fader.addEventListener('input', (e) => {
       const vol = parseFloat(e.target.value);
       mixerState.volumes[chan] = vol;
       document.getElementById(`val-${chan}`).textContent = `${Math.round(vol * 100)}%`;
       applyMixerVolumes();
       saveMixerState();
-      // Record an automation event so the move is captured in the song's
-      // timeline. recordFadeEvent dedups within 50 ms so a fader drag
-      // doesn't spray dozens of events. Skipped if no song is loaded.
-      if (automationCurrentBase) {
-        const lvl = Math.max(0, Math.min(10, Math.round(vol * 10)));
-        recordFadeEvent(chan, lvl);
-      }
+    });
+    // `change` fires once when the user releases the slider (or types a new
+    // value). THIS is when we record a single fade event capturing the
+    // final value — so a 20%→80% drag becomes one V8 marker, not six.
+    fader.addEventListener('change', (e) => {
+      if (!automationCurrentBase) return;
+      const vol = parseFloat(e.target.value);
+      const lvl = Math.max(0, Math.min(10, Math.round(vol * 10)));
+      recordFadeEvent(chan, lvl);
     });
 
     const muteBtn = document.getElementById(`mute-${chan}`);
@@ -5244,6 +5266,53 @@ function attachSectionDividerHandlers(node, idx) {
 // events and persisted in the same metadata.json save.
 let automationSections = [];
 
+// LOOPER state. When `sectionLooperActive` is true, the audio sync loop
+// snaps the playhead from `sectionLooperRange.endT` back to `startT`.
+// Range is computed once on toggle-on from the current playhead position.
+let sectionLooperActive = false;
+let sectionLooperRange  = null;
+
+// Find the section that contains time `t` — returns {startT, endT, color}.
+// If `t` is between two section boundaries, this is the band running from
+// the prior section's end to the next section's end. If no sections exist,
+// returns null. If t is past the last section, the range extends to song end.
+function findSectionAt(t) {
+  const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
+  if (!sections.length) return null;
+  let prevT = 0;
+  for (const s of sections) {
+    if (t >= prevT && t < s.t) return { startT: prevT, endT: s.t, color: s.color };
+    prevT = s.t;
+  }
+  const dur = songDurationSec();
+  return dur ? { startT: prevT, endT: dur, color: null } : null;
+}
+
+function toggleSectionLooper() {
+  const btn = document.getElementById('btn-section-looper');
+  const label = document.getElementById('looper-section-text');
+  if (!sectionLooperActive) {
+    const t = currentPlayheadSec();
+    const range = findSectionAt(t);
+    if (!range) {
+      if (label) label.textContent = 'no section here';
+      return;
+    }
+    sectionLooperRange = range;
+    sectionLooperActive = true;
+    if (btn) btn.classList.add('active');
+    if (label) {
+      const colorName = SECTION_COLORS[range.color]?.name || 'section';
+      label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s`;
+    }
+  } else {
+    sectionLooperActive = false;
+    sectionLooperRange = null;
+    if (btn) btn.classList.remove('active');
+    if (label) label.textContent = 'play through';
+  }
+}
+
 // Click → select (Delete removes it); double-click → edit modal; drag →
 // retime. Single-click within ~3px and 250ms is a click; otherwise a drag.
 function attachMarkerHandlers(node, idx) {
@@ -5640,6 +5709,32 @@ function setupMidiUI() {
     markAutomationDirty();
     closeMidiModal();
   });
+
+  // INIT — snapshot the current mixer state as t=0 fade events. Replaces
+  // any existing t=0 fade events so the user can re-snapshot freely. This
+  // is the "initial state when song starts" the user wanted: tweak the
+  // faders to taste, hit INIT, then every play starts with that mix.
+  const initBtn = document.getElementById('midi-btn-init-state');
+  if (initBtn) {
+    initBtn.addEventListener('click', () => {
+      if (!automationCurrentBase) return;
+      const STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
+      // Drop any existing fade events at t=0 — INIT replaces, doesn't stack.
+      automationEvents = automationEvents.filter(e =>
+        !(e.type === 'fade' && Math.abs(e.t) < 0.01 && STEMS.includes(e.stem))
+      );
+      for (const stem of STEMS) {
+        if (!(stem in (mixerState.volumes || {}))) continue;
+        const vol = mixerState.volumes[stem];
+        const muted = mixerState.muted[stem];
+        const lvl = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
+        automationEvents.push({ t: 0, type: 'fade', stem, level: lvl, fired: false });
+      }
+      automationEvents.sort((a, b) => a.t - b.t);
+      renderAutomationLane();
+      markAutomationDirty();
+    });
+  }
 
   // Lane toolbar — SAVE ACTIONS commits in-memory events to metadata.json;
   // CLEAR ACTIONS wipes them (and saves the empty list so the wipe sticks).
