@@ -3630,8 +3630,15 @@ function startSyncLoop() {
 
 // Synchronized ended coordinate wraps to solve the stutter loop
 function handleMasterTrackEnded() {
+  // Auto-save the timeline if the user accumulated actions during this play
+  // and didn't hit SAVE ACTIONS. The user explicitly asked for end-of-song
+  // auto-save in addition to the manual button.
+  if (automationCurrentBase && automationDirty) {
+    saveAutomationForSong(automationCurrentBase, automationEvents)
+      .catch(err => console.warn('[automation] auto-save on song end failed:', err));
+  }
   const activeTracks = Object.keys(audioElements).filter(k => audioHasSrc(audioElements[k]));
-  
+
   if (isLooping) {
     // Seamless programmatic loop wrap!
     activeTracks.forEach(chan => {
@@ -4878,19 +4885,36 @@ let automationLastTime    = 0;    // for forward-only event firing
 let automationDispatchTimer = null;
 let automationEditingIdx  = null; // null = adding; otherwise index into events
 let automationCurrentBase = null; // which song's events we're showing
+// In-memory edits no longer auto-save. The user explicitly commits via SAVE
+// ACTIONS or the song-end auto-save. `automationDirty` tracks whether the
+// current in-memory state differs from what's persisted in metadata.json.
+let automationDirty       = false;
+let automationLastSavedJSON = '[]';  // canonical snapshot to compare against
 
 async function loadAutomationForSong(songBase) {
   automationCurrentBase = songBase;
   automationLastTime = 0;
-  if (!songBase) { automationEvents = []; renderAutomationLane(); return; }
+  if (!songBase) {
+    automationEvents = [];
+    automationLastSavedJSON = '[]';
+    automationDirty = false;
+    renderAutomationLane();
+    refreshAutomationToolbar();
+    return;
+  }
   try {
     const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`);
     const d = await r.json();
-    automationEvents = (d.automation || []).map(e => ({ ...e, fired: false }));
+    const events = d.automation || [];
+    automationEvents = events.map(e => ({ ...e, fired: false }));
+    automationLastSavedJSON = JSON.stringify(events);
   } catch (e) {
     automationEvents = [];
+    automationLastSavedJSON = '[]';
   }
+  automationDirty = false;
   renderAutomationLane();
+  refreshAutomationToolbar();
 }
 
 async function saveAutomationForSong(songBase, events) {
@@ -4903,8 +4927,36 @@ async function saveAutomationForSong(songBase, events) {
   });
   if (!r.ok) throw new Error((await r.json()).error || 'save failed');
   const d = await r.json();
-  automationEvents = (d.automation || []).map(e => ({ ...e, fired: false }));
+  const saved = d.automation || [];
+  automationEvents = saved.map(e => ({ ...e, fired: false }));
+  automationLastSavedJSON = JSON.stringify(saved);
+  automationDirty = false;
   renderAutomationLane();
+  refreshAutomationToolbar();
+}
+
+// Updates the lane toolbar — counter, "● unsaved" dot, button enable states.
+// Called whenever the in-memory event list changes.
+function refreshAutomationToolbar() {
+  const counter = document.getElementById('midi-lane-counter');
+  const dirty   = document.getElementById('midi-lane-dirty');
+  const saveBtn = document.getElementById('midi-btn-save-actions');
+  const clearBtn = document.getElementById('midi-btn-clear-actions');
+  if (!counter) return;
+  counter.textContent = `${automationEvents.length} action${automationEvents.length === 1 ? '' : 's'}`;
+  if (dirty)  dirty.style.display = automationDirty ? '' : 'none';
+  if (saveBtn) saveBtn.disabled = !automationCurrentBase || !automationDirty;
+  if (clearBtn) clearBtn.disabled = !automationCurrentBase || automationEvents.length === 0;
+}
+
+// Mark the in-memory event list as differing from what's on disk. Triggered
+// by adds, deletes, drags, and modal commits. Cheap JSON compare so the dot
+// reliably clears when the user undoes their changes manually.
+function markAutomationDirty() {
+  const cleanNow = automationEvents.map(({ fired, ...rest }) => rest);
+  const nowJSON = JSON.stringify(cleanNow);
+  automationDirty = (nowJSON !== automationLastSavedJSON);
+  refreshAutomationToolbar();
 }
 
 function songDurationSec() {
@@ -4970,11 +5022,51 @@ function renderAutomationLane() {
     const letter = eventTypeLetter(e);
     const tip = `${e.label ? e.label + ' · ' : ''}${eventSummary(e)} @ ${e.t.toFixed(2)}s`;
     node.innerHTML = `<span class="midi-event-letter">${letter}</span><span class="midi-event-tip">${escapeHtml(tip)}</span>`;
-    node.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openMidiModal(idx);
-    });
+    attachMarkerHandlers(node, idx);
     markers.appendChild(node);
+  });
+  refreshAutomationToolbar();
+}
+
+// Click vs drag detection: track mousedown position + distance moved. A
+// click within a few pixels and 250 ms opens the edit modal; anything
+// further is a drag that updates the event's `t`. Drag works horizontally
+// across the lane and live-snaps to the lane width.
+function attachMarkerHandlers(node, idx) {
+  let downX = 0, downT = 0, dragging = false, startTime = 0;
+  const lane = document.getElementById('midi-lane');
+  node.addEventListener('mousedown', (ev) => {
+    ev.stopPropagation();
+    downX = ev.clientX;
+    downT = Date.now();
+    dragging = false;
+    startTime = automationEvents[idx]?.t || 0;
+    const onMove = (mv) => {
+      const dx = mv.clientX - downX;
+      if (!dragging && Math.abs(dx) < 3) return;
+      dragging = true;
+      const dur = songDurationSec();
+      const r = lane.getBoundingClientRect();
+      const newT = Math.max(0, Math.min(dur, startTime + (dx / r.width) * dur));
+      automationEvents[idx].t = Math.round(newT * 100) / 100;
+      // Reposition just this marker without re-rendering the whole lane.
+      node.style.left = ((automationEvents[idx].t / dur) * 100) + '%';
+      const tip = node.querySelector('.midi-event-tip');
+      if (tip) tip.textContent = tip.textContent.replace(/@ [\d.]+s$/, `@ ${automationEvents[idx].t.toFixed(2)}s`);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (dragging) {
+        automationEvents.sort((a, b) => a.t - b.t);
+        renderAutomationLane();
+        markAutomationDirty();
+      } else if (Date.now() - downT < 250) {
+        openMidiModal(idx);
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   });
 }
 
@@ -5032,9 +5124,11 @@ function closeMidiModal() {
 function midiModalTypeChanged() {
   const t = document.getElementById('midi-f-type').value;
   const isStem = (t === 'mute' || t === 'unmute');
-  // Show/hide the type-specific rows.
+  const isNote = (t === 'note_on' || t === 'note_off');
   document.querySelectorAll('.midi-row-pc').forEach(n => n.style.display = t === 'pc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-cc-preset').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-note').forEach(n => n.style.display = isNote ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-stem').forEach(n => n.style.display = isStem ? 'grid' : 'none');
   // MIDI-only fields hide for stem actions (no wire involved).
   document.querySelectorAll('.midi-row').forEach(row => {
@@ -5061,14 +5155,17 @@ function readMidiModalForm() {
     type,
     label: document.getElementById('midi-f-label').value.trim(),
   };
-  if (type === 'pc' || type === 'cc') {
+  if (type === 'pc' || type === 'cc' || type === 'note_on' || type === 'note_off') {
     out.device  = document.getElementById('midi-f-device').value;
     out.channel = parseInt(document.getElementById('midi-f-channel').value, 10) || 1;
     if (type === 'pc') {
       out.program = parseInt(document.getElementById('midi-f-program').value, 10) || 0;
-    } else {
+    } else if (type === 'cc') {
       out.controller = parseInt(document.getElementById('midi-f-controller').value, 10) || 0;
       out.value      = parseInt(document.getElementById('midi-f-value').value, 10) || 0;
+    } else {
+      out.note     = parseInt(document.getElementById('midi-f-note').value, 10) || 60;
+      out.velocity = parseInt(document.getElementById('midi-f-velocity').value, 10) || 100;
     }
   } else if (type === 'mute' || type === 'unmute') {
     out.stem = document.getElementById('midi-f-stem').value;
@@ -5076,14 +5173,17 @@ function readMidiModalForm() {
   return out;
 }
 
-// Keyboard shortcut: while a song is loaded, the keys V/D/B/G/P/O drop a
-// stem mute/unmute event at the current playhead and persist immediately.
-// Each press toggles — if the most recent prior event for that stem is a
-// mute, the new one is unmute; otherwise mute.
-async function recordStemToggleAtPlayhead(stem) {
+// Keyboard shortcut: while a song is loaded, V/D/B/G/P/O record a stem
+// mute/unmute event at the current playhead. Events accumulate in memory
+// only — the user commits with SAVE ACTIONS, or playback's `ended` handler
+// auto-saves when the song reaches the end.
+//
+// Toggle logic: look at the most recent event for the same stem at or
+// before the current playhead. If the most recent is mute, the new event
+// is unmute; otherwise mute.
+function recordStemToggleAtPlayhead(stem) {
   if (!automationCurrentBase) return;
   const t = currentPlayheadSec();
-  // Find the most recent event for this stem at or before now.
   let lastType = null;
   for (const e of automationEvents) {
     if ((e.type === 'mute' || e.type === 'unmute') && e.stem === stem && e.t <= t + 0.01) {
@@ -5091,13 +5191,11 @@ async function recordStemToggleAtPlayhead(stem) {
     }
   }
   const next = (lastType === 'mute') ? 'unmute' : 'mute';
-  const ev = { t, type: next, stem, label: `${next} ${stem}` };
+  const ev = { t, type: next, stem, label: `${next} ${stem}`, fired: true };
   automationEvents.push(ev);
-  try {
-    await saveAutomationForSong(automationCurrentBase, automationEvents);
-  } catch (e) {
-    console.warn('[stem-shortcut] save failed:', e);
-  }
+  automationEvents.sort((a, b) => a.t - b.t);
+  renderAutomationLane();
+  markAutomationDirty();
   // Fire immediately so the audible state matches the dropped marker.
   fireAutomationEvent(ev).catch(()=>{});
 }
@@ -5172,35 +5270,71 @@ function setupMidiUI() {
   });
 
   document.getElementById('midi-f-type').addEventListener('change', midiModalTypeChanged);
+  // CC quick-pick: when the user selects a common controller from the
+  // preset dropdown, write it into the Controller field. They can still
+  // edit it afterward.
+  const ccPreset = document.getElementById('midi-f-cc-preset');
+  if (ccPreset) {
+    ccPreset.addEventListener('change', () => {
+      if (!ccPreset.value) return;
+      document.getElementById('midi-f-controller').value = ccPreset.value;
+      // Auto-fill a label from the preset's display text.
+      const labelEl = document.getElementById('midi-f-label');
+      const text = ccPreset.options[ccPreset.selectedIndex].textContent;
+      if (!labelEl.value) labelEl.value = text.split('—').slice(1).join('—').trim() || `CC ${ccPreset.value}`;
+    });
+  }
   document.getElementById('midi-btn-cancel').addEventListener('click', closeMidiModal);
   document.querySelector('#midi-modal .midi-modal-backdrop').addEventListener('click', closeMidiModal);
 
-  document.getElementById('midi-btn-save').addEventListener('click', async () => {
+  // Modal "Save" commits the event into the IN-MEMORY list only. The
+  // user explicitly persists via the SAVE ACTIONS button on the lane
+  // toolbar, or the song-end auto-save handles it. This matches how the
+  // user described the workflow: build up the timeline live, then commit.
+  document.getElementById('midi-btn-save').addEventListener('click', () => {
+    if (!automationCurrentBase) {
+      const s = document.getElementById('midi-modal-status');
+      s.textContent = 'No song loaded.';
+      s.className = 'midi-modal-status error';
+      return;
+    }
     const ev = readMidiModalForm();
     if (automationEditingIdx === null) automationEvents.push(ev);
     else automationEvents[automationEditingIdx] = ev;
-    try {
-      if (!automationCurrentBase) throw new Error('no song loaded');
-      await saveAutomationForSong(automationCurrentBase, automationEvents);
-      closeMidiModal();
-    } catch (err) {
-      const s = document.getElementById('midi-modal-status');
-      s.textContent = 'Save failed: ' + err.message;
-      s.className = 'midi-modal-status error';
-    }
+    automationEvents.sort((a, b) => a.t - b.t);
+    renderAutomationLane();
+    markAutomationDirty();
+    closeMidiModal();
   });
 
-  document.getElementById('midi-btn-delete').addEventListener('click', async () => {
+  document.getElementById('midi-btn-delete').addEventListener('click', () => {
     if (automationEditingIdx === null) return;
     automationEvents.splice(automationEditingIdx, 1);
+    renderAutomationLane();
+    markAutomationDirty();
+    closeMidiModal();
+  });
+
+  // Lane toolbar — SAVE ACTIONS commits in-memory events to metadata.json;
+  // CLEAR ACTIONS wipes them (and saves the empty list so the wipe sticks).
+  document.getElementById('midi-btn-save-actions').addEventListener('click', async () => {
+    if (!automationCurrentBase) return;
     try {
-      if (!automationCurrentBase) throw new Error('no song loaded');
       await saveAutomationForSong(automationCurrentBase, automationEvents);
-      closeMidiModal();
     } catch (err) {
-      const s = document.getElementById('midi-modal-status');
-      s.textContent = 'Save failed: ' + err.message;
-      s.className = 'midi-modal-status error';
+      alert(`Save failed: ${err.message}`);
+    }
+  });
+  document.getElementById('midi-btn-clear-actions').addEventListener('click', async () => {
+    if (!automationCurrentBase) return;
+    if (!confirm(`Clear all ${automationEvents.length} action(s) on this song's timeline?`)) return;
+    automationEvents = [];
+    renderAutomationLane();
+    markAutomationDirty();
+    try {
+      await saveAutomationForSong(automationCurrentBase, []);
+    } catch (err) {
+      alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old events.`);
     }
   });
 

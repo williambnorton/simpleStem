@@ -259,9 +259,17 @@
             </div>
             <!-- MIDI automation lane: a thin strip overlaid on the visualizer
                  where MIDI event markers appear at their timestamps. Click an
-                 empty area to drop a new event; click a marker to edit. -->
+                 empty area to drop a new event; click a marker to edit; drag
+                 a marker horizontally to slide its timing. The toolbar shows
+                 unsaved changes and lets the user commit or wipe them.  -->
             <div id="midi-lane" class="midi-lane" title="Click to add a MIDI event at this time">
               <div id="midi-lane-markers" class="midi-lane-markers"></div>
+            </div>
+            <div id="midi-lane-toolbar" class="midi-lane-toolbar">
+              <span id="midi-lane-counter" class="midi-lane-counter">0 actions</span>
+              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">● unsaved</span>
+              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE ACTIONS</button>
+              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR ACTIONS</button>
             </div>
           </div>
           
@@ -679,11 +687,31 @@
         <optgroup label="MIDI">
           <option value="pc">Program Change</option>
           <option value="cc">Control Change (CC)</option>
+          <option value="note_on">Note On</option>
+          <option value="note_off">Note Off</option>
         </optgroup>
-        <optgroup label="Stem PlaybackAction">
+        <optgroup label="Stem PlaybackAction (Internal)">
           <option value="mute">Mute stem</option>
           <option value="unmute">Unmute stem</option>
         </optgroup>
+      </select>
+    </div>
+    <div class="midi-row midi-row-cc-preset" style="display:none;">
+      <label>CC quick-pick</label>
+      <select id="midi-f-cc-preset">
+        <option value="">(choose a common CC…)</option>
+        <option value="1">1 — Modulation</option>
+        <option value="7">7 — Channel Volume</option>
+        <option value="10">10 — Pan</option>
+        <option value="11">11 — Expression</option>
+        <option value="64">64 — Sustain Pedal</option>
+        <option value="71">71 — Filter Resonance</option>
+        <option value="74">74 — Filter Cutoff</option>
+        <option value="91">91 — Reverb Send</option>
+        <option value="93">93 — Chorus Send</option>
+        <option value="120">120 — All Sound Off</option>
+        <option value="121">121 — Reset All Controllers</option>
+        <option value="123">123 — All Notes Off</option>
       </select>
     </div>
     <div class="midi-row midi-row-stem" style="display:none;">
@@ -712,6 +740,14 @@
     <div class="midi-row midi-row-cc" style="display:none;">
       <label>Value (0–127)</label>
       <input id="midi-f-value" type="number" min="0" max="127" value="100">
+    </div>
+    <div class="midi-row midi-row-note" style="display:none;">
+      <label>Note (0–127)</label>
+      <input id="midi-f-note" type="number" min="0" max="127" value="60">
+    </div>
+    <div class="midi-row midi-row-note" style="display:none;">
+      <label>Velocity (0–127)</label>
+      <input id="midi-f-velocity" type="number" min="0" max="127" value="100">
     </div>
     <div class="midi-row">
       <label>Label</label>

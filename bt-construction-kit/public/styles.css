@@ -3944,6 +3944,37 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
 .midi-event-marker.fired { outline: 1px solid rgba(255,255,255,0.7); }
 .midi-event-marker:hover { transform: scale(1.4); z-index: 2; }
+.midi-event-marker:active { cursor: ew-resize; }
+
+/* MIDI lane toolbar — sits just under the lane. SAVE ACTIONS commits to
+   metadata.json; CLEAR ACTIONS wipes; counter shows how many events. */
+.midi-lane-toolbar {
+  position: absolute;
+  left: 0; right: 0; bottom: -42px;
+  height: 18px;
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  color: var(--text-dim, #aaa);
+  pointer-events: none;
+  z-index: 5;
+}
+.midi-lane-counter { pointer-events: auto; }
+.midi-lane-dirty { color: #f4c430; font-weight: 800; pointer-events: auto; }
+.midi-toolbar-btn {
+  pointer-events: auto;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-family: inherit; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  border: 1px solid var(--border-color, #333);
+  background: var(--bg-card, #1f2128);
+  color: var(--text-main, #eee);
+  cursor: pointer;
+}
+.midi-toolbar-btn.primary { background: var(--color-blue, #4f9cf0); border-color: transparent; color: #fff; }
+.midi-toolbar-btn.danger  { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.4); color: #e74c3c; }
+.midi-toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .midi-event-marker .midi-event-tip {
   position: absolute;
   bottom: 100%;
