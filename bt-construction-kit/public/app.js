@@ -4986,14 +4986,27 @@ function songDurationSec() {
 const STEM_LETTER = { vocals: 'V', drums: 'D', bass: 'B', guitar: 'G', piano: 'P', other: 'O' };
 const LETTER_STEM = Object.fromEntries(Object.entries(STEM_LETTER).map(([k,v]) => [v.toLowerCase(), k]));
 
-// What single letter does this event display on its marker?
-//   PC / CC → M (MIDI)
-//   mute / unmute → V/D/B/G/P/O for the affected stem
-//   fade → F
-function eventTypeLetter(e) {
-  if (e.type === 'mute' || e.type === 'unmute') return STEM_LETTER[e.stem] || '?';
-  if (e.type === 'fade') return 'F';
-  return 'M';
+// Rich marker label per event type. Replaces the single-letter scheme.
+//   Mute      → "<L>0"           e.g. V0  (vocals muted)
+//   Unmute    → "<L>10"          e.g. V10 (vocals at full)  [v1: binary only]
+//   Fade      → "<L><n>"         e.g. V7  (vocals fader at 7) — for future use
+//   PC        → "M<ch>P<prog>"   e.g. M4P12  (MIDI ch 4 Program Change 12)
+//   CC        → "M<ch>C<ctrl>"   e.g. M4C7   (MIDI ch 4 Controller 7)
+//   Note On   → "M<ch>N<note>"   e.g. M4N60  (MIDI ch 4 note 60 on)
+//   Note Off  → "M<ch>n<note>"   e.g. M4n60  (lowercase n = off)
+function eventMarkerLabel(e) {
+  if (e.type === 'mute')   return `${STEM_LETTER[e.stem] || '?'}0`;
+  if (e.type === 'unmute') return `${STEM_LETTER[e.stem] || '?'}10`;
+  if (e.type === 'fade') {
+    const lvl = typeof e.value === 'number' ? Math.round(e.value * 10) : '?';
+    return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
+  }
+  const ch = e.channel || 1;
+  if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
+  if (e.type === 'cc')       return `M${ch}C${e.controller ?? '?'}`;
+  if (e.type === 'note_on')  return `M${ch}N${e.note ?? '?'}`;
+  if (e.type === 'note_off') return `M${ch}n${e.note ?? '?'}`;
+  return e.type || '?';
 }
 
 // CSS class suffix so the marker can be color-coded by type.
@@ -5014,33 +5027,39 @@ function eventSummary(e) {
   return e.type || 'event';
 }
 
+// Index of the currently-selected marker, or null. Used by the Delete key
+// handler so the user can point-and-delete an action.
+let automationSelectedIdx = null;
+
 function renderAutomationLane() {
   const lane = document.getElementById('midi-lane');
   const markers = document.getElementById('midi-lane-markers');
   if (!lane || !markers) return;
   markers.innerHTML = '';
   const dur = songDurationSec();
-  if (!dur) return;
+  if (!dur) { refreshAutomationToolbar(); return; }
   automationEvents.forEach((e, idx) => {
     const pct = (e.t / dur) * 100;
     if (pct < 0 || pct > 100) return;
     const node = document.createElement('div');
-    node.className = `midi-event-marker ${eventClass(e)}` + (e.fired ? ' fired' : '');
+    let cls = `midi-event-marker ${eventClass(e)}`;
+    if (e.fired) cls += ' fired';
+    if (idx === automationSelectedIdx) cls += ' selected';
+    node.className = cls;
     node.style.left = pct + '%';
     node.dataset.idx = String(idx);
-    const letter = eventTypeLetter(e);
+    const label = eventMarkerLabel(e);
     const tip = `${e.label ? e.label + ' · ' : ''}${eventSummary(e)} @ ${e.t.toFixed(2)}s`;
-    node.innerHTML = `<span class="midi-event-letter">${letter}</span><span class="midi-event-tip">${escapeHtml(tip)}</span>`;
+    node.title = tip;
+    node.innerHTML = `<span class="midi-event-letter">${escapeHtml(label)}</span>`;
     attachMarkerHandlers(node, idx);
     markers.appendChild(node);
   });
   refreshAutomationToolbar();
 }
 
-// Click vs drag detection: track mousedown position + distance moved. A
-// click within a few pixels and 250 ms opens the edit modal; anything
-// further is a drag that updates the event's `t`. Drag works horizontally
-// across the lane and live-snaps to the lane width.
+// Click → select (Delete removes it); double-click → edit modal; drag →
+// retime. Single-click within ~3px and 250ms is a click; otherwise a drag.
 function attachMarkerHandlers(node, idx) {
   let downX = 0, downT = 0, dragging = false, startTime = 0;
   const lane = document.getElementById('midi-lane');
@@ -5058,25 +5077,40 @@ function attachMarkerHandlers(node, idx) {
       const r = lane.getBoundingClientRect();
       const newT = Math.max(0, Math.min(dur, startTime + (dx / r.width) * dur));
       automationEvents[idx].t = Math.round(newT * 100) / 100;
-      // Reposition just this marker without re-rendering the whole lane.
       node.style.left = ((automationEvents[idx].t / dur) * 100) + '%';
-      const tip = node.querySelector('.midi-event-tip');
-      if (tip) tip.textContent = tip.textContent.replace(/@ [\d.]+s$/, `@ ${automationEvents[idx].t.toFixed(2)}s`);
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (dragging) {
         automationEvents.sort((a, b) => a.t - b.t);
+        automationSelectedIdx = null;
         renderAutomationLane();
         markAutomationDirty();
       } else if (Date.now() - downT < 250) {
-        openMidiModal(idx);
+        // Short click → select (Delete key removes it).
+        automationSelectedIdx = idx;
+        renderAutomationLane();
       }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   });
+  // Double-click → open edit modal for fine-grained edits.
+  node.addEventListener('dblclick', (ev) => {
+    ev.stopPropagation();
+    openMidiModal(idx);
+  });
+}
+
+// Delete-key removes the currently selected marker. Wired in setupMidiUI.
+function deleteSelectedMarker() {
+  if (automationSelectedIdx == null) return;
+  if (automationSelectedIdx < 0 || automationSelectedIdx >= automationEvents.length) return;
+  automationEvents.splice(automationSelectedIdx, 1);
+  automationSelectedIdx = null;
+  renderAutomationLane();
+  markAutomationDirty();
 }
 
 function currentPlayheadSec() {
@@ -5269,6 +5303,8 @@ function setupMidiUI() {
   if (!lane) return;
   lane.addEventListener('click', (e) => {
     if (e.target.closest('.midi-event-marker')) return;
+    // Empty lane click → clear selection AND open modal at the clicked time.
+    automationSelectedIdx = null;
     const r = lane.getBoundingClientRect();
     const pct = (e.clientX - r.left) / r.width;
     const dur = songDurationSec();
@@ -5276,6 +5312,26 @@ function setupMidiUI() {
     const t = Math.max(0, Math.min(dur, pct * dur));
     openMidiModal(null);
     document.getElementById('midi-f-time').value = t.toFixed(2);
+  });
+
+  // Delete key removes the selected marker. Skip if a text input is focused.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const tgt = e.target;
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
+                tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+    if (automationSelectedIdx == null) return;
+    e.preventDefault();
+    deleteSelectedMarker();
+  });
+
+  // Re-render the lane whenever the active audio element learns its
+  // duration. Without this the lane stays empty until the playback loop
+  // happens to repaint (i.e. user presses play). With it, markers paint
+  // as soon as the first stem's `loadedmetadata` fires.
+  Object.values(audioElements || {}).forEach(ae => {
+    ae.addEventListener('loadedmetadata', () => renderAutomationLane());
+    ae.addEventListener('durationchange', () => renderAutomationLane());
   });
 
   document.getElementById('midi-f-type').addEventListener('change', midiModalTypeChanged);

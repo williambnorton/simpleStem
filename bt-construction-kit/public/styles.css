@@ -3901,30 +3901,48 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .song-modal-table .meta-link { color: var(--color-blue); text-decoration: underline; word-break: break-all; }
 .song-modal-table .meta-link:hover { color: var(--color-purple); }
 
-/* ── MIDI automation lane + modal ────────────────────────────────────────── */
-/* The lane sits on top of the visualizer canvas, full-width, ~18px tall. We
-   absolutely-position it inside the existing .player-wave-overlay parent. */
-.midi-lane {
-  position: absolute;
-  left: 0; right: 0; bottom: -22px;
-  height: 18px;
-  cursor: crosshair;
-  background: linear-gradient(to bottom, rgba(255,200,80,0.04), rgba(255,200,80,0.10));
-  border-top: 1px solid rgba(255, 200, 80, 0.18);
-  border-bottom: 1px solid rgba(255, 200, 80, 0.18);
-  z-index: 5;
+/* ── Automation pane (under playback timeline) ────────────────────────────
+   The pane is its own row beneath the playback slider. The lane sits on
+   the left and grows with the column; the toolbar (counter + SAVE/CLEAR)
+   sits on the far right. Markers are wider so they can show rich labels
+   like V0 (vocals muted), V7 (vocals fader at 7), M4P12 (MIDI ch 4 PC 12). */
+.automation-pane {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: rgba(255, 200, 80, 0.04);
+  border: 1px solid rgba(255, 200, 80, 0.18);
+  border-radius: 4px;
 }
-.midi-lane:hover { background: linear-gradient(to bottom, rgba(255,200,80,0.10), rgba(255,200,80,0.20)); }
+.automation-lane-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+.midi-lane {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  cursor: crosshair;
+  background: linear-gradient(to bottom, rgba(255,200,80,0.06), rgba(255,200,80,0.12));
+  border-radius: 3px;
+}
+.midi-lane:hover { background: linear-gradient(to bottom, rgba(255,200,80,0.12), rgba(255,200,80,0.20)); }
 .midi-lane-markers { position: absolute; inset: 0; pointer-events: none; }
+
+/* Marker — wider chip that holds a label like "V0" or "M4P12". Width is
+   auto so longer labels grow it; markers center on their timestamp via the
+   translateX(-50%) trick. */
 .midi-event-marker {
   position: absolute;
   top: 1px; bottom: 1px;
-  /* Wider so the type letter fits — 16px gives a clean square at the lane's
-     ~18px height. Color is set by an evt-* class. */
-  width: 16px;
-  margin-left: -8px;
+  padding: 0 5px;
+  min-width: 22px;
+  transform: translateX(-50%);
   border: 1px solid #000;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
   pointer-events: auto;
   display: flex;
@@ -3932,10 +3950,11 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   justify-content: center;
   color: #111;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1;
+  white-space: nowrap;
 }
 .midi-event-marker .midi-event-letter { display: block; pointer-events: none; }
 .midi-event-marker.evt-midi   { background: var(--color-yellow, #f4c430); box-shadow: 0 0 4px rgba(255, 200, 80, 0.6); }
@@ -3943,30 +3962,27 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-unmute { background: #2ecc71; color: #111; box-shadow: 0 0 4px rgba(46, 204, 113, 0.6); }
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
 .midi-event-marker.fired { outline: 1px solid rgba(255,255,255,0.7); }
-.midi-event-marker:hover { transform: scale(1.4); z-index: 2; }
+.midi-event-marker.selected { outline: 2px solid #fff; outline-offset: 1px; z-index: 3; }
+.midi-event-marker:hover { transform: translateX(-50%) scale(1.15); z-index: 2; }
 .midi-event-marker:active { cursor: ew-resize; }
 
-/* MIDI lane toolbar — sits just under the lane. SAVE ACTIONS commits to
-   metadata.json; CLEAR ACTIONS wipes; counter shows how many events. */
-.midi-lane-toolbar {
-  position: absolute;
-  left: 0; right: 0; bottom: -42px;
-  height: 18px;
-  display: flex; align-items: center; gap: 8px;
+/* Toolbar — right side of the pane. Counter + dirty dot + SAVE + CLEAR. */
+.automation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px;
   color: var(--text-dim, #aaa);
-  pointer-events: none;
-  z-index: 5;
+  flex-shrink: 0;
 }
-.midi-lane-counter { pointer-events: auto; }
-.midi-lane-dirty { color: #f4c430; font-weight: 800; pointer-events: auto; }
+.midi-lane-counter { font-weight: 600; }
+.midi-lane-dirty { color: #f4c430; font-weight: 800; }
 .midi-toolbar-btn {
-  pointer-events: auto;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 3px;
   font-family: inherit; font-size: 10px; font-weight: 800;
-  letter-spacing: 0.02em; text-transform: uppercase;
+  letter-spacing: 0.04em; text-transform: uppercase;
   border: 1px solid var(--border-color, #333);
   background: var(--bg-card, #1f2128);
   color: var(--text-main, #eee);

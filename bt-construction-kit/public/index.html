@@ -257,20 +257,6 @@
                 <span>Buffering Audio...</span>
               </div>
             </div>
-            <!-- MIDI automation lane: a thin strip overlaid on the visualizer
-                 where MIDI event markers appear at their timestamps. Click an
-                 empty area to drop a new event; click a marker to edit; drag
-                 a marker horizontally to slide its timing. The toolbar shows
-                 unsaved changes and lets the user commit or wipe them.  -->
-            <div id="midi-lane" class="midi-lane" title="Click to add a MIDI event at this time">
-              <div id="midi-lane-markers" class="midi-lane-markers"></div>
-            </div>
-            <div id="midi-lane-toolbar" class="midi-lane-toolbar">
-              <span id="midi-lane-counter" class="midi-lane-counter">0 actions</span>
-              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">● unsaved</span>
-              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE ACTIONS</button>
-              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR ACTIONS</button>
-            </div>
           </div>
           
           <!-- Progress bar / Timeline -->
@@ -281,6 +267,26 @@
               <div id="timeline-progress" class="timeline-fill"></div>
             </div>
             <span id="time-duration" class="time-label">0:00</span>
+          </div>
+
+          <!-- Automation pane — dedicated row below the playback timeline.
+               Action markers (V0/V7/M4P12/etc.) appear at their timestamps
+               aligned to the slider above. Click an empty area to drop a
+               new event; click a marker to select it (Delete key removes);
+               drag a marker to retime. SAVE/CLEAR buttons on the far
+               right commit or wipe everything for this song. -->
+          <div class="automation-pane" id="automation-pane">
+            <div class="automation-lane-wrap">
+              <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
+                <div id="midi-lane-markers" class="midi-lane-markers"></div>
+              </div>
+            </div>
+            <div class="automation-toolbar" id="midi-lane-toolbar">
+              <span id="midi-lane-counter" class="midi-lane-counter">0 actions</span>
+              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">● unsaved</span>
+              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
+              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
+            </div>
           </div>
 
           <!-- Main Player Controls Dashboard -->
