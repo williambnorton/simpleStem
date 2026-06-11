@@ -6025,13 +6025,18 @@ function setupMidiUI() {
   });
   document.getElementById('midi-btn-clear-actions').addEventListener('click', async () => {
     if (!automationCurrentBase) return;
-    const total = automationEvents.length + automationSections.length;
-    if (!confirm(`Clear all ${total} action(s) and section(s) on this song's timeline?`)) return;
+    // CLEAR wipes ACTION events only. Section markers (Intro/Verse/Chorus/
+    // etc.) are intentionally preserved — they're structural cues for the
+    // players, not transient automation, and the user wants them sticky
+    // across CLEAR and INIT.
+    if (automationEvents.length === 0) return;
+    if (!confirm(`Clear all ${automationEvents.length} action(s) on this song's timeline? (Section markers will be kept.)`)) return;
     automationEvents = [];
-    automationSections = [];
     renderAutomationLane();
     markAutomationDirty();
     try {
+      // saveAutomationForSong reads the current automationSections at send
+      // time, so they ride along untouched.
       await saveAutomationForSong(automationCurrentBase, []);
     } catch (err) {
       alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old data.`);
