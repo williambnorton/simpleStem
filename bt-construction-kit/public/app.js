@@ -2856,6 +2856,21 @@ function setupClickTrack() {
   });
 }
 
+// Where the first downbeat occurs in seconds. Anchors the BPM grid so
+// clicks align with the actual beat instead of t=0 (which is usually intro
+// silence or anacrusis). Computed once per song from the first onset; if
+// onsets aren't ready yet, falls back to 0.
+function getBeatOffsetSec() {
+  if (typeof clickBeatOffsetOverride === 'number') return clickBeatOffsetOverride;
+  const onsets = window.songOnsetTimes;
+  if (Array.isArray(onsets) && onsets.length) {
+    // Skip very-early micro-spikes (< 50 ms) — they're usually fade-in
+    // artifacts, not the real first beat.
+    for (const t of onsets) { if (t >= 0.05) return t; }
+  }
+  return 0;
+}
+
 function clickSchedulerTick() {
   if (!clickEnabled) return;
   requestAnimationFrame(clickSchedulerTick);
@@ -2875,42 +2890,18 @@ function clickSchedulerTick() {
   clickLastSongTime = songTime;
 
   const LOOKAHEAD_SEC = 0.2;
-
-  // Onset-based scheduling: the visualizer detected actual amplitude
-  // spikes in the song; each one is a transient (drum hit, vocal
-  // attack, etc) and gets a click. Falls back to BPM grid when onsets
-  // aren't computed yet or are too sparse to be useful.
-  const onsets = window.songOnsetTimes;
-  const useOnsets = Array.isArray(onsets) && onsets.length > 16;
-
-  if (useOnsets) {
-    // Binary-search for the next onset >= songTime
-    let lo = 0, hi = onsets.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (onsets[mid] < songTime) lo = mid + 1; else hi = mid;
-    }
-    for (let i = lo; i < onsets.length && onsets[i] < songTime + LOOKAHEAD_SEC; i++) {
-      if (i > clickLastScheduledBeat) {
-        const delay = onsets[i] - songTime;
-        if (delay >= -0.01) {
-          // Treat every 4th onset as a 'downbeat' so the click has rhythmic
-          // texture even when the spikes are unevenly spaced.
-          fireClickAt(audioCtx.currentTime + Math.max(delay, 0), i % 4 === 0);
-        }
-        clickLastScheduledBeat = i;
-      }
-    }
-    return;
-  }
-
-  // Fallback: BPM grid (original behavior)
   const bpm = (currentSong && currentSong.practiceBpm) || 120;
   const beatSec = 60 / bpm;
-  let beatIdx = Math.floor(songTime / beatSec);
-  while (beatIdx * beatSec < songTime + LOOKAHEAD_SEC) {
+  const offset = getBeatOffsetSec();
+
+  // BPM grid anchored to the first real downbeat. Each click lands at
+  // offset + N * beatSec — so the BEATS stay BPM-locked but the GRID is
+  // aligned to where the song actually starts playing in time. Every 4th
+  // beat is treated as a downbeat (higher-pitched click).
+  let beatIdx = Math.max(0, Math.floor((songTime - offset) / beatSec));
+  while (offset + beatIdx * beatSec < songTime + LOOKAHEAD_SEC) {
     if (beatIdx > clickLastScheduledBeat) {
-      const beatTime = beatIdx * beatSec;
+      const beatTime = offset + beatIdx * beatSec;
       const delay = beatTime - songTime;
       if (delay >= -0.01) {
         fireClickAt(audioCtx.currentTime + Math.max(delay, 0), beatIdx % 4 === 0);
@@ -2920,6 +2911,9 @@ function clickSchedulerTick() {
     beatIdx++;
   }
 }
+// Optional user override for the beat offset — settable via a future "tap
+// first beat" button. null means: auto-detect from onsets.
+let clickBeatOffsetOverride = null;
 
 function fireClickAt(when, downbeat) {
   const osc = audioCtx.createOscillator();
@@ -5728,8 +5722,13 @@ function setupMidiUI() {
   if (initBtn) {
     initBtn.addEventListener('click', () => {
       if (!automationCurrentBase) return;
-      if (automationEvents.length > 0 || automationSections.length > 0) {
-        if (!confirm(`INIT will clear all ${automationEvents.length} action(s) and ${automationSections.length} section(s) and replace them with the current mixer state. Continue?`)) return;
+      // INIT wipes the timeline's automation events (V0, D6, M4P12, etc.)
+      // and replaces them with a single 'init' event holding the current
+      // mixer snapshot. Section markers (Intro/Verse/Chorus/etc.) are
+      // PRESERVED — they describe song structure, independent of automation.
+      const hasEvents = automationEvents.length > 0;
+      if (hasEvents) {
+        if (!confirm(`INIT will clear all ${automationEvents.length} action(s) on the timeline (section markers stay) and replace them with the current mixer state. Continue?`)) return;
       }
       const STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
       const state = {};
@@ -5740,7 +5739,6 @@ function setupMidiUI() {
         state[stem] = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
       }
       automationEvents = [{ t: 0, type: 'init', state, fired: false }];
-      automationSections = [];
       automationSelectedIdx = null;
       renderAutomationLane();
       markAutomationDirty();
