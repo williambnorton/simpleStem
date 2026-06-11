@@ -3882,24 +3882,12 @@ async function togglePlayPause() {
     stopBeatingVisualizer();
     stopPlayheadSaverAndFlush();
   } else {
-    // Count-in pre-roll: when the song has count-in enabled, play 4 clicks
-    // at the song's BPM before starting audio. Skip the pre-roll on a
-    // mid-song resume (currentTime > a few seconds in) — count-in is for
-    // starting a performance, not resuming a pause.
+    // Count-in (simpler model): when count-in is enabled and the song is
+    // starting fresh, turn the click track ON now so the player hears 4
+    // beats at the song BPM, then auto-OFF after 4 beats elapse. The click
+    // track itself is unchanged — we just toggle it for the user.
     const masterAe0 = activeElements[0];
     const isFreshStart = masterAe0 && masterAe0.currentTime < 1.5;
-    if (automationCountIn && isFreshStart) {
-      els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
-      els.btnPlay.disabled = true;
-      await playCountIn();
-      els.btnPlay.disabled = false;
-      // Turn off the click track after the count-in so the song plays clean.
-      if (clickEnabled) {
-        clickEnabled = false;
-        const ctBtn = document.getElementById('btn-click-toggle');
-        if (ctBtn) ctBtn.classList.remove('active');
-      }
-    }
     const masterTime = activeElements[0].currentTime;
     activeElements.forEach(ae => {
       ae.currentTime = masterTime;
@@ -3911,6 +3899,27 @@ async function togglePlayPause() {
     startSyncLoop();
     startBeatingVisualizer(currentSong.practiceBpm || 100);
     startPlayheadSaver();
+
+    if (automationCountIn && isFreshStart) {
+      // Turn click track ON if not already on.
+      if (!clickEnabled) {
+        clickEnabled = true;
+        const ctBtn = document.getElementById('btn-click-toggle');
+        if (ctBtn) ctBtn.classList.add('active');
+        clickLastScheduledBeat = -1;
+        clickLastSongTime = 0;
+        clickSchedulerTick();
+      }
+      // Schedule auto-OFF after exactly 4 beats. Add ~80 ms grace so the
+      // 4th click definitely fires before we mute the scheduler.
+      const bpm = (currentSong && currentSong.practiceBpm) || 120;
+      const fourBeatsMs = 4 * (60 / bpm) * 1000 + 80;
+      setTimeout(() => {
+        clickEnabled = false;
+        const ctBtn = document.getElementById('btn-click-toggle');
+        if (ctBtn) ctBtn.classList.remove('active');
+      }, fourBeatsMs);
+    }
   }
 
   applyMixerVolumes();
