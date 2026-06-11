@@ -3,6 +3,13 @@
 // State management
 let songLibrary = [];   // raw entries from server (one per file/folder)
 let mergedLibrary = []; // grouped: one entry per song with .variants array
+
+// Library checkboxes feed into this Set. Each checked row's stems-folder
+// name (song_base) goes in; clicking the green + button in the active
+// gig-sidebar setlist commits every entry to the setlist at once, then
+// the Set + checkboxes are cleared. Pattern: check 10 AC/DC songs at the
+// top of a practice gig, click +, all 10 join the setlist + precache.
+const batchSelectedBases = new Set();
 let filteredLibrary = []; // filtered view of mergedLibrary
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let setlist = []; // Array of song items in setlist
@@ -1038,29 +1045,53 @@ function renderOneGigSetlist(sl, idx) {
     songsEl.appendChild(row);
   });
 
-  // Ghost preview slot — only on the ACTIVE setlist, only when there's a
-  // current song that isn't already in this setlist. Greyed out, with a
-  // bright green + so the user sees exactly what would happen if they
-  // confirmed: 'this song would land here'.
-  if (idx === activeSetlistIdx && currentSong) {
-    const previewBase = songBaseOf(currentSong);
-    const alreadyIn = previewBase && sl.songs.some(s => s.song_base === previewBase);
-    if (previewBase && !alreadyIn) {
+  // Ghost preview slots — only on the ACTIVE setlist. Two sources:
+  //   1. the currently-loaded song (legacy single-add behavior)
+  //   2. every batch-selected library row (new multi-add behavior — user
+  //      checks boxes on AC/DC / Led Zep / etc., they ALL appear here as
+  //      ghosts, clicking + on any one commits the whole batch).
+  // The bright green + is on every ghost; clicking ANY commits everything.
+  if (idx === activeSetlistIdx) {
+    const pendingBases = new Set();
+    if (currentSong) {
+      const previewBase = songBaseOf(currentSong);
+      if (previewBase && !sl.songs.some(s => s.song_base === previewBase)) {
+        pendingBases.add(previewBase);
+      }
+    }
+    for (const b of batchSelectedBases) {
+      if (!sl.songs.some(s => s.song_base === b)) pendingBases.add(b);
+    }
+
+    const commitAll = () => {
+      for (const b of pendingBases) sl.songs.push({ song_base: b });
+      // Clear the batch set so the checkboxes uncheck and ghosts disappear.
+      batchSelectedBases.clear();
+      renderGigSidebar();
+      // Also re-render the library so the checkboxes visually reset.
+      if (typeof renderSongList === 'function') renderSongList();
+      scheduleGigSave();
+    };
+
+    for (const base of pendingBases) {
+      const merged = mergedLibrary.find(m => {
+        const sv = m.variants.find(v => v.type === 'stems');
+        return sv && sv.folderName === base;
+      });
+      const title = (merged && merged.title) || base.replace(/_/g, ' ');
+      const artist = (merged && merged.artist) || '';
       const ghost = document.createElement('div');
       ghost.className = 'sls-row sls-ghost';
       ghost.innerHTML = `
         <span class="sls-grip" style="visibility:hidden;">⋮⋮</span>
-        <span class="sls-title sls-ghost-title" title="Click + to add — '${escapeHtml(currentSong.title)}'">${escapeHtml(currentSong.title)}</span>
-        <span class="sls-artist sls-ghost-artist">${escapeHtml(currentSong.artist || '')}</span>
-        <button class="sls-add-ghost" title="Add the currently loaded song to this setlist"><i data-lucide="plus"></i></button>
+        <span class="sls-title sls-ghost-title" title="Click + to add ${pendingBases.size} song(s) to this setlist">${escapeHtml(title)}</span>
+        <span class="sls-artist sls-ghost-artist">${escapeHtml(artist)}</span>
+        <button class="sls-add-ghost" title="Add ALL ${pendingBases.size} pending song(s) to this setlist"><i data-lucide="plus"></i>${pendingBases.size > 1 ? `<sup style="font-size:9px;margin-left:2px;">${pendingBases.size}</sup>` : ''}</button>
       `;
       ghost.querySelector('.sls-add-ghost').addEventListener('click', e => {
         e.stopPropagation();
-        sl.songs.push({ song_base: previewBase });
-        renderGigSidebar();
-        scheduleGigSave();
+        commitAll();
       });
-      // Clicking elsewhere on the ghost row does nothing (no song loaded here yet)
       songsEl.appendChild(ghost);
     }
   }
@@ -2272,17 +2303,33 @@ function renderLibrary() {
     row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'}`;
     row.dataset.id = merged.id;
 
-    // Setlist checkbox (toggles the primary variant)
+    // Library row checkbox doubles as both:
+    //   (a) the legacy Setlist Planner toggle (right-side pane) AND
+    //   (b) a batch-add selector for the active gig sidebar setlist.
+    // The active gig sidebar renders a ghost row for each batch-selected
+    // song; clicking the green + on ANY of those ghost rows commits the
+    // whole batch.
     const selectCell = document.createElement('div');
     selectCell.className = 'song-select-cell';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'song-checkbox';
-    checkbox.checked = setlist.some(item => item.id === primary.id);
+    const stemsVarForBatch = merged.variants.find(v => v.type === 'stems');
+    const songBaseForBatch = stemsVarForBatch && stemsVarForBatch.folderName;
+    checkbox.checked = setlist.some(item => item.id === primary.id)
+      || (songBaseForBatch && batchSelectedBases.has(songBaseForBatch));
     checkbox.addEventListener('click', e => e.stopPropagation());
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) addToSetlist(primary);
       else removeFromSetlist(primary.id);
+      // Batch-select side: track the song_base too. Only stemmed songs go
+      // in (unstemmed ones can't be played from the active setlist).
+      if (songBaseForBatch) {
+        if (checkbox.checked) batchSelectedBases.add(songBaseForBatch);
+        else batchSelectedBases.delete(songBaseForBatch);
+        // Re-render the gig sidebar so ghost rows reflect the new batch.
+        if (typeof renderGigSidebar === 'function') renderGigSidebar();
+      }
     });
     selectCell.appendChild(checkbox);
 
