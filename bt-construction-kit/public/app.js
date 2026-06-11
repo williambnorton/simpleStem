@@ -3901,24 +3901,18 @@ async function togglePlayPause() {
     startPlayheadSaver();
 
     if (automationCountIn && isFreshStart) {
-      // Turn click track ON if not already on.
-      if (!clickEnabled) {
-        clickEnabled = true;
-        const ctBtn = document.getElementById('btn-click-toggle');
-        if (ctBtn) ctBtn.classList.add('active');
-        clickLastScheduledBeat = -1;
-        clickLastSongTime = 0;
-        clickSchedulerTick();
-      }
-      // Schedule auto-OFF after exactly 4 beats. Add ~80 ms grace so the
-      // 4th click definitely fires before we mute the scheduler.
+      // Fire 4 click sounds directly via the Web Audio scheduler. This
+      // bypasses the click TRACK (which aligns to the song's first real
+      // beat — so on a song with intro silence the scheduler wouldn't
+      // fire any clicks during the count-in window). These 4 clicks are
+      // simple scheduled tones, guaranteed to fire on time.
+      if (!audioCtx) initAudioCtx();
       const bpm = (currentSong && currentSong.practiceBpm) || 120;
-      const fourBeatsMs = 4 * (60 / bpm) * 1000 + 80;
-      setTimeout(() => {
-        clickEnabled = false;
-        const ctBtn = document.getElementById('btn-click-toggle');
-        if (ctBtn) ctBtn.classList.remove('active');
-      }, fourBeatsMs);
+      const beatSec = 60 / bpm;
+      const startAt = audioCtx.currentTime + 0.02;
+      for (let i = 0; i < 4; i++) {
+        fireClickAt(startAt + i * beatSec, true);
+      }
     }
   }
 
