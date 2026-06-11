@@ -126,6 +126,8 @@ const els = {
   // Controls
   btnPlay: document.getElementById('btn-play-pause'),
   btnStop: document.getElementById('btn-stop'),
+  btnGoBeginning: document.getElementById('btn-go-beginning'),
+  btnGoNext: document.getElementById('btn-go-next'),
   btnLoop: document.getElementById('btn-loop-toggle'),
   speedSlider: document.getElementById('speed-slider'),
   speedDisplay: document.getElementById('speed-display'),
@@ -4593,6 +4595,31 @@ function setupEventListeners() {
   // Player Controls
   els.btnPlay.addEventListener('click', togglePlayPause);
   els.btnStop.addEventListener('click', stopAudio);
+  // ⏮ Beginning: seek every active stem to 0 (keep play/pause state).
+  if (els.btnGoBeginning) {
+    els.btnGoBeginning.addEventListener('click', () => {
+      Object.keys(audioElements || {}).forEach(chan => {
+        const ae = audioElements[chan];
+        if (audioHasSrc(ae)) { try { ae.currentTime = 0; } catch (e) {} }
+      });
+      els.timeline.value = 0;
+      els.timelineFill.style.width = '0%';
+      els.timeCurrent.textContent = '0:00';
+      automationLastTime = 0;
+      automationEvents.forEach(e => { e.fired = false; });
+      renderAutomationLane();
+    });
+  }
+  // ⏭ Next song: advance through the currently active gig setlist. If no
+  // setlist is playing, advances within the active gig sidebar setlist.
+  if (els.btnGoNext) {
+    els.btnGoNext.addEventListener('click', () => {
+      if (typeof gigSetlistJump === 'function' && activeGig &&
+          activeGig.setlists && activeGig.setlists[activeSetlistIdx]) {
+        gigSetlistJump(activeSetlistIdx, +1);
+      }
+    });
+  }
   els.btnLoop.addEventListener('click', toggleLooping);
   
   els.timeline.addEventListener('input', seekAudio);
@@ -4922,6 +4949,7 @@ async function loadAutomationForSong(songBase) {
   automationLastTime = 0;
   if (!songBase) {
     automationEvents = [];
+    automationSections = [];
     automationLastSavedJSON = '[]';
     automationDirty = false;
     renderAutomationLane();
@@ -4933,9 +4961,11 @@ async function loadAutomationForSong(songBase) {
     const d = await r.json();
     const events = d.automation || [];
     automationEvents = events.map(e => ({ ...e, fired: false }));
-    automationLastSavedJSON = JSON.stringify(events);
+    automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
+    automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections });
   } catch (e) {
     automationEvents = [];
+    automationSections = [];
     automationLastSavedJSON = '[]';
   }
   automationDirty = false;
@@ -4949,13 +4979,15 @@ async function saveAutomationForSong(songBase, events) {
   const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ automation: clean }),
+    body: JSON.stringify({ automation: clean, sections: automationSections }),
   });
   if (!r.ok) throw new Error((await r.json()).error || 'save failed');
   const d = await r.json();
   const saved = d.automation || [];
+  const savedSections = Array.isArray(d.sections) ? d.sections : automationSections;
   automationEvents = saved.map(e => ({ ...e, fired: false }));
-  automationLastSavedJSON = JSON.stringify(saved);
+  automationSections = savedSections;
+  automationLastSavedJSON = JSON.stringify({ a: saved, s: savedSections });
   automationDirty = false;
   renderAutomationLane();
   refreshAutomationToolbar();
@@ -4972,7 +5004,9 @@ function refreshAutomationToolbar() {
   counter.textContent = `${automationEvents.length} action${automationEvents.length === 1 ? '' : 's'}`;
   if (dirty)  dirty.style.display = automationDirty ? '' : 'none';
   if (saveBtn) saveBtn.disabled = !automationCurrentBase || !automationDirty;
-  if (clearBtn) clearBtn.disabled = !automationCurrentBase || automationEvents.length === 0;
+  // CLEAR is always available when a song is loaded — even with 0 visible
+  // actions, the user might want to wipe sections (or just be sure).
+  if (clearBtn) clearBtn.disabled = !automationCurrentBase;
 }
 
 // Mark the in-memory event list as differing from what's on disk. Triggered
@@ -4980,7 +5014,7 @@ function refreshAutomationToolbar() {
 // reliably clears when the user undoes their changes manually.
 function markAutomationDirty() {
   const cleanNow = automationEvents.map(({ fired, ...rest }) => rest);
-  const nowJSON = JSON.stringify(cleanNow);
+  const nowJSON = JSON.stringify({ a: cleanNow, s: automationSections });
   automationDirty = (nowJSON !== automationLastSavedJSON);
   refreshAutomationToolbar();
 }
@@ -5057,6 +5091,13 @@ function eventSummary(e) {
 // handler so the user can point-and-delete an action.
 let automationSelectedIdx = null;
 
+// Max rows that the pane can stack vertically. Markers whose horizontal
+// span overlaps with a marker in the same row are pushed to the next row.
+const AUTOMATION_MAX_ROWS = 5;
+const AUTOMATION_ROW_HEIGHT = 14;   // px — matches .midi-event-marker height
+const AUTOMATION_ROW_GAP    = 2;    // px between rows
+const AUTOMATION_MARKER_MIN_GAP_PX = 4;  // markers closer than this stack
+
 function renderAutomationLane() {
   const lane = document.getElementById('midi-lane');
   const markers = document.getElementById('midi-lane-markers');
@@ -5064,16 +5105,45 @@ function renderAutomationLane() {
   markers.innerHTML = '';
   const dur = songDurationSec();
   if (!dur) { refreshAutomationToolbar(); return; }
-  automationEvents.forEach((e, idx) => {
+
+  // Section bands behind the markers — render first so markers stack on top.
+  renderSectionBands(markers, dur);
+
+  // Pass 1 — compute each event's x position (px) so we can detect
+  // horizontal collisions for row assignment.
+  const laneWidth = lane.clientWidth || 1;
+  const positioned = automationEvents.map((e, idx) => {
     const pct = (e.t / dur) * 100;
-    if (pct < 0 || pct > 100) return;
+    const xpx = (e.t / dur) * laneWidth;
+    return { idx, e, pct, xpx };
+  }).filter(p => p.pct >= 0 && p.pct <= 100);
+
+  // Pass 2 — assign each event a row by checking which row last had a
+  // marker that's already past (with a small min-gap). Walking events in
+  // time order keeps row assignment stable.
+  const rowLastX = new Array(AUTOMATION_MAX_ROWS).fill(-Infinity);
+  positioned.forEach(p => {
+    let row = 0;
+    for (; row < AUTOMATION_MAX_ROWS; row++) {
+      if (p.xpx - rowLastX[row] > AUTOMATION_MARKER_MIN_GAP_PX) break;
+    }
+    if (row >= AUTOMATION_MAX_ROWS) row = AUTOMATION_MAX_ROWS - 1; // overflow → last row
+    p.row = row;
+    rowLastX[row] = p.xpx;
+  });
+
+  // Pass 3 — paint.
+  positioned.forEach(p => {
+    const { idx, e, pct, row } = p;
     const node = document.createElement('div');
     let cls = `midi-event-marker ${eventClass(e)}`;
     if (e.fired) cls += ' fired';
     if (idx === automationSelectedIdx) cls += ' selected';
     node.className = cls;
     node.style.left = pct + '%';
+    node.style.top = (row * (AUTOMATION_ROW_HEIGHT + AUTOMATION_ROW_GAP) + 2) + 'px';
     node.dataset.idx = String(idx);
+    node.dataset.row = String(row);
     const label = eventMarkerLabel(e);
     const tip = `${e.label ? e.label + ' · ' : ''}${eventSummary(e)} @ ${e.t.toFixed(2)}s`;
     node.title = tip;
@@ -5083,6 +5153,47 @@ function renderAutomationLane() {
   });
   refreshAutomationToolbar();
 }
+
+// Color palette for section markers, keyed 1..9.
+const SECTION_COLORS = {
+  1: { name: 'Intro',  bg: 'rgba(46, 204, 113, 0.18)' },    // light green
+  2: { name: 'Verse',  bg: 'rgba(79, 156, 240, 0.18)' },    // light blue
+  3: { name: 'Chorus', bg: 'rgba(231, 76, 60, 0.18)' },     // light red
+  4: { name: 'Bridge', bg: 'rgba(155, 89, 182, 0.18)' },    // light purple
+  5: { name: 'Solo',   bg: 'rgba(243, 156, 18, 0.18)' },    // light orange
+  6: { name: 'Pre',    bg: 'rgba(241, 196, 15, 0.18)' },    // light yellow
+  7: { name: 'Outro',  bg: 'rgba(26, 188, 156, 0.18)' },    // light teal
+  8: { name: 'Break',  bg: 'rgba(149, 165, 166, 0.18)' },   // light gray
+  9: { name: 'Tag',    bg: 'rgba(236, 64, 122, 0.18)' },    // light pink
+};
+
+// Render colored bands behind the lane markers. Each section's band runs
+// from the prior section's t (or 0 for the first) to its own t. The final
+// section's color extends to song end.
+function renderSectionBands(markers, dur) {
+  const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
+  if (!sections.length) return;
+  let prevT = 0;
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i];
+    const color = SECTION_COLORS[s.color];
+    if (!color) { prevT = s.t; continue; }
+    const startPct = (prevT / dur) * 100;
+    const endPct   = (s.t   / dur) * 100;
+    const band = document.createElement('div');
+    band.className = 'automation-section-band';
+    band.style.left  = startPct + '%';
+    band.style.width = (endPct - startPct) + '%';
+    band.style.background = color.bg;
+    band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s`;
+    markers.appendChild(band);
+    prevT = s.t;
+  }
+}
+
+// Per-song section markers ({t, color: 1..9}). Loaded alongside automation
+// events and persisted in the same metadata.json save.
+let automationSections = [];
 
 // Click → select (Delete removes it); double-click → edit modal; drag →
 // retime. Single-click within ~3px and 250ms is a click; otherwise a drag.
@@ -5292,19 +5403,49 @@ function recordFadeEvent(stem, level, atTime) {
 }
 
 function setupStemHotkeys() {
-  const map = { v: 'vocals', d: 'drums', b: 'bass', g: 'guitar', p: 'piano', o: 'other' };
+  const stemMap = { v: 'vocals', d: 'drums', b: 'bass', g: 'guitar', p: 'piano', o: 'other' };
   window.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     // Don't fire when typing in an input/select/textarea/contenteditable.
     const tgt = e.target;
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
                 tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
-    const stem = map[e.key.toLowerCase()];
-    if (!stem) return;
     if (!automationCurrentBase) return;   // no song loaded → ignore
-    e.preventDefault();
-    recordStemToggleAtPlayhead(stem);
+    const k = e.key;
+    // Stem mute/unmute toggle: V/D/B/G/P/O
+    const stem = stemMap[k.toLowerCase()];
+    if (stem) {
+      e.preventDefault();
+      recordStemToggleAtPlayhead(stem);
+      return;
+    }
+    // Section boundary: 1..9 → drops a section marker at the current
+    // playhead with the corresponding color. The colored band fills from
+    // the previous section's t (or 0) to this section's t.
+    if (k >= '1' && k <= '9') {
+      e.preventDefault();
+      recordSectionAtPlayhead(parseInt(k, 10));
+    }
   });
+}
+
+// Append a section marker at the current playhead. If a section already
+// exists very close to now, overwrite its color rather than adding a new
+// one (so the user can fix a fat-finger key press).
+function recordSectionAtPlayhead(color) {
+  if (!automationCurrentBase) return;
+  if (!SECTION_COLORS[color]) return;
+  const t = currentPlayheadSec();
+  const NEAR = 0.3;
+  const existing = automationSections.find(s => Math.abs(s.t - t) < NEAR);
+  if (existing) {
+    existing.color = color;
+  } else {
+    automationSections.push({ t: Math.round(t * 100) / 100, color });
+    automationSections.sort((a, b) => a.t - b.t);
+  }
+  renderAutomationLane();
+  markAutomationDirty();
 }
 
 // Single entry point used by the dispatcher. Routes by type:
@@ -5463,14 +5604,16 @@ function setupMidiUI() {
   });
   document.getElementById('midi-btn-clear-actions').addEventListener('click', async () => {
     if (!automationCurrentBase) return;
-    if (!confirm(`Clear all ${automationEvents.length} action(s) on this song's timeline?`)) return;
+    const total = automationEvents.length + automationSections.length;
+    if (!confirm(`Clear all ${total} action(s) and section(s) on this song's timeline?`)) return;
     automationEvents = [];
+    automationSections = [];
     renderAutomationLane();
     markAutomationDirty();
     try {
       await saveAutomationForSong(automationCurrentBase, []);
     } catch (err) {
-      alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old events.`);
+      alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old data.`);
     }
   });
 

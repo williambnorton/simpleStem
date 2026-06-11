@@ -1801,14 +1801,19 @@ app.get('/api/song/:base/automation', (req, res) => {
   if (!fs.existsSync(mp)) return res.json({ base: s.b, automation: [] });
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
-    res.json({ base: s.b, automation: Array.isArray(meta.automation) ? meta.automation : [] });
+    res.json({
+      base: s.b,
+      automation: Array.isArray(meta.automation) ? meta.automation : [],
+      sections:   Array.isArray(meta.sections)   ? meta.sections   : [],
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/song/:base/automation', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
-  const events = req.body && req.body.automation;
+  const events   = req.body && req.body.automation;
+  const sections = (req.body && req.body.sections) || [];
   if (!Array.isArray(events)) return res.status(400).json({ error: 'need { automation: [...] }' });
   const mp = path.join(s.dir, 'metadata.json');
   if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
@@ -1843,9 +1848,21 @@ app.put('/api/song/:base/automation', (req, res) => {
         return base;
       })
       .sort((a, b) => a.t - b.t);
+    // Sections: {t, color: 1..9}. Sort by t. Dedup with 0.3s tolerance is
+    // handled client-side, so accept whatever the client sent.
+    const cleanSections = Array.isArray(sections)
+      ? sections
+          .filter(x => x && typeof x.t === 'number' && x.t >= 0)
+          .map(x => ({
+            t: Math.round(x.t * 1000) / 1000,
+            color: Math.max(1, Math.min(9, parseInt(x.color, 10) || 1)),
+          }))
+          .sort((a, b) => a.t - b.t)
+      : [];
     meta.automation = clean;
+    meta.sections   = cleanSections;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
-    res.json({ ok: true, automation: clean });
+    res.json({ ok: true, automation: clean, sections: cleanSections });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -3906,38 +3906,63 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
    the left and grows with the column; the toolbar (counter + SAVE/CLEAR)
    sits on the far right. Markers are wider so they can show rich labels
    like V0 (vocals muted), V7 (vocals fader at 7), M4P12 (MIDI ch 4 PC 12). */
+/* The pane mirrors .player-timeline-container — same flex layout, same gap.
+   First child is an invisible time-label spacer so the inner lane wrap sits
+   in the EXACT column the slider sits in above. Pane is 5 rows tall (~80px)
+   so up to 5 simultaneous actions can stack vertically. */
 .automation-pane {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 4px 8px;
-  background: rgba(255, 200, 80, 0.04);
-  border: 1px solid rgba(255, 200, 80, 0.18);
-  border-radius: 4px;
+  gap: 14px;
+  margin-top: 6px;
+}
+.automation-pane .time-spacer {
+  visibility: hidden;
 }
 .automation-lane-wrap {
   flex: 1;
   position: relative;
   min-width: 0;
+  /* Mirror the slider's thumb-travel range. Browsers center the thumb on the
+     value, so the thumb center at value=0 is INSET from the slider's left
+     edge by half the thumb width (14/2 = 7px). The marker x=0 should align
+     with that thumb-center, hence the 7px horizontal padding. */
+  padding: 0 7px;
+  height: 78px;
+  background: rgba(255, 200, 80, 0.04);
+  border: 1px solid rgba(255, 200, 80, 0.18);
+  border-radius: 4px;
 }
 .midi-lane {
   position: relative;
   width: 100%;
-  height: 22px;
+  height: 100%;
   cursor: crosshair;
-  background: linear-gradient(to bottom, rgba(255,200,80,0.06), rgba(255,200,80,0.12));
-  border-radius: 3px;
+  background: transparent;
 }
 .midi-lane:hover { background: linear-gradient(to bottom, rgba(255,200,80,0.12), rgba(255,200,80,0.20)); }
 .midi-lane-markers { position: absolute; inset: 0; pointer-events: none; }
 
+/* Section bands sit behind the action markers and color the lane background
+   from the prior section's t to this section's t. Pointer-events: none so
+   they don't intercept lane clicks (which would otherwise drop a new
+   action). */
+.automation-section-band {
+  position: absolute;
+  top: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.midi-event-marker { z-index: 1; }
+
 /* Marker — wider chip that holds a label like "V0" or "M4P12". Width is
    auto so longer labels grow it; markers center on their timestamp via the
    translateX(-50%) trick. */
+/* Markers — height = ~14px so 5 rows fit in the 78px pane. `top` is set in
+   JS based on which row the marker is assigned to (see layoutMarkerRows). */
 .midi-event-marker {
   position: absolute;
-  top: 1px; bottom: 1px;
+  height: 14px;
   padding: 0 5px;
   min-width: 22px;
   transform: translateX(-50%);

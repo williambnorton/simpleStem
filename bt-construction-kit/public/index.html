@@ -270,20 +270,21 @@
           </div>
 
           <!-- Automation pane — dedicated row below the playback timeline.
-               Action markers (V0/V7/M4P12/etc.) appear at their timestamps
-               aligned to the slider above. Click an empty area to drop a
-               new event; click a marker to select it (Delete key removes);
-               drag a marker to retime. SAVE/CLEAR buttons on the far
-               right commit or wipe everything for this song. -->
+               The pane MIRRORS the timeline-bar-wrapper's horizontal layout
+               so action markers align to the slider's thumb position. Pane
+               is 5 rows tall to allow up to 5 simultaneous actions stacked
+               vertically. SAVE/CLEAR buttons live in the duration-spacer
+               slot on the far right. -->
           <div class="automation-pane" id="automation-pane">
+            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
             <div class="automation-lane-wrap">
               <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
                 <div id="midi-lane-markers" class="midi-lane-markers"></div>
               </div>
             </div>
             <div class="automation-toolbar" id="midi-lane-toolbar">
-              <span id="midi-lane-counter" class="midi-lane-counter">0 actions</span>
-              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">● unsaved</span>
+              <span id="midi-lane-counter" class="midi-lane-counter">0</span>
+              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">●</span>
               <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
               <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
             </div>
@@ -294,8 +295,10 @@
             
             <!-- Standard Playback Controls -->
             <div class="playback-controls">
+              <button id="btn-go-beginning" class="control-btn hover-glow" title="Go to beginning of song"><i data-lucide="skip-back"></i></button>
               <button id="btn-stop" class="control-btn hover-glow" title="Stop"><i data-lucide="square"></i></button>
               <button id="btn-play-pause" class="control-btn play-btn hover-glow" title="Play"><i data-lucide="play" id="play-icon"></i></button>
+              <button id="btn-go-next" class="control-btn hover-glow" title="Next song in the active setlist"><i data-lucide="skip-forward"></i></button>
               <button id="btn-loop-toggle" class="control-btn toggle-btn hover-glow" title="Toggle Looping"><i data-lucide="repeat"></i></button>
               <button id="btn-click-toggle" class="control-btn toggle-btn hover-glow" title="Toggle click track (uses the song BPM)"><i data-lucide="alarm-clock"></i></button>
               <button id="btn-speed-dialog" class="control-btn hover-glow" title="Playback Speed">
