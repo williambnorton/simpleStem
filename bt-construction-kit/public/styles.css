@@ -3973,8 +3973,47 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   text-transform: uppercase;
   border-radius: 3px;
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
 }
+.automation-section-label:hover { background: rgba(0, 0, 0, 0.7); outline: 1px solid #fff; }
+
+/* Section picker popup — opens when a section label is clicked. */
+.section-picker {
+  position: fixed;
+  z-index: 9100;
+  background: var(--bg-card, #1f2128);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+}
+.section-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.section-picker-cell {
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 70px;
+}
+.section-picker-cell.active { outline: 2px solid #fff; outline-offset: 1px; }
+.section-picker-cell:hover { transform: scale(1.04); }
+.section-picker-num { font-size: 14px; font-weight: 900; }
+.section-picker-name { font-size: 10px; letter-spacing: 0.04em; }
 /* Black vertical divider at each section's end — draggable to retime. */
 .automation-section-divider {
   position: absolute;

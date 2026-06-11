@@ -301,7 +301,9 @@ let openSetlistIdxs = new Set([0]);
 let gigPlayingSetlistIdx = null;
 let gigPlayingSongIdx = null;
 
-const GIG_ACTIVE_SLUG_KEY = 'simpleStem.activeGigSlug';
+const GIG_ACTIVE_SLUG_KEY     = 'simpleStem.activeGigSlug';
+const ACTIVE_SETLIST_IDX_KEY  = 'simpleStem.activeSetlistIdx';
+const LAST_SONG_BASE_KEY      = 'simpleStem.lastSongBase';
 
 function setupGigSidebar() {
   document.getElementById('gig-new-btn').addEventListener('click', onGigNew);
@@ -505,8 +507,15 @@ async function loadActiveGig(slug) {
           : '(no manual setlists yet — save one from the planner)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
+      // Restore the previously-active setlist if we remember one.
+      try {
+        const savedIdx = parseInt(localStorage.getItem(ACTIVE_SETLIST_IDX_KEY), 10);
+        if (Number.isInteger(savedIdx) && savedIdx >= 0 && savedIdx < activeGig.setlists.length) {
+          activeSetlistIdx = savedIdx;
+        }
+      } catch (e) {}
       activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
-      openSetlistIdxs = new Set([0]);
+      openSetlistIdxs = new Set([activeSetlistIdx]);
       try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
       renderGigSidebar();
       if (document.body.classList.contains('gig-mode')) {
@@ -673,6 +682,13 @@ function loadGigSetlistSong(setlistIdx, songIdx) {
   }
   gigPlayingSetlistIdx = setlistIdx;
   gigPlayingSongIdx = songIdx;
+  activeSetlistIdx = setlistIdx;   // selecting from a setlist updates active
+  // Remember which setlist + song was last loaded so the next app start
+  // can resume here. Stored alongside the active-gig slug.
+  try {
+    localStorage.setItem(ACTIVE_SETLIST_IDX_KEY, String(setlistIdx));
+    localStorage.setItem(LAST_SONG_BASE_KEY, entry.song_base);
+  } catch (e) {}
   ensurePlayerVisible();
   loadSong(setlistPlayVariant(merged), { autoplay: true });
   renderGigSidebar();
@@ -875,6 +891,7 @@ function renderOneGigSetlist(sl, idx) {
     if (activeSetlistIdx !== idx) {
       activeSetlistIdx = idx;
       openSetlistIdxs.add(idx);
+      try { localStorage.setItem(ACTIVE_SETLIST_IDX_KEY, String(idx)); } catch (e) {}
     } else {
       if (openSetlistIdxs.has(idx)) openSetlistIdxs.delete(idx);
       else openSetlistIdxs.add(idx);
@@ -2012,6 +2029,26 @@ async function fetchLibrary() {
     mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
 
     filteredLibrary = [...mergedLibrary];
+
+    // First-time library load → try to restore the last-loaded song. This
+    // runs once per page load; subsequent library refreshes (queue runner
+    // pings) don't re-trigger it.
+    if (!window._restoredLastSong) {
+      window._restoredLastSong = true;
+      try {
+        const lastBase = localStorage.getItem(LAST_SONG_BASE_KEY);
+        if (lastBase) {
+          const merged = mergedLibrary.find(m => {
+            const sv = m.variants.find(v => v.type === 'stems');
+            return sv && sv.folderName === lastBase;
+          });
+          if (merged) {
+            const v = preferredPlayVariant(merged);
+            if (v) loadSong(v, { autoplay: false });
+          }
+        }
+      } catch (e) { console.warn('[restore] last song failed:', e); }
+    }
     
     renderStats(data.stats);
     renderLibrary();
@@ -3221,9 +3258,14 @@ function loadSong(song, opts) {
 
   // Expose currentSong for the visualizer (beat-grid uses song.practiceBpm).
   window.currentSong = song;
+  // Remember which song was last loaded so the next app start can resume.
+  const _songBaseForRestore = songBaseOf(song);
+  if (_songBaseForRestore) {
+    try { localStorage.setItem(LAST_SONG_BASE_KEY, _songBaseForRestore); } catch (e) {}
+  }
   // Load this song's MIDI automation so the lane shows its markers and the
   // dispatcher fires events during playback.
-  loadAutomationForSong(songBaseOf(song));
+  loadAutomationForSong(_songBaseForRestore);
   // Kick off server-side precache so subsequent plays of this song are
   // hot. Fire-and-forget; the audio elements still drive the immediate
   // first-play stream. This dramatically reduces the cold-fetch wait for
@@ -5210,8 +5252,15 @@ function renderSectionBands(container, dur) {
     band.style.width = widthPct + '%';
     band.style.background = color.bg;
     band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s`;
-    band.innerHTML = `<span class="automation-section-label">${escapeHtml(color.name)}</span>`;
+    band.innerHTML = `<span class="automation-section-label" data-section-idx="${i}" title="Click to change section type">${escapeHtml(color.name)}</span>`;
     container.appendChild(band);
+    // Click the label to open the picker. Use mousedown so the click
+    // doesn't bubble to the lane (which would drop a new event).
+    const labelEl = band.querySelector('.automation-section-label');
+    if (labelEl) labelEl.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openSectionPicker(i, labelEl);
+    });
     // Black draggable divider at the END of this section.
     const divider = document.createElement('div');
     divider.className = 'automation-section-divider';
@@ -5542,6 +5591,60 @@ function setupStemHotkeys() {
     }
   });
 }
+
+// Open the picker popup near `anchor` to change section `idx`'s color/label.
+// Renders all 9 SECTION_COLORS as a small grid; clicking one updates the
+// section, closes the picker, and triggers a re-render + dirty flag.
+function openSectionPicker(idx, anchor) {
+  const picker = document.getElementById('section-picker');
+  const grid = document.getElementById('section-picker-grid');
+  if (!picker || !grid) return;
+  grid.innerHTML = '';
+  const current = automationSections[idx]?.color;
+  for (let k = 1; k <= 9; k++) {
+    const c = SECTION_COLORS[k];
+    if (!c) continue;
+    const cell = document.createElement('button');
+    cell.className = 'section-picker-cell' + (k === current ? ' active' : '');
+    cell.style.background = c.bg.replace(/,\s*0\.18\s*\)/, ',0.65)');  // brighter for the picker
+    cell.innerHTML = `<span class="section-picker-num">${k}</span><span class="section-picker-name">${escapeHtml(c.name)}</span>`;
+    cell.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (automationSections[idx]) {
+        automationSections[idx].color = k;
+        renderAutomationLane();
+        markAutomationDirty();
+      }
+      closeSectionPicker();
+    });
+    grid.appendChild(cell);
+  }
+  // Position near the anchor (clicked label). Use viewport coords.
+  const r = anchor.getBoundingClientRect();
+  picker.style.display = 'block';
+  // Defer placement so we can read the picker's own dimensions.
+  requestAnimationFrame(() => {
+    const pr = picker.getBoundingClientRect();
+    let left = r.left + r.width / 2 - pr.width / 2;
+    let top  = r.bottom + 6;
+    left = Math.max(8, Math.min(window.innerWidth - pr.width - 8, left));
+    if (top + pr.height + 8 > window.innerHeight) top = r.top - pr.height - 6;
+    picker.style.left = `${left}px`;
+    picker.style.top  = `${top}px`;
+  });
+}
+
+function closeSectionPicker() {
+  const picker = document.getElementById('section-picker');
+  if (picker) picker.style.display = 'none';
+}
+
+// Backdrop click closes the picker (added once at boot).
+document.addEventListener('click', (ev) => {
+  const picker = document.getElementById('section-picker');
+  if (!picker || picker.style.display === 'none') return;
+  if (!picker.contains(ev.target)) closeSectionPicker();
+}, true);
 
 // Append a section marker at the current playhead. If a section already
 // exists very close to now, overwrite its color rather than adding a new
