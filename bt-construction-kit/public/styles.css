@@ -3928,16 +3928,23 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .midi-lane {
   position: absolute;
-  /* Bottom-aligned to the canvas so the waveform stays readable above. */
+  /* Bottom-aligned to the canvas. Transparent backdrop so the waveform
+     stays fully visible — markers paint over the waveform. A dashed top
+     border subtly indicates where the lane begins, only visible on hover
+     or when a marker is being placed. */
   left: 0; right: 0; bottom: 0;
   height: 76px;
   cursor: crosshair;
-  background: rgba(20, 25, 43, 0.45);
-  border-top: 1px solid rgba(255, 200, 80, 0.25);
+  background: transparent;
+  border-top: 1px dashed rgba(255, 200, 80, 0.0);
   pointer-events: auto;
   z-index: 1;
+  transition: border-top-color 120ms ease;
 }
-.midi-lane:hover { background: rgba(20, 25, 43, 0.55); }
+.midi-lane:hover {
+  border-top-color: rgba(255, 200, 80, 0.4);
+  background: rgba(255, 200, 80, 0.04);
+}
 .midi-lane-markers { position: absolute; inset: 0; pointer-events: none; }
 
 /* Section bands sit behind the action markers and color the lane background
