@@ -583,6 +583,18 @@ async function loadActiveGig(slug) {
 
 function precacheActiveGig() {
   if (!activeGig || !activeGig.slug) return;
+  // Synthetic pseudo-gigs (YouTube Sync, Manual Setlists) don't have a
+  // corresponding GIGS/<slug>.json file — the gig-precache endpoint 404s
+  // for them. Fall back to per-setlist precache instead.
+  if (activeGig.synthetic) {
+    for (const sl of activeGig.setlists || []) {
+      if (sl.slug) {
+        fetch(`/api/precache/setlist/${encodeURIComponent(sl.slug)}`, { method: 'POST' })
+          .catch(() => {});
+      }
+    }
+    return;
+  }
   fetch(`/api/precache/gig/${encodeURIComponent(activeGig.slug)}`, { method: 'POST' })
     .then(r => r.json())
     .then(d => console.log(`[gig precache] ${activeGig.slug}: queued ${d.songs} songs`))
@@ -1293,22 +1305,30 @@ async function loadDrumLoops() {
 // fetching from Drive on first play). Called once after the catalog loads,
 // and again after each precache POST settles.
 async function hydrateLoopCacheStatus(filenames) {
-  const files = filenames || drumLoopsAll.map(l => l.fileName).filter(Boolean);
-  if (!files.length) return;
+  const allFiles = filenames || drumLoopsAll.map(l => l.fileName).filter(Boolean);
+  if (!allFiles.length) return;
   try {
-    const res = await fetch('/api/loop-cache-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files }),
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    for (const [f, cached] of Object.entries(data.status || {})) {
-      loopCacheStatus.set(f, !!cached);
+    // Chunk so the request body never gets close to the 5 MB server cap.
+    // 1000 file paths × ~60 bytes ≈ 60 KB per request — comfortably under.
+    const CHUNK = 1000;
+    for (let i = 0; i < allFiles.length; i += CHUNK) {
+      const files = allFiles.slice(i, i + CHUNK);
+      const res = await fetch('/api/loop-cache-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const [f, cached] of Object.entries(data.status || {})) {
+        loopCacheStatus.set(f, !!cached);
+      }
     }
     renderDrumLoops();
     renderLoopSequence();
-  } catch (e) { /* cache hydration is best-effort */ }
+  } catch (e) {
+    // cache hydration is best-effort
+  }
 }
 
 // Trigger a background copy from Drive into the local cache. Resolves true if

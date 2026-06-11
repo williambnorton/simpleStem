@@ -1235,7 +1235,10 @@ app.post('/api/precache/loop/:file', (req, res) => {
 // Returns the cache state for a list of loop filenames. Body: { files: [...] }.
 // Used by the client to mark pills as cached / not-cached at render time
 // without doing one HEAD per pill.
-app.post('/api/loop-cache-status', express.json(), (req, res) => {
+// 5 MB limit accommodates the worst-case payload (every loop in the catalog
+// in a single POST). Default express.json() is 100 KB which 413s on libraries
+// with thousands of loop files.
+app.post('/api/loop-cache-status', express.json({ limit: '5mb' }), (req, res) => {
   const files = Array.isArray(req.body && req.body.files) ? req.body.files : [];
   const status = {};
   for (const f of files) {
