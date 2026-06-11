@@ -919,13 +919,30 @@ function renderOneGigSetlist(sl, idx) {
     scheduleGigSave();
   });
   titleInput.addEventListener('click', e => e.stopPropagation());
-  head.querySelector('.gig-setlist-del').addEventListener('click', e => {
+  head.querySelector('.gig-setlist-del').addEventListener('click', async e => {
     e.stopPropagation();
     if (activeGig.setlists.length <= 1) {
       alert("Can't delete the only setlist in the gig.");
       return;
     }
     if (!confirm(`Remove "${sl.title}" from the gig?`)) return;
+    // Manual pseudo-gig: the setlist is a standalone SETLISTS/<slug>.json
+    // file on disk. Removing it from the in-memory array isn't enough —
+    // we also have to DELETE the file, otherwise the next /api/setlists
+    // read re-resurrects it on the next page load.
+    if (activeGig.synthetic && activeGig.syntheticKind === 'manual' && sl.slug) {
+      try {
+        const r = await fetch(`/api/setlists/${encodeURIComponent(sl.slug)}`, { method: 'DELETE' });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          alert(`Couldn't delete "${sl.title}": ${d.error || r.status}`);
+          return;
+        }
+      } catch (err) {
+        alert(`Couldn't delete "${sl.title}": ${err.message}`);
+        return;
+      }
+    }
     activeGig.setlists.splice(idx, 1);
     if (activeSetlistIdx >= activeGig.setlists.length) activeSetlistIdx = activeGig.setlists.length - 1;
     renderGigSidebar();
@@ -2892,6 +2909,10 @@ function applySidebarWidth(px) {
 let clickEnabled = false;
 let clickLastScheduledBeat = -1;
 let clickLastSongTime = 0;
+// Number of clicks fired since the last toggle-on. Click track auto-disables
+// after 4 — short pre-roll counter, not a continuous metronome.
+let clickBeatsFired = 0;
+const CLICK_MAX_BEATS = 4;
 
 function setupClickTrack() {
   const btn = document.getElementById('btn-click-toggle');
@@ -2903,6 +2924,7 @@ function setupClickTrack() {
       initAudioCtx();
       clickLastScheduledBeat = -1;
       clickLastSongTime = 0;
+      clickBeatsFired = 0;
       clickSchedulerTick();
     }
   });
@@ -2957,6 +2979,16 @@ function clickSchedulerTick() {
       const delay = beatTime - songTime;
       if (delay >= -0.01) {
         fireClickAt(audioCtx.currentTime + Math.max(delay, 0), beatIdx % 4 === 0);
+        clickBeatsFired++;
+        // After 4 beats, auto-disable. Schedules a small grace so the 4th
+        // click is heard before the scheduler stops requesting frames.
+        if (clickBeatsFired >= CLICK_MAX_BEATS) {
+          setTimeout(() => {
+            clickEnabled = false;
+            const btn = document.getElementById('btn-click-toggle');
+            if (btn) btn.classList.remove('active');
+          }, Math.max(0, delay * 1000) + 80);
+        }
       }
       clickLastScheduledBeat = beatIdx;
     }
