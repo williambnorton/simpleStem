@@ -1844,6 +1844,18 @@ app.put('/api/song/:base/automation', (req, res) => {
         } else if (e.type === 'fade') {
           base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
           base.level = Math.max(0, Math.min(10, parseInt(e.level, 10) || 0));
+        } else if (e.type === 'init') {
+          // INIT carries a snapshot of every stem's level at t=0.
+          const state = {};
+          if (e.state && typeof e.state === 'object') {
+            for (const [stem, lvl] of Object.entries(e.state)) {
+              if (VALID_STEMS.has(stem)) {
+                state[stem] = Math.max(0, Math.min(10, parseInt(lvl, 10) || 0));
+              }
+            }
+          }
+          base.state = state;
+          base.t = 0;
         }
         return base;
       })

@@ -270,13 +270,16 @@
               </div>
             </div>
             <span class="time-label time-spacer" aria-hidden="true">0:00</span>
-            <!-- Toolbar floats in the top-right corner of the visualization
-                 area so it doesn't steal flex space from the playback
-                 slider below. -->
+          </div>
+
+          <!-- Automation toolbar — its own row directly under the visualizer.
+               Right-aligned so it sits beneath the lane's marker area
+               without overlapping the playback slider below. -->
+          <div class="automation-toolbar-row">
             <div class="automation-toolbar" id="midi-lane-toolbar">
               <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
               <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
-              <button id="midi-btn-init-state" class="midi-toolbar-btn" title="Capture the current mixer state (fader levels + mutes) as the song's initial state at t=0">INIT</button>
+              <button id="midi-btn-init-state" class="midi-toolbar-btn" title="Capture the current mixer state as the song's initial state — also clears every other action on the timeline">INIT</button>
               <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
               <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
             </div>

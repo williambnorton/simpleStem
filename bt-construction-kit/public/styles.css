@@ -4022,6 +4022,16 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-unmute { background: #2ecc71; color: #111; box-shadow: 0 0 4px rgba(46, 204, 113, 0.6); }
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
 .midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
+/* INIT marker — taller and wider than action markers so the song's initial-
+   state indicator is unmistakable at the left edge of the lane. */
+.midi-event-marker.evt-init {
+  background: #9b59b6;
+  color: #fff;
+  height: 22px;
+  min-width: 26px;
+  font-size: 13px;
+  box-shadow: 0 0 6px rgba(155, 89, 182, 0.7);
+}
 
 /* LOOPER button — big toggle that loops the section bracketing the current
    playhead. Replaces the Outro Jam Stretch panel. */
@@ -4079,33 +4089,24 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker:hover { transform: translateX(-50%) scale(1.15); z-index: 2; }
 .midi-event-marker:active { cursor: ew-resize; }
 
-/* Toolbar — stacks vertically under the "Visualizer" label in the top-left
-   corner of the visualization area. Keeps the entire waveform + slider
-   travel free for the user. The Visualizer label sits at top:6/left:8 so
-   we anchor at top:24 to slot beneath it. */
-.player-visualization-area .automation-toolbar {
-  position: absolute;
-  top: 24px; left: 8px;
-  z-index: 10;
+/* Toolbar row — its own row directly below the visualizer. Right-aligned
+   so the buttons stack neatly against the right edge of the player area
+   without intruding on the playback slider below. */
+.automation-toolbar-row {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
+  justify-content: flex-end;
+  margin: 4px 0 2px;
+}
+.automation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px;
-  color: var(--text-dim, #ddd);
-  background: rgba(10, 14, 28, 0.78);
-  padding: 4px 5px;
+  color: var(--text-dim, #aaa);
+  background: rgba(10, 14, 28, 0.5);
+  padding: 4px 8px;
   border-radius: 4px;
-  pointer-events: auto;
-  min-width: 64px;
-}
-.player-visualization-area .automation-toolbar .midi-toolbar-btn {
-  text-align: center;
-}
-.player-visualization-area .automation-toolbar .midi-lane-counter,
-.player-visualization-area .automation-toolbar .midi-lane-dirty {
-  text-align: center;
 }
 .midi-lane-counter { font-weight: 600; }
 .midi-lane-dirty { color: #f4c430; font-weight: 800; }

@@ -5068,6 +5068,7 @@ const LETTER_STEM = Object.fromEntries(Object.entries(STEM_LETTER).map(([k,v]) =
 //   Note On   → "M<ch>N<note>"   e.g. M4N60
 //   Note Off  → "M<ch>n<note>"   e.g. M4n60  (lowercase n = off)
 function eventMarkerLabel(e) {
+  if (e.type === 'init')   return 'I';
   if (e.type === 'mute')   return `${STEM_LETTER[e.stem] || '?'}0`;
   if (e.type === 'unmute') return `${STEM_LETTER[e.stem] || '?'}10`;
   if (e.type === 'fade') {
@@ -5088,6 +5089,7 @@ function eventMarkerLabel(e) {
 // events the color depends on the level (0 = red, 10 = green, in-between
 // = yellow/amber).
 function eventClass(e) {
+  if (e.type === 'init')   return 'evt-init';
   if (e.type === 'mute')   return 'evt-mute';
   if (e.type === 'unmute') return 'evt-unmute';
   if (e.type === 'fade') {
@@ -5572,6 +5574,13 @@ function recordSectionAtPlayhead(color) {
 //   unmute     → flip mixerState.muted[stem] off, repaint
 //   fade       → stub for now; ramps come later
 async function fireAutomationEvent(e) {
+  // INIT — apply the captured initial state to every stem in one shot.
+  if (e.type === 'init' && e.state && typeof e.state === 'object') {
+    for (const [stem, level] of Object.entries(e.state)) {
+      applyFadeToStem(stem, level);
+    }
+    return;
+  }
   // Legacy mute/unmute: treat as fade to 0 or 10.
   if (e.type === 'mute' || e.type === 'unmute') {
     return applyFadeToStem(e.stem, e.type === 'mute' ? 0 : 10);
@@ -5710,27 +5719,29 @@ function setupMidiUI() {
     closeMidiModal();
   });
 
-  // INIT — snapshot the current mixer state as t=0 fade events. Replaces
-  // any existing t=0 fade events so the user can re-snapshot freely. This
-  // is the "initial state when song starts" the user wanted: tweak the
-  // faders to taste, hit INIT, then every play starts with that mix.
+  // INIT — snapshot the current mixer state as a single 'init' event at t=0
+  // and CLEAR every other automation event on the timeline. This is the
+  // "fresh start with the song-opening mix" the user wanted: tweak faders
+  // to taste, hit INIT, song starts with that mix every time. A block 'I'
+  // marker renders at the left edge to indicate the saved initial state.
   const initBtn = document.getElementById('midi-btn-init-state');
   if (initBtn) {
     initBtn.addEventListener('click', () => {
       if (!automationCurrentBase) return;
+      if (automationEvents.length > 0 || automationSections.length > 0) {
+        if (!confirm(`INIT will clear all ${automationEvents.length} action(s) and ${automationSections.length} section(s) and replace them with the current mixer state. Continue?`)) return;
+      }
       const STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
-      // Drop any existing fade events at t=0 — INIT replaces, doesn't stack.
-      automationEvents = automationEvents.filter(e =>
-        !(e.type === 'fade' && Math.abs(e.t) < 0.01 && STEMS.includes(e.stem))
-      );
+      const state = {};
       for (const stem of STEMS) {
         if (!(stem in (mixerState.volumes || {}))) continue;
         const vol = mixerState.volumes[stem];
         const muted = mixerState.muted[stem];
-        const lvl = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
-        automationEvents.push({ t: 0, type: 'fade', stem, level: lvl, fired: false });
+        state[stem] = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
       }
-      automationEvents.sort((a, b) => a.t - b.t);
+      automationEvents = [{ t: 0, type: 'init', state, fired: false }];
+      automationSections = [];
+      automationSelectedIdx = null;
       renderAutomationLane();
       markAutomationDirty();
     });
