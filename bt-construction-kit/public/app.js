@@ -5101,13 +5101,16 @@ const AUTOMATION_MARKER_MIN_GAP_PX = 4;  // markers closer than this stack
 function renderAutomationLane() {
   const lane = document.getElementById('midi-lane');
   const markers = document.getElementById('midi-lane-markers');
+  const bands   = document.getElementById('midi-lane-bands');
   if (!lane || !markers) return;
   markers.innerHTML = '';
+  if (bands) bands.innerHTML = '';
   const dur = songDurationSec();
   if (!dur) { refreshAutomationToolbar(); return; }
 
-  // Section bands behind the markers — render first so markers stack on top.
-  renderSectionBands(markers, dur);
+  // Section bands overlay the FULL visualizer canvas (their own container).
+  // Markers stack at the lane's bottom anchor.
+  if (bands) renderSectionBands(bands, dur);
 
   // Pass 1 — compute each event's x position (px) so we can detect
   // horizontal collisions for row assignment.

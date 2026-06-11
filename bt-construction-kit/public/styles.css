@@ -3901,46 +3901,36 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .song-modal-table .meta-link { color: var(--color-blue); text-decoration: underline; word-break: break-all; }
 .song-modal-table .meta-link:hover { color: var(--color-purple); }
 
-/* ── Automation pane (under playback timeline) ────────────────────────────
-   The pane is its own row beneath the playback slider. The lane sits on
-   the left and grows with the column; the toolbar (counter + SAVE/CLEAR)
-   sits on the far right. Markers are wider so they can show rich labels
-   like V0 (vocals muted), V7 (vocals fader at 7), M4P12 (MIDI ch 4 PC 12). */
-/* The pane mirrors .player-timeline-container — same flex layout, same gap.
-   First child is an invisible time-label spacer so the inner lane wrap sits
-   in the EXACT column the slider sits in above. Pane is 5 rows tall (~80px)
-   so up to 5 simultaneous actions can stack vertically. */
-.automation-pane {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 6px;
+/* ── Automation overlay (on top of the visualizer canvas) ─────────────────
+   The visualizer canvas is already horizontally aligned to the playback
+   slider below it (per the visualizer-width task). By overlaying the lane
+   on the canvas, action markers inherit that alignment for free — no flex
+   layout shenanigans, no thumb-width inset math. Section bands cover the
+   entire canvas backdrop; markers stack at the canvas bottom. */
+.automation-overlay {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 4;
 }
-.automation-pane .time-spacer {
-  visibility: hidden;
-}
-.automation-lane-wrap {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-  /* Mirror the slider's thumb-travel range. Browsers center the thumb on the
-     value, so the thumb center at value=0 is INSET from the slider's left
-     edge by half the thumb width (14/2 = 7px). The marker x=0 should align
-     with that thumb-center, hence the 7px horizontal padding. */
-  padding: 0 7px;
-  height: 78px;
-  background: rgba(255, 200, 80, 0.04);
-  border: 1px solid rgba(255, 200, 80, 0.18);
-  border-radius: 4px;
+.midi-lane-bands {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
 }
 .midi-lane {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  /* Bottom-aligned to the canvas so the waveform stays readable above. */
+  left: 0; right: 0; bottom: 0;
+  height: 76px;
   cursor: crosshair;
-  background: transparent;
+  background: rgba(20, 25, 43, 0.45);
+  border-top: 1px solid rgba(255, 200, 80, 0.25);
+  pointer-events: auto;
+  z-index: 1;
 }
-.midi-lane:hover { background: linear-gradient(to bottom, rgba(255,200,80,0.12), rgba(255,200,80,0.20)); }
+.midi-lane:hover { background: rgba(20, 25, 43, 0.55); }
 .midi-lane-markers { position: absolute; inset: 0; pointer-events: none; }
 
 /* Section bands sit behind the action markers and color the lane background
@@ -3992,7 +3982,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker:hover { transform: translateX(-50%) scale(1.15); z-index: 2; }
 .midi-event-marker:active { cursor: ew-resize; }
 
-/* Toolbar — right side of the pane. Counter + dirty dot + SAVE + CLEAR. */
+/* Toolbar — sits inline with the playback timeline, on the right side. */
 .automation-toolbar {
   display: flex;
   align-items: center;
@@ -4001,6 +3991,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   font-size: 10px;
   color: var(--text-dim, #aaa);
   flex-shrink: 0;
+  margin-left: 6px;
 }
 .midi-lane-counter { font-weight: 600; }
 .midi-lane-dirty { color: #f4c430; font-weight: 800; }

@@ -257,9 +257,23 @@
                 <span>Buffering Audio...</span>
               </div>
             </div>
+            <!-- Automation overlay sits on top of the visualizer canvas. It
+                 reuses the canvas's horizontal alignment (which already
+                 matches the playback slider exactly), so action markers
+                 drop directly beneath the slider thumb without flex layout
+                 conflicts. Section color bands paint behind the markers. -->
+            <div id="automation-overlay" class="automation-overlay">
+              <div id="midi-lane-bands" class="midi-lane-bands"></div>
+              <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
+                <div id="midi-lane-markers" class="midi-lane-markers"></div>
+              </div>
+            </div>
           </div>
           
-          <!-- Progress bar / Timeline -->
+          <!-- Progress bar / Timeline. The automation toolbar (counter +
+               SAVE/CLEAR) sits on the right side of this row so the lane
+               itself can stay overlaid on the visualizer with no extra
+               vertical real estate stolen below. -->
           <div class="player-timeline-container">
             <span id="time-current" class="time-label">0:00</span>
             <div class="timeline-bar-wrapper">
@@ -267,24 +281,9 @@
               <div id="timeline-progress" class="timeline-fill"></div>
             </div>
             <span id="time-duration" class="time-label">0:00</span>
-          </div>
-
-          <!-- Automation pane — dedicated row below the playback timeline.
-               The pane MIRRORS the timeline-bar-wrapper's horizontal layout
-               so action markers align to the slider's thumb position. Pane
-               is 5 rows tall to allow up to 5 simultaneous actions stacked
-               vertically. SAVE/CLEAR buttons live in the duration-spacer
-               slot on the far right. -->
-          <div class="automation-pane" id="automation-pane">
-            <span class="time-label time-spacer" aria-hidden="true">0:00</span>
-            <div class="automation-lane-wrap">
-              <div id="midi-lane" class="midi-lane" title="Click to add an action at this time">
-                <div id="midi-lane-markers" class="midi-lane-markers"></div>
-              </div>
-            </div>
             <div class="automation-toolbar" id="midi-lane-toolbar">
-              <span id="midi-lane-counter" class="midi-lane-counter">0</span>
-              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;">●</span>
+              <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
+              <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
               <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
               <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
             </div>
