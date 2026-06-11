@@ -3225,6 +3225,15 @@ function loadSong(song, opts) {
   // Load this song's MIDI automation so the lane shows its markers and the
   // dispatcher fires events during playback.
   loadAutomationForSong(songBaseOf(song));
+  // Kick off server-side precache so subsequent plays of this song are
+  // hot. Fire-and-forget; the audio elements still drive the immediate
+  // first-play stream. This dramatically reduces the cold-fetch wait for
+  // the NEXT song the user clicks if it's already in a setlist.
+  const songBaseForPrecache = songBaseOf(song);
+  if (songBaseForPrecache) {
+    fetch(`/api/precache/stems/${encodeURIComponent(songBaseForPrecache)}`, { method: 'POST' })
+      .catch(() => {});
+  }
   // Render variant picker (Source: STEMS / -V-G-B / -V-G / DO ...)
   renderVariantPicker(song);
   // Refresh sidebar setlist toggle (+/- depends on whether currentSong is

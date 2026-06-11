@@ -1047,21 +1047,39 @@ async function ensureCachedAsync(sourcePath, cachePath) {
 }
 
 // Audio streaming endpoints — supports HTTP Range via res.sendFile.
+// Hot-cache path: if `cachePath` already has the file at full size, serve
+// from local SSD (fast, no Drive in the request loop).
+// Cold-cache path: serve DIRECTLY from `sourcePath` (which lives on Drive
+// Stream) — DO NOT block waiting for a copy. Kick off the cache copy in
+// the background so the NEXT play of this file is hot. This eliminates
+// the multi-second "spinning disc" the user saw on first play of any song
+// in a cold cache: 6 stems would previously serialize through a blocking
+// fs.copyFileSync each ~2s = 12s before the audio could even start.
 function sendCachedAudio(req, res, sourcePath, cachePath) {
   if (!fs.existsSync(sourcePath)) {
     console.warn('[audio 404] source missing:', sourcePath);
     return res.status(404).send('Audio file not found');
   }
-  const served = ensureCached(sourcePath, cachePath);
-  if (!fs.existsSync(served)) {
-    console.warn('[audio 500] served path missing after ensureCached:', served);
-    return res.status(500).send('Cache failure');
-  }
+  let served = sourcePath;
+  try {
+    if (fs.existsSync(cachePath)) {
+      const csz = fs.statSync(cachePath).size;
+      const ssz = fs.statSync(sourcePath).size;
+      if (csz === ssz && csz > 0) served = cachePath;
+    }
+  } catch (e) {}
   // dotfiles: 'allow' is required because our cache lives under ~/.bt-cache
   // and 'send' otherwise refuses any path with a dot-prefixed segment.
   res.sendFile(served, { dotfiles: 'allow' }, (err) => {
     if (err) console.warn('[audio sendFile err]', served, err.message);
   });
+  // Cold-cache path → schedule background copy. setImmediate yields so the
+  // sendFile response goes first. ensureCachedAsync handles dedup + errors.
+  if (served === sourcePath && cachePath) {
+    setImmediate(() => {
+      ensureCachedAsync(sourcePath, cachePath).catch(() => {});
+    });
+  }
 }
 
 app.get('/api/audio/stems/:song/:file', (req, res) => {
