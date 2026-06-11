@@ -3881,40 +3881,58 @@ async function togglePlayPause() {
     clearInterval(syncInterval);
     stopBeatingVisualizer();
     stopPlayheadSaverAndFlush();
-  } else {
-    // Count-in (simpler model): when count-in is enabled and the song is
-    // starting fresh, turn the click track ON now so the player hears 4
-    // beats at the song BPM, then auto-OFF after 4 beats elapse. The click
-    // track itself is unchanged — we just toggle it for the user.
-    const masterAe0 = activeElements[0];
-    const isFreshStart = masterAe0 && masterAe0.currentTime < 1.5;
-    const masterTime = activeElements[0].currentTime;
-    activeElements.forEach(ae => {
-      ae.currentTime = masterTime;
-      ae.play().catch(err => console.warn('[audio.play] rejected:', err, 'src=', ae.src));
-    });
-    isPlaying = true;
-    els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
-
-    startSyncLoop();
-    startBeatingVisualizer(currentSong.practiceBpm || 100);
-    startPlayheadSaver();
-
-    if (automationCountIn && isFreshStart) {
-      // Fire 4 click sounds directly via the Web Audio scheduler. This
-      // bypasses the click TRACK (which aligns to the song's first real
-      // beat — so on a song with intro silence the scheduler wouldn't
-      // fire any clicks during the count-in window). These 4 clicks are
-      // simple scheduled tones, guaranteed to fire on time.
-      if (!audioCtx) initAudioCtx();
-      const bpm = (currentSong && currentSong.practiceBpm) || 120;
-      const beatSec = 60 / bpm;
-      const startAt = audioCtx.currentTime + 0.02;
-      for (let i = 0; i < 4; i++) {
-        fireClickAt(startAt + i * beatSec, true);
-      }
-    }
+    applyMixerVolumes();
+    lucide.createIcons();
+    return;
   }
+
+  // No active audio? Nothing to play. (Was crashing on activeElements[0].)
+  if (activeElements.length === 0) {
+    console.warn('[togglePlayPause] no active audio elements; nothing to play');
+    return;
+  }
+
+  const masterAe0 = activeElements[0];
+  const isFreshStart = masterAe0.currentTime < 1.5;
+
+  // Count-in TRUE PRE-ROLL: schedule 4 clicks, then start the song on what
+  // would be beat 5. The 4 clicks lead INTO the song; the song doesn't
+  // start until they're done. After the song starts there's no more click
+  // (click track stays off unless the user explicitly toggled it).
+  if (automationCountIn && isFreshStart) {
+    if (!audioCtx) initAudioCtx();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) {}
+    }
+    const bpm = (currentSong && currentSong.practiceBpm) || 120;
+    const beatSec = 60 / bpm;
+    const clickStart = audioCtx.currentTime + 0.04;
+    // Schedule all 4 clicks at precise audioCtx times — Web Audio handles
+    // the timing accurately regardless of main-thread jitter.
+    for (let i = 0; i < 4; i++) {
+      fireClickAt(clickStart + i * beatSec, true);
+    }
+    // Show pre-roll state, lock the play button so multiple presses don't
+    // pile up overlapping count-ins.
+    els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
+    els.btnPlay.disabled = true;
+    const audioStartTime = clickStart + 4 * beatSec;
+    const waitMs = Math.max(0, (audioStartTime - audioCtx.currentTime) * 1000);
+    await new Promise(r => setTimeout(r, waitMs));
+    els.btnPlay.disabled = false;
+  }
+
+  const masterTime = masterAe0.currentTime;
+  activeElements.forEach(ae => {
+    ae.currentTime = masterTime;
+    ae.play().catch(err => console.warn('[audio.play] rejected:', err, 'src=', ae.src));
+  });
+  isPlaying = true;
+  els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
+
+  startSyncLoop();
+  startBeatingVisualizer(currentSong.practiceBpm || 100);
+  startPlayheadSaver();
 
   applyMixerVolumes();
   lucide.createIcons();
