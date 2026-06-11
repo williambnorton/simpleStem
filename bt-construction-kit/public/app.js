@@ -3169,13 +3169,13 @@ function injectMixerHeaderInfo() {
   }
   if (outputChannelCount <= 2) {
     info.innerHTML = `
-      <button class="routing-tag stereo-only routing-reprobe" title="Click to re-probe the audio device for available channels">
-        Stereo only · device gives ${outputChannelCount} channel${outputChannelCount === 1 ? '' : 's'} · click to re-probe
+      <button class="routing-tag stereo-only routing-reprobe" title="Plug in XR18 and select it as macOS system output, then click to reload the page (the only way Web Audio detects a new device).">
+        Stereo only · ${outputChannelCount} ch · click to reload &amp; detect new device
       </button>
     `;
   } else {
     info.innerHTML = `
-      <button class="routing-tag multi routing-reprobe" title="Click to re-probe the audio device for available channels">${outputChannelCount} ch out · re-probe</button>
+      <button class="routing-tag multi routing-reprobe" title="Switched device? Click to reload the page so Web Audio re-detects the channel count.">${outputChannelCount} ch out · reload</button>
       <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
       <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
     `;
@@ -3193,41 +3193,30 @@ function injectMixerHeaderInfo() {
 // UI. Use this after plugging in a new audio device (XR18, etc.) so the
 // portal picks it up without a full page reload.
 async function reprobeAudioDevice() {
-  if (!audioCtx) {
-    console.warn('[reprobe] no audio context yet — click play once first');
-    return;
-  }
-  try {
-    const mx = audioCtx.destination.maxChannelCount || 2;
-    // Try to bump the destination channel count to whatever the device says
-    // it can do. This is the moment Web Audio normally only sets at graph
-    // creation; setting it again here forces the runtime to re-allocate
-    // output buffers if the device changed.
-    if (mx > 2) {
-      try { audioCtx.destination.channelCount = mx; }
-      catch (e) { console.warn('[reprobe] destination.channelCount set failed:', e.message); }
-    }
-    outputChannelCount = audioCtx.destination.channelCount || 2;
-    // Re-sync intermediate nodes so they don't downmix to stereo.
-    if (outputChannelCount > 2) {
-      for (const node of [analyserNode, masterGainNode]) {
-        if (!node) continue;
-        try {
-          node.channelCount = outputChannelCount;
-          node.channelCountMode = 'explicit';
-          node.channelInterpretation = 'discrete';
-        } catch (e) { /* ignore */ }
-      }
-    }
-    // Re-render the badge AND the routing button grids (the latter will
-    // show more buttons live if more channels just became available).
-    injectMixerHeaderInfo();
-    applyRouting();
-    renderRoutingGrids();
-    console.log(`[reprobe] device now ${outputChannelCount} channels`);
-  } catch (e) {
-    console.warn('[reprobe] failed:', e.message);
-  }
+  // Hard truth about Web Audio: destination.maxChannelCount is captured
+  // when the AudioContext is created, and it cannot be changed afterward.
+  // No amount of resetting node.channelCount changes what the underlying
+  // OS routing reports. The ONLY way to pick up an XR18 (or any multi-
+  // channel device) you plugged in mid-session is to:
+  //   1. Set the device as your macOS system output (System Settings → Sound)
+  //   2. Create a fresh AudioContext, which only happens on page load
+  //
+  // So this button now:
+  //   - Confirms the user has the device selected as system output
+  //   - Reloads the page (creating a fresh AudioContext that probes the
+  //     now-selected device for its real max channel count)
+  //
+  // The portal's state (active gig, last song, mixer state) is persisted
+  // in localStorage, so reload is fully lossless.
+  const cur = audioCtx ? (audioCtx.destination.maxChannelCount || 2) : 'unknown';
+  const ok = confirm(
+    `This page sees the audio device as ${cur}-channel.\n\n` +
+    `Web Audio reads the channel count once when the page loads — it can't be re-detected on the fly. If you've just plugged in your XR18 (or switched system output), you need to reload.\n\n` +
+    `1. Make sure XR18 is selected in macOS System Settings → Sound → Output\n` +
+    `2. Click OK to reload\n\n` +
+    `The portal's state will restore automatically.`
+  );
+  if (ok) location.reload();
 }
 
 function injectStripRoutingButtons() {
