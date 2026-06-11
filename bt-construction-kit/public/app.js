@@ -3863,13 +3863,21 @@ function updateStretchInfoProgress() {
 }
 
 // Play / Pause Coordination
+let countInInProgress = false;
+
 async function togglePlayPause() {
   if (!currentSong) return;
+  // Re-entry guard: while a count-in pre-roll is awaiting, ignore further
+  // toggle requests. Without this, rapid Play presses pile up overlapping
+  // pre-rolls and freeze the UI.
+  if (countInInProgress) {
+    console.warn('[togglePlayPause] count-in in progress; ignoring re-entry');
+    return;
+  }
 
-  initAudioCtx();
-
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
+  try { initAudioCtx(); } catch (e) { console.warn('[audioCtx] init failed:', e); }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (e) {}
   }
 
   const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
@@ -3886,7 +3894,6 @@ async function togglePlayPause() {
     return;
   }
 
-  // No active audio? Nothing to play. (Was crashing on activeElements[0].)
   if (activeElements.length === 0) {
     console.warn('[togglePlayPause] no active audio elements; nothing to play');
     return;
@@ -3896,30 +3903,33 @@ async function togglePlayPause() {
   const isFreshStart = masterAe0.currentTime < 1.5;
 
   // Count-in TRUE PRE-ROLL: schedule 4 clicks, then start the song on what
-  // would be beat 5. The 4 clicks lead INTO the song; the song doesn't
-  // start until they're done. After the song starts there's no more click
-  // (click track stays off unless the user explicitly toggled it).
-  if (automationCountIn && isFreshStart) {
-    if (!audioCtx) initAudioCtx();
-    if (audioCtx && audioCtx.state === 'suspended') {
-      try { await audioCtx.resume(); } catch (e) {}
-    }
-    const bpm = (currentSong && currentSong.practiceBpm) || 120;
-    const beatSec = 60 / bpm;
-    const clickStart = audioCtx.currentTime + 0.04;
-    // Schedule all 4 clicks at precise audioCtx times — Web Audio handles
-    // the timing accurately regardless of main-thread jitter.
-    for (let i = 0; i < 4; i++) {
-      fireClickAt(clickStart + i * beatSec, true);
-    }
-    // Show pre-roll state, lock the play button so multiple presses don't
-    // pile up overlapping count-ins.
+  // would be beat 5. Wrapped in try/finally so the button + flag always
+  // reset even if the pre-roll throws or is interrupted.
+  if (automationCountIn && isFreshStart && audioCtx) {
+    countInInProgress = true;
     els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
     els.btnPlay.disabled = true;
-    const audioStartTime = clickStart + 4 * beatSec;
-    const waitMs = Math.max(0, (audioStartTime - audioCtx.currentTime) * 1000);
-    await new Promise(r => setTimeout(r, waitMs));
-    els.btnPlay.disabled = false;
+    try {
+      const bpm = (currentSong && currentSong.practiceBpm) || 120;
+      const beatSec = 60 / bpm;
+      const clickStart = audioCtx.currentTime + 0.04;
+      for (let i = 0; i < 4; i++) {
+        try { fireClickAt(clickStart + i * beatSec, true); }
+        catch (e) { console.warn('[count-in] fireClickAt failed:', e); }
+      }
+      const audioStartTime = clickStart + 4 * beatSec;
+      let waitMs = (audioStartTime - audioCtx.currentTime) * 1000;
+      // Sanity-cap to 8 seconds (= 30 BPM × 4) so a NaN or runaway value
+      // can't permanently freeze the UI. Anything under 30 BPM is unusual.
+      waitMs = Math.max(0, Math.min(8000, isFinite(waitMs) ? waitMs : 0));
+      await new Promise(r => setTimeout(r, waitMs));
+    } catch (e) {
+      console.warn('[count-in] pre-roll failed:', e);
+    } finally {
+      countInInProgress = false;
+      els.btnPlay.disabled = false;
+      lucide.createIcons();
+    }
   }
 
   const masterTime = masterAe0.currentTime;
@@ -4706,6 +4716,12 @@ function setupEventListeners() {
   // ⏮ Beginning: seek every active stem to 0 (keep play/pause state).
   if (els.btnGoBeginning) {
     els.btnGoBeginning.addEventListener('click', () => {
+      // If a count-in is mid-flight, abort it cleanly so the back button
+      // doesn't end up racing the awaited audio start.
+      if (countInInProgress) {
+        countInInProgress = false;
+        if (els.btnPlay) els.btnPlay.disabled = false;
+      }
       Object.keys(audioElements || {}).forEach(chan => {
         const ae = audioElements[chan];
         if (audioHasSrc(ae)) { try { ae.currentTime = 0; } catch (e) {} }
