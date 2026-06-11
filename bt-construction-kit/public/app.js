@@ -5757,6 +5757,16 @@ function setupStemHotkeys() {
     if (k >= '1' && k <= '9') {
       e.preventDefault();
       recordSectionAtPlayhead(parseInt(k, 10));
+      return;
+    }
+    // M → open the MIDI event modal pre-filled at the current playhead.
+    // (Replaces the empty-lane-click trigger which conflicted with the
+    // section divider grab.)
+    if (k.toLowerCase() === 'm') {
+      e.preventDefault();
+      openMidiModal(null);
+      const timeEl = document.getElementById('midi-f-time');
+      if (timeEl) timeEl.value = currentPlayheadSec().toFixed(2);
     }
   });
 }
@@ -5815,18 +5825,42 @@ document.addEventListener('click', (ev) => {
   if (!picker.contains(ev.target)) closeSectionPicker();
 }, true);
 
-// Snap a time value to the nearest beat using the song's BPM and the
-// detected offset to the first downbeat. With the offset baked in, beat 1
-// of the song is at `offset`, beat 2 at `offset + beatSec`, etc. Returns
-// `t` unchanged if BPM is missing.
+// Snap a time value to the nearest beat. Two-pass approach:
+//
+//   Pass 1 — BPM math:     beat = offset + N × (60/BPM). Gives a regular grid
+//                          aligned to the song's first downbeat.
+//   Pass 2 — Onset refine: search `window.songOnsetTimes` (peaks detected by
+//                          the visualizer, dominated by drum hits) for an
+//                          actual onset within ±100 ms of the grid beat.
+//                          Use the onset's exact time if found — this
+//                          accounts for slight BPM drift and avoids "off by
+//                          a tick" snap when the song isn't perfectly to
+//                          a metronome.
+//
+// Returns `t` rounded to 0.01s if BPM is missing.
 function snapTimeToBeat(t) {
   const bpm = currentSong && currentSong.practiceBpm;
   if (!bpm) return Math.round(t * 100) / 100;
   const beatSec = 60 / bpm;
   const offset = (typeof getBeatOffsetSec === 'function') ? getBeatOffsetSec() : 0;
   const beatNum = Math.max(0, Math.round((t - offset) / beatSec));
-  const snapped = offset + beatNum * beatSec;
-  return Math.max(0, Math.round(snapped * 100) / 100);
+  const gridT = offset + beatNum * beatSec;
+
+  // Pass 2: snap to the nearest detected onset if one sits close to gridT.
+  const WINDOW = 0.1;  // ±100 ms
+  const onsets = window.songOnsetTimes;
+  if (Array.isArray(onsets) && onsets.length) {
+    let best = null, bestDist = WINDOW;
+    // Onsets are typically sorted; binary-search-ish walk would be faster
+    // but the array is small and this runs only at section-edit time.
+    for (const ot of onsets) {
+      const d = Math.abs(ot - gridT);
+      if (d < bestDist) { bestDist = d; best = ot; }
+      else if (ot - gridT > WINDOW) break;
+    }
+    if (best !== null) return Math.max(0, Math.round(best * 100) / 100);
+  }
+  return Math.max(0, Math.round(gridT * 100) / 100);
 }
 
 // Append a section marker at the current playhead. If a section already
@@ -5924,15 +5958,12 @@ function setupMidiUI() {
   if (!lane) return;
   lane.addEventListener('click', (e) => {
     if (e.target.closest('.midi-event-marker')) return;
-    // Empty lane click → clear selection AND open modal at the clicked time.
+    if (e.target.closest('.automation-section-divider')) return;
+    // Empty-lane click no longer opens the MIDI modal — the cross-hair
+    // cursor was getting in the way of grabbing section dividers and
+    // section labels. Use the 'M' keyboard shortcut instead.
     automationSelectedIdx = null;
-    const r = lane.getBoundingClientRect();
-    const pct = (e.clientX - r.left) / r.width;
-    const dur = songDurationSec();
-    if (!dur) return;
-    const t = Math.max(0, Math.min(dur, pct * dur));
-    openMidiModal(null);
-    document.getElementById('midi-f-time').value = t.toFixed(2);
+    renderAutomationLane();
   });
 
   // Delete key removes the selected marker. Skip if a text input is focused.
