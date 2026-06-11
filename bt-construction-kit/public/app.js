@@ -5127,6 +5127,16 @@ let automationLastSavedJSON = '[]';  // canonical snapshot to compare against
 async function loadAutomationForSong(songBase) {
   automationCurrentBase = songBase;
   automationLastTime = 0;
+  // Reset the LOOPER on every song load. Otherwise the loop range from the
+  // previous song carries over into the new one — the button looks active
+  // and the sync loop tries to wrap the playhead at the old endT, even if
+  // the new song has no sections defined at all.
+  sectionLooperActive = false;
+  sectionLooperRange = null;
+  const looperBtn = document.getElementById('btn-section-looper');
+  const looperLabel = document.getElementById('looper-section-text');
+  if (looperBtn) looperBtn.classList.remove('active');
+  if (looperLabel) looperLabel.textContent = 'no section';
   if (!songBase) {
     automationEvents = [];
     automationSections = [];
