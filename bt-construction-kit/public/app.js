@@ -230,6 +230,21 @@ window.addEventListener('DOMContentLoaded', () => {
   // Section LOOPER button — toggle the section-loop on/off
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
+
+  // Count-in toggle. State is per-song; flips immediately and saves to
+  // metadata.json so the next play of this song honors it.
+  const countInBtn = document.getElementById('btn-count-in-toggle');
+  if (countInBtn) countInBtn.addEventListener('click', async () => {
+    if (!automationCurrentBase) return;
+    automationCountIn = !automationCountIn;
+    refreshCountInButton();
+    markAutomationDirty();
+    try {
+      await saveAutomationForSong(automationCurrentBase, automationEvents);
+    } catch (e) {
+      console.warn('[count-in] save failed:', e);
+    }
+  });
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
   // second round-trip if/when the user opens it.)
@@ -3848,17 +3863,17 @@ function updateStretchInfoProgress() {
 }
 
 // Play / Pause Coordination
-function togglePlayPause() {
+async function togglePlayPause() {
   if (!currentSong) return;
-  
+
   initAudioCtx();
-  
+
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
-  
+
   const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
-  
+
   if (isPlaying) {
     activeElements.forEach(ae => ae.pause());
     isPlaying = false;
@@ -3867,6 +3882,24 @@ function togglePlayPause() {
     stopBeatingVisualizer();
     stopPlayheadSaverAndFlush();
   } else {
+    // Count-in pre-roll: when the song has count-in enabled, play 4 clicks
+    // at the song's BPM before starting audio. Skip the pre-roll on a
+    // mid-song resume (currentTime > a few seconds in) — count-in is for
+    // starting a performance, not resuming a pause.
+    const masterAe0 = activeElements[0];
+    const isFreshStart = masterAe0 && masterAe0.currentTime < 1.5;
+    if (automationCountIn && isFreshStart) {
+      els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
+      els.btnPlay.disabled = true;
+      await playCountIn();
+      els.btnPlay.disabled = false;
+      // Turn off the click track after the count-in so the song plays clean.
+      if (clickEnabled) {
+        clickEnabled = false;
+        const ctBtn = document.getElementById('btn-click-toggle');
+        if (ctBtn) ctBtn.classList.remove('active');
+      }
+    }
     const masterTime = activeElements[0].currentTime;
     activeElements.forEach(ae => {
       ae.currentTime = masterTime;
@@ -3879,7 +3912,7 @@ function togglePlayPause() {
     startBeatingVisualizer(currentSong.practiceBpm || 100);
     startPlayheadSaver();
   }
-  
+
   applyMixerVolumes();
   lucide.createIcons();
 }
@@ -5008,10 +5041,12 @@ async function loadAutomationForSong(songBase) {
   if (!songBase) {
     automationEvents = [];
     automationSections = [];
+    automationCountIn = false;
     automationLastSavedJSON = '[]';
     automationDirty = false;
     renderAutomationLane();
     refreshAutomationToolbar();
+    refreshCountInButton();
     return;
   }
   try {
@@ -5020,12 +5055,15 @@ async function loadAutomationForSong(songBase) {
     const events = d.automation || [];
     automationEvents = events.map(e => ({ ...e, fired: false }));
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
-    automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections });
+    automationCountIn = !!d.countIn;
+    automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
   } catch (e) {
     automationEvents = [];
     automationSections = [];
+    automationCountIn = false;
     automationLastSavedJSON = '[]';
   }
+  refreshCountInButton();
   automationDirty = false;
   renderAutomationLane();
   refreshAutomationToolbar();
@@ -5037,18 +5075,21 @@ async function saveAutomationForSong(songBase, events) {
   const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ automation: clean, sections: automationSections }),
+    body: JSON.stringify({ automation: clean, sections: automationSections, countIn: automationCountIn }),
   });
   if (!r.ok) throw new Error((await r.json()).error || 'save failed');
   const d = await r.json();
   const saved = d.automation || [];
   const savedSections = Array.isArray(d.sections) ? d.sections : automationSections;
+  const savedCountIn = !!d.countIn;
   automationEvents = saved.map(e => ({ ...e, fired: false }));
   automationSections = savedSections;
-  automationLastSavedJSON = JSON.stringify({ a: saved, s: savedSections });
+  automationCountIn = savedCountIn;
+  automationLastSavedJSON = JSON.stringify({ a: saved, s: savedSections, c: savedCountIn });
   automationDirty = false;
   renderAutomationLane();
   refreshAutomationToolbar();
+  refreshCountInButton();
 }
 
 // Updates the lane toolbar — counter, "● unsaved" dot, button enable states.
@@ -5072,9 +5113,38 @@ function refreshAutomationToolbar() {
 // reliably clears when the user undoes their changes manually.
 function markAutomationDirty() {
   const cleanNow = automationEvents.map(({ fired, ...rest }) => rest);
-  const nowJSON = JSON.stringify({ a: cleanNow, s: automationSections });
+  const nowJSON = JSON.stringify({ a: cleanNow, s: automationSections, c: automationCountIn });
   automationDirty = (nowJSON !== automationLastSavedJSON);
   refreshAutomationToolbar();
+}
+
+// Reflect the current automationCountIn value on the toggle button (active
+// class + tooltip).
+function refreshCountInButton() {
+  const btn = document.getElementById('btn-count-in-toggle');
+  if (!btn) return;
+  btn.classList.toggle('active', !!automationCountIn);
+  btn.title = automationCountIn
+    ? 'Count-in: ON — Play triggers 4 clicks before audio starts. Click to disable.'
+    : 'Count-in: OFF — Play starts audio immediately. Click to enable for this song.';
+}
+
+// Play 4 clicks at the song's BPM, then resolve. Each click is a downbeat
+// pitch (1800 Hz) for an obvious "1-2-3-4" pre-roll. Uses the same
+// fireClickAt + audioCtx that the click track does.
+function playCountIn() {
+  return new Promise((resolve) => {
+    if (!audioCtx) initAudioCtx();
+    if (!audioCtx) { resolve(); return; }
+    const bpm = (currentSong && currentSong.practiceBpm) || 120;
+    const beatSec = 60 / bpm;
+    const start = audioCtx.currentTime + 0.05;
+    for (let i = 0; i < 4; i++) fireClickAt(start + i * beatSec, true);
+    // Resolve right BEFORE the 4th-beat onset so audio can start
+    // synchronously with what the player perceives as beat 1.
+    const totalMs = 4 * beatSec * 1000;
+    setTimeout(resolve, totalMs + 50);
+  });
 }
 
 function songDurationSec() {
@@ -5310,6 +5380,12 @@ function attachSectionDividerHandlers(node, idx) {
 // Per-song section markers ({t, color: 1..9}). Loaded alongside automation
 // events and persisted in the same metadata.json save.
 let automationSections = [];
+
+// Per-song count-in flag. When true, pressing Play first plays 4 clicks at
+// the song's BPM, then starts audio (and turns off the click track if it
+// was on). Stored alongside automation in metadata.json so the count-in is
+// remembered across sessions.
+let automationCountIn = false;
 
 // LOOPER state. When `sectionLooperActive` is true, the audio sync loop
 // snaps the playhead from `sectionLooperRange.endT` back to `startT`.

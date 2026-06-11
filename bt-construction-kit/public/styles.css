@@ -4066,6 +4066,22 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
    Font override: Space Grotesk's bold capital I has prominent top/bottom
    serifs that read like a 'T'. Arial Black renders 'I' as a clean vertical
    block with no ambiguity. */
+/* Count-in toggle button: # icon with a small "4" badge so the action is
+   obvious at a glance. Active state inherits the existing .toggle-btn.active
+   green outline that the click-toggle uses. */
+#btn-count-in-toggle { position: relative; }
+#btn-count-in-toggle .ci-num {
+  position: absolute;
+  bottom: 4px; right: 5px;
+  font-size: 9px;
+  font-weight: 900;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 1px 3px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
 .midi-event-marker.evt-init {
   background: #9b59b6;
   color: #fff;

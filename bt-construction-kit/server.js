@@ -1805,6 +1805,7 @@ app.get('/api/song/:base/automation', (req, res) => {
       base: s.b,
       automation: Array.isArray(meta.automation) ? meta.automation : [],
       sections:   Array.isArray(meta.sections)   ? meta.sections   : [],
+      countIn:    !!meta.countIn,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1814,6 +1815,7 @@ app.put('/api/song/:base/automation', (req, res) => {
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const events   = req.body && req.body.automation;
   const sections = (req.body && req.body.sections) || [];
+  const countIn  = !!(req.body && req.body.countIn);
   if (!Array.isArray(events)) return res.status(400).json({ error: 'need { automation: [...] }' });
   const mp = path.join(s.dir, 'metadata.json');
   if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
@@ -1873,8 +1875,9 @@ app.put('/api/song/:base/automation', (req, res) => {
       : [];
     meta.automation = clean;
     meta.sections   = cleanSections;
+    meta.countIn    = countIn;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
-    res.json({ ok: true, automation: clean, sections: cleanSections });
+    res.json({ ok: true, automation: clean, sections: cleanSections, countIn });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
