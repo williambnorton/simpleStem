@@ -3961,6 +3961,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-mute   { background: #e74c3c; color: #fff; box-shadow: 0 0 4px rgba(231, 76, 60, 0.6); }
 .midi-event-marker.evt-unmute { background: #2ecc71; color: #111; box-shadow: 0 0 4px rgba(46, 204, 113, 0.6); }
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
+.midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
 .midi-event-marker.fired { outline: 1px solid rgba(255,255,255,0.7); }
 .midi-event-marker.selected { outline: 2px solid #fff; outline-offset: 1px; z-index: 3; }
 .midi-event-marker:hover { transform: translateX(-50%) scale(1.15); z-index: 2; }

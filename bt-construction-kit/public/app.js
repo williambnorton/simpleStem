@@ -4712,6 +4712,13 @@ function setupEventListeners() {
       document.getElementById(`val-${chan}`).textContent = `${Math.round(vol * 100)}%`;
       applyMixerVolumes();
       saveMixerState();
+      // Record an automation event so the move is captured in the song's
+      // timeline. recordFadeEvent dedups within 50 ms so a fader drag
+      // doesn't spray dozens of events. Skipped if no song is loaded.
+      if (automationCurrentBase) {
+        const lvl = Math.max(0, Math.min(10, Math.round(vol * 10)));
+        recordFadeEvent(chan, lvl);
+      }
     });
 
     const muteBtn = document.getElementById(`mute-${chan}`);
@@ -4720,6 +4727,16 @@ function setupEventListeners() {
       muteBtn.classList.toggle('active', mixerState.muted[chan]);
       applyMixerVolumes();
       saveMixerState();
+      // Record a fade event capturing the new state: muted = level 0,
+      // unmuted = restore to current fader level.
+      if (automationCurrentBase) {
+        if (mixerState.muted[chan]) {
+          recordFadeEvent(chan, 0);
+        } else {
+          const lvl = Math.max(1, Math.min(10, Math.round((mixerState.volumes[chan] || 0.8) * 10)));
+          recordFadeEvent(chan, lvl);
+        }
+      }
     });
 
     const soloBtn = document.getElementById(`solo-${chan}`);
@@ -4986,19 +5003,21 @@ function songDurationSec() {
 const STEM_LETTER = { vocals: 'V', drums: 'D', bass: 'B', guitar: 'G', piano: 'P', other: 'O' };
 const LETTER_STEM = Object.fromEntries(Object.entries(STEM_LETTER).map(([k,v]) => [v.toLowerCase(), k]));
 
-// Rich marker label per event type. Replaces the single-letter scheme.
-//   Mute      → "<L>0"           e.g. V0  (vocals muted)
-//   Unmute    → "<L>10"          e.g. V10 (vocals at full)  [v1: binary only]
-//   Fade      → "<L><n>"         e.g. V7  (vocals fader at 7) — for future use
-//   PC        → "M<ch>P<prog>"   e.g. M4P12  (MIDI ch 4 Program Change 12)
-//   CC        → "M<ch>C<ctrl>"   e.g. M4C7   (MIDI ch 4 Controller 7)
-//   Note On   → "M<ch>N<note>"   e.g. M4N60  (MIDI ch 4 note 60 on)
+// Marker labels.
+//   Fade      → "<L><level>"     e.g. V0 (mute), V4 (40%), V10 (100%)
+//   Mute (legacy)   → "<L>0"     (treated as level 0)
+//   Unmute (legacy) → "<L>10"    (treated as level 10)
+//   PC        → "M<ch>P<prog>"   e.g. M4P12
+//   CC        → "M<ch>C<ctrl>"   e.g. M4C7
+//   Note On   → "M<ch>N<note>"   e.g. M4N60
 //   Note Off  → "M<ch>n<note>"   e.g. M4n60  (lowercase n = off)
 function eventMarkerLabel(e) {
   if (e.type === 'mute')   return `${STEM_LETTER[e.stem] || '?'}0`;
   if (e.type === 'unmute') return `${STEM_LETTER[e.stem] || '?'}10`;
   if (e.type === 'fade') {
-    const lvl = typeof e.value === 'number' ? Math.round(e.value * 10) : '?';
+    const lvl = (typeof e.level === 'number') ? e.level
+              : (typeof e.value === 'number') ? Math.round(e.value * 10)
+              : '?';
     return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
   }
   const ch = e.channel || 1;
@@ -5009,11 +5028,18 @@ function eventMarkerLabel(e) {
   return e.type || '?';
 }
 
-// CSS class suffix so the marker can be color-coded by type.
+// CSS class suffix so the marker can be color-coded by type. For fade
+// events the color depends on the level (0 = red, 10 = green, in-between
+// = yellow/amber).
 function eventClass(e) {
   if (e.type === 'mute')   return 'evt-mute';
   if (e.type === 'unmute') return 'evt-unmute';
-  if (e.type === 'fade')   return 'evt-fade';
+  if (e.type === 'fade') {
+    const lvl = (typeof e.level === 'number') ? e.level : 5;
+    if (lvl <= 0) return 'evt-mute';
+    if (lvl >= 10) return 'evt-unmute';
+    return 'evt-fade-mid';
+  }
   return 'evt-midi';
 }
 
@@ -5216,30 +5242,52 @@ function readMidiModalForm() {
   return out;
 }
 
-// Keyboard shortcut: while a song is loaded, V/D/B/G/P/O record a stem
-// mute/unmute event at the current playhead. Events accumulate in memory
-// only — the user commits with SAVE ACTIONS, or playback's `ended` handler
-// auto-saves when the song reaches the end.
-//
-// Toggle logic: look at the most recent event for the same stem at or
-// before the current playhead. If the most recent is mute, the new event
-// is unmute; otherwise mute.
+// Keyboard shortcut: while a song is loaded, V/D/B/G/P/O record a fade
+// event at the current playhead. Toggles between mute (level 0) and the
+// stem's current fader level. Events accumulate in memory only — the user
+// commits with SAVE ACTIONS, or playback's `ended` handler auto-saves when
+// the song reaches the end.
 function recordStemToggleAtPlayhead(stem) {
   if (!automationCurrentBase) return;
   const t = currentPlayheadSec();
-  let lastType = null;
+  // Look at the most recent fade event for this stem before now.
+  let lastLevel = null;
   for (const e of automationEvents) {
-    if ((e.type === 'mute' || e.type === 'unmute') && e.stem === stem && e.t <= t + 0.01) {
-      lastType = e.type;
-    }
+    if (e.stem !== stem || e.t > t + 0.01) continue;
+    if (e.type === 'fade')   lastLevel = (typeof e.level === 'number') ? e.level : null;
+    else if (e.type === 'mute')   lastLevel = 0;
+    else if (e.type === 'unmute') lastLevel = 10;
   }
-  const next = (lastType === 'mute') ? 'unmute' : 'mute';
-  const ev = { t, type: next, stem, label: `${next} ${stem}`, fired: true };
-  automationEvents.push(ev);
-  automationEvents.sort((a, b) => a.t - b.t);
+  // Toggle: if last was muted (or no history), next is current fader value.
+  // Otherwise next is mute. This is the V0 ↔ V<currentFader> toggle.
+  const curVol = mixerState.volumes?.[stem] ?? 0.8;
+  const curLevel = Math.max(0, Math.min(10, Math.round(curVol * 10)));
+  const nextLevel = (lastLevel === 0 || lastLevel == null) ? Math.max(1, curLevel) : 0;
+  recordFadeEvent(stem, nextLevel, t);
+}
+
+// Append a fade event to the in-memory timeline AND apply it immediately.
+// Used by the keyboard shortcut, by fader-drag recording, and by mute
+// button presses while a song is loaded.
+function recordFadeEvent(stem, level, atTime) {
+  if (!automationCurrentBase) return;
+  const t = (typeof atTime === 'number') ? atTime : currentPlayheadSec();
+  const ev = { t, type: 'fade', stem, level: Math.max(0, Math.min(10, level)), fired: true };
+  // Dedup: if there's already a fade event for this stem within 50 ms,
+  // overwrite its level rather than adding a new one. Stops a fader drag
+  // from spraying 30 events per second onto the timeline.
+  const NEAR = 0.05;
+  const recent = automationEvents.findLast?.(e => e.type === 'fade' && e.stem === stem && Math.abs(e.t - t) < NEAR);
+  if (recent) {
+    recent.level = ev.level;
+  } else {
+    automationEvents.push(ev);
+    automationEvents.sort((a, b) => a.t - b.t);
+  }
   renderAutomationLane();
   markAutomationDirty();
-  // Fire immediately so the audible state matches the dropped marker.
+  // Apply audibly. Use the same handler the dispatcher uses so the gain
+  // node, mute button, and fader slider all stay in sync.
   fireAutomationEvent(ev).catch(()=>{});
 }
 
@@ -5265,23 +5313,46 @@ function setupStemHotkeys() {
 //   unmute     → flip mixerState.muted[stem] off, repaint
 //   fade       → stub for now; ramps come later
 async function fireAutomationEvent(e) {
+  // Legacy mute/unmute: treat as fade to 0 or 10.
   if (e.type === 'mute' || e.type === 'unmute') {
-    const stem = e.stem;
-    if (!stem || !(stem in (mixerState.muted || {}))) return;
-    const want = (e.type === 'mute');
-    if (mixerState.muted[stem] !== want) {
-      mixerState.muted[stem] = want;
-      if (typeof applyMixerVolumes === 'function') applyMixerVolumes();
-      if (typeof saveMixerState === 'function') saveMixerState();
-      const btn = document.getElementById(`mute-${stem}`);
-      if (btn) btn.classList.toggle('active', want);
-    }
-    return;
+    return applyFadeToStem(e.stem, e.type === 'mute' ? 0 : 10);
   }
-  if (e.type === 'pc' || e.type === 'cc') {
+  // Modern fade event: level is 0..10 inclusive (0 = muted, 10 = 100%).
+  if (e.type === 'fade') {
+    const lvl = (typeof e.level === 'number') ? e.level
+              : (typeof e.value === 'number') ? Math.round(e.value * 10) : 0;
+    return applyFadeToStem(e.stem, lvl);
+  }
+  if (e.type === 'pc' || e.type === 'cc' || e.type === 'note_on' || e.type === 'note_off') {
     return sendMidiNow(e);
   }
-  // 'fade' is not yet implemented — ramps come in a future iteration.
+}
+
+// Apply a fade level to a stem: level 0 = mute on + fader 0, level n in
+// 1..10 = mute off + fader at n*10%. Updates mixerState, the visible
+// mute/fader controls, and triggers applyMixerVolumes so the audio
+// hardware/Web Audio gain nodes follow.
+function applyFadeToStem(stem, level) {
+  if (!stem || !mixerState.muted || !(stem in mixerState.muted)) return;
+  level = Math.max(0, Math.min(10, Math.round(level)));
+  const wantMute = (level === 0);
+  const vol = wantMute ? 0 : (level / 10);
+  if (mixerState.muted[stem] !== wantMute) {
+    mixerState.muted[stem] = wantMute;
+    const btn = document.getElementById(`mute-${stem}`);
+    if (btn) btn.classList.toggle('active', wantMute);
+  }
+  // Only set fader if we're unmuting (or fading to a specific value).
+  // For mute, we don't reset the user's prior fader position.
+  if (!wantMute) {
+    mixerState.volumes[stem] = vol;
+    const fader = document.getElementById(`fader-${stem}`);
+    const val = document.getElementById(`val-${stem}`);
+    if (fader) fader.value = vol;
+    if (val) val.textContent = `${Math.round(vol * 100)}%`;
+  }
+  if (typeof applyMixerVolumes === 'function') applyMixerVolumes();
+  if (typeof saveMixerState === 'function') saveMixerState();
 }
 
 async function sendMidiNow(event) {

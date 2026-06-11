@@ -1836,6 +1836,9 @@ app.put('/api/song/:base/automation', (req, res) => {
           }
         } else if (e.type === 'mute' || e.type === 'unmute') {
           base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
+        } else if (e.type === 'fade') {
+          base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
+          base.level = Math.max(0, Math.min(10, parseInt(e.level, 10) || 0));
         }
         return base;
       })
