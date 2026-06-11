@@ -1430,15 +1430,17 @@ async function precacheAllStemsM4a() {
     console.warn('[stem precache] failed:', e.message);
   }
 }
-// See the note above precacheAllM4as: full-library stem precache also gated
-// on SIMPLE_STEM_PRECACHE_ALL. Off by default so we don't drag the entire
-// STEMS/ folder through Drive Stream on every boot.
-if (process.env.SIMPLE_STEM_PRECACHE_ALL === '1') {
-  setImmediate(precacheAllStemsM4a);
-  setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
-} else {
-  console.log('[boot] precacheAllStemsM4a DISABLED (default). Stem cache fills on demand.');
-}
+// Full-library stem precache is the DEFAULT now. The portal pulls every
+// m4a stem in STEMS/ into ~/.bt-cache/STEMS/ at boot and then again every
+// hour. Result: any song plays instantly with no Drive fetch. Total
+// footprint ~3 GB for ~180 songs (well under the 50 GB cache cap).
+//
+// The boot pass is async — it doesn't block the HTTP server; the server
+// starts answering requests immediately and the cache fills in the
+// background. The hourly tick picks up any newly-added songs and skips
+// already-cached files cheaply (mtime+size check).
+setImmediate(precacheAllStemsM4a);
+setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
 
 // Manual trigger — POST /api/precache/library forces both passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;

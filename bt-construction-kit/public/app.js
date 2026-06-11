@@ -232,30 +232,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRoutingUI();
   setupFormatFilters();
   setupClickTrack();
-  // "Cache All" button — kicks off /api/precache/library which copies every
-  // m4a stem (+ mixdowns if any) into ~/.bt-cache. ~3 GB for ~180 songs.
-  // The server processes in the background; this just kicks it off.
-  const precacheAllBtn = document.getElementById('btn-precache-all');
-  if (precacheAllBtn) precacheAllBtn.addEventListener('click', async () => {
-    if (!confirm('Cache every song\'s stems to local disk?\nRuns in the background, the portal stays responsive. ~3 GB for ~180 songs, ~5–15 min over wifi.')) return;
-    const orig = precacheAllBtn.innerHTML;
-    precacheAllBtn.innerHTML = '<i data-lucide="loader-2"></i><span style="margin-left:6px;">Caching…</span>';
-    precacheAllBtn.disabled = true;
-    try {
-      await fetch('/api/precache/library', { method: 'POST' });
-      // Don't lock the button forever — flip back after a moment so the
-      // user can see it returned. Progress shows in server logs.
-      setTimeout(() => {
-        precacheAllBtn.innerHTML = orig;
-        precacheAllBtn.disabled = false;
-        if (typeof lucide?.createIcons === 'function') lucide.createIcons();
-      }, 3500);
-    } catch (e) {
-      precacheAllBtn.innerHTML = orig;
-      precacheAllBtn.disabled = false;
-      alert(`Couldn't start precache: ${e.message}`);
-    }
-  });
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
   try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
