@@ -5456,6 +5456,10 @@ function attachSectionDividerHandlers(node, idx) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (dragging) {
+        // Snap the dropped position to the nearest beat so the section
+        // boundary is rhythm-aligned. Matters most for the LOOPER, which
+        // wraps at section.endT — beat-aligned wraps keep the loop tight.
+        automationSections[idx].t = snapTimeToBeat(automationSections[idx].t);
         automationSections.sort((a, b) => a.t - b.t);
         renderAutomationLane();
         markAutomationDirty();
@@ -5811,19 +5815,35 @@ document.addEventListener('click', (ev) => {
   if (!picker.contains(ev.target)) closeSectionPicker();
 }, true);
 
+// Snap a time value to the nearest beat using the song's BPM and the
+// detected offset to the first downbeat. With the offset baked in, beat 1
+// of the song is at `offset`, beat 2 at `offset + beatSec`, etc. Returns
+// `t` unchanged if BPM is missing.
+function snapTimeToBeat(t) {
+  const bpm = currentSong && currentSong.practiceBpm;
+  if (!bpm) return Math.round(t * 100) / 100;
+  const beatSec = 60 / bpm;
+  const offset = (typeof getBeatOffsetSec === 'function') ? getBeatOffsetSec() : 0;
+  const beatNum = Math.max(0, Math.round((t - offset) / beatSec));
+  const snapped = offset + beatNum * beatSec;
+  return Math.max(0, Math.round(snapped * 100) / 100);
+}
+
 // Append a section marker at the current playhead. If a section already
 // exists very close to now, overwrite its color rather than adding a new
-// one (so the user can fix a fat-finger key press).
+// one (so the user can fix a fat-finger key press). The boundary is
+// quantized to the nearest beat so loop wraps stay rhythmic.
 function recordSectionAtPlayhead(color) {
   if (!automationCurrentBase) return;
   if (!SECTION_COLORS[color]) return;
-  const t = currentPlayheadSec();
+  const rawT = currentPlayheadSec();
+  const t = snapTimeToBeat(rawT);
   const NEAR = 0.3;
   const existing = automationSections.find(s => Math.abs(s.t - t) < NEAR);
   if (existing) {
     existing.color = color;
   } else {
-    automationSections.push({ t: Math.round(t * 100) / 100, color });
+    automationSections.push({ t, color });
     automationSections.sort((a, b) => a.t - b.t);
   }
   renderAutomationLane();
