@@ -2929,6 +2929,7 @@ function applySidebarWidth(px) {
 let clickEnabled = false;
 let clickLastScheduledBeat = -1;
 let clickLastSongTime = 0;
+let clickIdleSince = 0;
 // Number of clicks fired since the last toggle-on. Click track auto-disables
 // after 4 — short pre-roll counter, not a continuous metronome.
 let clickBeatsFired = 0;
@@ -2976,7 +2977,21 @@ function clickSchedulerTick() {
     const ae = audioElements[ch];
     if (ae && ae.src && !ae.paused) { songTime = ae.currentTime; break; }
   }
-  if (songTime == null) return;
+  if (songTime == null) {
+    // No song playing → start the inactivity countdown. If 5 s elapses
+    // without playback the click track auto-disables so it can't sit in
+    // a RAF loop forever after a stray button press.
+    if (!clickIdleSince) clickIdleSince = Date.now();
+    else if (Date.now() - clickIdleSince > 5000) {
+      clickEnabled = false;
+      clickIdleSince = 0;
+      const btn = document.getElementById('btn-click-toggle');
+      if (btn) btn.classList.remove('active');
+      console.warn('[click] auto-disabled after 5s with no playback');
+    }
+    return;
+  }
+  clickIdleSince = 0;
 
   // Seek detection: if the song time jumped backwards, reset our
   // 'already-scheduled' cursor so future events fire again.
@@ -4213,7 +4228,7 @@ async function loadSetlistsList() {
       row.className = 'setlist-chip';
       const isPlaylist = sl.origin === 'playlist';
       const badge = isPlaylist
-        ? '<span class="sl-badge sl-yt" title="Synced from a YouTube playlist"><i data-lucide="youtube" style="width:11px;height:11px;"></i> sync</span>'
+        ? '<span class="sl-badge sl-yt" title="Synced from a YouTube playlist"><i data-lucide="rss" style="width:11px;height:11px;"></i> sync</span>'
         : '<span class="sl-badge sl-manual" title="Hand-curated; never auto-changed">manual</span>';
       // Manual setlists get a small × to remove them. Playlist-synced ones don't
       // (deleting one would just re-sync on the next pass — own the source instead).
