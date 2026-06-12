@@ -232,6 +232,8 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRoutingUI();
   setupFormatFilters();
   setupClickTrack();
+  loadPitchState();
+  setupPitchKnobs();
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
   try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
@@ -2808,9 +2810,14 @@ function initAudioCtx() {
   console.log(`[audio] graph initialized — outputChannelCount=${outputChannelCount}, destination.channelCount=${audioCtx.destination.channelCount}, maxChannelCount=${audioCtx.destination.maxChannelCount}`);
 
   // Graph: [stem sources] → splitter → masterMerger → analyser → masterGain → destination
+  //  (or, with pitch shift active: masterGain → pitchShifter → destination)
   masterMerger.connect(analyserNode);
   analyserNode.connect(masterGainNode);
   masterGainNode.connect(audioCtx.destination);
+  // Wire the pitch shifter once the master path exists. setupPitchShifter
+  // is a no-op if Tone.js failed to load or if we're on multi-channel out
+  // (where pitch shift would downmix the per-stem XR18 routing to stereo).
+  setupPitchShifter();
 
   Object.keys(audioElements).forEach(chan => {
     const ae = audioElements[chan];
@@ -2830,6 +2837,164 @@ function initAudioCtx() {
   applyRouting();
 
   initVisualizer(analyserNode);
+}
+
+// ── Pitch shift (master bus) ──────────────────────────────────────────────
+// Tone.PitchShift inserted between masterGain and destination so the entire
+// mixed signal shifts together while tempo stays constant. Two knobs in the
+// mixer header drive it:
+//   COARSE: -12..+12 semitones (whole half-steps)
+//   FINE:   -50..+50 cents (fractions of a half-step)
+// Total = pitchSemis + pitchCents/100, fed to pitchShifter.pitch.
+//
+// CAVEAT: Tone.PitchShift is stereo. When the laptop is on multi-channel
+// output (XR18, 18-ch), inserting the shifter would downmix the per-stem
+// channel routing back to stereo and break the band's monitor mix. The
+// shifter is therefore SKIPPED in that case — the knobs still hold/save
+// their value but the audio graph stays masterGain → destination.
+
+let pitchShifter = null;
+let pitchSemis = 0;   // -12..+12
+let pitchCents = 0;   // -50..+50
+const PITCH_STORAGE_KEY = 'simpleStem.pitchShift.v1';
+
+function loadPitchState() {
+  try {
+    const raw = localStorage.getItem(PITCH_STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    pitchSemis = Math.max(-12, Math.min(12, parseInt(s.semis, 10) || 0));
+    pitchCents = Math.max(-50, Math.min(50, parseInt(s.cents, 10) || 0));
+  } catch (e) {}
+}
+
+function savePitchState() {
+  try {
+    localStorage.setItem(PITCH_STORAGE_KEY,
+      JSON.stringify({ semis: pitchSemis, cents: pitchCents }));
+  } catch (e) {}
+}
+
+function applyPitchToShifter() {
+  if (!pitchShifter) return;
+  const total = pitchSemis + pitchCents / 100;
+  try { pitchShifter.pitch = total; } catch (e) {}
+}
+
+function setupPitchShifter() {
+  if (typeof window.Tone === 'undefined') {
+    console.warn('[pitch] Tone.js not loaded — pitch knobs will be inert');
+    return;
+  }
+  if (!audioCtx || !masterGainNode) return;
+  // Multi-channel output bypass: pitch shift would downmix to stereo and
+  // break per-stem XR18 routing, so we don't insert it.
+  if (outputChannelCount > 2) {
+    console.log('[pitch] multi-channel output detected; pitch shifter bypassed');
+    return;
+  }
+  try {
+    Tone.setContext(audioCtx);
+    pitchShifter = new Tone.PitchShift({
+      pitch: pitchSemis + pitchCents / 100,
+      windowSize: 0.1,
+      delayTime: 0,
+      feedback: 0,
+      wet: 1,
+    });
+    // Re-route: was masterGain → destination, now masterGain → pitchShifter → destination
+    masterGainNode.disconnect();
+    masterGainNode.connect(pitchShifter.input);
+    pitchShifter.connect(audioCtx.destination);
+    console.log('[pitch] master-bus pitch shifter wired');
+  } catch (e) {
+    console.warn('[pitch] failed to wire pitch shifter:', e.message);
+    pitchShifter = null;
+  }
+}
+
+function updatePitchKnobUI(which) {
+  const val = which === 'coarse' ? pitchSemis : pitchCents;
+  const max = which === 'coarse' ? 12 : 50;
+  const knob = document.getElementById(`knob-${which}`);
+  const valEl = document.getElementById(`val-${which}`);
+  if (knob) {
+    const indicator = knob.querySelector('.pitch-knob-indicator');
+    if (indicator) {
+      // Map [-max..+max] linearly to [-135°..+135°] of rotation.
+      const rot = (val / max) * 135;
+      indicator.style.transform = `rotate(${rot}deg)`;
+    }
+  }
+  if (valEl) {
+    valEl.textContent = val > 0 ? `+${val}` : `${val}`;
+    valEl.classList.toggle('nonzero', val !== 0);
+  }
+}
+
+function setPitch(which, value) {
+  const max = which === 'coarse' ? 12 : 50;
+  value = Math.max(-max, Math.min(max, Math.round(value)));
+  if (which === 'coarse') pitchSemis = value;
+  else pitchCents = value;
+  updatePitchKnobUI(which);
+  applyPitchToShifter();
+  savePitchState();
+}
+
+function setupPitchKnobs() {
+  ['coarse', 'fine'].forEach(which => {
+    const knob = document.getElementById(`knob-${which}`);
+    if (!knob) return;
+    let startY = 0, startVal = 0;
+    // Drag sensitivity — coarse is coarser per pixel so the 24-unit range
+    // requires noticeable arm motion; fine is 1 cent per pixel.
+    const PIXELS_PER_UNIT = which === 'coarse' ? 6 : 1;
+
+    const onMove = e => {
+      const y = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      const dy = startY - y; // dragging up = positive
+      const delta = Math.round(dy / PIXELS_PER_UNIT);
+      setPitch(which, startVal + delta);
+    };
+    const onUp = () => {
+      knob.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    const onDown = e => {
+      e.preventDefault();
+      startY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      startVal = which === 'coarse' ? pitchSemis : pitchCents;
+      knob.classList.add('dragging');
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onUp);
+    };
+    knob.addEventListener('mousedown', onDown);
+    knob.addEventListener('touchstart', onDown, { passive: false });
+    // Double-click resets to 0 — quick way back to neutral pitch.
+    knob.addEventListener('dblclick', () => setPitch(which, 0));
+    // Wheel: one notch per unit.
+    knob.addEventListener('wheel', e => {
+      e.preventDefault();
+      const step = e.deltaY < 0 ? 1 : -1;
+      const cur = which === 'coarse' ? pitchSemis : pitchCents;
+      setPitch(which, cur + step);
+    }, { passive: false });
+    // Keyboard for accessibility.
+    knob.addEventListener('keydown', e => {
+      const cur = which === 'coarse' ? pitchSemis : pitchCents;
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setPitch(which, cur + 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setPitch(which, cur - 1); }
+      if (e.key === '0')         { e.preventDefault(); setPitch(which, 0); }
+    });
+  });
+  updatePitchKnobUI('coarse');
+  updatePitchKnobUI('fine');
 }
 
 // ── Multi-channel routing helpers ─────────────────────────────────────────
@@ -3220,59 +3385,66 @@ async function reprobeAudioDevice() {
 }
 
 function injectStripRoutingButtons() {
-  // Always render the 3×6 routing grid so the band can configure stems-to-XR18
-  // routing even when the laptop is currently on the built-in 2-ch output.
-  // Buttons for channels above outputChannelCount are visibly disabled but
-  // remain present — they activate the moment an 18-ch device is plugged in.
+  // Positional routing layout: each named output channel sits at the position
+  // around the fader-container that mirrors its location in the band's
+  // hologram-style stem image.
+  //
+  //         V (top: Vocals — front/center)
+  //    O  ┌─────┐  P    (corners: Other / Piano)
+  //    L  │fader│  R    (sides: Stereo L/R)
+  //    G  └─────┘  B    (corners: Guitar / Bass)
+  //         D            (bottom: Drums)
+  //         [M][S]
+  //         [3-10, 17-18]  (remaining numeric XR18 outputs)
+  //
+  // Channel indices are 0-based to match routingMatrix; the channel NUMBER
+  // shown to the user is ch+1. Buttons above outputChannelCount are visibly
+  // disabled but remain present for when an XR18 is plugged in mid-session.
+  const POSITIONAL = [
+    { ch: 10, pos: 'V', label: 'Vocals (ch 11)' },
+    { ch: 15, pos: 'O', label: 'Other (ch 16)' },
+    { ch: 14, pos: 'P', label: 'Piano (ch 15)' },
+    { ch: 0,  pos: 'L', label: 'Stereo Left (ch 1)' },
+    { ch: 1,  pos: 'R', label: 'Stereo Right (ch 2)' },
+    { ch: 13, pos: 'G', label: 'Guitar (ch 14)' },
+    { ch: 12, pos: 'B', label: 'Bass (ch 13)' },
+    { ch: 11, pos: 'D', label: 'Drums (ch 12)' },
+  ];
+  const NUMERIC = [2, 3, 4, 5, 6, 7, 8, 9, 16, 17];
+
   document.querySelectorAll('.channel-strip').forEach(strip => {
-    if (strip.querySelector('.strip-routing-grid')) return;
+    if (strip.querySelector('.pos-V')) return;
     const chan = stripChannelName(strip);
     if (!chan) return;
-    const grid = document.createElement('div');
-    grid.className = 'strip-routing-grid';
-    grid.dataset.chan = chan;
-    // 3 rows × 6 cols = 18 channel buttons. Click each to toggle. Selected
-    // buttons appear solid green; unselected are outline. Below the grid a
-    // tiny line shows the resolved L/R routing for debugging the alternating
-    // rule ("L→1,3,5  R→2,4,6").
-    // Output channels 11-16 carry the "natural" stem assignment for the band's
-    // XR18 split. Show the SINGLE LETTER instead of the number so each button
-    // is one big, glanceable character: V D B G P O. Channels 1-10 and 17-18
-    // keep their numbers.
-    //   11 → V (Vocals)   12 → D (Drums)   13 → B (Bass)
-    //   14 → G (Guitar)   15 → P (Piano)   16 → O (Other)
-    // Channels 1-2 are the stereo main L/R pair. Channels 11-16 are the
-    // natural per-instrument outs on the XR18 split. All others stay
-    // numeric. The single-letter labels render bold via .srg-letter.
-    const CHAN_LETTER = {
-      1: 'L', 2: 'R',
-      11: 'V', 12: 'D', 13: 'B', 14: 'G', 15: 'P', 16: 'O'
-    };
-    const LETTER_MEANS = {
-      L: 'Stereo Left', R: 'Stereo Right',
-      V: 'Vocals', D: 'Drums', B: 'Bass',
-      G: 'Guitar', P: 'Piano', O: 'Other',
-    };
-    let html = '';
-    for (let i = 0; i < 18; i++) {
-      const num = i + 1;
-      const letter = CHAN_LETTER[num];
-      const label = letter || `${num}`;
-      const cls = letter ? 'srg-btn srg-letter' : 'srg-btn';
-      const title = `Output channel ${num}${letter ? ' (' + letter + ' = ' + LETTER_MEANS[letter] + ')' : ''}`;
-      html += `<button class="${cls}" data-ch="${i}" title="${title}">${label}</button>`;
-    }
-    grid.innerHTML = `
-      <div class="srg-grid">${html}</div>
-      <div class="srg-summary" data-chan="${chan}"></div>
-    `;
-    grid.querySelectorAll('.srg-btn[data-ch]').forEach(btn => {
+
+    POSITIONAL.forEach(({ ch, pos, label }) => {
+      const btn = document.createElement('button');
+      btn.className = `pos-btn pos-${pos}`;
+      btn.dataset.ch = ch;
+      btn.textContent = pos;
+      btn.title = `Route ${chan} stem to ${label}`;
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        toggleStripChannel(chan, parseInt(btn.dataset.ch, 10));
+        toggleStripChannel(chan, ch);
       });
+      strip.appendChild(btn);
     });
-    strip.appendChild(grid);
+
+    const numericRow = document.createElement('div');
+    numericRow.className = 'pos-numeric-row';
+    NUMERIC.forEach(ch => {
+      const btn = document.createElement('button');
+      btn.className = 'pos-btn pos-numeric';
+      btn.dataset.ch = ch;
+      btn.textContent = ch + 1;
+      btn.title = `Route ${chan} stem to Output ${ch + 1}`;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleStripChannel(chan, ch);
+      });
+      numericRow.appendChild(btn);
+    });
+    strip.appendChild(numericRow);
   });
 }
 
@@ -3284,29 +3456,21 @@ function stripChannelName(strip) {
 }
 
 function renderRoutingGrids() {
-  document.querySelectorAll('.strip-routing-grid').forEach(grid => {
-    const chan = grid.dataset.chan;
+  document.querySelectorAll('.channel-strip').forEach(strip => {
+    const chan = stripChannelName(strip);
+    if (!chan) return;
     const routes = routingMatrix[chan] || [];
-    grid.querySelectorAll('.srg-btn[data-ch]').forEach(btn => {
+    strip.querySelectorAll('.pos-btn[data-ch]').forEach(btn => {
       const ch = parseInt(btn.dataset.ch, 10);
       btn.classList.toggle('active', routes.includes(ch));
+      btn.disabled = ch >= outputChannelCount;
     });
-    const sum = grid.querySelector('.srg-summary');
-    if (sum) sum.textContent = summarizeRouting(routes);
   });
 }
 
-function summarizeRouting(routes) {
-  if (!routes || !routes.length) return 'unrouted';
-  const sorted = [...routes].sort((a, b) => a - b);
-  if (sorted.length === 1) return `mono → Out ${sorted[0] + 1}`;
-  const ls = []; const rs = [];
-  sorted.forEach((o, i) => (i % 2 === 0 ? ls : rs).push(o + 1));
-  return `L→${ls.join(',')}   R→${rs.join(',')}`;
-}
-
 // Alias: legacy call sites still use renderRoutingButtons; route them to the
-// new grid renderer.
+// new positional renderer. (summarizeRouting was removed with the old
+// .strip-routing-grid — the positional layout encodes the routing visually.)
 function renderRoutingButtons() { renderRoutingGrids(); }
 
 // Load song into the mixer

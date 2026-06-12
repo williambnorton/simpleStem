@@ -13,6 +13,10 @@
   
   <!-- Lucide Icons for premium visual cues -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tone.js — used for the master-bus pitch shifter (PitchShift). Granular
+       FFT shift preserves tempo while moving the song up or down in pitch.
+       Loaded from CDN; only the PitchShift node is used. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.0.4/Tone.js"></script>
   
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="styles.css">
@@ -354,6 +358,26 @@
           <div id="mixer-container" class="mixer-console glass-card" style="display: none;">
             <div class="mixer-header">
               <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
+              <!-- Pitch shift knobs: COARSE shifts whole semitones (-12..+12).
+                   FINE shifts cents (-50..+50). Sum drives one Tone.PitchShift
+                   on the master bus so the song shifts pitch while tempo
+                   stays constant. Click-drag vertically on the knob face. -->
+              <div class="pitch-knobs" id="pitch-knobs">
+                <div class="pitch-knob-cell" data-knob="coarse">
+                  <div class="pitch-knob" id="knob-coarse" tabindex="0" title="Coarse pitch — half-steps. Drag up/down; double-click resets to 0.">
+                    <div class="pitch-knob-indicator"></div>
+                  </div>
+                  <div class="pitch-knob-label">SEMI</div>
+                  <div class="pitch-knob-value" id="val-coarse">0</div>
+                </div>
+                <div class="pitch-knob-cell" data-knob="fine">
+                  <div class="pitch-knob" id="knob-fine" tabindex="0" title="Fine pitch — cents (fractions of a half-step). Drag up/down; double-click resets to 0.">
+                    <div class="pitch-knob-indicator"></div>
+                  </div>
+                  <div class="pitch-knob-label">CENT</div>
+                  <div class="pitch-knob-value" id="val-fine">0</div>
+                </div>
+              </div>
               <button id="btn-reset-mixer" class="btn-secondary"><i data-lucide="rotate-ccw"></i> Reset Faders</button>
               <!-- Collapse-mixer toggle: clicking this shrinks the entire top
                    pane down to just title / BPM / key / drum-pattern, so the
@@ -364,11 +388,24 @@
             </div>
             
             <div class="faders-container">
+              <!-- Each channel-strip is a CSS grid:
+                     . V .
+                     O F P     ← F = .fader-container (spans rows 2-4)
+                     L F R
+                     G F B
+                     . D .
+                     M  S       ← mute/solo
+                     numeric    ← remaining XR18 output channels (3-10, 17-18)
+                   Positional + numeric buttons are injected by
+                   injectStripRoutingButtons() in app.js. -->
+
               <!-- Vocals Channel -->
               <div class="channel-strip vocals-strip">
-                <div class="channel-header"><span class="channel-icon text-pink"><i data-lucide="mic"></i></span><span class="channel-name">Vocals</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-vocals" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-pink"><i data-lucide="mic"></i></span><span class="channel-name">Vocals</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-vocals" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-vocals">80%</div>
                 </div>
                 <div class="channel-buttons">
@@ -379,9 +416,11 @@
 
               <!-- Drums Channel -->
               <div class="channel-strip drums-strip">
-                <div class="channel-header"><span class="channel-icon text-green"><i data-lucide="drum"></i></span><span class="channel-name">Drums</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-drums" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-green"><i data-lucide="drum"></i></span><span class="channel-name">Drums</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-drums" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-drums">80%</div>
                 </div>
                 <div class="channel-buttons">
@@ -393,9 +432,11 @@
 
               <!-- Bass Channel -->
               <div class="channel-strip bass-strip">
-                <div class="channel-header"><span class="channel-icon text-blue"><i data-lucide="audio-waveform"></i></span><span class="channel-name">Bass</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-bass" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-blue"><i data-lucide="audio-waveform"></i></span><span class="channel-name">Bass</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-bass" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-bass">80%</div>
                 </div>
                 <div class="channel-buttons">
@@ -407,9 +448,11 @@
 
               <!-- Guitar Channel -->
               <div class="channel-strip guitar-strip">
-                <div class="channel-header"><span class="channel-icon text-yellow"><i data-lucide="guitar"></i></span><span class="channel-name">Guitar</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-guitar" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-yellow"><i data-lucide="guitar"></i></span><span class="channel-name">Guitar</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-guitar" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-guitar">80%</div>
                 </div>
                 <div class="channel-buttons">
@@ -421,9 +464,11 @@
 
               <!-- Piano Channel -->
               <div class="channel-strip piano-strip">
-                <div class="channel-header"><span class="channel-icon text-purple"><i data-lucide="piano"></i></span><span class="channel-name">Piano</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-piano" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-purple"><i data-lucide="piano"></i></span><span class="channel-name">Piano</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-piano" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-piano">80%</div>
                 </div>
                 <div class="channel-buttons">
@@ -435,9 +480,11 @@
 
               <!-- Other Channel -->
               <div class="channel-strip other-strip">
-                <div class="channel-header"><span class="channel-icon text-orange"><i data-lucide="music"></i></span><span class="channel-name">Other</span></div>
-                <div class="fader-track">
-                  <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                <div class="fader-container">
+                  <div class="channel-header"><span class="channel-icon text-orange"><i data-lucide="music"></i></span><span class="channel-name">Other</span></div>
+                  <div class="fader-track">
+                    <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
+                  </div>
                   <div class="fader-value" id="val-other">80%</div>
                 </div>
                 <div class="channel-buttons">

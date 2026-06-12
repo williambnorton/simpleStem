@@ -1791,17 +1791,57 @@ select {
   gap: 12px;
 }
 
+/* Stem container: the outer box. Holds positional V/O/P/L/R/G/B/D buttons
+   wrapped around a central .fader-container, with the M/S row and remaining
+   numeric routing buttons stacked beneath. Grid areas:
+     row 1:  .  V  .
+     row 2:  O  F  P   ← F = fader-container (spans rows 2-4)
+     row 3:  L  F  R
+     row 4:  G  F  B
+     row 5:  .  D  .
+     row 6:  M S       (full width)
+     row 7:  3-10 17-18 numeric (full width)
+*/
 .channel-strip {
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 10px 6px;
+  padding: 8px 6px;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(28px, auto) minmax(0, 1fr) minmax(28px, auto);
+  grid-template-rows: auto auto 1fr auto auto auto auto;
+  grid-template-areas:
+    ".    pV   ."
+    "pO   F    pP"
+    "pL   F    pR"
+    "pG   F    pB"
+    ".    pD   ."
+    "ms   ms   ms"
+    "nm   nm   nm";
+  column-gap: 4px;
+  row-gap: 4px;
+  align-items: center;
+  justify-items: center;
+  transition: var(--transition-smooth);
+}
+
+/* Fader container — Bill's "Fader Container": holds the centered icon+label
+   on top, then the vertical slider, then the position % at the bottom. The
+   positional V/O/P/L/R/G/B/D buttons around it are NOT inside this box;
+   they live in the parent .channel-strip grid. */
+.fader-container {
+  grid-area: F;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  transition: var(--transition-smooth);
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 2px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
 }
 
 /* Header row holds the instrument icon (left) + stem name (right) in one
@@ -1902,13 +1942,17 @@ select {
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 500;
   color: var(--text-muted);
-  margin-top: 50px;
+  /* Was 50px to push the value below the rotated slider in the OLD layout.
+     The fader-value now sits as a flex sibling of .fader-track inside
+     .fader-container, so it lands naturally below the slider with no nudge. */
+  margin-top: 0;
 }
 
 .channel-buttons {
   display: flex;
   gap: 6px;
   width: 100%;
+  grid-area: ms;
 }
 
 .mute-btn, .solo-btn {
@@ -3027,118 +3071,97 @@ input:checked + .slider-round:before {
 }
 .routing-info .btn-secondary { padding: 4px 10px; font-size: 0.72rem; }
 
-/* Per-strip routing grid: 3 rows × 6 cols = 18 channel buttons. Each
-   button is one XR18 output channel. Active → solid green; inactive →
-   dashed outline. Below the grid a tiny summary line shows the resolved
-   L/R routing so the alternating rule is visible. */
-.strip-routing-grid {
-  margin-top: 6px; padding: 6px 2px;
-  border-top: 1px solid var(--border-color);
+/* Positional routing buttons — replace the old 3×6 routing grid. Each named
+   button (V/O/P/L/R/G/B/D) lands at the position around the .fader-container
+   that mirrors its physical place in the band's stem-image hologram:
+     V on top (Vocals front-center),
+     O and P at top corners (Other / Piano),
+     L and R on the sides (stereo L/R),
+     G and B at bottom corners (Guitar / Bass),
+     D at the bottom (Drums).
+   Numeric channels (3-10, 17-18) stack in rows beneath D. */
+.pos-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-color);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
-/* Routing channel buttons wrap to fit whatever strip width gives us — no
-   forced 6-up grid. Each button stays a fixed mini-size so the row count
-   floats with the column count. */
-.strip-routing-grid .srg-grid {
+.pos-btn:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--color-green);
+  color: var(--color-green);
+}
+.pos-btn.active {
+  background: var(--color-green);
+  color: #fff;
+  border: 1px solid #2e8b57;
+}
+.pos-btn:disabled { opacity: 0.22; cursor: not-allowed; }
+
+/* Named positional buttons — bigger and visually heavier than numerics. */
+.pos-V, .pos-O, .pos-P, .pos-L, .pos-R, .pos-G, .pos-B, .pos-D {
+  width: 30px;
+  height: 28px;
+  font-size: 14px;
+  font-weight: 900;
+}
+.pos-V { grid-area: pV; }
+.pos-O { grid-area: pO; align-self: start;  }
+.pos-P { grid-area: pP; align-self: start;  }
+.pos-L { grid-area: pL; }
+.pos-R { grid-area: pR; }
+.pos-G { grid-area: pG; align-self: end;    }
+.pos-B { grid-area: pB; align-self: end;    }
+.pos-D { grid-area: pD; }
+
+/* Yellow accent for the 6 instrument outs (V/D/B/G/P/O) — matches the
+   "natural per-instrument output channel" convention from the XR18 split. */
+.pos-V, .pos-D, .pos-B, .pos-G, .pos-P, .pos-O {
+  background: rgba(241, 196, 15, 0.22);
+  border: 1.5px solid #000;
+  color: var(--text-main);
+}
+.pos-V.active, .pos-D.active, .pos-B.active,
+.pos-G.active, .pos-P.active, .pos-O.active {
+  background: var(--color-yellow); color: #000; border-color: #000;
+}
+
+/* L/R as the stereo main pair — green-tinted with thick black border so
+   they read as one coupled unit. */
+.pos-L, .pos-R {
+  background: rgba(46, 204, 113, 0.20);
+  border: 2px solid #000;
+  color: var(--text-main);
+}
+.pos-L.active, .pos-R.active {
+  background: var(--color-green); color: #000;
+}
+
+/* Numeric remainder row — channels 3-10 and 17-18 stack below D and the
+   M/S row. Smaller buttons, wrap to multiple lines if narrow. */
+.pos-numeric-row {
+  grid-area: nm;
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
   justify-content: center;
+  width: 100%;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-color);
 }
-.strip-routing-grid .srg-btn {
-  flex: 0 0 26px;
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 10px; font-weight: 700;
-  padding: 3px 0;
-  position: relative;
-  background: transparent; color: var(--text-muted);
-  border: 1px dashed var(--border-color); border-radius: 4px;
-  cursor: pointer;
-  transition: var(--transition-smooth);
-}
-.strip-routing-grid .srg-btn:hover:not(:disabled) {
-  border-style: solid; border-color: var(--color-green); color: var(--color-green);
-}
-.strip-routing-grid .srg-btn.active {
-  background: var(--color-green); color: #fff;
-  border: 1px solid #2e8b57;
-}
-.strip-routing-grid .srg-btn:disabled { opacity: 0.2; cursor: not-allowed; }
-
-/* Channels 1-2 are the stereo main L/R pair. Tied together with a thick
-   black border so they read as ONE coupled unit. The two buttons share
-   their middle edge (border-right on L removed, border-left on R removed)
-   to look like a single bordered group. */
-.strip-routing-grid .srg-btn[data-ch="0"],
-.strip-routing-grid .srg-btn[data-ch="1"] {
-  background: rgba(46, 204, 113, 0.22);
-  border: 2.5px solid #000;
-  color: var(--text-main);
-}
-.strip-routing-grid .srg-btn[data-ch="0"] {
-  border-right: none;
-  border-radius: 4px 0 0 4px;
-}
-.strip-routing-grid .srg-btn[data-ch="1"] {
-  border-left: none;
-  border-radius: 0 4px 4px 0;
-}
-.strip-routing-grid .srg-btn[data-ch="0"].active,
-.strip-routing-grid .srg-btn[data-ch="1"].active {
-  background: var(--color-green);
-  color: #000;
-}
-
-/* Channels 11-16 are the natural per-instrument outs (V/D/B/G/P/O) on
-   the XR18 split. Yellow background + black border to signal "instrument
-   output channel". The .srg-letter rule below still controls the letter
-   weight/color when these are picked. */
-.strip-routing-grid .srg-btn[data-ch="10"],
-.strip-routing-grid .srg-btn[data-ch="11"],
-.strip-routing-grid .srg-btn[data-ch="12"],
-.strip-routing-grid .srg-btn[data-ch="13"],
-.strip-routing-grid .srg-btn[data-ch="14"],
-.strip-routing-grid .srg-btn[data-ch="15"] {
-  background: rgba(241, 196, 15, 0.25);
-  border: 1.5px solid #000;
-  color: var(--text-main);
-}
-.strip-routing-grid .srg-btn[data-ch="10"].active,
-.strip-routing-grid .srg-btn[data-ch="11"].active,
-.strip-routing-grid .srg-btn[data-ch="12"].active,
-.strip-routing-grid .srg-btn[data-ch="13"].active,
-.strip-routing-grid .srg-btn[data-ch="14"].active,
-.strip-routing-grid .srg-btn[data-ch="15"].active {
-  background: var(--color-yellow);
-  color: #000;
-  border-color: #000;
-}
-
-/* Channels 17-18 are the XR18's effects-return / spare pair. Tied together
-   with a single black border around the pair so they read as one unit.
-   data-ch="16" gets a left+top+bottom border; data-ch="17" gets right+top+
-   bottom; the join between them is left invisible so the two cells look
-   like one bordered group. */
-.strip-routing-grid .srg-btn[data-ch="16"] {
-  border: 1.5px solid #000;
-  border-right: none;
-  border-radius: 4px 0 0 4px;
-}
-.strip-routing-grid .srg-btn[data-ch="17"] {
-  border: 1.5px solid #000;
-  border-left: none;
-  border-radius: 0 4px 4px 0;
-}
-
-/* Channels 11-16 show a single big letter (V/D/B/G/P/O) instead of the
-   number. Bigger, bolder so the letter reads at a glance from across the
-   room while still fitting the same 26px button slot. */
-.strip-routing-grid .srg-btn.srg-letter {
-  font-size: 14px;
-  font-weight: 900;
-  color: #000;
-}
-.strip-routing-grid .srg-btn.srg-letter.active {
-  color: #000;
+.pos-btn.pos-numeric {
+  flex: 0 0 22px;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 /* The .channel-loops row used to hold the 1/2/3/4 per-strip drum-loop
@@ -3146,13 +3169,76 @@ input:checked + .slider-round:before {
    in renderChannelLoopButtons; hide the now-empty container so the strip
    isn't padded by an invisible row. */
 .channel-loops { display: none !important; }
-.strip-routing-grid .srg-summary {
-  margin-top: 5px;
-  font-size: 0.65rem; color: var(--text-dim);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  min-height: 0.9rem;
+
+/* ── Pitch shift knobs ────────────────────────────────────────────────────
+   Two click-drag rotary knobs in the mixer header. Drag up/down to change
+   value (40px = full range). Double-click resets to 0. The indicator
+   needle rotates from -135° (min) to +135° (max). Wired in app.js to a
+   single Tone.PitchShift on the master bus. */
+.pitch-knobs {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 8px;
 }
+.pitch-knob-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  user-select: none;
+}
+.pitch-knob {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #5a6578, #2d3748 70%);
+  border: 2px solid #1a202c;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5),
+              inset 0 1px 2px rgba(255,255,255,0.15);
+  position: relative;
+  cursor: ns-resize;
+  transition: box-shadow 0.15s ease;
+}
+.pitch-knob:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6),
+              inset 0 1px 2px rgba(255,255,255,0.2),
+              0 0 8px rgba(46, 204, 113, 0.45);
+}
+.pitch-knob:focus { outline: 2px solid var(--color-green); outline-offset: 2px; }
+.pitch-knob.dragging { box-shadow: 0 2px 6px rgba(0,0,0,0.7),
+                                   inset 0 1px 2px rgba(255,255,255,0.2),
+                                   0 0 12px rgba(241, 196, 15, 0.7); }
+.pitch-knob-indicator {
+  position: absolute;
+  top: 4px; left: 50%;
+  width: 2.5px; height: 15px;
+  background: #f1c40f;
+  margin-left: -1.25px;
+  border-radius: 1px;
+  /* The needle pivots from its bottom end, which we place at the knob's
+     center (top:4px + height:15px = 19px ≈ knob radius). */
+  transform-origin: 50% calc(100% + 0px);
+  transform: rotate(0deg);
+  transition: transform 0.05s linear;
+  box-shadow: 0 0 4px rgba(241, 196, 15, 0.6);
+}
+.pitch-knob-label {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.pitch-knob-value {
+  font-size: 10px;
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 600;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: center;
+}
+.pitch-knob-value.nonzero { color: var(--color-yellow); }
 
 /* ===== Sidebar rollup pattern (Library Analytics, Setlist) =====
    Click the header to expand/collapse the body. Caret rotates 180° when
