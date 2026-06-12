@@ -373,6 +373,10 @@ async function scanStems() {
     // Prefer pre-computed metadata.json (title/artist/duration_sec/bpm/key).
     // Falls back to filename parsing + ffprobe only when the JSON is missing.
     let title, artist, duration, practiceBpm, originalBpm, key, keySignature;
+    // MPB Songlist fields (populated by mpb_sync.py). Default null so the
+    // shape stays stable whether or not the importer has run.
+    let singerLead = null, singerBackup = null, singerGroupVocal = null;
+    let bandRequired = null, drumPattern = null, readiness = null;
     const metaJsonPath = path.join(folderPath, 'metadata.json');
     let usedMetaJson = false;
     if (fs.existsSync(metaJsonPath)) {
@@ -384,6 +388,12 @@ async function scanStems() {
         if (typeof mj.bpm === 'number') practiceBpm = Math.round(mj.bpm);
         key = mj.key || null;
         keySignature = mj.key_signature || null;
+        singerLead = mj.singer_lead || null;
+        singerBackup = mj.singer_backup || null;
+        singerGroupVocal = typeof mj.singer_group_vocal === 'boolean' ? mj.singer_group_vocal : null;
+        bandRequired = Array.isArray(mj.band_required) ? mj.band_required : null;
+        drumPattern = mj.drum_pattern || null;
+        readiness = mj.readiness || null;
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -414,6 +424,13 @@ async function scanStems() {
       originalBpm: originalBpm || null,
       key: key,
       keySignature: keySignature || null,
+      // MPB Songlist fields synced from the Google Sheet by mpb_sync.py.
+      singer_lead: singerLead,
+      singer_backup: singerBackup,
+      singer_group_vocal: singerGroupVocal,
+      band_required: bandRequired,
+      drum_pattern: drumPattern,
+      readiness: readiness,
       stems: stems,
       cached: isStemsFolderCached(folder),
       logicProjectName: logicProjectName,

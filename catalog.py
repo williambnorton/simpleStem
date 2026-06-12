@@ -171,6 +171,13 @@ def build(root, do_fill):
             'source_url': meta.get('source_url'),
             'playlist_title': meta.get('playlist_title'),
             'sequence_number': meta.get('sequence_number'),
+            # MPB Songlist fields populated by mpb_sync.py
+            'singer_lead': meta.get('singer_lead'),
+            'singer_backup': meta.get('singer_backup'),
+            'singer_group_vocal': meta.get('singer_group_vocal'),
+            'band_required': meta.get('band_required'),
+            'drum_pattern': meta.get('drum_pattern'),
+            'readiness': meta.get('readiness'),
             'renditions': renditions,
             'status': 'complete' if complete else 'partial',
         }

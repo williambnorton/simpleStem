@@ -30,7 +30,8 @@ QUEUE="$DATA/STEM_QUEUE"
 INCOMING="$DATA/INCOMING_WEBLOC"
 STEMS="$DATA/STEMS"
 CATALOG_INTERVAL="${CATALOG_INTERVAL:-3600}"   # seconds between catalog passes (hourly)
-SERVICES="watcher cataloger catalogwatch"
+MPB_SYNC_INTERVAL="${MPB_SYNC_INTERVAL:-86400}" # seconds between MPB Sheet syncs (daily)
+SERVICES="watcher cataloger catalogwatch mpbsync"
 mkdir -p "$RUN"
 
 pidfile() { echo "$RUN/lib-$1.pid"; }
@@ -72,6 +73,12 @@ start_cmd() {
                # fire 20 rebuilds.
                local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
                echo "exec fswatch -r --latency 5 --event Created --event Renamed --event Removed '$STEMS' '$DATA/M4A' | xargs -n1 -I{} '$py' '$BASE/catalog.py'" ;;
+    mpbsync)   # Pull the Mitchell Park Band Songlist Google Sheet once a day,
+               # write singer/drum_pattern/band_required/readiness fields onto
+               # each matched STEMS/<slug>/metadata.json, and (re)write
+               # GIGS/<slug>.json from the gig tabs. Idempotent; safe to re-run.
+               local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
+               echo "while true; do '$py' '$BASE/mpb_sync.py' || true; sleep $MPB_SYNC_INTERVAL; done" ;;
   esac
 }
 
@@ -177,11 +184,24 @@ case "${1:-}" in
     shift
     py="$(find_py)"; [[ -n "$py" ]] || py="python3"
     "$py" "$BASE/setlist_sync.py" "$@" ;;
+  sheet)
+    # Sync the Mitchell Park Band Songlist Google Sheet → simpleStem.
+    # Reads mpb_sync_config.json, fetches each tab as CSV via the gviz endpoint,
+    # writes singer/drum_pattern/band_required/readiness fields into matched
+    # STEMS/<slug>/metadata.json files, and writes GIGS/<slug>.json for each
+    # gig tab. Unmatched rows go to LOGS/mpb_sync_report.json; no new renders
+    # are kicked off. Examples:
+    #   ./librarian.sh sheet                # full sync (master + gigs)
+    #   ./librarian.sh sheet --dry-run      # preview without writing
+    #   ./librarian.sh sheet --master-only  # skip the gig tabs
+    shift
+    py="$(find_py)"; [[ -n "$py" ]] || py="python3"
+    "$py" "$BASE/mpb_sync.py" "$@" ;;
   logs)
     name="${2:-}"
     if [[ -n "$name" ]]; then tail -n 60 -f "$(logfile "$name")"
     else tail -n 30 -f "$RUN"/lib-*.log; fi ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|logs [watcher|cataloger]|catalog|setlists [...]}" >&2
+    echo "usage: $0 {start|stop|restart|status|logs [watcher|cataloger|mpbsync]|catalog|setlists [...]|sheet [...]}" >&2
     exit 1 ;;
 esac

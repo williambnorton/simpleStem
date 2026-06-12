@@ -210,6 +210,45 @@ Events are stored as Program Change or Control Change for v1. Ramps
 (continuous fader rides) are not implemented; each event is one-shot.
 Editor is the yellow lane below the visualizer in the portal.
 
+### MPB Songlist sync (`mpb_sync.py`)
+
+The band already maintains the canonical song list in a Google Sheet
+("New Mitchell Park Song List"). `mpb_sync.py` runs on the **Librarian** and
+pulls that sheet daily, mapping each row to the matching `STEMS/<slug>/`
+folder by normalized title + artist. It writes six MPB fields into each
+matched `metadata.json` and never touches anything else:
+
+- `singer_raw` — the literal Vocals column value (e.g. `"JD (Matt)"`).
+- `singer_lead` — primary vocalist (first name token, e.g. `"JD"`).
+- `singer_backup` — parenthesized fallback singer (e.g. `"Matt"`).
+- `singer_group_vocal` — `true` when Vocals is `"All"`.
+- `band_required` — list parsed from the Reqd column
+  (e.g. `["Bill","Matt","Dan"]`). Lets the portal filter the library to
+  songs the present roster can actually play.
+- `drum_pattern` — opaque Drums column verbatim (`"120@130"`, `"95UduHop"`,
+  `"ACTUAL"`, …). The portal displays it as a pill; it doesn't try to parse.
+- `readiness` — State column verbatim (`"InTheCan"` / `"Rehearse"` / `"tbd"`).
+
+For each gig tab in the sheet (May Day 26, EDR 4/24, MV 3/31, NK3 March 28),
+the script also splits songs into setlists at Seq=N00 boundaries, names each
+setlist from the divider row's title (`"5:50PM Mid Rally Set"`, `"Break"`,
+`"Encore"`, …), matches each song to a `STEMS/<slug>/` folder, and writes
+`GIGS/<gig_slug>.json`.
+
+Unmatched rows go to `LOGS/mpb_sync_report.json` for triage. The script
+never auto-creates STEMS dirs and never enqueues new renders.
+
+**Configuration:** `mpb_sync_config.json` next to the script lists the
+sheet ID, master sheet name, and gig sheet names. **The sheet must be shared
+as "Anyone with the link can view"** so the gviz CSV endpoint returns data
+without OAuth.
+
+**Cadence:** the Librarian runs it every 24 h as a separate service
+(`librarian.sh start` brings `mpbsync` up alongside `watcher`, `cataloger`,
+and `catalogwatch`). Manual triggers: `./librarian.sh sheet` (full sync),
+`./librarian.sh sheet --dry-run` (preview), `./librarian.sh sheet
+--master-only` (skip the gig tabs).
+
 ### Section auto-detection (`section_detect.py`)
 
 When `stem.sh` finishes a render, it calls `section_detect.py` on the song
@@ -268,9 +307,13 @@ field. This is NOT YET WIRED — see the roadmap.
   `chords_search_url`, `processing{download,separation,mixdowns}`, optional
   `drum_pattern` (opaque string the portal displays as a pill next to
   BPM/key — e.g. `"120@96"` for "BPM 120, drum machine pattern 96"), and
-  for setlist members `playlist_title` + `sequence_number`. **Producer:**
-  `metadata.py`. **Consumer:** `bt-construction-kit/server.js`. Change both
-  together.
+  for setlist members `playlist_title` + `sequence_number`. Songs that have
+  been touched by `mpb_sync.py` also carry the MPB Songlist fields
+  `singer_raw`, `singer_lead`, `singer_backup`, `singer_group_vocal`,
+  `band_required` (list, e.g. `["Bill","Matt","Dan"]`), and `readiness`
+  (`"InTheCan"`/`"Rehearse"`/`"tbd"`). **Producers:** `metadata.py` (audio
+  analysis), `mpb_sync.py` (Songlist fields). **Consumer:**
+  `bt-construction-kit/server.js`. Change all of them together.
 - **Version stamp**: the portal's brand chip displays a build timestamp
   derived from the newest mtime across the code files, formatted
   `V1.MMDDHHMM` (e.g. `V1.06071402`). No manual bumping — when Drive syncs

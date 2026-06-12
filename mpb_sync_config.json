@@ -1,0 +1,11 @@
+{
+  "_comment": "MPB Songlist Google Sheet → simpleStem importer config. The sheet must be shared as 'Anyone with the link can view' so the gviz CSV endpoint returns data without auth.",
+  "sheet_id": "1e3DewMjHOmf_OlexPo6E1F_2i69YTYGMemJIZyRQIJA",
+  "master_sheet": "New Master List",
+  "gig_sheets": [
+    {"sheet_name": "May Day 26"},
+    {"sheet_name": "EDR 4/24"},
+    {"sheet_name": "MV 3/31"},
+    {"sheet_name": "NK3 March 28"}
+  ]
+}

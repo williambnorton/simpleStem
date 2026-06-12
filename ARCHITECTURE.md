@@ -456,6 +456,66 @@ Producer: `metadata.py`. Consumer: `bt-construction-kit/server.js`.
 from a chaptered album video — they describe the window within the
 album that became this song's `source.wav`.
 
+Songs that have been touched by `mpb_sync.py` (the Mitchell Park Band
+Songlist importer — see below) also carry these fields:
+
+```json
+{
+  "singer_raw":          "JD (Matt)",
+  "singer_lead":         "JD",
+  "singer_backup":       "Matt",
+  "singer_group_vocal":  false,
+  "band_required":       ["Bill", "Matt", "Dan"],
+  "drum_pattern":        "120@130",
+  "readiness":           "InTheCan",
+  "mpb_sync_at":         "2026-06-11T22:14:00Z"
+}
+```
+
+These are owned by `mpb_sync.py` (not `metadata.py`) and overwritten on
+every sync. The portal uses them to filter the library by tonight's
+roster (`band_required`), display singer/drum-pattern pills on each row,
+and gate live mode to `readiness === "InTheCan"`.
+
+### MPB Songlist sync (`mpb_sync.py`)
+
+The Mitchell Park Band keeps the canonical songlist in a Google Sheet
+(`New Mitchell Park Song List`). `mpb_sync.py` runs on the Librarian and
+pulls that sheet daily, so the source-of-truth stays where the band
+already edits it. The flow:
+
+1. Fetch the master tab as CSV via the public gviz endpoint
+   (`/gviz/tq?tqx=out:csv&sheet=NAME`). No OAuth — the sheet must be
+   shared as "Anyone with the link can view".
+2. Build an index of the local STEMS/ library, keyed by aggressively
+   normalized `title::artist` (lowercased, parentheticals stripped, all
+   non-alphanumerics dropped, leading "the " removed). Maps `AC/DC` and
+   `ACDC` to the same key.
+3. For each Sheet row, match to a STEMS slug. Exact match first; on
+   ambiguity (multiple songs sharing a title) the artist string is fuzzy-
+   compared. Below a 0.88 ratio threshold we don't claim a match.
+4. For each matched row, overwrite the seven MPB fields in that song's
+   `metadata.json`. Other fields (bpm, key, sectionCandidates, automation)
+   are not touched.
+5. For each gig tab in the config (`May Day 26`, `EDR 4/24`, `MV 3/31`,
+   `NK3 March 28`), split songs into setlists at Seq=N00 boundaries, name
+   each setlist from the divider row (`"5:50PM Mid Rally Set"`, `"Break"`,
+   `"Encore"`, …), match each song to a STEMS slug, and write the
+   resulting gig to `GIGS/<gig_slug>.json` with `source: "mpb_sync"`.
+6. Write `LOGS/mpb_sync_report.json` with stats and the full unmatched-row
+   list for triage. No new renders are auto-enqueued — unmatched rows are
+   reported, not actioned.
+
+Configuration lives in `mpb_sync_config.json` next to the script. Cadence
+is daily, managed by `librarian.sh` as a separate `mpbsync` service.
+Manual:
+
+```bash
+./librarian.sh sheet                # full sync (master + gigs)
+./librarian.sh sheet --dry-run      # preview without writing
+./librarian.sh sheet --master-only  # skip gig tabs
+```
+
 ### M4A naming
 
 `<SlugTitle>_<SlugArtist>_<suffix>.m4a` in `M4A/`.
