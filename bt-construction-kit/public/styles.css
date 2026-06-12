@@ -1802,29 +1802,47 @@ select {
      row 6:  M S       (full width)
      row 7:  3-10 17-18 numeric (full width)
 */
+/* Stem strip — built as nested flex rows by injectStripRoutingButtons:
+     .pos-top-row    [ V centered ]
+     .pos-middle-row [ .pos-side-left | .fader-container | .pos-side-right ]
+     .pos-bottom-row [ D centered ]
+     .pos-numeric-row [ 3-10, 17-18 ]
+   The flex layout is far more deterministic than grid template areas
+   here — every cell's position is established by parent flex direction
+   + child ordering, not name resolution. */
 .channel-strip {
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 8px 6px;
+  padding: 6px 4px;
   min-width: 0;
-  display: grid;
-  /* Three columns: left button column (32px), fader-container (1fr),
-     right button column (32px). Six rows:
-       row 1 = V (top, centered above fader-container)
-       row 2 = O   /   icon+label area inside fader-container   /   P
-       row 3 = L   /   slider area inside fader-container        /   R
-       row 4 = G   /   value % + M/S area inside fader-container /   B
-       row 5 = D (bottom, centered below fader-container)
-       row 6 = numeric channels (3-10, 17-18) full width
-     fader-container spans rows 2-4 in column 2. */
-  grid-template-columns: 32px minmax(0, 1fr) 32px;
-  grid-template-rows: auto auto 1fr auto auto auto;
-  column-gap: 4px;
-  row-gap: 4px;
-  align-items: center;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   transition: var(--transition-smooth);
+}
+.pos-top-row, .pos-bottom-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 24px;
+}
+.pos-middle-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+.pos-side-left, .pos-side-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  flex: 0 0 32px;
+  padding: 4px 0;
 }
 
 /* Fader container — Bill's "Fader Container": holds (top→bottom) the
@@ -1833,10 +1851,11 @@ select {
    V/O/P/L/R/G/B/D buttons around it are NOT inside this box; they live in
    the parent .channel-strip grid. */
 .fader-container {
-  /* Sits in the center column, spanning the three middle rows that the
-     side buttons (O/P, L/R, G/B) flank. */
-  grid-column: 2 / 3;
-  grid-row: 2 / 5;
+  /* Sits in the middle of .pos-middle-row, flanked by .pos-side-left and
+     .pos-side-right. flex: 1 so it eats whatever strip width remains
+     after the two 32px side columns. */
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3130,13 +3149,9 @@ input:checked + .slider-round:before {
 }
 /* Positional placement — explicit column/row indices (more deterministic
    than named areas; CSS specificity around grid-area can be flaky). */
-.pos-V { grid-column: 2; grid-row: 1; }
-.pos-O { grid-column: 1; grid-row: 2; align-self: start; }
-.pos-P { grid-column: 3; grid-row: 2; align-self: start; }
-.pos-L { grid-column: 1; grid-row: 3; align-self: center; }
-.pos-R { grid-column: 3; grid-row: 3; align-self: center; }
-.pos-G { grid-column: 1; grid-row: 4; align-self: end; }
-.pos-B { grid-column: 3; grid-row: 4; align-self: end; }
+/* Per-button positional placement is now handled entirely by the parent
+   flex containers (.pos-top-row, .pos-side-left, .pos-side-right,
+   .pos-bottom-row). The old grid-column/grid-row rules were removed. */
 .pos-D { grid-column: 2; grid-row: 5; }
 
 /* Yellow accent for the 6 instrument outs (V/D/B/G/P/O) — matches the

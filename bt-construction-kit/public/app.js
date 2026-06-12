@@ -3431,50 +3431,79 @@ function injectStripRoutingButtons() {
   // Channel indices are 0-based to match routingMatrix; the channel NUMBER
   // shown to the user is ch+1. Buttons above outputChannelCount are visibly
   // disabled but remain present for when an XR18 is plugged in mid-session.
-  const POSITIONAL = [
-    { ch: 10, pos: 'V', label: 'Vocals (ch 11)' },
+  // Build the layout via nested flex containers — each row's role is
+  // established by its parent flex direction + child ordering, no CSS grid
+  // template area resolution needed. Bulletproof against per-strip CSS
+  // overrides (e.g. inline display: flex set elsewhere).
+  const LEFT_BUTTONS = [
     { ch: 15, pos: 'O', label: 'Other (ch 16)' },
-    { ch: 14, pos: 'P', label: 'Piano (ch 15)' },
     { ch: 0,  pos: 'L', label: 'Stereo Left (ch 1)' },
-    { ch: 1,  pos: 'R', label: 'Stereo Right (ch 2)' },
     { ch: 13, pos: 'G', label: 'Guitar (ch 14)' },
-    { ch: 12, pos: 'B', label: 'Bass (ch 13)' },
-    { ch: 11, pos: 'D', label: 'Drums (ch 12)' },
   ];
-  const NUMERIC = [2, 3, 4, 5, 6, 7, 8, 9, 16, 17];
+  const RIGHT_BUTTONS = [
+    { ch: 14, pos: 'P', label: 'Piano (ch 15)' },
+    { ch: 1,  pos: 'R', label: 'Stereo Right (ch 2)' },
+    { ch: 12, pos: 'B', label: 'Bass (ch 13)' },
+  ];
+  const TOP_BUTTON    = { ch: 10, pos: 'V', label: 'Vocals (ch 11)' };
+  const BOTTOM_BUTTON = { ch: 11, pos: 'D', label: 'Drums (ch 12)' };
+  const NUMERIC       = [2, 3, 4, 5, 6, 7, 8, 9, 16, 17];
+
+  const makeBtn = (chan, ch, pos, label, extraClass = '') => {
+    const btn = document.createElement('button');
+    btn.className = `pos-btn pos-${pos}${extraClass ? ' ' + extraClass : ''}`;
+    btn.dataset.ch = ch;
+    btn.textContent = pos;
+    btn.title = `Route ${chan} stem to ${label}`;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleStripChannel(chan, ch);
+    });
+    return btn;
+  };
 
   document.querySelectorAll('.channel-strip').forEach(strip => {
-    if (strip.querySelector('.pos-V')) return;
+    if (strip.querySelector('.pos-middle-row')) return;
     const chan = stripChannelName(strip);
     if (!chan) return;
+    const fader = strip.querySelector('.fader-container');
+    if (!fader) return;
 
-    POSITIONAL.forEach(({ ch, pos, label }) => {
-      const btn = document.createElement('button');
-      btn.className = `pos-btn pos-${pos}`;
-      btn.dataset.ch = ch;
-      btn.textContent = pos;
-      btn.title = `Route ${chan} stem to ${label}`;
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        toggleStripChannel(chan, ch);
-      });
-      strip.appendChild(btn);
-    });
+    // Force strip to flex-column regardless of any inline display override
+    // (e.g. the `c.style.display = 'flex'` set elsewhere when a stems song
+    // loads — we want column flow here, not row).
+    strip.style.display = 'flex';
+    strip.style.flexDirection = 'column';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'pos-top-row';
+    topRow.appendChild(makeBtn(chan, TOP_BUTTON.ch, TOP_BUTTON.pos, TOP_BUTTON.label));
+
+    const middleRow = document.createElement('div');
+    middleRow.className = 'pos-middle-row';
+    const leftCol = document.createElement('div');
+    leftCol.className = 'pos-side-left';
+    LEFT_BUTTONS.forEach(b => leftCol.appendChild(makeBtn(chan, b.ch, b.pos, b.label)));
+    const rightCol = document.createElement('div');
+    rightCol.className = 'pos-side-right';
+    RIGHT_BUTTONS.forEach(b => rightCol.appendChild(makeBtn(chan, b.ch, b.pos, b.label)));
+    middleRow.appendChild(leftCol);
+    middleRow.appendChild(fader);  // moves fader-container INTO middle row
+    middleRow.appendChild(rightCol);
+
+    const bottomRow = document.createElement('div');
+    bottomRow.className = 'pos-bottom-row';
+    bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
 
     const numericRow = document.createElement('div');
     numericRow.className = 'pos-numeric-row';
     NUMERIC.forEach(ch => {
-      const btn = document.createElement('button');
-      btn.className = 'pos-btn pos-numeric';
-      btn.dataset.ch = ch;
-      btn.textContent = ch + 1;
-      btn.title = `Route ${chan} stem to Output ${ch + 1}`;
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        toggleStripChannel(chan, ch);
-      });
-      numericRow.appendChild(btn);
+      numericRow.appendChild(makeBtn(chan, ch, ch + 1, `Output ${ch + 1}`, 'pos-numeric'));
     });
+
+    strip.insertBefore(topRow, strip.firstChild);
+    strip.appendChild(middleRow);
+    strip.appendChild(bottomRow);
     strip.appendChild(numericRow);
   });
 }
@@ -3668,7 +3697,7 @@ function loadSong(song, opts) {
     els.trackType.className = 'badge';
     els.mixerContainer.style.display = 'block';
     
-    document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'flex');
+    document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'grid');
     
     // Setup sources
     const folder = song.folderName;
