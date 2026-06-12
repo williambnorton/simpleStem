@@ -358,27 +358,39 @@
           <div id="mixer-container" class="mixer-console glass-card" style="display: none;">
             <div class="mixer-header">
               <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
-              <!-- Pitch shift knobs: COARSE shifts whole semitones (-12..+12).
-                   FINE shifts cents (-50..+50). Sum drives one Tone.PitchShift
-                   on the master bus so the song shifts pitch while tempo
-                   stays constant. Click-drag vertically on the knob face. -->
-              <div class="pitch-knobs" id="pitch-knobs">
-                <div class="pitch-knob-cell" data-knob="coarse">
-                  <div class="pitch-knob" id="knob-coarse" tabindex="0" title="Coarse pitch — half-steps. Drag up/down; double-click resets to 0.">
-                    <div class="pitch-knob-indicator"></div>
-                  </div>
-                  <div class="pitch-knob-label">SEMI</div>
-                  <div class="pitch-knob-value" id="val-coarse">0</div>
-                </div>
+              <!-- Pitch Fix pane — labeled panel holding the FINE (cents) knob
+                   and the SEMI (half-steps) knob. Each knob has its own -/+
+                   stepper above it. The SEMI knob shows a ring of alternating
+                   · and # marks to communicate that it clicks in half-step
+                   increments. Values persist per song in metadata.json under
+                   pitch_semis / pitch_cents, and drive one Tone.PitchShift on
+                   the master bus so the song shifts pitch with tempo intact. -->
+              <fieldset class="pitch-fix-pane">
+                <legend>Pitch Fix</legend>
                 <div class="pitch-knob-cell" data-knob="fine">
+                  <div class="pitch-knob-steppers">
+                    <button class="pitch-step-btn" data-knob="fine" data-dir="-1" title="−1 cent">−</button>
+                    <button class="pitch-step-btn" data-knob="fine" data-dir="+1" title="+1 cent">+</button>
+                  </div>
                   <div class="pitch-knob" id="knob-fine" tabindex="0" title="Fine pitch — cents (fractions of a half-step). Drag up/down; double-click resets to 0.">
                     <div class="pitch-knob-indicator"></div>
                   </div>
                   <div class="pitch-knob-label">CENT</div>
                   <div class="pitch-knob-value" id="val-fine">0</div>
                 </div>
-              </div>
-              <button id="btn-reset-mixer" class="btn-secondary"><i data-lucide="rotate-ccw"></i> Reset Faders</button>
+                <div class="pitch-knob-cell" data-knob="coarse">
+                  <div class="pitch-knob-steppers">
+                    <button class="pitch-step-btn" data-knob="coarse" data-dir="-1" title="−1 half-step">−</button>
+                    <button class="pitch-step-btn" data-knob="coarse" data-dir="+1" title="+1 half-step">+</button>
+                  </div>
+                  <div class="pitch-knob semi-knob" id="knob-coarse" tabindex="0" title="Half-steps. Drag up/down or use −/+ buttons; double-click resets to 0.">
+                    <div class="semi-knob-marks" aria-hidden="true"></div>
+                    <div class="pitch-knob-indicator"></div>
+                  </div>
+                  <div class="pitch-knob-label">SEMI</div>
+                  <div class="pitch-knob-value" id="val-coarse">0</div>
+                </div>
+              </fieldset>
               <!-- Collapse-mixer toggle: clicking this shrinks the entire top
                    pane down to just title / BPM / key / drum-pattern, so the
                    library and gig sidebar get more room. -->
@@ -407,10 +419,10 @@
                     <input type="range" id="fader-vocals" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-vocals">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-vocals" class="mute-btn">M</button>
-                  <button id="solo-vocals" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-vocals" class="mute-btn">M</button>
+                    <button id="solo-vocals" class="solo-btn">S</button>
+                  </div>
                 </div>
               </div>
 
@@ -422,10 +434,10 @@
                     <input type="range" id="fader-drums" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-drums">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-drums" class="mute-btn">M</button>
-                  <button id="solo-drums" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-drums" class="mute-btn">M</button>
+                    <button id="solo-drums" class="solo-btn">S</button>
+                  </div>
                 </div>
                 <div class="channel-loops" data-channel="drums"></div>
               </div>
@@ -438,10 +450,10 @@
                     <input type="range" id="fader-bass" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-bass">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-bass" class="mute-btn">M</button>
-                  <button id="solo-bass" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-bass" class="mute-btn">M</button>
+                    <button id="solo-bass" class="solo-btn">S</button>
+                  </div>
                 </div>
                 <div class="channel-loops" data-channel="bass"></div>
               </div>
@@ -454,10 +466,10 @@
                     <input type="range" id="fader-guitar" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-guitar">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-guitar" class="mute-btn">M</button>
-                  <button id="solo-guitar" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-guitar" class="mute-btn">M</button>
+                    <button id="solo-guitar" class="solo-btn">S</button>
+                  </div>
                 </div>
                 <div class="channel-loops" data-channel="guitar"></div>
               </div>
@@ -470,10 +482,10 @@
                     <input type="range" id="fader-piano" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-piano">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-piano" class="mute-btn">M</button>
-                  <button id="solo-piano" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-piano" class="mute-btn">M</button>
+                    <button id="solo-piano" class="solo-btn">S</button>
+                  </div>
                 </div>
                 <div class="channel-loops" data-channel="piano"></div>
               </div>
@@ -486,10 +498,10 @@
                     <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
                   <div class="fader-value" id="val-other">80%</div>
-                </div>
-                <div class="channel-buttons">
-                  <button id="mute-other" class="mute-btn">M</button>
-                  <button id="solo-other" class="solo-btn">S</button>
+                  <div class="channel-buttons">
+                    <button id="mute-other" class="mute-btn">M</button>
+                    <button id="solo-other" class="solo-btn">S</button>
+                  </div>
                 </div>
               </div>
 

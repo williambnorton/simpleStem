@@ -1833,7 +1833,30 @@ app.get('/api/song/:base/automation', (req, res) => {
       // musical boundaries (see snapTimeToBeat in app.js).
       sectionCandidates: Array.isArray(meta.sectionCandidates) ? meta.sectionCandidates : [],
       countIn:    !!meta.countIn,
+      // Per-song pitch shift settings — half-steps and cents. Default to 0
+      // when absent so the client can always render the knobs at neutral.
+      pitch_semis: typeof meta.pitch_semis === 'number' ? meta.pitch_semis : 0,
+      pitch_cents: typeof meta.pitch_cents === 'number' ? meta.pitch_cents : 0,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Save the per-song pitch shift values into metadata.json. Small, focused
+// endpoint so the client can debounce-save on knob change without touching
+// the much-larger automation array.
+app.put('/api/song/:base/pitch', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
+  const semis = Math.max(-12, Math.min(12, parseInt((req.body || {}).semis, 10) || 0));
+  const cents = Math.max(-50, Math.min(50, parseInt((req.body || {}).cents, 10) || 0));
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.pitch_semis = semis;
+    meta.pitch_cents = cents;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, pitch_semis: semis, pitch_cents: cents });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

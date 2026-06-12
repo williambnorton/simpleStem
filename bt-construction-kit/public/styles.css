@@ -1809,15 +1809,14 @@ select {
   padding: 8px 6px;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(28px, auto) minmax(0, 1fr) minmax(28px, auto);
-  grid-template-rows: auto auto 1fr auto auto auto auto;
+  grid-template-columns: minmax(30px, auto) minmax(0, 1fr) minmax(30px, auto);
+  grid-template-rows: auto auto 1fr auto auto auto;
   grid-template-areas:
     ".    pV   ."
     "pO   F    pP"
     "pL   F    pR"
     "pG   F    pB"
     ".    pD   ."
-    "ms   ms   ms"
     "nm   nm   nm";
   column-gap: 4px;
   row-gap: 4px;
@@ -1826,10 +1825,11 @@ select {
   transition: var(--transition-smooth);
 }
 
-/* Fader container — Bill's "Fader Container": holds the centered icon+label
-   on top, then the vertical slider, then the position % at the bottom. The
-   positional V/O/P/L/R/G/B/D buttons around it are NOT inside this box;
-   they live in the parent .channel-strip grid. */
+/* Fader container — Bill's "Fader Container": holds (top→bottom) the
+   centered icon+label, the vertical slider, the position %, and then the
+   M/S buttons in the bottom-left/bottom-right corners. The positional
+   V/O/P/L/R/G/B/D buttons around it are NOT inside this box; they live in
+   the parent .channel-strip grid. */
 .fader-container {
   grid-area: F;
   display: flex;
@@ -1838,7 +1838,7 @@ select {
   justify-content: flex-start;
   gap: 4px;
   width: 100%;
-  padding: 6px 2px;
+  padding: 6px 4px 4px 4px;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 7px;
@@ -1948,11 +1948,21 @@ select {
   margin-top: 0;
 }
 
+/* M/S row — now sits at the BOTTOM of the .fader-container (Bill's spec:
+   "MUTE and SOLO within the Fader Container on the bottom left and bottom
+   right"). M pinned left, S pinned right via space-between. */
 .channel-buttons {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px;
   width: 100%;
-  grid-area: ms;
+  margin-top: 4px;
+  padding: 0 2px;
+}
+.channel-buttons .mute-btn,
+.channel-buttons .solo-btn {
+  flex: 0 0 auto;
+  min-width: 28px;
 }
 
 .mute-btn, .solo-btn {
@@ -3170,11 +3180,94 @@ input:checked + .slider-round:before {
    isn't padded by an invisible row. */
 .channel-loops { display: none !important; }
 
-/* ── Pitch shift knobs ────────────────────────────────────────────────────
-   Two click-drag rotary knobs in the mixer header. Drag up/down to change
-   value (40px = full range). Double-click resets to 0. The indicator
-   needle rotates from -135° (min) to +135° (max). Wired in app.js to a
-   single Tone.PitchShift on the master bus. */
+/* ── Pitch Fix pane ───────────────────────────────────────────────────────
+   Labeled fieldset that holds the two pitch knobs (FINE = cents, SEMI =
+   half-steps). Each knob has a -/+ stepper above it. The SEMI knob renders
+   a ring of alternating · and # marks to communicate "this clicks in half-
+   steps." Drag up/down on the knob face to change value, double-click to
+   zero, or use the -/+ buttons. Values persist per-song in metadata.json
+   and drive one Tone.PitchShift on the master bus. */
+.pitch-fix-pane {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 6px 14px 8px 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.pitch-fix-pane legend {
+  padding: 0 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--color-yellow);
+}
+
+/* -/+ stepper buttons placed above each knob. */
+.pitch-knob-steppers {
+  display: flex;
+  justify-content: space-between;
+  width: 46px;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+.pitch-step-btn {
+  width: 20px;
+  height: 18px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  padding: 0;
+}
+.pitch-step-btn:hover {
+  background: rgba(241, 196, 15, 0.25);
+  border-color: var(--color-yellow);
+  color: var(--color-yellow);
+}
+.pitch-step-btn:active { transform: translateY(1px); }
+
+/* SEMI knob tick-mark ring — 13 marks evenly spaced from -135° to +135°,
+   alternating · and # to communicate the half-step quantization. The
+   marks sit just outside the knob's circle on a slightly larger ring,
+   positioned via rotate(angle) translateY(-22px) per mark. The marks
+   are decorative — actual click resolution is one mark per semitone
+   even though the marks themselves are at 22.5° intervals. */
+.semi-knob {
+  position: relative;
+}
+.semi-knob-marks {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  pointer-events: none;
+}
+.semi-knob-mark {
+  position: absolute;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  line-height: 1;
+  width: 8px; height: 8px;
+  margin: -4px 0 0 -4px;
+  text-align: center;
+  transform-origin: 4px 4px;
+}
+.semi-knob-mark.sharp { color: var(--color-yellow); font-weight: 900; }
+.semi-knob-mark.zero  { color: var(--text-main); font-size: 10px; }
+
 .pitch-knobs {
   display: flex;
   gap: 14px;

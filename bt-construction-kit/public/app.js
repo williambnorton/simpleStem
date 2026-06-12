@@ -142,7 +142,7 @@ const els = {
   
   // Mixer
   mixerContainer: document.getElementById('mixer-container'),
-  btnResetMixer: document.getElementById('btn-reset-mixer'),
+  // btnResetMixer removed when the Reset Faders button was deleted.
   
   // Loops
   loopsContainer: document.getElementById('loops-container'),
@@ -2856,23 +2856,29 @@ function initAudioCtx() {
 let pitchShifter = null;
 let pitchSemis = 0;   // -12..+12
 let pitchCents = 0;   // -50..+50
-const PITCH_STORAGE_KEY = 'simpleStem.pitchShift.v1';
-
-function loadPitchState() {
-  try {
-    const raw = localStorage.getItem(PITCH_STORAGE_KEY);
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    pitchSemis = Math.max(-12, Math.min(12, parseInt(s.semis, 10) || 0));
-    pitchCents = Math.max(-50, Math.min(50, parseInt(s.cents, 10) || 0));
-  } catch (e) {}
-}
+let pitchSaveTimer = null;
+// loadPitchState used to seed from localStorage; pitch is now per-song, so
+// this is a no-op kept only because the boot sequence still calls it. The
+// real load happens in loadAutomationForSong from the server response.
+function loadPitchState() { /* no-op: pitch is per-song; see loadAutomationForSong */ }
 
 function savePitchState() {
-  try {
-    localStorage.setItem(PITCH_STORAGE_KEY,
-      JSON.stringify({ semis: pitchSemis, cents: pitchCents }));
-  } catch (e) {}
+  // Debounced PUT to /api/song/:base/pitch — writes the two integers into
+  // metadata.json. Keyed to whatever song is currently in the player; if
+  // no song is loaded, the save is dropped (nothing to attach pitch to).
+  if (pitchSaveTimer) clearTimeout(pitchSaveTimer);
+  pitchSaveTimer = setTimeout(() => {
+    pitchSaveTimer = null;
+    const base = (typeof automationCurrentBase !== 'undefined' && automationCurrentBase)
+      || (typeof currentSongFolder !== 'undefined' && currentSongFolder)
+      || null;
+    if (!base) return;
+    fetch(`/api/song/${encodeURIComponent(base)}/pitch`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ semis: pitchSemis, cents: pitchCents }),
+    }).catch(e => console.warn('[pitch] save failed:', e.message));
+  }, 400);
 }
 
 function applyPitchToShifter() {
@@ -2942,7 +2948,31 @@ function setPitch(which, value) {
   savePitchState();
 }
 
+function renderSemiKnobMarks() {
+  // Draws 13 marks in a ring just outside the SEMI knob, alternating · and #.
+  // Mark 6 (center, at top) is the "0" indicator and is highlighted.
+  const marksHost = document.querySelector('#knob-coarse .semi-knob-marks');
+  if (!marksHost) return;
+  if (marksHost.childElementCount > 0) return; // already rendered
+  const TOTAL = 13;
+  const ARC_DEG = 270;           // span from -135° to +135°
+  const RADIUS_PX = 26;          // distance from knob center to mark
+  for (let i = 0; i < TOTAL; i++) {
+    const t = i / (TOTAL - 1);           // 0..1
+    const deg = -ARC_DEG / 2 + t * ARC_DEG;
+    const isSharp = (i % 2) === 1;
+    const isZero = i === Math.floor(TOTAL / 2);
+    const span = document.createElement('span');
+    span.className = 'semi-knob-mark' + (isSharp ? ' sharp' : '') + (isZero ? ' zero' : '');
+    span.textContent = isSharp ? '#' : '·';
+    span.style.transform = `rotate(${deg}deg) translateY(-${RADIUS_PX}px) rotate(${-deg}deg)`;
+    marksHost.appendChild(span);
+  }
+}
+
 function setupPitchKnobs() {
+  renderSemiKnobMarks();
+
   ['coarse', 'fine'].forEach(which => {
     const knob = document.getElementById(`knob-${which}`);
     if (!knob) return;
@@ -2976,16 +3006,13 @@ function setupPitchKnobs() {
     };
     knob.addEventListener('mousedown', onDown);
     knob.addEventListener('touchstart', onDown, { passive: false });
-    // Double-click resets to 0 — quick way back to neutral pitch.
     knob.addEventListener('dblclick', () => setPitch(which, 0));
-    // Wheel: one notch per unit.
     knob.addEventListener('wheel', e => {
       e.preventDefault();
       const step = e.deltaY < 0 ? 1 : -1;
       const cur = which === 'coarse' ? pitchSemis : pitchCents;
       setPitch(which, cur + step);
     }, { passive: false });
-    // Keyboard for accessibility.
     knob.addEventListener('keydown', e => {
       const cur = which === 'coarse' ? pitchSemis : pitchCents;
       if (e.key === 'ArrowUp')   { e.preventDefault(); setPitch(which, cur + 1); }
@@ -2993,6 +3020,20 @@ function setupPitchKnobs() {
       if (e.key === '0')         { e.preventDefault(); setPitch(which, 0); }
     });
   });
+
+  // -/+ stepper buttons above each knob — one half-step (semi) or one cent
+  // (fine) per click. Press-and-hold not implemented; for runs of more than
+  // a few units, drag the knob face instead.
+  document.querySelectorAll('.pitch-step-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      const which = btn.dataset.knob;
+      const dir = parseInt(btn.dataset.dir, 10) || 0;
+      const cur = which === 'coarse' ? pitchSemis : pitchCents;
+      setPitch(which, cur + dir);
+    });
+  });
+
   updatePitchKnobUI('coarse');
   updatePitchKnobUI('fine');
 }
@@ -3292,9 +3333,15 @@ function presetStereoMain() {
 // Click → popover with one checkbox per output pair (1-2 ... 17-18). Toggling
 // re-applies routing immediately so the user can hear it.
 function setupRoutingUI() {
-  // The first user click on the page is what we wait on; AudioContext requires
-  // a gesture before it'll show maxChannelCount, so the routing UI doesn't
-  // populate until we know how many channels we have. Re-render on each load.
+  // Inject positional buttons IMMEDIATELY so they're visible before the
+  // first play. AudioContext is still gated on a click (browser policy),
+  // but the routing DOM doesn't need audio — buttons reflect localStorage
+  // state and only show as "disabled" for channels beyond what the active
+  // output device supports (defaults to 2 until we know more). On the first
+  // user click we revisit to sync outputChannelCount + re-render.
+  loadRoutingMatrix();
+  injectStripRoutingButtons();
+  renderRoutingButtons();
   document.addEventListener('click', maybeInitRoutingUI, { once: false });
 }
 
@@ -3303,6 +3350,8 @@ function maybeInitRoutingUI() {
   if (!audioCtx || !masterMerger) return;
   if (!routingUIReady) {
     routingUIReady = true;
+    // Buttons may already exist from boot-time inject; re-render to sync
+    // their disabled state to the now-known outputChannelCount.
     injectStripRoutingButtons();
     renderRoutingButtons();
   }
@@ -5170,30 +5219,9 @@ function setupEventListeners() {
     });
   });
   
-  els.btnResetMixer.addEventListener('click', () => {
-    CHANNELS.forEach(chan => {
-      mixerState.volumes[chan] = 0.8;
-      mixerState.muted[chan] = false;
-      mixerState.soloed[chan] = false;
-      
-      const fader = document.getElementById(`fader-${chan}`);
-      const val   = document.getElementById(`val-${chan}`);
-      const mute  = document.getElementById(`mute-${chan}`);
-      const solo  = document.getElementById(`solo-${chan}`);
-      if (fader) fader.value = 0.8;
-      if (val)   val.textContent = '80%';
-      if (mute)  mute.classList.remove('active');
-      if (solo)  solo.classList.remove('active');
-    });
-    applyMixerVolumes();
-    saveMixerState();
-    // Reset Faders is the "back to normal" button — also pull every stem's
-    // multi-channel routing back to stereo (chans 1+2) so unusual aux
-    // spreads from earlier experiments don't keep silencing the main mix.
-    if (typeof presetStereoMain === 'function' && outputChannelCount > 2) {
-      presetStereoMain();
-    }
-  });
+  // Reset Faders button removed per Bill — kept null-guard in case any other
+  // call site still references btnResetMixer (none currently). Faders stay
+  // wherever the user puts them, persisted in mixerState.
 
   [els.loopMixBoth, els.loopMixDrums, els.loopMixBass].forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5372,12 +5400,24 @@ async function loadAutomationForSong(songBase) {
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
+    // Per-song pitch shift — pull from server, set the knobs, push to the
+    // shifter. We DON'T save here (just loading), so guard against a
+    // feedback loop by skipping the dirty-marker.
+    pitchSemis = Math.max(-12, Math.min(12, parseInt(d.pitch_semis, 10) || 0));
+    pitchCents = Math.max(-50, Math.min(50, parseInt(d.pitch_cents, 10) || 0));
+    updatePitchKnobUI('coarse');
+    updatePitchKnobUI('fine');
+    applyPitchToShifter();
   } catch (e) {
     automationEvents = [];
     automationSections = [];
     automationSectionCandidates = [];
     automationCountIn = false;
     automationLastSavedJSON = '[]';
+    pitchSemis = 0; pitchCents = 0;
+    updatePitchKnobUI('coarse');
+    updatePitchKnobUI('fine');
+    applyPitchToShifter();
   }
   refreshCountInButton();
   automationDirty = false;
