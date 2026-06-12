@@ -1845,6 +1845,25 @@ select {
   padding: 4px 0;
 }
 
+/* M/S row sits BELOW the D button at the strip level (Bill's spec). Width
+   matches the fader-container in the middle row — that's strip width
+   minus the two 32px side columns + the 4px gaps in .pos-middle-row. The
+   `align-self: center` + `width: calc()` math reproduces the fader's
+   horizontal extent. */
+.channel-strip > .channel-buttons {
+  align-self: center;
+  width: calc(100% - 76px);   /* 32+4+32+4+ + 4 padding = ~76px non-fader */
+  margin-top: 2px;
+  display: flex;
+  gap: 4px;
+}
+.channel-strip > .channel-buttons .mute-btn,
+.channel-strip > .channel-buttons .solo-btn {
+  flex: 1 1 50%;
+  min-width: 0;
+  padding: 6px 0;
+}
+
 /* Fader container — Bill's "Fader Container": holds (top→bottom) the
    centered icon+label, the vertical slider, the position %, and then the
    M/S buttons in the bottom-left/bottom-right corners. The positional

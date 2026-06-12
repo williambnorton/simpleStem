@@ -3030,9 +3030,22 @@ function setupPitchKnobs() {
 // sums L+R to mono. Lets the user click any combination of channels and get
 // a sensible result.
 function loadRoutingMatrix() {
+  // Default routing: each stem goes to L (0) + R (1) PLUS its "home"
+  // instrument channel on the XR18 split. So the V button is pre-lit on
+  // Vocals, D on Drums, etc., communicating which stem each strip is.
+  // (Home channels are 0-indexed: V=10, D=11, B=12, G=13, P=14, O=15.)
+  const HOME_CHAN = {
+    vocals: 10,  // V (ch 11)
+    drums:  11,  // D (ch 12)
+    bass:   12,  // B (ch 13)
+    guitar: 13,  // G (ch 14)
+    piano:  14,  // P (ch 15)
+    other:  15,  // O (ch 16)
+  };
   routingMatrix = {};
   Object.keys(audioElements).forEach(ch => {
-    routingMatrix[ch] = [0, 1];
+    const home = HOME_CHAN[ch];
+    routingMatrix[ch] = home !== undefined ? [0, 1, home] : [0, 1];
   });
   try {
     const raw = localStorage.getItem(ROUTING_STORAGE_KEY);
@@ -3041,9 +3054,12 @@ function loadRoutingMatrix() {
     Object.keys(audioElements).forEach(ch => {
       if (Array.isArray(stored[ch])) {
         routingMatrix[ch] = stored[ch]
-          .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < outputChannelCount)
+          .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < 18)
           .sort((a, b) => a - b);
-        if (!routingMatrix[ch].length) routingMatrix[ch] = [0, 1];
+        if (!routingMatrix[ch].length) {
+          const home = HOME_CHAN[ch];
+          routingMatrix[ch] = home !== undefined ? [0, 1, home] : [0, 1];
+        }
       }
     });
   } catch (e) {}
@@ -3475,6 +3491,11 @@ function injectStripRoutingButtons() {
     strip.style.display = 'flex';
     strip.style.flexDirection = 'column';
 
+    // M/S row belongs UNDER the D button (Bill's spec), not inside the
+    // fader-container. Pull it out so we can re-append after bottomRow.
+    const channelButtons = fader.querySelector('.channel-buttons');
+    if (channelButtons) channelButtons.remove();
+
     const topRow = document.createElement('div');
     topRow.className = 'pos-top-row';
     topRow.appendChild(makeBtn(chan, TOP_BUTTON.ch, TOP_BUTTON.pos, TOP_BUTTON.label));
@@ -3504,6 +3525,7 @@ function injectStripRoutingButtons() {
     strip.insertBefore(topRow, strip.firstChild);
     strip.appendChild(middleRow);
     strip.appendChild(bottomRow);
+    if (channelButtons) strip.appendChild(channelButtons);
     strip.appendChild(numericRow);
   });
 }
