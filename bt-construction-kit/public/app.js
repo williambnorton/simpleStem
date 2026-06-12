@@ -3386,8 +3386,14 @@ function injectMixerHeaderInfo() {
       </button>
     `;
   } else {
+    // XR18 (or any multi-channel device) is live. Loud green badge so the
+    // band can see at a glance that they ARE routed to the XR18, not the
+    // laptop speakers.
+    const deviceName = outputChannelCount === 18 ? 'XR18' : `${outputChannelCount}-ch device`;
     info.innerHTML = `
-      <button class="routing-tag multi routing-reprobe" title="Switched device? Click to reload the page so Web Audio re-detects the channel count.">${outputChannelCount} ch out · reload</button>
+      <button class="routing-tag multi-active routing-reprobe" title="Switched device? Click to reload the page so Web Audio re-detects the channel count.">
+        ● ${deviceName} ACTIVE · ${outputChannelCount} ch out
+      </button>
       <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
       <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
     `;

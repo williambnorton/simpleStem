@@ -1845,23 +1845,22 @@ select {
   padding: 4px 0;
 }
 
-/* M/S row sits BELOW the D button at the strip level (Bill's spec). Width
-   matches the fader-container in the middle row — that's strip width
-   minus the two 32px side columns + the 4px gaps in .pos-middle-row. The
-   `align-self: center` + `width: calc()` math reproduces the fader's
-   horizontal extent. */
+/* M/S row sits BELOW the D button. Spans the full panel container width
+   so both buttons are big easy-hit live targets. */
 .channel-strip > .channel-buttons {
-  align-self: center;
-  width: calc(100% - 76px);   /* 32+4+32+4+ + 4 padding = ~76px non-fader */
+  width: 100%;
   margin-top: 2px;
   display: flex;
   gap: 4px;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 .channel-strip > .channel-buttons .mute-btn,
 .channel-strip > .channel-buttons .solo-btn {
   flex: 1 1 50%;
   min-width: 0;
-  padding: 6px 0;
+  padding: 8px 0;
+  font-size: 14px;
 }
 
 /* Fader container — Bill's "Fader Container": holds (top→bottom) the
@@ -3108,6 +3107,21 @@ input:checked + .slider-round:before {
   letter-spacing: 0.3px;
 }
 .routing-tag.multi { background: var(--color-green); color: #fff; border-color: #2e8b57; }
+.routing-tag.multi-active {
+  background: var(--color-green);
+  color: #fff;
+  border: 2px solid #1e6f3e;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 6px 12px;
+  box-shadow: 0 0 12px rgba(46, 204, 113, 0.55);
+  animation: pulse-multi-active 2s ease-in-out infinite;
+}
+@keyframes pulse-multi-active {
+  0%, 100% { box-shadow: 0 0 12px rgba(46, 204, 113, 0.55); }
+  50%      { box-shadow: 0 0 18px rgba(46, 204, 113, 0.85); }
+}
 .routing-tag.stereo-only {
   background: var(--bg-dark);
   color: var(--text-muted);
