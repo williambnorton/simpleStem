@@ -36,38 +36,17 @@
              main content area (next to the clock) — see #player-top-bar. -->
       </div>
       
-      <!-- Instant Search & Filters -->
-      <section class="search-section">
-        <div class="search-box glass-input">
-          <i data-lucide="search" class="search-icon"></i>
-          <input type="text" id="song-search" placeholder="Search…" title="Search title, artist, key, BPM, or 'stems'" autocomplete="off">
-          <button id="clear-search" class="btn-icon" style="display: none;"><i data-lucide="x"></i></button>
-        </div>
-        
-        <!-- Sidebar filter pills + key/tempo dropdowns removed (06/2026) —
-             FORMAT-column toggles in the library header are the primary
-             filters now; the search box above covers the rest. The hidden
-             elements below preserve the IDs so legacy event listeners
-             (filterLibrary etc.) don't crash; CSS hides them. -->
-        <div class="filter-controls" style="display:none;">
-          <button id="btn-filter-all" class="filter-btn active"></button>
-          <button id="btn-filter-stems" class="filter-btn"></button>
-          <button id="btn-filter-m4a" class="filter-btn"></button>
-          <select id="filter-key"><option value=""></option></select>
-          <select id="filter-bpm"><option value=""></option></select>
-        </div>
-      </section>
-
-      <!-- Add from YouTube (queue for processing into the library) -->
-      <section class="add-yt-section">
-        <div class="search-box glass-input">
-          <i data-lucide="link" class="search-icon"></i>
-          <input type="text" id="yt-url" placeholder="Paste YouTube URL + Enter…" title="Paste a YouTube video, playlist, or chaptered album URL and press Enter to add" autocomplete="off">
-        </div>
-        <!-- Add button removed; Enter on the URL field submits (see setupQueueUI). -->
-        <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
-        <div id="queue-status" class="queue-status"></div>
-      </section>
+      <!-- Search + Paste-URL moved into the Song Library pane (06/2026) — they
+           belong with the library data they filter and add to. The hidden
+           filter controls below preserve their IDs so legacy event listeners
+           (filterLibrary etc.) don't crash. -->
+      <div class="filter-controls" style="display:none;">
+        <button id="btn-filter-all" class="filter-btn active"></button>
+        <button id="btn-filter-stems" class="filter-btn"></button>
+        <button id="btn-filter-m4a" class="filter-btn"></button>
+        <select id="filter-key"><option value=""></option></select>
+        <select id="filter-bpm"><option value=""></option></select>
+      </div>
 
       <!-- Gig rollup — the unit you actually plan for. A gig contains 1-4
            setlists (rendered as nested rollups inside this one). Sidebar
@@ -341,30 +320,15 @@
               </div>
             </div>
 
-            <!-- Section LOOPER — toggle button. When ON, the playhead loops
-                 between the two section markers that bracket the current
-                 position. When OFF, song plays through normally. Section
-                 markers (1-9 keys) define the loop boundaries. -->
-            <div class="looper-card glass-card">
-              <button id="btn-section-looper" class="looper-btn" type="button" title="Loop the current section (defined by section markers); click again to play through">
-                <i data-lucide="repeat-2"></i>
-                <span class="looper-btn-label">LOOPER</span>
-                <span class="looper-btn-sub" id="looper-section-text">no section</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Multitrack Mixer Console (Dynamically shown only when Stems are playing) -->
-          <div id="mixer-container" class="mixer-console glass-card" style="display: none;">
-            <div class="mixer-header">
-              <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
-              <!-- Pitch Fix pane — labeled panel holding the FINE (cents) knob
-                   and the SEMI (half-steps) knob. Each knob has its own -/+
-                   stepper above it. The SEMI knob shows a ring of alternating
-                   · and # marks to communicate that it clicks in half-step
-                   increments. Values persist per song in metadata.json under
-                   pitch_semis / pitch_cents, and drive one Tone.PitchShift on
-                   the master bus so the song shifts pitch with tempo intact. -->
+            <!-- LOOPER + Pitch Fix row — playback-shape controls together. -->
+            <div class="looper-pitch-row">
+              <div class="looper-card glass-card">
+                <button id="btn-section-looper" class="looper-btn" type="button" title="Loop the current section (defined by section markers); click again to play through">
+                  <i data-lucide="repeat-2"></i>
+                  <span class="looper-btn-label">LOOPER</span>
+                  <span class="looper-btn-sub" id="looper-section-text">no section</span>
+                </button>
+              </div>
               <fieldset class="pitch-fix-pane">
                 <legend>Pitch Fix</legend>
                 <div class="pitch-knob-cell" data-knob="fine">
@@ -390,7 +354,16 @@
                   <div class="pitch-knob-label">SEMI</div>
                   <div class="pitch-knob-value" id="val-coarse">0</div>
                 </div>
+                <button id="btn-pitch-reset" class="pitch-reset-btn" type="button" title="Zero both knobs — no pitch shift">RESET</button>
               </fieldset>
+            </div>
+          </div>
+
+          <!-- Multitrack Mixer Console (Dynamically shown only when Stems are playing) -->
+          <div id="mixer-container" class="mixer-console glass-card" style="display: none;">
+            <div class="mixer-header">
+              <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
+              <!-- Pitch Fix pane moved out to sit next to LOOPER (06/2026). -->
               <!-- Collapse-mixer toggle: clicking this shrinks the entire top
                    pane down to just title / BPM / key / drum-pattern, so the
                    library and gig sidebar get more room. -->
@@ -559,7 +532,21 @@
               <h2>Song Library</h2>
               <span class="sub" id="library-count-label">Loading library...</span>
             </div>
-            
+
+            <div class="library-inputs">
+              <div class="search-box glass-input">
+                <i data-lucide="search" class="search-icon"></i>
+                <input type="text" id="song-search" placeholder="Search title, artist, key, BPM, or 'stems'" title="Search title, artist, key, BPM, or 'stems'" autocomplete="off">
+                <button id="clear-search" class="btn-icon" style="display: none;"><i data-lucide="x"></i></button>
+              </div>
+              <div class="search-box glass-input">
+                <i data-lucide="link" class="search-icon"></i>
+                <input type="text" id="yt-url" placeholder="Paste YouTube URL + Enter to ingest" title="Paste a YouTube video, playlist, or chaptered album URL and press Enter to add" autocomplete="off">
+              </div>
+              <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
+            </div>
+            <div id="queue-status" class="queue-status"></div>
+
             <div class="library-view-toggles">
               <button id="btn-list-view" class="view-btn active" title="List View"><i data-lucide="list"></i></button>
               <button id="btn-grid-view" class="view-btn" title="Grid View"><i data-lucide="layout-grid"></i></button>

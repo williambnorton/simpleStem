@@ -3195,6 +3195,59 @@ input:checked + .slider-round:before {
    steps." Drag up/down on the knob face to change value, double-click to
    zero, or use the -/+ buttons. Values persist per-song in metadata.json
    and drive one Tone.PitchShift on the master bus. */
+/* LOOPER + Pitch Fix sit side-by-side in their own row above the mixer. */
+.looper-pitch-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+.looper-pitch-row .looper-card {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.looper-pitch-row .pitch-fix-pane {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* Library inputs row — Search + Paste-URL inside the Library pane. */
+.library-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  flex: 1 1 100%;
+}
+.library-inputs .search-box {
+  flex: 1 1 280px;
+  min-width: 200px;
+}
+.library-inputs .search-box input { width: 100%; }
+
+/* RESET button in the pitch pane — zeroes both knobs in one click. */
+.pitch-reset-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  margin-left: 6px;
+  align-self: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.pitch-reset-btn:hover {
+  background: rgba(231, 76, 60, 0.25);
+  border-color: var(--color-red, #e74c3c);
+  color: var(--color-red, #e74c3c);
+}
+.pitch-reset-btn:active { transform: translateY(1px); }
+
 .pitch-fix-pane {
   display: flex;
   gap: 18px;

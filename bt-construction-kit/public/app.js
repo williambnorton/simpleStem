@@ -2863,60 +2863,32 @@ let pitchSaveTimer = null;
 function loadPitchState() { /* no-op: pitch is per-song; see loadAutomationForSong */ }
 
 function savePitchState() {
-  // Debounced PUT to /api/song/:base/pitch — writes the two integers into
-  // metadata.json. Keyed to whatever song is currently in the player; if
-  // no song is loaded, the save is dropped (nothing to attach pitch to).
-  if (pitchSaveTimer) clearTimeout(pitchSaveTimer);
-  pitchSaveTimer = setTimeout(() => {
-    pitchSaveTimer = null;
-    const base = (typeof automationCurrentBase !== 'undefined' && automationCurrentBase)
-      || (typeof currentSongFolder !== 'undefined' && currentSongFolder)
-      || null;
-    if (!base) return;
-    fetch(`/api/song/${encodeURIComponent(base)}/pitch`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ semis: pitchSemis, cents: pitchCents }),
-    }).catch(e => console.warn('[pitch] save failed:', e.message));
-  }, 400);
+  // Pitch is a per-SESSION control now; nothing persists. No-op.
 }
 
 function applyPitchToShifter() {
-  if (!pitchShifter) return;
+  // playbackRate-based pitch shift. Couples tempo to pitch (~6%/semitone)
+  // but works reliably without stalling the media decoder, unlike Tone.js
+  // PitchShift between MediaElementSource and stripGain.
   const total = pitchSemis + pitchCents / 100;
-  try { pitchShifter.pitch = total; } catch (e) {}
+  const rate = Math.pow(2, total / 12);
+  for (const ae of Object.values(audioElements || {})) {
+    try {
+      ae.preservesPitch = false;
+      ae.mozPreservesPitch = false;
+      ae.webkitPreservesPitch = false;
+      ae.playbackRate = rate;
+    } catch (e) {}
+  }
 }
 
 function setupPitchShifter() {
-  if (typeof window.Tone === 'undefined') {
-    console.warn('[pitch] Tone.js not loaded — pitch knobs will be inert');
-    return;
-  }
-  if (!audioCtx || !masterGainNode) return;
-  // Multi-channel output bypass: pitch shift would downmix to stereo and
-  // break per-stem XR18 routing, so we don't insert it.
-  if (outputChannelCount > 2) {
-    console.log('[pitch] multi-channel output detected; pitch shifter bypassed');
-    return;
-  }
-  try {
-    Tone.setContext(audioCtx);
-    pitchShifter = new Tone.PitchShift({
-      pitch: pitchSemis + pitchCents / 100,
-      windowSize: 0.1,
-      delayTime: 0,
-      feedback: 0,
-      wet: 1,
-    });
-    // Re-route: was masterGain → destination, now masterGain → pitchShifter → destination
-    masterGainNode.disconnect();
-    masterGainNode.connect(pitchShifter.input);
-    pitchShifter.connect(audioCtx.destination);
-    console.log('[pitch] master-bus pitch shifter wired');
-  } catch (e) {
-    console.warn('[pitch] failed to wire pitch shifter:', e.message);
-    pitchShifter = null;
-  }
+  // Disabled. Tone.PitchShift between MediaElementSource and stripGain
+  // stalls the decoder; the working pitch path is playbackRate (see
+  // applyPitchToShifter). The knobs change rate directly; no Web Audio
+  // graph rewiring needed. Kept as a callable stub so existing init code
+  // doesn't crash.
+  console.log('[pitch] shifter disabled — knobs change playbackRate directly');
 }
 
 function updatePitchKnobUI(which) {
@@ -3033,6 +3005,16 @@ function setupPitchKnobs() {
       setPitch(which, cur + dir);
     });
   });
+
+  // RESET button — zeroes both knobs in one click.
+  const resetBtn = document.getElementById('btn-pitch-reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', e => {
+      e.preventDefault();
+      setPitch('coarse', 0);
+      setPitch('fine', 0);
+    });
+  }
 
   updatePitchKnobUI('coarse');
   updatePitchKnobUI('fine');
@@ -3987,15 +3969,22 @@ function startSyncLoop() {
 
     let masterTime = masterAe.currentTime;
 
-    // Section LOOPER: when on, snap the playhead back to the loop start
-    // when it crosses the loop end. Boundaries come from automationSections.
+    // Section LOOPER: while seamless AudioBuffer loop is playing, the
+    // MediaElement is silenced but still advances. Rewind it 50ms early
+    // so the timeline UI follows the loop. The audio is sample-accurate
+    // via the AudioBufferSourceNode; this rewind only affects the
+    // displayed playhead + automation event dispatch.
     if (sectionLooperActive && sectionLooperRange) {
       const { startT, endT } = sectionLooperRange;
-      if (masterTime >= endT - 0.02) {
-        masterAe.currentTime = startT;
-        activeTracks.slice(1).forEach(chan => {
-          try { audioElements[chan].currentTime = startT; } catch (e) {}
-        });
+      if (masterTime >= endT - 0.05) {
+        for (const chan of activeTracks) {
+          const ae = audioElements[chan];
+          if (!ae) continue;
+          try {
+            ae.currentTime = startT;
+            if (ae.paused) ae.play().catch(() => {});
+          } catch (e) {}
+        }
         automationLastTime = startT;
         automationEvents.forEach(e => { if (e.t >= startT) e.fired = false; });
         masterTime = startT;
@@ -5400,24 +5389,15 @@ async function loadAutomationForSong(songBase) {
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
-    // Per-song pitch shift — pull from server, set the knobs, push to the
-    // shifter. We DON'T save here (just loading), so guard against a
-    // feedback loop by skipping the dirty-marker.
-    pitchSemis = Math.max(-12, Math.min(12, parseInt(d.pitch_semis, 10) || 0));
-    pitchCents = Math.max(-50, Math.min(50, parseInt(d.pitch_cents, 10) || 0));
-    updatePitchKnobUI('coarse');
-    updatePitchKnobUI('fine');
-    applyPitchToShifter();
+    // Pitch is no longer per-song — it's a session-only effect. Don't
+    // reset the knobs on song change; the user's current pitch carries
+    // over until they hit RESET.
   } catch (e) {
     automationEvents = [];
     automationSections = [];
     automationSectionCandidates = [];
     automationCountIn = false;
     automationLastSavedJSON = '[]';
-    pitchSemis = 0; pitchCents = 0;
-    updatePitchKnobUI('coarse');
-    updatePitchKnobUI('fine');
-    applyPitchToShifter();
   }
   refreshCountInButton();
   automationDirty = false;
@@ -5773,11 +5753,16 @@ let automationSectionCandidates = [];
 // remembered across sessions.
 let automationCountIn = false;
 
-// LOOPER state. When `sectionLooperActive` is true, the audio sync loop
-// snaps the playhead from `sectionLooperRange.endT` back to `startT`.
-// Range is computed once on toggle-on from the current playhead position.
+// LOOPER state. When `sectionLooperActive` is true, audio plays through a
+// per-stem Web Audio AudioBufferSourceNode with `loop=true` — sample-
+// accurate looping with NO decoder gap. The MediaElement keeps advancing
+// (its audio path is disconnected from stripGain so it's silent) so the
+// existing timeline / automation sync code keeps working.
 let sectionLooperActive = false;
 let sectionLooperRange  = null;
+let loopBufferSources   = {};   // chan → AudioBufferSourceNode
+let loopStartedAtCtxT   = 0;
+let loopInitialOffset   = 0;
 
 // Find the section that contains time `t` — returns {startT, endT, color}.
 // If `t` is between two section boundaries, this is the band running from
@@ -5812,12 +5797,78 @@ function toggleSectionLooper() {
       const colorName = SECTION_COLORS[range.color]?.name || 'section';
       label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s`;
     }
+    setupSeamlessLoop(range.startT, range.endT).catch(err =>
+      console.warn('[loop] seamless setup failed (will fall back to seek):', err)
+    );
   } else {
     sectionLooperActive = false;
     sectionLooperRange = null;
     if (btn) btn.classList.remove('active');
     if (label) label.textContent = 'play through';
+    tearDownSeamlessLoop();
   }
+}
+
+async function setupSeamlessLoop(startT, endT) {
+  if (!audioCtx) return;
+  const sources = {};
+  for (const chan of Object.keys(audioElements)) {
+    const ae = audioElements[chan];
+    if (!ae || !ae.src) continue;
+    const nodes = stripNodes[chan];
+    if (!nodes) continue;
+    try {
+      const resp = await fetch(ae.src);
+      const arr = await resp.arrayBuffer();
+      const fullBuffer = await audioCtx.decodeAudioData(arr);
+      const sr = fullBuffer.sampleRate;
+      const startSample = Math.max(0, Math.floor(startT * sr));
+      const endSample = Math.min(fullBuffer.length, Math.floor(endT * sr));
+      const loopLen = endSample - startSample;
+      if (loopLen <= 0) continue;
+      const buf = audioCtx.createBuffer(fullBuffer.numberOfChannels, loopLen, sr);
+      for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
+        buf.getChannelData(ch).set(
+          fullBuffer.getChannelData(ch).subarray(startSample, endSample)
+        );
+      }
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.loopStart = 0;
+      src.loopEnd = loopLen / sr;
+      src.connect(nodes.stripGain);
+      try { nodes.source.disconnect(nodes.stripGain); } catch (e) {}
+      const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
+      src.start(0, offset);
+      sources[chan] = src;
+    } catch (e) {
+      console.warn(`[loop] couldn't seamless-loop ${chan}:`, e.message);
+      try { nodes.source.connect(nodes.stripGain); } catch (_) {}
+    }
+  }
+  loopBufferSources = sources;
+  loopStartedAtCtxT = audioCtx.currentTime;
+  const firstChan = Object.keys(sources)[0];
+  loopInitialOffset = firstChan
+    ? Math.max(0, audioElements[firstChan].currentTime - startT)
+    : 0;
+  console.log(`[loop] seamless loop engaged: ${Object.keys(sources).length} stems, ` +
+              `region ${startT.toFixed(2)}s → ${endT.toFixed(2)}s`);
+}
+
+function tearDownSeamlessLoop() {
+  if (!audioCtx) return;
+  for (const [chan, src] of Object.entries(loopBufferSources || {})) {
+    try { src.stop(); src.disconnect(); } catch (e) {}
+    const nodes = stripNodes[chan];
+    if (nodes && nodes.source && nodes.stripGain) {
+      try { nodes.source.connect(nodes.stripGain); } catch (e) {}
+    }
+  }
+  loopBufferSources = {};
+  loopStartedAtCtxT = 0;
+  loopInitialOffset = 0;
 }
 
 // Click → select (Delete removes it); double-click → edit modal; drag →
