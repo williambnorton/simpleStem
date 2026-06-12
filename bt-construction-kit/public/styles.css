@@ -1809,15 +1809,17 @@ select {
   padding: 8px 6px;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(30px, auto) minmax(0, 1fr) minmax(30px, auto);
+  /* Three columns: left button column (32px), fader-container (1fr),
+     right button column (32px). Six rows:
+       row 1 = V (top, centered above fader-container)
+       row 2 = O   /   icon+label area inside fader-container   /   P
+       row 3 = L   /   slider area inside fader-container        /   R
+       row 4 = G   /   value % + M/S area inside fader-container /   B
+       row 5 = D (bottom, centered below fader-container)
+       row 6 = numeric channels (3-10, 17-18) full width
+     fader-container spans rows 2-4 in column 2. */
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
   grid-template-rows: auto auto 1fr auto auto auto;
-  grid-template-areas:
-    ".    pV   ."
-    "pO   F    pP"
-    "pL   F    pR"
-    "pG   F    pB"
-    ".    pD   ."
-    "nm   nm   nm";
   column-gap: 4px;
   row-gap: 4px;
   align-items: center;
@@ -1831,7 +1833,10 @@ select {
    V/O/P/L/R/G/B/D buttons around it are NOT inside this box; they live in
    the parent .channel-strip grid. */
 .fader-container {
-  grid-area: F;
+  /* Sits in the center column, spanning the three middle rows that the
+     side buttons (O/P, L/R, G/B) flank. */
+  grid-column: 2 / 3;
+  grid-row: 2 / 5;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3123,14 +3128,16 @@ input:checked + .slider-round:before {
   font-size: 14px;
   font-weight: 900;
 }
-.pos-V { grid-area: pV; }
-.pos-O { grid-area: pO; align-self: start;  }
-.pos-P { grid-area: pP; align-self: start;  }
-.pos-L { grid-area: pL; }
-.pos-R { grid-area: pR; }
-.pos-G { grid-area: pG; align-self: end;    }
-.pos-B { grid-area: pB; align-self: end;    }
-.pos-D { grid-area: pD; }
+/* Positional placement — explicit column/row indices (more deterministic
+   than named areas; CSS specificity around grid-area can be flaky). */
+.pos-V { grid-column: 2; grid-row: 1; }
+.pos-O { grid-column: 1; grid-row: 2; align-self: start; }
+.pos-P { grid-column: 3; grid-row: 2; align-self: start; }
+.pos-L { grid-column: 1; grid-row: 3; align-self: center; }
+.pos-R { grid-column: 3; grid-row: 3; align-self: center; }
+.pos-G { grid-column: 1; grid-row: 4; align-self: end; }
+.pos-B { grid-column: 3; grid-row: 4; align-self: end; }
+.pos-D { grid-column: 2; grid-row: 5; }
 
 /* Yellow accent for the 6 instrument outs (V/D/B/G/P/O) — matches the
    "natural per-instrument output channel" convention from the XR18 split. */
@@ -3155,10 +3162,11 @@ input:checked + .slider-round:before {
   background: var(--color-green); color: #000;
 }
 
-/* Numeric remainder row — channels 3-10 and 17-18 stack below D and the
-   M/S row. Smaller buttons, wrap to multiple lines if narrow. */
+/* Numeric remainder row — channels 3-10 and 17-18 stack below D. Smaller
+   buttons, wrap to multiple lines if narrow. */
 .pos-numeric-row {
-  grid-area: nm;
+  grid-column: 1 / 4;
+  grid-row: 6;
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
