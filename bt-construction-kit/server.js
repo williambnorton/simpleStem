@@ -1810,6 +1810,11 @@ app.get('/api/song/:base/automation', (req, res) => {
       base: s.b,
       automation: Array.isArray(meta.automation) ? meta.automation : [],
       sections:   Array.isArray(meta.sections)   ? meta.sections   : [],
+      // sectionCandidates is a read-only array of timestamps produced by
+      // section_detect.py — moments where multiple stems change together.
+      // The portal uses them to snap user-placed section markers to real
+      // musical boundaries (see snapTimeToBeat in app.js).
+      sectionCandidates: Array.isArray(meta.sectionCandidates) ? meta.sectionCandidates : [],
       countIn:    !!meta.countIn,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

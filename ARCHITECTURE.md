@@ -549,6 +549,48 @@ Device → port mapping the portal sends today:
 Sidecar lifecycle is managed by `performer.sh` (`SERVICES="runner midi server"`).
 Install deps with `pipx inject demucs mido python-rtmidi`.
 
+### Section auto-detection (multi-stem novelty)
+
+`section_detect.py` analyzes a freshly-rendered song folder and writes a
+read-only `sectionCandidates: [t1, t2, ...]` array into its `metadata.json`.
+The array holds timestamps (in seconds) where multiple stems change
+energy simultaneously — typically the boundaries between intro / verse /
+chorus / bridge / outro.
+
+The algorithm is a basic multi-stem novelty function:
+
+```
+for each stem in {vocals, drums, bass, guitar, piano, other}:
+    envelope[stem] = RMS(stem audio, hop=100ms)
+    deriv[stem]    = |Δenvelope[stem]|
+
+combined[t] = sum over stems of deriv[stem][t]
+peaks       = local maxima of combined[t] above 35% of max, ≥6s spacing
+```
+
+The script costs ~3 s of CPU per song. It runs:
+- Automatically at the end of `stem.sh` (new renders get candidates).
+- Optionally as a one-time backfill via `backfill_section_detect.sh --go`.
+
+**Storage:** `STEMS/<song>/metadata.json` gains a `sectionCandidates`
+array. The field is read-only — the portal never writes it.
+
+**Server:** `GET /api/song/:base/automation` returns
+`{automation, sections, sectionCandidates, countIn}`. The candidates
+ride alongside the user-editable section markers.
+
+**Client:** `snapSectionToCandidate(t)` searches for a candidate within
+±2 s of the user's target and snaps to it; falls back to the BPM-grid
+snap (`snapTimeToBeat`) if none is in range. Used by 1-9 key placement
+and section-divider drag.
+
+**Visual:** the lane renders a thin vertical hint tick at every
+candidate timestamp (`.automation-section-hint` CSS), so the user can
+see where the algorithm thinks boundaries are before placing their own.
+
+Install dep: `pipx inject demucs librosa numpy` (numpy comes with
+librosa; explicit for clarity).
+
 ---
 
 ## Code map

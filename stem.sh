@@ -466,6 +466,22 @@ else
   done
 fi
 
+# Section-boundary detection — runs the multi-stem novelty function over
+# the freshly-rendered stems and writes a `sectionCandidates` array into
+# metadata.json. The portal uses these to snap user-placed section
+# boundaries to actual moments where many stems change together (verse
+# entries, chorus boosts, bridges). ~3 sec on CPU; best-effort: a failure
+# here doesn't fail the stem render.
+SECTION_SCRIPT="$SCRIPT_DIR/section_detect.py"
+if [[ -f "$SECTION_SCRIPT" ]]; then
+  echo ">> Detecting section candidates (multi-stem novelty)..."
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    "$PYTHON_BIN" "$SECTION_SCRIPT" "$OUT_DIR" || echo "  WARN: section_detect failed (non-fatal)"
+  else
+    python3 "$SECTION_SCRIPT" "$OUT_DIR" || echo "  WARN: section_detect failed (non-fatal)"
+  fi
+fi
+
 echo ">> Done. Files:"
 ls -1 "$OUT_DIR/"
 echo ">> Folder: $OUT_DIR"

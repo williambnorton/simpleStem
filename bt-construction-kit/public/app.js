@@ -5205,11 +5205,13 @@ async function loadAutomationForSong(songBase) {
     const events = d.automation || [];
     automationEvents = events.map(e => ({ ...e, fired: false }));
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
+    automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
   } catch (e) {
     automationEvents = [];
     automationSections = [];
+    automationSectionCandidates = [];
     automationCountIn = false;
     automationLastSavedJSON = '[]';
   }
@@ -5390,7 +5392,10 @@ function renderAutomationLane() {
 
   // Section bands overlay the FULL visualizer canvas (their own container).
   // Markers stack at the lane's bottom anchor.
-  if (bands) renderSectionBands(bands, dur);
+  if (bands) {
+    renderSectionBands(bands, dur);
+    renderSectionCandidateHints(bands, dur);
+  }
 
   // Pass 1 — compute each event's x position (px) so we can detect
   // horizontal collisions for row assignment.
@@ -5493,6 +5498,23 @@ function renderSectionBands(container, dur) {
   }
 }
 
+// Render faint vertical tick marks for each sectionCandidate timestamp.
+// They show where section_detect.py thinks the boundaries are — so the
+// user can SEE the candidates before placing their own sections, and
+// drop a 1-9 key right on top of one.
+function renderSectionCandidateHints(container, dur) {
+  if (!Array.isArray(automationSectionCandidates) || !automationSectionCandidates.length) return;
+  for (const t of automationSectionCandidates) {
+    if (t < 0 || t > dur) continue;
+    const pct = (t / dur) * 100;
+    const hint = document.createElement('div');
+    hint.className = 'automation-section-hint';
+    hint.style.left = pct + '%';
+    hint.title = `Candidate boundary @ ${t.toFixed(2)}s — multi-stem energy change detected`;
+    container.appendChild(hint);
+  }
+}
+
 // Drag a section's end-position divider horizontally to retime it.
 function attachSectionDividerHandlers(node, idx) {
   let downX = 0, dragging = false, startTime = 0;
@@ -5517,10 +5539,9 @@ function attachSectionDividerHandlers(node, idx) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (dragging) {
-        // Snap the dropped position to the nearest beat so the section
-        // boundary is rhythm-aligned. Matters most for the LOOPER, which
-        // wraps at section.endT — beat-aligned wraps keep the loop tight.
-        automationSections[idx].t = snapTimeToBeat(automationSections[idx].t);
+        // Snap to the nearest sectionCandidate within ±2 s if one exists,
+        // otherwise fall back to BPM-grid + onset snap.
+        automationSections[idx].t = snapSectionToCandidate(automationSections[idx].t);
         automationSections.sort((a, b) => a.t - b.t);
         renderAutomationLane();
         markAutomationDirty();
@@ -5534,6 +5555,13 @@ function attachSectionDividerHandlers(node, idx) {
 // Per-song section markers ({t, color: 1..9}). Loaded alongside automation
 // events and persisted in the same metadata.json save.
 let automationSections = [];
+
+// Read-only array of timestamps where section_detect.py found multi-stem
+// energy changes (likely real musical section boundaries). Used to snap
+// user-placed section markers and rendered as faint vertical hint ticks
+// on the lane so the user can see where the algorithm thinks boundaries
+// are before they place their own.
+let automationSectionCandidates = [];
 
 // Per-song count-in flag. When true, pressing Play first plays 4 clicks at
 // the song's BPM, then starts audio (and turns off the click track if it
@@ -5912,8 +5940,6 @@ function snapTimeToBeat(t) {
   const onsets = window.songOnsetTimes;
   if (Array.isArray(onsets) && onsets.length) {
     let best = null, bestDist = WINDOW;
-    // Onsets are typically sorted; binary-search-ish walk would be faster
-    // but the array is small and this runs only at section-edit time.
     for (const ot of onsets) {
       const d = Math.abs(ot - gridT);
       if (d < bestDist) { bestDist = d; best = ot; }
@@ -5924,6 +5950,28 @@ function snapTimeToBeat(t) {
   return Math.max(0, Math.round(gridT * 100) / 100);
 }
 
+// Section-specific snap. First tries to land on a sectionCandidate
+// (multi-stem novelty peak from section_detect.py) within ±2 s of the
+// user's target; if none is in range, falls back to the regular
+// snapTimeToBeat (BPM-grid + onset refine). This gives section
+// boundaries musical accuracy even when the user clicks fuzzy.
+function snapSectionToCandidate(t) {
+  const CANDIDATE_WINDOW = 2.0;
+  if (Array.isArray(automationSectionCandidates) && automationSectionCandidates.length) {
+    let best = null, bestDist = CANDIDATE_WINDOW;
+    for (const ct of automationSectionCandidates) {
+      const d = Math.abs(ct - t);
+      if (d < bestDist) { bestDist = d; best = ct; }
+      else if (ct - t > CANDIDATE_WINDOW) break;
+    }
+    if (best !== null) {
+      // Round to centiseconds — candidates are stored 2 decimals already.
+      return Math.max(0, Math.round(best * 100) / 100);
+    }
+  }
+  return snapTimeToBeat(t);
+}
+
 // Append a section marker at the current playhead. If a section already
 // exists very close to now, overwrite its color rather than adding a new
 // one (so the user can fix a fat-finger key press). The boundary is
@@ -5932,7 +5980,7 @@ function recordSectionAtPlayhead(color) {
   if (!automationCurrentBase) return;
   if (!SECTION_COLORS[color]) return;
   const rawT = currentPlayheadSec();
-  const t = snapTimeToBeat(rawT);
+  const t = snapSectionToCandidate(rawT);
   const NEAR = 0.3;
   const existing = automationSections.find(s => Math.abs(s.t - t) < NEAR);
   if (existing) {

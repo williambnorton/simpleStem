@@ -210,6 +210,32 @@ Events are stored as Program Change or Control Change for v1. Ramps
 (continuous fader rides) are not implemented; each event is one-shot.
 Editor is the yellow lane below the visualizer in the portal.
 
+### Section auto-detection (`section_detect.py`)
+
+When `stem.sh` finishes a render, it calls `section_detect.py` on the song
+folder. That script runs a multi-stem novelty function:
+
+1. Load each stem's audio, compute RMS energy envelope at 10 Hz.
+2. Take the per-stem absolute first derivative (energy change rate).
+3. Sum the derivatives across stems → combined "section change strength."
+4. Find peaks above 35% of the global max with ≥6 s spacing.
+5. Write the peak timestamps to `metadata.json` as `sectionCandidates`.
+
+The portal's `/api/song/:base/automation` endpoint exposes these
+candidates alongside the editable `sections` array. The client uses them
+two ways:
+
+- **Snap on placement.** When the user drops a section (key 1–9) or
+  drags a section divider, `snapSectionToCandidate(t)` looks for a
+  candidate within ±2 s and snaps to it. Falls back to BPM-grid snap
+  if none is in range.
+- **Visual hints.** Faint vertical ticks on the lane background mark
+  every candidate timestamp, so the user can see where the algorithm
+  thinks boundaries are before placing their own.
+
+Backfill the existing library: `./backfill_section_detect.sh --go`.
+~3 sec per song on CPU, ~9 min for 176 songs.
+
 ### Time-of-day scheduling (planned)
 
 Songs carry `duration_sec` in metadata. Setlist projected start/end

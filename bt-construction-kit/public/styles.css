@@ -3961,6 +3961,20 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   justify-content: center;
   overflow: hidden;
 }
+
+/* Section-candidate hint ticks — faint vertical lines on the lane at
+   timestamps where section_detect.py found multi-stem energy changes.
+   They guide the user toward placing section markers at musical
+   boundaries; sections snap to the closest candidate within ±2 s. */
+.automation-section-hint {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: rgba(200, 210, 230, 0.28);
+  pointer-events: none;
+  z-index: 0;
+}
 .automation-section-label {
   margin-top: 4px;
   padding: 2px 8px;
