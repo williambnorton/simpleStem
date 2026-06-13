@@ -748,8 +748,27 @@ try {
 async function tryLoadFromCatalog() {
   if (!fs.existsSync(CATALOG_LOCAL_MIRROR)) return null;
   const raw = await fsp.readFile(CATALOG_LOCAL_MIRROR, 'utf8');
-  const parsed = JSON.parse(raw);
-  if (!parsed || !parsed.data || !Array.isArray(parsed.data.songs)) return null;
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) {
+    console.warn(`[catalog] ⚠️  CATALOG.json present but unparseable: ${e.message}`);
+    return null;
+  }
+  if (!parsed || !parsed.data || !Array.isArray(parsed.data.songs)) {
+    // Shape drift — the producer (catalog.py on the Librarian) wrote a file
+    // that doesn't match the contract documented in
+    // prompts/librarian_catalog_canonical_shape.md. Loudly surface this so
+    // the next person who looks at the logs knows what to fix instead of
+    // silently falling back to a Drive scan (or, worse, a stale cache).
+    const topKeys = parsed && typeof parsed === 'object' ? Object.keys(parsed) : [];
+    console.warn(
+      `[catalog] ⚠️  DRIFT: CATALOG.json shape mismatch — ` +
+      `expected {data:{songs:[...]}} but got top-level keys [${topKeys.join(', ')}]. ` +
+      `Update catalog.py on the Librarian to emit the canonical shape ` +
+      `(see prompts/librarian_catalog_canonical_shape.md).`
+    );
+    return null;
+  }
   return parsed;
 }
 

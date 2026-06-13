@@ -5034,15 +5034,12 @@ function saveSetlistStartTime() {
 }
 
 function loadSetlistFromLocalStorage() {
-  const data = localStorage.getItem('bt_construction_setlist');
-  if (data) {
-    try {
-      setlist = JSON.parse(data);
-      renderSetlist();
-    } catch (e) {
-      console.log('Error parsing localstorage setlist data', e);
-    }
-  }
+  // Setlist song selections are session-only — clear any persisted picks on
+  // boot so library-row checkboxes start unchecked. (Songs land in `setlist`
+  // when the user checks library rows to batch-add; persisting that across
+  // restarts left ghost selections on every startup.) Name + start time are
+  // still restored — those are config, not selections.
+  localStorage.removeItem('bt_construction_setlist');
   const name = localStorage.getItem('bt_construction_setlist_name');
   if (name && els.setlistName) els.setlistName.value = name;
   const start = localStorage.getItem('bt_construction_setlist_start');
