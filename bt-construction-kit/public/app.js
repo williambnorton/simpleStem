@@ -3053,11 +3053,19 @@ function loadRoutingMatrix() {
     const stored = JSON.parse(raw);
     Object.keys(audioElements).forEach(ch => {
       if (Array.isArray(stored[ch])) {
-        routingMatrix[ch] = stored[ch]
+        const arr = stored[ch]
           .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < 18)
           .sort((a, b) => a - b);
-        if (!routingMatrix[ch].length) {
-          const home = HOME_CHAN[ch];
+        // Migration for sessions saved before the home-channel default.
+        // If the stored routing doesn't already include the home channel,
+        // add it so the per-stem button (V on Vocals, D on Drums, etc.)
+        // is pre-lit regardless of what was saved earlier.
+        const home = HOME_CHAN[ch];
+        if (home !== undefined && !arr.includes(home)) arr.push(home);
+        arr.sort((a, b) => a - b);
+        if (arr.length) {
+          routingMatrix[ch] = arr;
+        } else {
           routingMatrix[ch] = home !== undefined ? [0, 1, home] : [0, 1];
         }
       }
@@ -3104,8 +3112,33 @@ function toggleStripChannel(chan, channelIdx) {
   filtered.sort((a, b) => a - b);
   routingMatrix[chan] = filtered;
   saveRoutingMatrix();
-  applyRouting();
+  // Only rebuild THIS stem's splitter connections. The previous
+  // applyRouting() rebuild touched all six stems on every click, which
+  // caused an audible ~1s stutter on the others. Per-stem rebuild affects
+  // only the changed stem.
+  applyRoutingForStem(chan);
   renderRoutingGrids();
+}
+
+function applyRoutingForStem(chan) {
+  const s = stripNodes && stripNodes[chan];
+  if (!s || !masterMerger) return;
+  try { s.splitter.disconnect(); } catch (e) {}
+  const routes = routingMatrix[chan] || [];
+  if (!routes.length) return;
+  const sorted = [...routes].sort((a, b) => a - b);
+  if (sorted.length === 1) {
+    const out = sorted[0];
+    if (out < outputChannelCount) {
+      try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
+      try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
+    }
+  } else {
+    sorted.forEach((out, i) => {
+      if (out >= outputChannelCount) return;
+      try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
+    });
+  }
 }
 
 function presetSpreadToSixAux() {
@@ -3720,6 +3753,10 @@ function loadSong(song, opts) {
     });
   }
   
+  // Any active LOOPER from the previous song must stop NOW — otherwise its
+  // AudioBufferSourceNodes keep looping on top of the new song's audio.
+  stopLooperIfActive();
+
   if (song.type === 'stems') {
     els.trackType.textContent = 'STEMS';
     els.trackType.className = 'badge';
@@ -5866,8 +5903,22 @@ function toggleSectionLooper() {
   }
 }
 
+// Stored so we can restore the volumes the user had before LOOPER engaged.
+let loopSavedAEVolumes = {};
+
 async function setupSeamlessLoop(startT, endT) {
   if (!audioCtx) return;
+  // Belt and suspenders: ALSO silence the MediaElement's own volume so the
+  // original song can't bleed through even if a stale Web Audio connection
+  // survives somewhere. We'll restore these on tearDown.
+  loopSavedAEVolumes = {};
+  for (const [chan, ae] of Object.entries(audioElements)) {
+    if (ae) {
+      loopSavedAEVolumes[chan] = ae.volume;
+      try { ae.volume = 0; } catch (e) {}
+    }
+  }
+
   const sources = {};
   for (const chan of Object.keys(audioElements)) {
     const ae = audioElements[chan];
@@ -5902,6 +5953,10 @@ async function setupSeamlessLoop(startT, endT) {
     } catch (e) {
       console.warn(`[loop] couldn't seamless-loop ${chan}:`, e.message);
       try { nodes.source.connect(nodes.stripGain); } catch (_) {}
+      // If this stem fails, restore its volume so it isn't silently dropped.
+      if (ae && typeof loopSavedAEVolumes[chan] === 'number') {
+        try { ae.volume = loopSavedAEVolumes[chan]; } catch (_) {}
+      }
     }
   }
   loopBufferSources = sources;
@@ -5915,17 +5970,40 @@ async function setupSeamlessLoop(startT, endT) {
 }
 
 function tearDownSeamlessLoop() {
-  if (!audioCtx) return;
   for (const [chan, src] of Object.entries(loopBufferSources || {})) {
     try { src.stop(); src.disconnect(); } catch (e) {}
     const nodes = stripNodes[chan];
-    if (nodes && nodes.source && nodes.stripGain) {
+    if (audioCtx && nodes && nodes.source && nodes.stripGain) {
       try { nodes.source.connect(nodes.stripGain); } catch (e) {}
     }
   }
+  // Restore the per-stem AudioElement volumes we saved at engage time. If
+  // tearDown is called without a prior engage (defensive), this is a no-op.
+  for (const [chan, vol] of Object.entries(loopSavedAEVolumes)) {
+    const ae = audioElements[chan];
+    if (ae && typeof vol === 'number') {
+      try { ae.volume = vol; } catch (e) {}
+    }
+  }
+  loopSavedAEVolumes = {};
   loopBufferSources = {};
   loopStartedAtCtxT = 0;
   loopInitialOffset = 0;
+}
+
+// Public helper: any code path that swaps the playing song should call this
+// FIRST so the AudioBufferSourceNodes carrying the previous song's loop don't
+// keep playing on top of the new song.
+function stopLooperIfActive() {
+  if (sectionLooperActive) {
+    sectionLooperActive = false;
+    sectionLooperRange = null;
+    const btn = document.getElementById('btn-section-looper');
+    const label = document.getElementById('looper-section-text');
+    if (btn) btn.classList.remove('active');
+    if (label) label.textContent = 'no section';
+  }
+  tearDownSeamlessLoop();
 }
 
 // Click → select (Delete removes it); double-click → edit modal; drag →
