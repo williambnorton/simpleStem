@@ -254,48 +254,61 @@ function draw() {
     }
   } else {
     // STEMS mode — six horizontal lanes (top → bottom V/D/B/G/P/O). Each
-    // lane mirrors its stem's peaks, colored to the strip accent, with
-    // amplitude weighted by the live audio element volume so muted stems
-    // flatten out. Lane separators are faint white; small letter labels
-    // sit at the left edge of each lane.
+    // lane shows the SOURCE peak signal for that stem at FULL STRENGTH,
+    // independent of mute / solo / fader. This is a structural reference
+    // for timing instrument entries, not a live mix meter; the mute/solo/
+    // fader controls still affect what you HEAR, but the lane stays lit
+    // so you can see when each part comes in.
+    //
+    // Bigger, bolder per-stem labels at the left edge in the lane's color
+    // pop through any section-band overlay (.player-wave-overlay) sitting
+    // on top of the canvas.
     const STEM_ORDER = [
-      { key: 'vocals', color: 'rgba(233, 30, 99, 0.85)',  label: 'V' },
-      { key: 'drums',  color: 'rgba(46, 204, 113, 0.85)', label: 'D' },
-      { key: 'bass',   color: 'rgba(41, 128, 185, 0.85)', label: 'B' },
-      { key: 'guitar', color: 'rgba(241, 196, 15, 0.85)', label: 'G' },
-      { key: 'piano',  color: 'rgba(156, 39, 176, 0.85)', label: 'P' },
-      { key: 'other',  color: 'rgba(255, 152, 0, 0.85)',  label: 'O' },
+      { key: 'vocals', color: 'rgba(233, 30, 99, 0.95)',  label: 'V' },
+      { key: 'drums',  color: 'rgba(46, 204, 113, 0.95)', label: 'D' },
+      { key: 'bass',   color: 'rgba(41, 128, 185, 0.95)', label: 'B' },
+      { key: 'guitar', color: 'rgba(241, 196, 15, 0.95)', label: 'G' },
+      { key: 'piano',  color: 'rgba(156, 39, 176, 0.95)', label: 'P' },
+      { key: 'other',  color: 'rgba(255, 152, 0, 0.95)',  label: 'O' },
     ];
     const laneH = height / STEM_ORDER.length;
-    const audio = window.audioElements;
-    ctx.font = '9px "Space Grotesk", sans-serif';
+    const labelPadLeft = 18;   // reserve space at the left for the label
+    ctx.font = 'bold 13px "Space Grotesk", sans-serif';
     ctx.textBaseline = 'middle';
     for (let li = 0; li < STEM_ORDER.length; li++) {
       const { key, color, label } = STEM_ORDER[li];
       const peaks = stemPeaks.get(key) || stemPeaks.get('__m4a__');
       const laneTop = li * laneH;
       const laneMid = laneTop + laneH / 2;
+      // Faint lane separator
       if (li > 0) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, laneTop);
         ctx.lineTo(width, laneTop);
         ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      // Stem label — solid color so it stays legible over section bands.
+      // Black halo around the letter for extra punch against any band fill.
       ctx.textAlign = 'left';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.strokeText(label, 4, laneMid);
+      ctx.fillStyle = color;
       ctx.fillText(label, 4, laneMid);
-      const ae = audio && audio[key];
-      const weight = (ae && ae.volume > AUDIBLE_THRESHOLD) ? ae.volume : 0;
-      if (!peaks || weight <= 0) continue;
-      const bucketW = width / peaks.length;
+      if (!peaks) continue;
+      // Always draw at FULL strength — visualizer is a song reference,
+      // not a live mix meter. Volume / mute / solo are unrelated.
+      const drawX0 = labelPadLeft;
+      const drawW  = width - labelPadLeft;
+      const bucketW = drawW / peaks.length;
       ctx.fillStyle = color;
       for (let i = 0; i < peaks.length; i++) {
-        const p = peaks[i] * weight;
+        const p = peaks[i];
         const scaled = Math.min(1, Math.sqrt(p) * 1.15);
-        const barH = scaled * (laneH * 0.85);
-        const x = i * bucketW;
+        const barH = scaled * (laneH * 0.88);
+        const x = drawX0 + i * bucketW;
         const w = Math.max(0.6, bucketW - 0.3);
         ctx.fillRect(x, laneMid - barH / 2, w, barH);
       }
