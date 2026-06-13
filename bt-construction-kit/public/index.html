@@ -231,6 +231,16 @@
                the slider thumb. -->
           <div class="player-visualization-area">
             <span class="visualizer-label">Visualizer</span>
+            <!-- SUM ↔ STEMS toggle. SUM is the single combined waveform
+                 (good for whole-song shape); STEMS splits the canvas into
+                 6 horizontal lanes (top→bottom V/D/B/G/P/O), each showing
+                 ONE stem's peaks colored to its strip accent — much better
+                 for spotting entries/drops when teaching an instrument
+                 part. Choice persists in localStorage. -->
+            <button id="viz-mode-toggle" class="viz-mode-btn" type="button"
+                    title="Toggle between summed waveform and 6 per-stem lanes (V/D/B/G/P/O top→bottom)">
+              SUM
+            </button>
             <span class="time-label time-spacer" aria-hidden="true">0:00</span>
             <!-- Canvas + overlays share a positioned wrapper. The wrapper
                  takes flex:1 in the player-visualization-area's flex row

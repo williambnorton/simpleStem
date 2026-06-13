@@ -223,6 +223,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupSetlistsPanel();
   setupVersionWatch();
   setupMasterVolume();
+  setupVizModeToggle();
   setupTabs();
   setupDrumLoopsTab();
   setupLoopSequenceUI();
@@ -2880,6 +2881,30 @@ function applyPitchToShifter() {
       ae.playbackRate = rate;
     } catch (e) {}
   }
+}
+
+// Visualizer mode toggle — flips the waveform between SUM (single combined
+// trace) and STEMS (six stacked lanes V/D/B/G/P/O, top→bottom). The choice
+// persists across sessions in localStorage. The actual rendering switch
+// lives in visualizer.js draw(); this just owns the button + the
+// window.__vizMode global the renderer reads.
+const VIZ_MODE_KEY = 'simpleStem.vizMode';
+function setupVizModeToggle() {
+  const btn = document.getElementById('viz-mode-toggle');
+  if (!btn) return;
+  let mode;
+  try { mode = localStorage.getItem(VIZ_MODE_KEY) || 'sum'; } catch (e) { mode = 'sum'; }
+  if (mode !== 'sum' && mode !== 'stems') mode = 'sum';
+  window.__vizMode = mode;
+  btn.textContent = mode.toUpperCase();
+  btn.classList.toggle('viz-mode-stems', mode === 'stems');
+  btn.addEventListener('click', () => {
+    const next = window.__vizMode === 'stems' ? 'sum' : 'stems';
+    window.__vizMode = next;
+    btn.textContent = next.toUpperCase();
+    btn.classList.toggle('viz-mode-stems', next === 'stems');
+    try { localStorage.setItem(VIZ_MODE_KEY, next); } catch (e) {}
+  });
 }
 
 function setupPitchShifter() {

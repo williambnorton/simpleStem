@@ -229,29 +229,77 @@ function draw() {
     return;
   }
 
-  // Combine the peaks of currently-audible stems. For m4a tracks there's
-  // only one ('__m4a__') and the audible-check is trivially true. For
-  // stems tracks each strip's audio element volume reflects mute / solo /
-  // fader, so peeking at `volume > AUDIBLE_THRESHOLD` tells us what the
-  // user can actually hear. We weight each stem's peaks by its volume so
-  // pulling a fader down dims the visualization too, not just lops it off.
-  const combined = combineAudiblePeaks();
+  // Render mode — SUM (combined waveform) or STEMS (six per-stem lanes).
+  // Set via #viz-mode-toggle in the visualizer area; persisted in
+  // localStorage as 'simpleStem.vizMode' ('sum' or 'stems').
+  const mode = (window.__vizMode === 'stems') ? 'stems' : 'sum';
 
-  // Mirror waveform: peaks drawn from the centerline outward.
-  const grad = ctx.createLinearGradient(0, height, 0, 0);
-  grad.addColorStop(0, 'rgba(156, 39, 176, 0.85)');
-  grad.addColorStop(0.5, 'rgba(0, 188, 212, 0.85)');
-  grad.addColorStop(1, 'rgba(46, 204, 113, 0.85)');
-
-  const bucketW = width / combined.length;
-  const half = height / 2;
-  ctx.fillStyle = grad;
-  for (let i = 0; i < combined.length; i++) {
-    const p = combined[i];
-    const barH = p * (height * 0.9);
-    const x = i * bucketW;
-    const w = Math.max(0.6, bucketW - 0.3);
-    ctx.fillRect(x, half - barH / 2, w, barH);
+  if (mode === 'sum') {
+    // Combine the per-stem peaks weighted by audible volume.
+    const combined = combineAudiblePeaks();
+    const grad = ctx.createLinearGradient(0, height, 0, 0);
+    grad.addColorStop(0, 'rgba(156, 39, 176, 0.85)');
+    grad.addColorStop(0.5, 'rgba(0, 188, 212, 0.85)');
+    grad.addColorStop(1, 'rgba(46, 204, 113, 0.85)');
+    const bucketW = width / combined.length;
+    const half = height / 2;
+    ctx.fillStyle = grad;
+    for (let i = 0; i < combined.length; i++) {
+      const p = combined[i];
+      const scaled = Math.min(1, Math.sqrt(p) * 1.15);
+      const barH = scaled * (height * 0.95);
+      const x = i * bucketW;
+      const w = Math.max(0.6, bucketW - 0.3);
+      ctx.fillRect(x, half - barH / 2, w, barH);
+    }
+  } else {
+    // STEMS mode — six horizontal lanes (top → bottom V/D/B/G/P/O). Each
+    // lane mirrors its stem's peaks, colored to the strip accent, with
+    // amplitude weighted by the live audio element volume so muted stems
+    // flatten out. Lane separators are faint white; small letter labels
+    // sit at the left edge of each lane.
+    const STEM_ORDER = [
+      { key: 'vocals', color: 'rgba(233, 30, 99, 0.85)',  label: 'V' },
+      { key: 'drums',  color: 'rgba(46, 204, 113, 0.85)', label: 'D' },
+      { key: 'bass',   color: 'rgba(41, 128, 185, 0.85)', label: 'B' },
+      { key: 'guitar', color: 'rgba(241, 196, 15, 0.85)', label: 'G' },
+      { key: 'piano',  color: 'rgba(156, 39, 176, 0.85)', label: 'P' },
+      { key: 'other',  color: 'rgba(255, 152, 0, 0.85)',  label: 'O' },
+    ];
+    const laneH = height / STEM_ORDER.length;
+    const audio = window.audioElements;
+    ctx.font = '9px "Space Grotesk", sans-serif';
+    ctx.textBaseline = 'middle';
+    for (let li = 0; li < STEM_ORDER.length; li++) {
+      const { key, color, label } = STEM_ORDER[li];
+      const peaks = stemPeaks.get(key) || stemPeaks.get('__m4a__');
+      const laneTop = li * laneH;
+      const laneMid = laneTop + laneH / 2;
+      if (li > 0) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, laneTop);
+        ctx.lineTo(width, laneTop);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, 4, laneMid);
+      const ae = audio && audio[key];
+      const weight = (ae && ae.volume > AUDIBLE_THRESHOLD) ? ae.volume : 0;
+      if (!peaks || weight <= 0) continue;
+      const bucketW = width / peaks.length;
+      ctx.fillStyle = color;
+      for (let i = 0; i < peaks.length; i++) {
+        const p = peaks[i] * weight;
+        const scaled = Math.min(1, Math.sqrt(p) * 1.15);
+        const barH = scaled * (laneH * 0.85);
+        const x = i * bucketW;
+        const w = Math.max(0.6, bucketW - 0.3);
+        ctx.fillRect(x, laneMid - barH / 2, w, barH);
+      }
+    }
   }
 
   // Beat grid — vertical markers at every beat boundary computed from the
