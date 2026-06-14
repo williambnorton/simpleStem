@@ -343,10 +343,18 @@ function draw() {
     ctx.fillRect(0, 0, playedX, height);
   }
 
-  // Playhead line.
+  // Playhead line — thick + black so it stays visible in direct sun on
+  // an outdoor stage. White halo on either side keeps it legible over
+  // dark waveform regions too.
   if (playedX > 0 && playedX < width) {
-    ctx.strokeStyle = 'rgba(46, 204, 113, 0.95)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(playedX, 0);
+    ctx.lineTo(playedX, height);
+    ctx.stroke();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(playedX, 0);
     ctx.lineTo(playedX, height);

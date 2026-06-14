@@ -4519,6 +4519,49 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   pointer-events: none;
 }
 .automation-section-divider:hover::after { background: #f4c430; }
+/* Hover affordance — vertical grip + delete X. Hidden by default; revealed
+   when the mouse is on the divider so it doesn't clutter the lane. */
+.section-divider-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  z-index: 3;
+}
+.automation-section-divider:hover .section-divider-handle { display: flex; }
+.section-divider-handle .sdh-grip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #f4c430;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  cursor: ew-resize;
+  user-select: none;
+}
+.section-divider-handle .sdh-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: rgba(244, 67, 54, 0.85);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.section-divider-handle .sdh-del:hover {
+  background: #f44336;
+}
 .midi-event-marker { z-index: 1; }
 
 /* Marker — wider chip that holds a label like "V0" or "M4P12". Width is

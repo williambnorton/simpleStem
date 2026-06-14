@@ -6042,8 +6042,31 @@ function renderSectionCandidateHints(container, dur) {
 function attachSectionDividerHandlers(node, idx) {
   let downX = 0, dragging = false, startTime = 0;
   const overlay = document.getElementById('automation-overlay');
-  // Right-click on a section divider → remove that section. Quick way to
-  // prune over-eager auto-accepted candidates without dragging.
+  // Hover affordance: when the user mouses over a divider, fade in a
+  // little drag handle (a vertical grip) and a delete × button so it's
+  // obvious you can either move or remove the divider. Both stay on
+  // while the mouse is anywhere over the divider OR its handle.
+  if (!node.querySelector('.section-divider-handle')) {
+    const handle = document.createElement('span');
+    handle.className = 'section-divider-handle';
+    handle.title = 'Drag to move (snaps to detected boundaries). Click × or right-click to delete.';
+    handle.innerHTML = '<span class="sdh-grip">⋮⋮</span><button class="sdh-del" title="Delete this section">×</button>';
+    node.appendChild(handle);
+    // Delete button — same effect as right-click.
+    handle.querySelector('.sdh-del').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      automationSections.splice(idx, 1);
+      renderAutomationLane();
+      markAutomationDirty();
+    });
+    // Stop drag from initiating when the user is interacting with the
+    // delete button.
+    handle.querySelector('.sdh-del').addEventListener('mousedown', (ev) => ev.stopPropagation());
+  }
+  // Right-click anywhere on the divider → remove that section. Same as
+  // clicking the × button. Keep the right-click path so muscle memory
+  // from earlier rounds still works.
   node.addEventListener('contextmenu', (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
@@ -6052,6 +6075,8 @@ function attachSectionDividerHandlers(node, idx) {
     markAutomationDirty();
   });
   node.addEventListener('mousedown', (ev) => {
+    // Ignore drag start if the user grabbed the delete button.
+    if (ev.target.closest('.sdh-del')) return;
     ev.stopPropagation();
     downX = ev.clientX;
     dragging = false;
@@ -6376,11 +6401,27 @@ function openMidiModal(idx) {
   automationEditingIdx = (idx === null || idx === undefined) ? null : idx;
   let e;
   if (automationEditingIdx === null) {
-    e = {
-      t: currentPlayheadSec(),
-      device: 'helix', type: 'pc', channel: 4,
-      program: 0, controller: 7, value: 100, label: '',
-    };
+    // Default action: last type the user picked + last params they used
+    // for THAT type, so the dialog opens already showing "what I just
+    // did, again." User spec: "click MIDI and the default should be
+    // Program Change if that was the last action. Further, if the
+    // program change message was last set to MIDI channel 4 and Program
+    // #6, then that should be the default."
+    const lastType   = loadLastActionType();
+    const lastByType = loadLastByType();
+    const lastChByDev = loadChannelByDevice();
+    const defaults   = lastByType[lastType] || {};
+    const device     = defaults.device || 'helix';
+    e = Object.assign(
+      {
+        t: currentPlayheadSec(),
+        device, type: lastType,
+        channel: lastChByDev[device] || defaults.channel || 4,
+        program: 0, controller: 7, value: 100, label: '',
+      },
+      defaults,
+      { t: currentPlayheadSec(), label: '' }   // time + label always fresh
+    );
     document.getElementById('midi-modal-title').textContent = 'Add Action';
     document.getElementById('midi-btn-delete').style.display = 'none';
   } else {
@@ -6402,7 +6443,9 @@ function openMidiModal(idx) {
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
   document.getElementById('midi-modal-status').className = 'midi-modal-status';
-  // Show the auto-shorthand preview right away. Any field edit re-runs it.
+  // Fresh watermark so the label-as-shorthand auto-sync starts clean,
+  // then prime the field with the current shorthand.
+  if (typeof window.__resetShorthandWatermark === 'function') window.__resetShorthandWatermark();
   if (typeof window.__updateShorthandPreview === 'function') window.__updateShorthandPreview();
 }
 
@@ -6774,6 +6817,61 @@ async function sendMidiNow(event) {
   return r.json();
 }
 
+// ── Action-row constants (hoisted to module scope, NOT inside setupMidiUI) ─
+// Previously these were declared mid-function which made setupMidiActionRow
+// crash with "Cannot access RECENT_SLOTS before initialization" because the
+// row's render runs before the line that introduces the const. Top-level
+// declarations dodge the temporal-dead-zone entirely.
+const RECENT_KEY   = 'simpleStem.midiRecentUses.v1';
+const RECENT_SLOTS = 5;
+// Remember what the user picked last time so the dialog opens with their
+// most recent choices instead of starting from scratch. Keyed by action
+// type so PC and CC each keep their own "last values."
+const LAST_TYPE_KEY    = 'simpleStem.midiLastType.v1';
+const LAST_BY_TYPE_KEY = 'simpleStem.midiLastByType.v1';
+const CH_BY_DEVICE_KEY = 'simpleStem.midiChannelByDevice.v1';
+
+function loadLastActionType() {
+  try { return localStorage.getItem(LAST_TYPE_KEY) || 'pc'; } catch (e) { return 'pc'; }
+}
+function saveLastActionType(t) {
+  try { localStorage.setItem(LAST_TYPE_KEY, t); } catch (e) {}
+}
+function loadLastByType() {
+  try {
+    const raw = localStorage.getItem(LAST_BY_TYPE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function saveLastByType(m) {
+  try { localStorage.setItem(LAST_BY_TYPE_KEY, JSON.stringify(m)); } catch (e) {}
+}
+function loadChannelByDevice() {
+  try {
+    const raw = localStorage.getItem(CH_BY_DEVICE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function saveChannelByDevice(m) {
+  try { localStorage.setItem(CH_BY_DEVICE_KEY, JSON.stringify(m)); } catch (e) {}
+}
+// Bump these stores after a successful Save.
+function recordActionDefaults(a) {
+  if (!a || !a.type) return;
+  saveLastActionType(a.type);
+  const m = loadLastByType();
+  m[a.type] = Object.assign({}, a);
+  delete m[a.type].t;       // time is per-event, not a default
+  delete m[a.type].label;   // label is per-event, not a default
+  delete m[a.type].fired;
+  saveLastByType(m);
+  if (a.device && a.channel != null) {
+    const c = loadChannelByDevice();
+    c[a.device] = a.channel;
+    saveChannelByDevice(c);
+  }
+}
+
 function setupMidiUI() {
   setupMidiActionRow();
   const lane = document.getElementById('midi-lane');
@@ -6810,6 +6908,36 @@ function setupMidiUI() {
 
   document.getElementById('midi-f-type').addEventListener('change', () => {
     midiModalTypeChanged();
+    // Switch in the remembered defaults for the newly-picked type so the
+    // form mirrors what the user did the LAST time they used this type.
+    const newType = document.getElementById('midi-f-type').value;
+    const lastByType = loadLastByType();
+    const d = lastByType[newType];
+    if (d) {
+      if (d.device  != null) document.getElementById('midi-f-device').value  = d.device;
+      if (d.channel != null) document.getElementById('midi-f-channel').value = d.channel;
+      if (d.program != null && document.getElementById('midi-f-program'))
+        document.getElementById('midi-f-program').value = d.program;
+      if (d.controller != null && document.getElementById('midi-f-controller'))
+        document.getElementById('midi-f-controller').value = d.controller;
+      if (d.value != null && document.getElementById('midi-f-value'))
+        document.getElementById('midi-f-value').value = d.value;
+      if (d.note != null && document.getElementById('midi-f-note'))
+        document.getElementById('midi-f-note').value = d.note;
+      if (d.velocity != null && document.getElementById('midi-f-velocity'))
+        document.getElementById('midi-f-velocity').value = d.velocity;
+      if (d.stem != null && document.getElementById('midi-f-stem'))
+        document.getElementById('midi-f-stem').value = d.stem;
+    }
+    updateShorthandPreview();
+  });
+  // When the user picks a different device, reload the channel they last
+  // used WITH THAT device — so "I always send to my Helix on ch4 and my
+  // XR18 on ch5" stays sticky.
+  document.getElementById('midi-f-device').addEventListener('change', () => {
+    const dev = document.getElementById('midi-f-device').value;
+    const m = loadChannelByDevice();
+    if (m[dev] != null) document.getElementById('midi-f-channel').value = m[dev];
     updateShorthandPreview();
   });
   // Live shorthand preview — refresh whenever any modal input changes.
@@ -6853,8 +6981,10 @@ function setupMidiUI() {
       return;
     }
     const ev = readMidiModalForm();
-    // If the user left the Label field blank, persist the auto-shorthand
-    // so the timeline marker shows M4P12 etc. instead of an empty chip.
+    // The Label field already carries the shorthand by default (the form
+    // syncs as the user types), so usually .label is non-empty. If the
+    // user blanked it on purpose, fall back to the shorthand so the
+    // timeline chip still reads something.
     if (!ev.label) ev.label = actionShorthand(ev);
     if (automationEditingIdx === null) automationEvents.push(ev);
     else automationEvents[automationEditingIdx] = ev;
@@ -6862,6 +6992,9 @@ function setupMidiUI() {
     // Bump the usage counter so the most-used actions float up into the
     // quick-fire row beside +Action.
     recordRecentUse(ev);
+    // Remember per-type defaults + per-device channel so the next open
+    // of this dialog starts where we left off.
+    recordActionDefaults(ev);
     renderAutomationLane();
     markAutomationDirty();
     closeMidiModal();
@@ -6914,8 +7047,8 @@ function setupMidiUI() {
   // action's signature; the top 5 most-used actions are then shown as
   // quick-fire buttons to the right of +Action. Single click drops the
   // action at the playhead and fires it live through the sidecar.
-  const RECENT_KEY  = 'simpleStem.midiRecentUses.v1';
-  const RECENT_SLOTS = 5;
+  // (RECENT_KEY / RECENT_SLOTS hoisted to module scope above setupMidiUI
+  // so this row renders even though setupMidiActionRow() runs first.)
 
   function loadRecentMap() {
     try {
@@ -7047,17 +7180,28 @@ function setupMidiUI() {
   window.__recordRecentUse   = recordRecentUse;
   window.__actionShorthand   = actionShorthand;
 
-  // Live shorthand preview at the top of the modal. Reads the current
-  // field values; updates the .midi-shorthand div. Called from every
-  // form input's `input`/`change` handler.
+  // Per user spec: the shorthand is now the DEFAULT VALUE of the Label
+  // field — it tracks the form as you type. The user can overwrite the
+  // label with anything they want, and we only re-sync when the label is
+  // empty or still matches the previously-derived shorthand. This keeps
+  // a user-typed "Big Lead Patch" from being clobbered when they nudge
+  // the channel after typing.
+  let _lastAutoShorthand = '';
   function updateShorthandPreview() {
-    const preview = document.getElementById('midi-shorthand-preview');
-    if (!preview) return;
+    const labelEl = document.getElementById('midi-f-label');
+    if (!labelEl) return;
     try {
       const a = readMidiModalForm();
-      preview.textContent = actionShorthand(a) || a.type || '';
-    } catch (e) { preview.textContent = ''; }
+      const sh = actionShorthand(a) || '';
+      if (!labelEl.value || labelEl.value === _lastAutoShorthand) {
+        labelEl.value = sh;
+      }
+      _lastAutoShorthand = sh;
+    } catch (e) { /* ignore */ }
   }
+  // Reset the auto-sync watermark when the modal opens so the first
+  // re-sync after edit takes hold cleanly.
+  window.__resetShorthandWatermark = () => { _lastAutoShorthand = ''; };
   window.__updateShorthandPreview = updateShorthandPreview;
 
   // Lane toolbar — SAVE ACTIONS commits in-memory events to metadata.json;

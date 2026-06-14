@@ -276,7 +276,7 @@
                  crosshair-cursor approach was removed because it grabbed
                  pointer events from the section dividers below. -->
             <div class="midi-action-row" id="midi-action-row">
-              <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the MIDI event editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ MIDI</button>
+              <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the Action editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ Action</button>
               <div class="midi-preset-slots" id="midi-preset-slots"></div>
             </div>
             <div class="automation-toolbar" id="midi-lane-toolbar">
@@ -745,10 +745,6 @@
   <div class="midi-modal-backdrop"></div>
   <div class="midi-modal-card">
     <h3 id="midi-modal-title">Add Action</h3>
-    <!-- Live shorthand preview: updates as you change channel/type/etc.
-         This is what gets embedded in metadata.json under the event's
-         "label" field unless the user types a custom override below. -->
-    <div class="midi-shorthand" id="midi-shorthand-preview" title="Auto-generated shorthand. The custom Label below overrides this when saved.">M4P0</div>
     <div class="midi-row">
       <label>Time (s)</label>
       <input id="midi-f-time" type="number" min="0" step="0.01" value="0">
