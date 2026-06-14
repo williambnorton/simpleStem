@@ -4303,8 +4303,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-lane-bands {
   position: absolute;
   inset: 0;
+  /* pointer-events:none lets clicks fall through bands; the divider
+     children inside this layer set pointer-events:auto themselves so
+     they can still receive hover/click/drag. */
   pointer-events: none;
-  z-index: 0;
+  /* Bands + dividers sit ABOVE the .midi-lane click-target so the user
+     can grab a divider that crosses through the lane area. */
+  z-index: 3;
 }
 .midi-lane {
   position: absolute;
@@ -4533,19 +4538,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   box-shadow: 0 0 3px rgba(255, 140, 0, 0.75);
   pointer-events: none;
 }
-.automation-section-divider:hover::after,
-.automation-section-divider.selected::after {
-  /* Bright on hover OR when sticky-selected so the user always knows
-     which divider Delete/Backspace will remove. */
+.automation-section-divider:hover::after {
+  /* Bright orange on hover so the user knows which divider Delete will
+     remove (hover-tracked, not sticky — moving away clears the arm). */
   background: #ffae42;
   box-shadow: 0 0 8px rgba(255, 174, 66, 0.95);
   width: 3px;
   margin-left: -1.5px;
-}
-/* Sticky selection — keeps the column lit after the click so the user
-   can move the mouse to press Delete without losing the highlight. */
-.automation-section-divider.selected {
-  background: rgba(255, 140, 0, 0.22);
 }
 /* Hover-handle (grip + ×) removed in favor of sticky-selected model:
    click a divider to select; Delete/Backspace removes; right-click

@@ -6073,12 +6073,17 @@ function attachSectionDividerHandlers(node, idx) {
   let downX = 0, dragging = false, startTime = 0;
   const overlay = document.getElementById('automation-overlay');
 
-  // Reflect persisted selection so the chosen divider stays orange
-  // across re-renders.
-  if (selectedSectionDividerIdx === idx) node.classList.add('selected');
+  node.title = 'Drag to move (snaps to candidates). Hover + press Delete to remove.';
 
-  node.title = 'Click to select. Drag to move (snaps to candidates). Delete to remove.';
+  // Hover → track which divider is "armed" so the global Delete handler
+  // knows which one to remove. mouseenter/leave fire even when the
+  // divider's hit box overlaps siblings, unlike :hover-only CSS rules.
+  node.addEventListener('mouseenter', () => { hoveredSectionDividerIdx = idx; });
+  node.addEventListener('mouseleave', () => {
+    if (hoveredSectionDividerIdx === idx) hoveredSectionDividerIdx = null;
+  });
 
+  // Right-click also deletes — kept for muscle memory from earlier rounds.
   node.addEventListener('contextmenu', (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
@@ -6087,12 +6092,6 @@ function attachSectionDividerHandlers(node, idx) {
 
   node.addEventListener('mousedown', (ev) => {
     ev.stopPropagation();
-    // Click → select this divider (sticky highlight). Re-render so the
-    // .selected class flips between dividers visibly.
-    selectedSectionDividerIdx = idx;
-    document.querySelectorAll('.automation-section-divider.selected')
-      .forEach(d => d.classList.remove('selected'));
-    node.classList.add('selected');
     downX = ev.clientX;
     dragging = false;
     startTime = automationSections[idx]?.t || 0;
@@ -6145,31 +6144,25 @@ function attachSectionDividerHandlers(node, idx) {
 // events and persisted in the same metadata.json save.
 let automationSections = [];
 
-// Sticky-selection model for section dividers. Click a divider to select
-// it (orange highlight). Press Delete/Backspace to remove (previous section
-// extends through). Click anywhere off a divider to deselect.
-let selectedSectionDividerIdx = null;
+// Hover-tracked deletion for section dividers.
+//   Mouse enters a divider → highlight + remember idx
+//   Mouse leaves          → unhighlight + forget
+//   Delete / Backspace    → if a divider is currently hovered, remove it
+//                           (previous section extends through what was
+//                            the following section)
+// Click + drag on the divider still moves it.
+let hoveredSectionDividerIdx = null;
 
-// Global keyboard handler for divider delete. Wired in DOMContentLoaded
-// via setupSectionDividerKeyboard().
 function setupSectionDividerKeyboard() {
   window.addEventListener('keydown', (e) => {
-    if (selectedSectionDividerIdx == null) return;
+    if (hoveredSectionDividerIdx == null) return;
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-    // Don't fight text inputs.
     const tgt = e.target;
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
                 tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
     e.preventDefault();
-    deleteSectionDividerAt(selectedSectionDividerIdx);
-  });
-  // Click off a divider deselects.
-  document.addEventListener('mousedown', (e) => {
-    if (selectedSectionDividerIdx == null) return;
-    if (e.target.closest('.automation-section-divider')) return;
-    selectedSectionDividerIdx = null;
-    document.querySelectorAll('.automation-section-divider.selected')
-      .forEach(d => d.classList.remove('selected'));
+    deleteSectionDividerAt(hoveredSectionDividerIdx);
+    hoveredSectionDividerIdx = null;
   });
 }
 
