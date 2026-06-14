@@ -233,6 +233,13 @@ window.addEventListener('DOMContentLoaded', () => {
   setupVersionWatch();
   setupMasterVolume();
   setupVizModeToggle();
+  // Kick the visualizer's render loop now — DON'T wait for initAudioCtx
+  // (which is deferred until first user gesture). Without this the canvas
+  // stays the HTML default 300x150 with zero pixels drawn until the user
+  // clicks play. Passing null for the analyser is fine; the analyser is
+  // only used for live-FFT mode which we don't currently render — peaks
+  // come from setWaveformStems() decoding the per-stem audio files.
+  try { initVisualizer(null); } catch (e) { console.warn('[viz] eager init failed:', e); }
   setupTabs();
   setupDrumLoopsTab();
   setupLoopSequenceUI();

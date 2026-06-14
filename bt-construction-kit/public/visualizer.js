@@ -34,6 +34,14 @@ const PEAK_BUCKETS = 1500;
 const AUDIBLE_THRESHOLD = 0.01;
 
 function initVisualizer(analyserNode) {
+  // Idempotent: app.js calls this eagerly at boot with null and later
+  // again from initAudioCtx with the real analyser. The second call only
+  // refreshes the analyser reference; canvas + render loop are already
+  // wired up.
+  if (canvas) {
+    analyser = analyserNode || analyser;
+    return;
+  }
   canvas = document.getElementById('visualizer-canvas');
   if (!canvas) return;
   ctx = canvas.getContext('2d');
