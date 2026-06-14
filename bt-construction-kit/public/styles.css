@@ -788,13 +788,11 @@ select {
   border-radius: 20px;
 }
 
-/* Search Box — tight stack with the YouTube-paste section below */
-.search-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 6px;
-}
+/* Orphan rule kept intentionally? No — the .search-section / .add-yt-section
+   elements were moved into the Song Library pane (task #206) and the markup
+   in index.html no longer renders these wrappers. The rules below are dead
+   and have been removed. (.glass-input is kept; the input is reused inside
+   the library header.) */
 
 .glass-input {
   display: flex;
@@ -2942,9 +2940,10 @@ input:checked + .slider-round:before {
 }
 
 /* ── Add-from-YouTube queue (portal queueing) ─────────────────────────── */
-.add-yt-section { margin: 0 0 10px; display: flex; flex-direction: column; gap: 4px; }
-.add-yt-section .search-box { margin-bottom: 0; }
-/* + Add button under the URL input — full-width below */
+/* .add-yt-section wrapper rule removed: the URL input now lives inside the
+   library-header (.library-inputs), and there's no longer a discrete
+   .add-yt-section block. Leaving .add-yt-btn — that selector is still used
+   by the + Add button inline below the URL input. */
 .add-yt-btn {
   width: 100%;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

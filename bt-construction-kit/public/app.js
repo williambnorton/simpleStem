@@ -6832,6 +6832,64 @@ function setupMidiUI() {
       alert(`Save failed: ${err.message}`);
     }
   });
+  // ACCEPT — drop a section marker at every auto-detected candidate that
+  // isn't already covered by a saved section. Quick way to rough-in all
+  // the boundaries for a song; the user can then relabel/move/delete with
+  // existing UI. Color rotates 1..9 (Intro/Verse/Chorus/Bridge/…) so
+  // adjacent sections are visually distinct.
+  document.getElementById('midi-btn-accept-candidates').addEventListener('click', () => {
+    if (!automationCurrentBase) return;
+    const cands = automationSectionCandidates || [];
+    if (!cands.length) {
+      alert("This song has no auto-detected section candidates yet.\n\n" +
+            "Run ./backfill_section_detect.sh --go on the Performer to compute them for the existing library.");
+      return;
+    }
+    const NEAR = 0.5;
+    let added = 0;
+    let colorIdx = (automationSections.length % 9) + 1;
+    for (const t of cands) {
+      if (automationSections.some(s => Math.abs(s.t - t) < NEAR)) continue;
+      automationSections.push({ t, color: colorIdx });
+      colorIdx = (colorIdx % 9) + 1;
+      added++;
+    }
+    if (added === 0) { alert('Every candidate is already covered by a section.'); return; }
+    automationSections.sort((a, b) => a.t - b.t);
+    renderAutomationLane();
+    markAutomationDirty();
+  });
+
+  // NEXT ▶ — jump to the next song in the library that has zero saved
+  // sections, so you can work through the catalog without manually picking.
+  // Uses the existing /api/song/:base/automation endpoint to peek at each
+  // candidate before loading audio — cheap, no autoplay.
+  document.getElementById('midi-btn-next-unsectioned').addEventListener('click', async () => {
+    if (!mergedLibrary || !mergedLibrary.length) { alert('Library still loading.'); return; }
+    // Build an ordered list of stems-having songs, starting AFTER the current.
+    const stemsRows = mergedLibrary
+      .map(m => m.variants.find(v => v.type === 'stems'))
+      .filter(Boolean);
+    const curBase = automationCurrentBase;
+    const startIdx = curBase ? stemsRows.findIndex(v => v.folderName === curBase) : -1;
+    const ordered = [
+      ...stemsRows.slice(startIdx + 1),
+      ...stemsRows.slice(0, Math.max(0, startIdx + 1)),
+    ];
+    for (const v of ordered) {
+      try {
+        const r = await fetch(`/api/song/${encodeURIComponent(v.folderName)}/automation?_=${Date.now()}`);
+        const d = await r.json();
+        const has = Array.isArray(d.sections) && d.sections.length > 0;
+        if (!has) {
+          loadSong(v, { autoplay: false });
+          return;
+        }
+      } catch (e) { /* keep walking */ }
+    }
+    alert('Every song in the library already has at least one section marker.');
+  });
+
   document.getElementById('midi-btn-clear-actions').addEventListener('click', async () => {
     if (!automationCurrentBase) return;
     // CLEAR wipes ACTION events only. Section markers (Intro/Verse/Chorus/
