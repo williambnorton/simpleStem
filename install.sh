@@ -92,6 +92,7 @@ If "demucs" is not yet on your PATH in this shell, open a new terminal
 Quick test:
   ./stem.sh "I Melt With You" "Modern English"
 
-Batch from the band sheet:
-  nohup ./mpbbatch.bash > batch.log 2>&1 &
+Sync the Mitchell Park song list from the shared Google Sheet:
+  ./librarian.sh sheet         # full sync (writes metadata + GIGS/)
+  ./librarian.sh sheet --dry-run
 EOF

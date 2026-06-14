@@ -82,9 +82,10 @@ Pipeline (acquisition machine):
 - `stem.sh` — the heavy worker: yt-dlp → 48 kHz `source.wav` → Demucs
   htdemucs_6s (6 stems) → m4a mixdowns. Writes `STEMS/<slug>/`.
 - `post_process.py` — gain-match stems to source. `loop_detect.py` — beat-synced
-  loops. `batch.bash` / `mpbbatch.bash` — older Google-Sheet batch path.
-- Docker: `Dockerfile`, `docker-compose.yml`, `entrypoint.sh` — containerized
-  stem/batch runs (bundles ffmpeg/yt-dlp/demucs).
+  loops. The legacy Google-Sheet batch path (`mpbbatch.bash`) and the
+  Docker bundle (`Dockerfile`/`docker-compose.yml`/`entrypoint.sh`) have
+  been retired — `mpb_sync.py` driven by `librarian.sh sheet` is the only
+  sheet-sync entry point now; Docker will be rebuilt from scratch later.
 
 UI (studio machine):
 - `bt-construction-kit/` — Express 5 server (`server.js`, port 3000) + static

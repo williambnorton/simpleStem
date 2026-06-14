@@ -5693,6 +5693,22 @@ async function loadAutomationForSong(songBase) {
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
+    // Auto-accept candidates: if this song has zero saved sections AND the
+    // backfill produced candidate timestamps, materialize them as draft
+    // sections so the user can immediately try them as loops. Colors rotate
+    // 1..9 (Intro/Verse/Chorus/Bridge/…) so adjacent bands look distinct
+    // out of the gate. The dirty flag is set below so SAVE persists them
+    // and the toolbar indicator shows the unsaved-changes dot.
+    var _autoAccepted = false;
+    if (automationSections.length === 0 && automationSectionCandidates.length > 0) {
+      let colorIdx = 1;
+      for (const t of automationSectionCandidates) {
+        automationSections.push({ t, color: colorIdx });
+        colorIdx = (colorIdx % 9) + 1;
+      }
+      automationSections.sort((a, b) => a.t - b.t);
+      _autoAccepted = true;
+    }
     // Pitch is no longer per-song — it's a session-only effect. Don't
     // reset the knobs on song change; the user's current pitch carries
     // over until they hit RESET.
@@ -5702,9 +5718,12 @@ async function loadAutomationForSong(songBase) {
     automationSectionCandidates = [];
     automationCountIn = false;
     automationLastSavedJSON = '[]';
+    var _autoAccepted = false;
   }
   refreshCountInButton();
-  automationDirty = false;
+  // Dirty iff auto-accept populated sections that aren't on the server yet.
+  // Otherwise the freshly-loaded state matches the saved snapshot.
+  automationDirty = !!_autoAccepted;
   renderAutomationLane();
   refreshAutomationToolbar();
 }
