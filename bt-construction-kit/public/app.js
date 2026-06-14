@@ -1062,7 +1062,12 @@ function renderOneGigSetlist(sl, idx) {
       const sv = m.variants.find(v => v.type === 'stems');
       return sv && sv.folderName === s.song_base;
     });
-    const title = (merged && merged.title) || s.song_base.replace(/_/g, ' ');
+    // setlist_sync.py can hand us entries with a null song_base when a
+    // YouTube playlist row didn't match any STEMS folder. Without this
+    // fallback, switching to the YouTube Sync gig crashes renderGigSidebar
+    // with "Cannot read properties of null (reading 'replace')".
+    const fallbackName = (s.song_base || s.title || '(unmatched)').replace(/_/g, ' ');
+    const title = (merged && merged.title) || fallbackName;
     const artist = (merged && merged.artist) || '';
     const row = document.createElement('div');
     row.className = 'sls-row';
@@ -4012,9 +4017,11 @@ function loadSong(song, opts) {
     
     els.mixerContainer.style.display = 'none';
     els.loopsContainer.style.display = 'none';
-    document.querySelector('.stretch-outro-card').style.opacity = '0.5';
-    document.querySelector('.stretch-outro-card').style.pointerEvents = 'none';
-    els.stretchToggle.checked = false;
+    // Outro Jam Stretch DOM was removed (task #139, replaced by LOOPER) —
+    // guard every read so a missing element doesn't crash loadSong.
+    const _strCard = document.querySelector('.stretch-outro-card');
+    if (_strCard) { _strCard.style.opacity = '0.5'; _strCard.style.pointerEvents = 'none'; }
+    if (els.stretchToggle) els.stretchToggle.checked = false;
     stretchActive = false;
     toggleStretchState();
     
@@ -5258,6 +5265,15 @@ function playNextInSetlist() {
    ============================= */
 
 function toggleStretchState() {
+  // The Outro Jam Stretch UI was replaced by the section LOOPER (task #139)
+  // and its DOM elements (stretchCyclesContainer, stretchInfo) were removed.
+  // This function is still called from loadSong's m4a/stems branches — make
+  // it a graceful no-op when the elements are gone. Without these guards,
+  // every song load on boot logs
+  //   [restore] last song failed: TypeError: Cannot read properties of null
+  //                                 (reading 'style') at toggleStretchState
+  // and the auto-restore path silently aborts.
+  if (!els.stretchCyclesContainer || !els.stretchInfo) return;
   if (stretchActive) {
     els.stretchCyclesContainer.style.opacity = '1';
     els.stretchCyclesContainer.style.pointerEvents = 'auto';
