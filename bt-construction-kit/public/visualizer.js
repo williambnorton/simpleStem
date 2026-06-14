@@ -343,39 +343,22 @@ function draw() {
     ctx.fillRect(0, 0, playedX, height);
   }
 
-  // Playhead — drawn last so it sits ON TOP of section bands. Three
-  // layers:
-  //   1. White halo (8px wide) for max contrast over dark waveform regions
-  //   2. Black core (3px) — the line you actually see
-  //   3. A downward-pointing orange triangle at the top so even when the
-  //      waveform is dense the flag tells you where Now is.
+  // Playhead — drawn last so it sits ON TOP of section bands and the
+  // waveform. Thick solid black line per user spec; thin white halo
+  // for contrast against dark regions.
   if (playedX > 0 && playedX < width) {
     ctx.save();
-    // Halo
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 7;
     ctx.beginPath();
     ctx.moveTo(playedX, 0);
     ctx.lineTo(playedX, height);
     ctx.stroke();
-    // Core
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(playedX, 0);
     ctx.lineTo(playedX, height);
-    ctx.stroke();
-    // Flag — bright orange downward triangle anchored at the top of
-    // the canvas. ~14px wide, ~12px tall.
-    ctx.fillStyle = '#ff8c00';
-    ctx.beginPath();
-    ctx.moveTo(playedX - 7, 0);
-    ctx.lineTo(playedX + 7, 0);
-    ctx.lineTo(playedX, 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
   }
