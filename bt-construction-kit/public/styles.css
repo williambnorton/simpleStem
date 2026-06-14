@@ -3179,6 +3179,24 @@ input:checked + .slider-round:before {
   transition: none;
 }
 
+/* LOOPER label states.
+   .looper-active-label  — shown while a section is looping; surfaces the
+                            "automation recording paused" warning so the user
+                            knows fader moves won't be captured.
+   .looper-recording-disabled — flashes briefly when the user tries to record
+                            a fade while looping. */
+#looper-section-text.looper-active-label {
+  color: var(--color-orange, #ff9800);
+  font-weight: 600;
+}
+#looper-section-text.looper-recording-disabled {
+  background: rgba(244, 67, 54, 0.25);
+  color: #ff5252;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.3s, color 0.3s;
+}
+
 /* Positional routing buttons — replace the old 3×6 routing grid. Each named
    button (V/O/P/L/R/G/B/D) lands at the position around the .fader-container
    that mirrors its physical place in the band's stem-image hologram:

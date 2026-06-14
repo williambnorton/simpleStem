@@ -855,6 +855,11 @@ async function persistActiveGig() {
 }
 
 function renderGigSidebar() {
+  // Profiling: regression Q1a flagged this as a freeze candidate. Logs the
+  // wall-clock cost so we can see if a particular gig is slow. Look in
+  // DevTools console for [perf] renderGigSidebar Xms — if it's >100 ms we
+  // need to chunk renderOneGigSetlist into requestIdleCallback.
+  const __perfT0 = performance.now();
   const nameEl = document.getElementById('gig-side-name');
   const countEl = document.getElementById('gig-side-count');
   const setlistsEl = document.getElementById('gig-setlists');
@@ -897,11 +902,42 @@ function renderGigSidebar() {
   }
 
   setlistsEl.innerHTML = '';
-  activeGig.setlists.forEach((sl, idx) => {
-    const node = renderOneGigSetlist(sl, idx);
-    setlistsEl.appendChild(node);
-  });
-  if (window.lucide) lucide.createIcons();
+  const slCount = activeGig.setlists.length;
+  // Chunk threshold: 3+ setlists yield to the browser between each so the
+  // tab doesn't hang during the gig-switch animation. For 1-2 setlists it's
+  // faster to render synchronously.
+  if (slCount <= 2) {
+    activeGig.setlists.forEach((sl, idx) => {
+      setlistsEl.appendChild(renderOneGigSetlist(sl, idx));
+    });
+    if (window.lucide) lucide.createIcons();
+    const dt = performance.now() - __perfT0;
+    if (dt > 50) console.warn(`[perf] renderGigSidebar (sync ${slCount} setlists) ${dt.toFixed(1)}ms`);
+    else console.log(`[perf] renderGigSidebar ${dt.toFixed(1)}ms`);
+  } else {
+    // Chunked: append the first setlist synchronously (so the user sees
+    // SOMETHING immediately), then defer the rest via requestIdleCallback
+    // (falling back to setTimeout(0) on Safari).
+    const yieldFn = window.requestIdleCallback ||
+                    ((cb) => setTimeout(() => cb({ timeRemaining: () => 50 }), 0));
+    let i = 0;
+    setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[0], 0));
+    i = 1;
+    const renderRest = () => {
+      yieldFn(() => {
+        for (; i < slCount; i++) {
+          setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[i], i));
+        }
+        if (window.lucide) lucide.createIcons();
+        const dt = performance.now() - __perfT0;
+        console.log(`[perf] renderGigSidebar (chunked ${slCount} setlists) ${dt.toFixed(1)}ms`);
+      });
+    };
+    renderRest();
+    // Run lucide once for the synchronously-appended first setlist so its
+    // icons don't visibly pop in late.
+    if (window.lucide) lucide.createIcons();
+  }
 }
 
 function renderOneGigSetlist(sl, idx) {
@@ -1423,6 +1459,10 @@ async function precacheLoop(fileName) {
 // loop buttons inside, so a 4-loop song shows up as one card with 4 buttons —
 // matching how a drummer thinks about it ("give me Harvest Moon's loops").
 function renderDrumLoops() {
+  // Profiling: regression Q1a flagged drum-loops tab switching as a freeze
+  // candidate. Logs the wall-clock cost. With 176 songs × ~10 loops, the
+  // chip body string can hit ~600 KB of HTML.
+  const __perfT0 = performance.now();
   const grid = document.getElementById('drumloops-grid');
   if (!grid) return;
   const q = (document.getElementById('drumloops-search')?.value || '').toLowerCase().trim();
@@ -1618,6 +1658,9 @@ function renderDrumLoops() {
   bindComboBarHandlers(grid);
   renderInstrumentFilters();
   if (window.lucide) lucide.createIcons();
+  const dt = performance.now() - __perfT0;
+  if (dt > 100) console.warn(`[perf] renderDrumLoops ${dt.toFixed(1)}ms (${groupRows.length} song rows)`);
+  else console.log(`[perf] renderDrumLoops ${dt.toFixed(1)}ms (${groupRows.length} song rows)`);
 }
 
 function bindComboBarHandlers(grid) {
@@ -6056,7 +6099,8 @@ function toggleSectionLooper() {
     if (btn) btn.classList.add('active');
     if (label) {
       const colorName = SECTION_COLORS[range.color]?.name || 'section';
-      label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s`;
+      label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s · automation recording paused`;
+      label.classList.add('looper-active-label');
     }
     setupSeamlessLoop(range.startT, range.endT).catch(err =>
       console.warn('[loop] seamless setup failed (will fall back to seek):', err)
@@ -6065,7 +6109,10 @@ function toggleSectionLooper() {
     sectionLooperActive = false;
     sectionLooperRange = null;
     if (btn) btn.classList.remove('active');
-    if (label) label.textContent = 'play through';
+    if (label) {
+      label.textContent = 'play through';
+      label.classList.remove('looper-active-label', 'looper-recording-disabled');
+    }
     tearDownSeamlessLoop();
   }
 }
@@ -6383,6 +6430,27 @@ function recordStemToggleAtPlayhead(stem) {
 // button presses while a song is loaded.
 function recordFadeEvent(stem, level, atTime) {
   if (!automationCurrentBase) return;
+  // Recording lock during section LOOPER: while a section is looping the
+  // playhead is pinned to startT (the underlying MediaElement is silenced),
+  // so any fader move while looping would land EVERY event at the loop
+  // start — and as soon as the loop wraps, the dispatcher would refire its
+  // own automation events on top of yours. Per user spec (regression Q2c)
+  // we just refuse to record while looping and surface a visible banner.
+  if (sectionLooperActive) {
+    const lbl = document.getElementById('looper-section-text');
+    if (lbl) {
+      // Briefly flash a warning. The label restores itself when the looper
+      // disengages (toggleSectionLooper rewrites it).
+      lbl.classList.add('looper-recording-disabled');
+      lbl.dataset.lastWarn = String(Date.now());
+      setTimeout(() => {
+        if (Date.now() - Number(lbl.dataset.lastWarn || 0) >= 1400) {
+          lbl.classList.remove('looper-recording-disabled');
+        }
+      }, 1500);
+    }
+    return;
+  }
   const t = (typeof atTime === 'number') ? atTime : currentPlayheadSec();
   const ev = { t, type: 'fade', stem, level: Math.max(0, Math.min(10, level)), fired: true };
   // Dedup window: collapse multiple fader landings within the SAME SECOND
