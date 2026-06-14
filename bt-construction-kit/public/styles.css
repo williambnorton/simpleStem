@@ -4512,13 +4512,21 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   position: absolute;
   top: 0; bottom: 0;
   left: 50%;
-  width: 3px;
-  margin-left: -1.5px;
-  background: #000;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+  width: 1px;
+  margin-left: -0.5px;
+  /* Thin bright orange so the band boundaries are legible without
+     hijacking attention from the playhead line. */
+  background: #ff8c00;
+  box-shadow: 0 0 3px rgba(255, 140, 0, 0.75);
   pointer-events: none;
 }
-.automation-section-divider:hover::after { background: #f4c430; }
+.automation-section-divider:hover::after {
+  /* Slightly thicker + brighter on hover so the user knows they grabbed it. */
+  background: #ffae42;
+  box-shadow: 0 0 6px rgba(255, 174, 66, 0.9);
+  width: 2px;
+  margin-left: -1px;
+}
 /* Hover affordance — vertical grip + delete X. Hidden by default; revealed
    when the mouse is on the divider so it doesn't clutter the lane. */
 .section-divider-handle {

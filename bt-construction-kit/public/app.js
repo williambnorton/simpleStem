@@ -7131,8 +7131,17 @@ function setupMidiUI() {
       const sh = actionShorthand(a);
       const btn = document.createElement('button');
       btn.className = 'midi-preset-slot';
+      // Bottom line:
+      //   - Use the custom label IF the user actually typed something
+      //     different from the auto-shorthand.
+      //   - Otherwise show just the use count (·N), no duplicate of the
+      //     shorthand on the line above.
+      const isCustom = a.label && a.label !== sh;
+      const bottom = isCustom
+        ? `${escapeHtml(a.label)}${count > 1 ? ` ·${count}` : ''}`
+        : (count > 1 ? `·${count}` : '');
       btn.innerHTML = `<span class="midi-preset-lingo">${escapeHtml(sh)}</span>` +
-                      `<span class="midi-preset-human">${escapeHtml(a.label || '')}${count > 1 ? ` ·${count}` : ''}</span>`;
+                      (bottom ? `<span class="midi-preset-human">${bottom}</span>` : '');
       btn.title = `Click: drop ${sh} at the playhead.\nRight-click: forget this action.`;
       btn.addEventListener('click', () => fireRecentAtPlayhead(a));
       btn.addEventListener('contextmenu', (e) => {
