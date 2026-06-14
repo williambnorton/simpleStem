@@ -143,7 +143,7 @@ flowchart LR
 - All scripts (`*.sh`, `*.py`)
 - `bt-construction-kit/` (Express server + static UI)
 - Docs (`*.md`)
-- Config (`Dockerfile`, `docker-compose.yml`, etc.)
+- Configuration files for installers / pipeline (`mpb_sync_config.json`, etc.)
 
 **What's git-ignored:**
 
@@ -534,9 +534,9 @@ Drive's sync sometimes drops.
 ### Slugs
 
 ASCII alphanumeric + `_` / `-` only. Spaces and punctuation collapse
-to `_`; runs of `_` collapse; leading/trailing `_` are trimmed. Both
-`stem.sh` (bash) and `mpbbatch.bash` use the same `slugify` function
-so existence checks line up.
+to `_`; runs of `_` collapse; leading/trailing `_` are trimmed.
+`stem.sh` (bash) and `webloc_watch.sh` use the same `slug` shell
+function so existence checks line up across the pipeline.
 
 ### Setlist files
 
@@ -666,8 +666,9 @@ librosa; explicit for clarity).
 | `loop_detect.py` | Beat-synced agglomerative segmentation of `source.wav`; tiles the most-repeated sections of each rhythm stem to song length at bar boundaries. |
 | `post_process.py` | Optional LSQ gain match between stems and source. Not auto-invoked; run by hand for stem rebalancing. |
 | `catalog.py` | Daily Librarian pass: rebuild `CATALOG.json` from `STEMS/` and `M4A/`; fill metadata gaps via MusicBrainz; compute missing BPM/key locally; flag (don't overwrite) drift between dirs and `metadata.json` files. |
-| `batch.bash`, `mpbbatch.bash` | Older Google-Sheet batch path. Pulls Song/Artist rows from a public sheet and runs `stem.sh` per row. Largely superseded by the webloc/queue flow. |
-| `Dockerfile`, `docker-compose.yml`, `entrypoint.sh` | Containerized `stem.sh` / `mpbbatch` runs. Bundles ffmpeg/yt-dlp/demucs. |
+| `section_detect.py` | Multi-stem novelty function: detects section boundaries in each song and writes `sectionCandidates` into `metadata.json`. Called at end of `stem.sh`; backfilled across the library via `backfill_section_detect.sh`. |
+| `mpb_sync.py` | Mitchell Park Band Google Sheet sync. Pulls the master songlist + per-gig tabs daily; writes singer/band/drum-pattern/readiness fields into matched `STEMS/<slug>/metadata.json` and produces `GIGS/<gig>.json` files. Replaces the retired `mpbbatch.bash` path. |
+| `backfill_section_detect.sh`, `backfill_m4a_stems.sh`, `migrate_per_folder_loops.sh` | One-shot Librarian maintenance scripts: backfill section candidates, encode m4a siblings for the WAV-only legacy library, and consolidate legacy per-folder loops into the canonical flat `LOOPS/` layout. All idempotent; default dry-run with `--go` to commit. |
 
 ### Control scripts
 
