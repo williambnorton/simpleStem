@@ -3138,6 +3138,47 @@ input:checked + .slider-round:before {
 }
 .routing-info .btn-secondary { padding: 4px 10px; font-size: 0.72rem; }
 
+/* Pre-show Sound Check — primary call-to-action on cold launch.
+   Bigger and brighter than the stereo-only banner so the band's first move
+   is to verify the rig is hot. */
+.routing-tag.soundcheck-cta {
+  background: linear-gradient(135deg, #1565c0, #0d47a1);
+  color: #fff;
+  border-color: #0d47a1;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  box-shadow: 0 0 12px rgba(33, 150, 243, 0.4);
+  animation: pulse-soundcheck 2.4s ease-in-out infinite;
+}
+.routing-tag.soundcheck-cta:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 18px rgba(33, 150, 243, 0.6);
+}
+@keyframes pulse-soundcheck {
+  0%, 100% { box-shadow: 0 0 8px rgba(33, 150, 243, 0.35); }
+  50%      { box-shadow: 0 0 20px rgba(33, 150, 243, 0.7); }
+}
+
+/* While the test tones are playing, dim the badge and stop the pulse so the
+   running count is readable. */
+.routing-tag.soundcheck-running {
+  animation: none;
+  background: #0d47a1;
+  color: #fff;
+}
+
+/* Each strip's positional button briefly flashes when its XR18 channel is
+   sounding during the check — so the band can SEE which output is playing
+   right now in addition to hearing it. */
+.pos-btn.soundcheck-flash {
+  background: var(--color-cyan) !important;
+  color: #000 !important;
+  box-shadow: 0 0 12px var(--color-cyan), 0 0 24px var(--color-cyan);
+  transition: none;
+}
+
 /* Positional routing buttons — replace the old 3×6 routing grid. Each named
    button (V/O/P/L/R/G/B/D) lands at the position around the .fader-container
    that mirrors its physical place in the band's stem-image hologram:

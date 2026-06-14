@@ -3446,21 +3446,38 @@ function injectMixerHeaderInfo() {
   if (liveCount !== outputChannelCount) {
     outputChannelCount = liveCount;
   }
-  if (outputChannelCount <= 2) {
+  // Pre-show readiness UX: until the user has run the Sound Check (or pressed
+  // Play, which has the same gesture-activated side effect), the browser
+  // hasn't told us the real device channel count. Show an inviting "Run
+  // Sound Check" button instead of the cryptic "click to reload" banner —
+  // clicking it (a) supplies the user gesture, (b) builds the audio graph,
+  // (c) probes the actual max channels, and (d) plays a quick test tone on
+  // every XR18 output so the FOH engineer can see audio land on every channel.
+  if (!audioCtx) {
     info.innerHTML = `
-      <button class="routing-tag stereo-only routing-reprobe" title="Plug in XR18 and select it as macOS system output, then click to reload the page (the only way Web Audio detects a new device).">
-        Stereo only · ${outputChannelCount} ch · click to reload &amp; detect new device
+      <button class="routing-tag soundcheck-cta routing-soundcheck" title="Activate the audio device, detect channel count, and play a brief test tone on each output. Do this before the first song so the band knows the rig is hot.">
+        🔊 Run Sound Check
       </button>
+    `;
+  } else if (outputChannelCount <= 2) {
+    const stamp = window.__soundCheckStamp ? ` · checked ${window.__soundCheckStamp}` : '';
+    info.innerHTML = `
+      <button class="routing-tag stereo-only routing-reprobe" title="Stereo only — XR18 not detected. Make sure it's selected in macOS Sound, then reload.">
+        Stereo only · ${outputChannelCount} ch${stamp} · click to reload &amp; re-detect
+      </button>
+      <button class="btn-secondary routing-soundcheck" title="Re-run the sound check now">Sound Check</button>
     `;
   } else {
     // XR18 (or any multi-channel device) is live. Loud green badge so the
     // band can see at a glance that they ARE routed to the XR18, not the
     // laptop speakers.
     const deviceName = outputChannelCount === 18 ? 'XR18' : `${outputChannelCount}-ch device`;
+    const stamp = window.__soundCheckStamp ? ` · checked ${window.__soundCheckStamp}` : '';
     info.innerHTML = `
       <button class="routing-tag multi-active routing-reprobe" title="Switched device? Click to reload the page so Web Audio re-detects the channel count.">
-        ● ${deviceName} ACTIVE · ${outputChannelCount} ch out
+        ● ${deviceName} ACTIVE · ${outputChannelCount} ch out${stamp}
       </button>
+      <button class="btn-secondary routing-soundcheck" title="Re-run the sound check — plays a brief test tone on every XR18 output.">Sound Check</button>
       <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
       <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
     `;
@@ -3468,9 +3485,114 @@ function injectMixerHeaderInfo() {
   const ps = info.querySelector('.routing-preset-stereo');
   const pS = info.querySelector('.routing-preset-spread');
   const reprobe = info.querySelector('.routing-reprobe');
+  const sc = info.querySelector('.routing-soundcheck');
   if (ps) ps.addEventListener('click', presetStereoMain);
   if (pS) pS.addEventListener('click', presetSpreadToSixAux);
   if (reprobe) reprobe.addEventListener('click', reprobeAudioDevice);
+  if (sc) sc.addEventListener('click', runSoundCheck);
+}
+
+// Pre-show readiness check.
+// 1. Supplies the user-gesture browsers require before they will report the
+//    real device channel count.
+// 2. Creates the AudioContext (initAudioCtx is gated on the gesture flag).
+// 3. Probes destination.maxChannelCount. If the XR18 is selected as system
+//    output, this is the moment we learn 18 not 2.
+// 4. Plays a brief 440 Hz sine tone on every output channel in sequence, so
+//    the FOH engineer can confirm signal lands on every XR18 input. Each
+//    tone is short (~180 ms) and quiet (~-12 dBFS).
+// 5. Updates the badge to "✓ N channels verified at HH:MM" so the band can
+//    see at a glance that the rig is hot before downbeat.
+let soundCheckInProgress = false;
+async function runSoundCheck() {
+  if (soundCheckInProgress) return;
+  soundCheckInProgress = true;
+  window.__hadUserGesture = true;          // we're inside a click handler
+  try {
+    initAudioCtx();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) {}
+    }
+    if (!audioCtx) {
+      alert('Sound Check: could not create AudioContext. Try reloading the page.');
+      return;
+    }
+    // After gesture + resume, re-read max channel count and adopt it.
+    const detected = audioCtx.destination.maxChannelCount || 2;
+    if (detected !== outputChannelCount) outputChannelCount = detected;
+    if (audioCtx.destination.channelCount !== detected) {
+      try {
+        audioCtx.destination.channelCount = detected;
+        audioCtx.destination.channelCountMode = 'explicit';
+        audioCtx.destination.channelInterpretation = 'discrete';
+      } catch (e) { console.warn('[soundcheck] destination channel set rejected:', e.message); }
+    }
+    // Banner — temporarily replaces the routing tag while the test runs.
+    const tag = document.querySelector('.routing-tag');
+    if (tag) {
+      tag.textContent = `🔊 Sound check… 0/${detected}`;
+      tag.classList.add('soundcheck-running');
+    }
+
+    // Build a dedicated test-tone subgraph: osc → gain → merger → destination.
+    // We don't reuse stripNodes because the song graph may not exist yet on a
+    // cold launch and we want this to work whether or not a song is loaded.
+    const merger = audioCtx.createChannelMerger(detected);
+    try {
+      merger.channelCount = detected;
+      merger.channelCountMode = 'explicit';
+      merger.channelInterpretation = 'discrete';
+    } catch (e) {}
+    merger.connect(audioCtx.destination);
+
+    const TONE_HZ = 440;
+    const TONE_MS = 180;
+    const GAP_MS  = 80;
+    const GAIN    = 0.25;   // ~-12 dBFS, comfortable on headphones too
+    for (let ch = 0; ch < detected; ch++) {
+      const osc = audioCtx.createOscillator();
+      const g   = audioCtx.createGain();
+      osc.frequency.value = TONE_HZ;
+      g.gain.setValueAtTime(0, audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(GAIN, audioCtx.currentTime + 0.01);
+      g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + TONE_MS / 1000);
+      osc.connect(g);
+      g.connect(merger, 0, ch);   // mono signal → input #ch of the merger
+      osc.start();
+      osc.stop(audioCtx.currentTime + TONE_MS / 1000 + 0.02);
+      if (tag) tag.textContent = `🔊 Sound check… ${ch + 1}/${detected}`;
+      // Light up the matching strip button (if present) so the user sees
+      // which channel is currently sounding. Bright class fades naturally
+      // via CSS transition.
+      document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
+        b.classList.add('soundcheck-flash')
+      );
+      await new Promise(r => setTimeout(r, TONE_MS + GAP_MS));
+      document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
+        b.classList.remove('soundcheck-flash')
+      );
+    }
+    try { merger.disconnect(); } catch (e) {}
+
+    if (tag) tag.classList.remove('soundcheck-running');
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    window.__soundCheckStamp = `${hh}:${mm}`;
+    // Re-render the header info — picks up the new outputChannelCount, the
+    // checked-at stamp, and (if the song graph already exists) re-syncs the
+    // routing strip enabled/disabled states.
+    try { maybeInitRoutingUI(); } catch (e) {}
+    injectMixerHeaderInfo();
+    // Re-render routing strips so disabled XR18-channel buttons un-grey.
+    try { injectStripRoutingButtons(); renderRoutingButtons(); } catch (e) {}
+    if (detected <= 2) {
+      alert(`Sound Check finished. Only ${detected} channels detected.\n` +
+            `If the XR18 is plugged in, select it as macOS system output and click "click to reload".`);
+    }
+  } finally {
+    soundCheckInProgress = false;
+  }
 }
 
 // Force the audio context to re-evaluate the destination's maximum channel
