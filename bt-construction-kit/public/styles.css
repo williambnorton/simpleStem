@@ -4388,6 +4388,29 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   text-overflow: ellipsis;
 }
 
+/* Hint shown when the user hasn't created any actions yet. */
+.midi-recent-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0 6px;
+}
+
+/* Live shorthand preview at the top of the Add Action modal. */
+.midi-shorthand {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-cyan);
+  background: rgba(0, 188, 212, 0.10);
+  border: 1px solid rgba(0, 188, 212, 0.35);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0 0 12px;
+  text-align: center;
+  user-select: all;
+}
+
 /* Section bands sit behind the action markers and color the lane background
    from the prior section's t to this section's t. Pointer-events: none so
    they don't intercept lane clicks (which would otherwise drop a new

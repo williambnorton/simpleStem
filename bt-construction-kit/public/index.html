@@ -744,7 +744,11 @@
 <div id="midi-modal" class="midi-modal" style="display:none;">
   <div class="midi-modal-backdrop"></div>
   <div class="midi-modal-card">
-    <h3 id="midi-modal-title">Add MIDI Event</h3>
+    <h3 id="midi-modal-title">Add Action</h3>
+    <!-- Live shorthand preview: updates as you change channel/type/etc.
+         This is what gets embedded in metadata.json under the event's
+         "label" field unless the user types a custom override below. -->
+    <div class="midi-shorthand" id="midi-shorthand-preview" title="Auto-generated shorthand. The custom Label below overrides this when saved.">M4P0</div>
     <div class="midi-row">
       <label>Time (s)</label>
       <input id="midi-f-time" type="number" min="0" step="0.01" value="0">
@@ -826,8 +830,8 @@
       <input id="midi-f-velocity" type="number" min="0" max="127" value="100">
     </div>
     <div class="midi-row">
-      <label>Label</label>
-      <input id="midi-f-label" type="text" maxlength="60" placeholder="e.g. Big Lead">
+      <label>Label (optional)</label>
+      <input id="midi-f-label" type="text" maxlength="60" placeholder="leave blank to save as shorthand (e.g. M4P12)">
     </div>
     <div class="midi-modal-buttons">
       <button id="midi-btn-test" class="ghost">Test send</button>

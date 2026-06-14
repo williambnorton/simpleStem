@@ -6042,6 +6042,15 @@ function renderSectionCandidateHints(container, dur) {
 function attachSectionDividerHandlers(node, idx) {
   let downX = 0, dragging = false, startTime = 0;
   const overlay = document.getElementById('automation-overlay');
+  // Right-click on a section divider → remove that section. Quick way to
+  // prune over-eager auto-accepted candidates without dragging.
+  node.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    automationSections.splice(idx, 1);
+    renderAutomationLane();
+    markAutomationDirty();
+  });
   node.addEventListener('mousedown', (ev) => {
     ev.stopPropagation();
     downX = ev.clientX;
@@ -6064,7 +6073,24 @@ function attachSectionDividerHandlers(node, idx) {
       if (dragging) {
         // Snap to the nearest sectionCandidate within ±2 s if one exists,
         // otherwise fall back to BPM-grid + onset snap.
-        automationSections[idx].t = snapSectionToCandidate(automationSections[idx].t);
+        const snappedT = snapSectionToCandidate(automationSections[idx].t);
+        automationSections[idx].t = snappedT;
+        // Slide-over-merge: if the dragged divider landed within 0.4 s of
+        // ANOTHER divider, that's a "remove the underlying one" gesture.
+        // Per user spec: "If sliding a separator over the top of an
+        // existing separator, this is the same as removing the underlying
+        // separator." Look for the closest other section and, if it's
+        // within the merge window, drop it. The dragged one wins (keeps
+        // its color/label).
+        const MERGE_WINDOW = 0.4;
+        const myTime = automationSections[idx].t;
+        for (let j = automationSections.length - 1; j >= 0; j--) {
+          if (j === idx) continue;
+          if (Math.abs(automationSections[j].t - myTime) < MERGE_WINDOW) {
+            automationSections.splice(j, 1);
+            if (j < idx) idx--;        // index shifts left
+          }
+        }
         automationSections.sort((a, b) => a.t - b.t);
         renderAutomationLane();
         markAutomationDirty();
@@ -6355,11 +6381,11 @@ function openMidiModal(idx) {
       device: 'helix', type: 'pc', channel: 4,
       program: 0, controller: 7, value: 100, label: '',
     };
-    document.getElementById('midi-modal-title').textContent = 'Add MIDI Event';
+    document.getElementById('midi-modal-title').textContent = 'Add Action';
     document.getElementById('midi-btn-delete').style.display = 'none';
   } else {
     e = automationEvents[automationEditingIdx];
-    document.getElementById('midi-modal-title').textContent = 'Edit MIDI Event';
+    document.getElementById('midi-modal-title').textContent = 'Edit Action';
     document.getElementById('midi-btn-delete').style.display = 'inline-block';
   }
   document.getElementById('midi-f-time').value     = Number(e.t || 0).toFixed(2);
@@ -6376,6 +6402,8 @@ function openMidiModal(idx) {
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
   document.getElementById('midi-modal-status').className = 'midi-modal-status';
+  // Show the auto-shorthand preview right away. Any field edit re-runs it.
+  if (typeof window.__updateShorthandPreview === 'function') window.__updateShorthandPreview();
 }
 
 function closeMidiModal() {
@@ -6780,7 +6808,23 @@ function setupMidiUI() {
     ae.addEventListener('durationchange', () => renderAutomationLane());
   });
 
-  document.getElementById('midi-f-type').addEventListener('change', midiModalTypeChanged);
+  document.getElementById('midi-f-type').addEventListener('change', () => {
+    midiModalTypeChanged();
+    updateShorthandPreview();
+  });
+  // Live shorthand preview — refresh whenever any modal input changes.
+  // Covers channel/program/controller/value/note/velocity/stem.
+  const previewFields = [
+    'midi-f-channel', 'midi-f-program', 'midi-f-controller',
+    'midi-f-value', 'midi-f-note', 'midi-f-velocity', 'midi-f-stem',
+    'midi-f-device',
+  ];
+  for (const id of previewFields) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener('input',  updateShorthandPreview);
+    el.addEventListener('change', updateShorthandPreview);
+  }
   // CC quick-pick: when the user selects a common controller from the
   // preset dropdown, write it into the Controller field. They can still
   // edit it afterward.
@@ -6789,10 +6833,9 @@ function setupMidiUI() {
     ccPreset.addEventListener('change', () => {
       if (!ccPreset.value) return;
       document.getElementById('midi-f-controller').value = ccPreset.value;
-      // Auto-fill a label from the preset's display text.
-      const labelEl = document.getElementById('midi-f-label');
-      const text = ccPreset.options[ccPreset.selectedIndex].textContent;
-      if (!labelEl.value) labelEl.value = text.split('—').slice(1).join('—').trim() || `CC ${ccPreset.value}`;
+      // Don't auto-fill the label anymore — the user wanted the shorthand
+      // (e.g. M4C121=0) to be the saved value when label is left blank.
+      updateShorthandPreview();
     });
   }
   document.getElementById('midi-btn-cancel').addEventListener('click', closeMidiModal);
@@ -6810,9 +6853,15 @@ function setupMidiUI() {
       return;
     }
     const ev = readMidiModalForm();
+    // If the user left the Label field blank, persist the auto-shorthand
+    // so the timeline marker shows M4P12 etc. instead of an empty chip.
+    if (!ev.label) ev.label = actionShorthand(ev);
     if (automationEditingIdx === null) automationEvents.push(ev);
     else automationEvents[automationEditingIdx] = ev;
     automationEvents.sort((a, b) => a.t - b.t);
+    // Bump the usage counter so the most-used actions float up into the
+    // quick-fire row beside +Action.
+    recordRecentUse(ev);
     renderAutomationLane();
     markAutomationDirty();
     closeMidiModal();
@@ -6858,120 +6907,125 @@ function setupMidiUI() {
     });
   }
 
-  // ── MIDI action row: +MIDI button + 5 user-configurable preset slots ───
-  // Replaces the crosshair-cursor "click anywhere on the lane to add" UX.
-  // Each preset stores a (label, lingo, actions[]) tuple. Left-click fires
-  // every action in the preset at the current playhead position. Right-
-  // click opens the preset editor so the user can rebrand a slot.
-  const PRESET_STORAGE_KEY = 'simpleStem.midiPresets.v1';
-  const PRESET_SLOTS = 5;
+  // ── MIDI action row: +Action + frequency-tracked recent-actions slots ──
+  // Replaces the crosshair-cursor "click anywhere on the lane to add" UX
+  // AND the static 5-slot manual presets. Every time the user saves an
+  // action through the modal, we increment a usage counter keyed by the
+  // action's signature; the top 5 most-used actions are then shown as
+  // quick-fire buttons to the right of +Action. Single click drops the
+  // action at the playhead and fires it live through the sidecar.
+  const RECENT_KEY  = 'simpleStem.midiRecentUses.v1';
+  const RECENT_SLOTS = 5;
 
-  function loadPresets() {
+  function loadRecentMap() {
     try {
-      const raw = localStorage.getItem(PRESET_STORAGE_KEY);
-      const arr = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(arr) && arr.length === PRESET_SLOTS) return arr;
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (raw) return JSON.parse(raw);
     } catch (e) {}
-    return Array.from({ length: PRESET_SLOTS }, () => ({ label: '', lingo: '', actions: [] }));
+    return {};
   }
-  function savePresets(arr) {
-    try { localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(arr)); } catch (e) {}
+  function saveRecentMap(m) {
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(m)); } catch (e) {}
   }
-  // Derive a short MIDI lingo (e.g. "PC4:3+CC4:121=0") from the actions
-  // array. The user can override this in the preset editor.
-  function deriveLingo(actions) {
-    if (!Array.isArray(actions) || !actions.length) return '';
-    return actions.map(a => {
-      if (a.type === 'pc') return `PC${a.channel}:${a.program}`;
-      if (a.type === 'cc') return `CC${a.channel}:${a.controller}=${a.value}`;
-      if (a.type === 'note_on')  return `N+${a.channel}:${a.note}v${a.velocity}`;
-      if (a.type === 'note_off') return `N-${a.channel}:${a.note}`;
-      if (a.type === 'mute')     return `M-${a.stem}`;
-      if (a.type === 'unmute')   return `M+${a.stem}`;
-      if (a.type === 'fade')     return `${(a.stem||'?')[0].toUpperCase()}${a.level}`;
-      return a.type;
-    }).join('+');
+  // Stable signature so e.g. "PC ch4 prog3 on helix" tallies the same
+  // every time. The user's custom label is NOT part of the signature
+  // (two labels for the same MIDI payload share a counter).
+  function actionSignature(a) {
+    const parts = [a.type || 'x'];
+    if (a.device) parts.push(a.device);
+    if (a.channel != null) parts.push('c' + a.channel);
+    if (a.program != null) parts.push('p' + a.program);
+    if (a.controller != null) parts.push('cc' + a.controller);
+    if (a.value != null) parts.push('v' + a.value);
+    if (a.note != null) parts.push('n' + a.note);
+    if (a.velocity != null) parts.push('vel' + a.velocity);
+    if (a.stem) parts.push(a.stem);
+    return parts.join(':');
   }
-  function renderPresetSlots() {
+  // Shorthand the user can read at a glance. Format follows Bill's
+  // example "M4P12" (MIDI channel 4, Program 12).
+  function actionShorthand(a) {
+    if (!a) return '';
+    if (a.type === 'pc') return `M${a.channel}P${a.program}`;
+    if (a.type === 'cc') return `M${a.channel}C${a.controller}=${a.value}`;
+    if (a.type === 'note_on')  return `M${a.channel}N+${a.note}v${a.velocity}`;
+    if (a.type === 'note_off') return `M${a.channel}N-${a.note}`;
+    if (a.type === 'mute')     return `${(a.stem||'?')[0].toUpperCase()}-mute`;
+    if (a.type === 'unmute')   return `${(a.stem||'?')[0].toUpperCase()}-on`;
+    if (a.type === 'fade')     return `${(a.stem||'?')[0].toUpperCase()}${a.level}`;
+    return a.type || '?';
+  }
+  // Bump the usage counter when an action lands in the timeline.
+  // Stored entry: { sig, count, lastUsed, sample: the action itself }
+  function recordRecentUse(a) {
+    if (!a || !a.type) return;
+    const sig = actionSignature(a);
+    const m = loadRecentMap();
+    const prev = m[sig] || { sig, count: 0, sample: null };
+    m[sig] = {
+      sig,
+      count: prev.count + 1,
+      lastUsed: Date.now(),
+      sample: a,    // keep the most recent invocation as the canonical form
+    };
+    saveRecentMap(m);
+    renderRecentSlots();
+  }
+  // Pick the top-RECENT_SLOTS most-used (ties broken by recency). Empty
+  // slots are NOT shown — slots only materialize once you've used an
+  // action at least once.
+  function topRecentActions() {
+    const m = loadRecentMap();
+    return Object.values(m)
+      .filter(e => e.sample)
+      .sort((a, b) => (b.count - a.count) || (b.lastUsed - a.lastUsed))
+      .slice(0, RECENT_SLOTS);
+  }
+  function renderRecentSlots() {
     const host = document.getElementById('midi-preset-slots');
     if (!host) return;
-    const presets = loadPresets();
+    const top = topRecentActions();
     host.innerHTML = '';
-    presets.forEach((p, i) => {
+    if (!top.length) {
+      const hint = document.createElement('span');
+      hint.className = 'midi-recent-hint';
+      hint.textContent = '↑ your most-used actions will appear here';
+      host.appendChild(hint);
+      return;
+    }
+    top.forEach(({ sample, count }) => {
+      const a = sample;
+      const sh = actionShorthand(a);
       const btn = document.createElement('button');
-      btn.className = 'midi-preset-slot' + (p.actions?.length ? '' : ' empty');
-      btn.dataset.idx = String(i);
-      const lingo = (p.lingo || deriveLingo(p.actions) || 'M' + (i + 1));
-      const human = p.label || 'configure me';
-      btn.innerHTML = `<span class="midi-preset-lingo">${escapeHtml(lingo)}</span>` +
-                      `<span class="midi-preset-human">${escapeHtml(human)}</span>`;
-      btn.title = p.actions?.length
-        ? `Left-click: fire ${p.actions.length} action(s) at the playhead. Right-click: edit this preset.`
-        : 'Right-click (or left-click) to configure this preset.';
-      btn.addEventListener('click', (e) => {
-        if (!p.actions?.length) { openPresetEditor(i); return; }
-        firePresetAtPlayhead(i);
-      });
+      btn.className = 'midi-preset-slot';
+      btn.innerHTML = `<span class="midi-preset-lingo">${escapeHtml(sh)}</span>` +
+                      `<span class="midi-preset-human">${escapeHtml(a.label || '')}${count > 1 ? ` ·${count}` : ''}</span>`;
+      btn.title = `Click: drop ${sh} at the playhead.\nRight-click: forget this action.`;
+      btn.addEventListener('click', () => fireRecentAtPlayhead(a));
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        openPresetEditor(i);
+        const m = loadRecentMap();
+        delete m[actionSignature(a)];
+        saveRecentMap(m);
+        renderRecentSlots();
       });
       host.appendChild(btn);
     });
   }
-  function firePresetAtPlayhead(idx) {
-    if (!automationCurrentBase) return;
-    const presets = loadPresets();
-    const p = presets[idx];
-    if (!p || !p.actions?.length) return;
+  function fireRecentAtPlayhead(a) {
+    if (!automationCurrentBase) { alert('Load a song first.'); return; }
     const t = currentPlayheadSec();
-    p.actions.forEach((a, i) => {
-      // Stagger by 1 ms so the dispatcher fires them in order on replay.
-      const ev = Object.assign({}, a, {
-        t: t + i * 0.001,
-        label: p.label || deriveLingo([a]),
-        fired: true,
-      });
-      automationEvents.push(ev);
-      try { fireAutomationEvent(ev); } catch (e) { console.warn('[preset] fire failed:', e); }
+    const ev = Object.assign({}, a, {
+      t,
+      label: a.label || actionShorthand(a),
+      fired: true,
     });
+    automationEvents.push(ev);
+    try { fireAutomationEvent(ev); } catch (e) { console.warn('[recent] fire failed:', e); }
     automationEvents.sort((a, b) => a.t - b.t);
     renderAutomationLane();
     markAutomationDirty();
-  }
-  function openPresetEditor(idx) {
-    const presets = loadPresets();
-    const p = presets[idx] || { label: '', lingo: '', actions: [] };
-    const label = prompt(
-      `Preset slot ${idx + 1} — human label (e.g. "MarshallStackDist")`,
-      p.label || ''
-    );
-    if (label === null) return;
-    const lingo = prompt(
-      `Preset slot ${idx + 1} — short MIDI lingo (e.g. "PC4:3+CC4:121")`,
-      p.lingo || deriveLingo(p.actions) || ''
-    );
-    if (lingo === null) return;
-    const actionsJson = prompt(
-      `Preset slot ${idx + 1} — actions JSON. Each entry needs at least "type" and (for MIDI) "channel".\n\n` +
-      `Examples:\n` +
-      `  [{"type":"pc","device":"helix","channel":4,"program":3},\n` +
-      `   {"type":"cc","device":"helix","channel":4,"controller":121,"value":0}]\n\n` +
-      `  [{"type":"cc","device":"xr18","channel":5,"controller":91,"value":127}]`,
-      JSON.stringify(p.actions || [], null, 0)
-    );
-    if (actionsJson === null) return;
-    let actions;
-    try {
-      actions = JSON.parse(actionsJson);
-      if (!Array.isArray(actions)) throw new Error('actions must be an array');
-    } catch (e) {
-      alert(`Couldn't parse actions JSON: ${e.message}\nLeaving slot unchanged.`);
-      return;
-    }
-    presets[idx] = { label: label.trim(), lingo: lingo.trim(), actions };
-    savePresets(presets);
-    renderPresetSlots();
+    recordRecentUse(a);   // bump count so winners keep winning
   }
 
   function setupMidiActionRow() {
@@ -6982,12 +7036,29 @@ function setupMidiUI() {
         openMidiModal(null);
         const timeEl = document.getElementById('midi-f-time');
         if (timeEl) timeEl.value = currentPlayheadSec().toFixed(2);
+        // Re-render shorthand preview from current field values.
+        updateShorthandPreview();
       });
     }
-    renderPresetSlots();
+    renderRecentSlots();
   }
-  // Expose so song load + setupMidiUI() can call it.
-  window.__renderPresetSlots = renderPresetSlots;
+  // Exposed so other code (modal save) can refresh the row.
+  window.__renderRecentSlots = renderRecentSlots;
+  window.__recordRecentUse   = recordRecentUse;
+  window.__actionShorthand   = actionShorthand;
+
+  // Live shorthand preview at the top of the modal. Reads the current
+  // field values; updates the .midi-shorthand div. Called from every
+  // form input's `input`/`change` handler.
+  function updateShorthandPreview() {
+    const preview = document.getElementById('midi-shorthand-preview');
+    if (!preview) return;
+    try {
+      const a = readMidiModalForm();
+      preview.textContent = actionShorthand(a) || a.type || '';
+    } catch (e) { preview.textContent = ''; }
+  }
+  window.__updateShorthandPreview = updateShorthandPreview;
 
   // Lane toolbar — SAVE ACTIONS commits in-memory events to metadata.json;
   // CLEAR ACTIONS wipes them (and saves the empty list so the wipe sticks).
