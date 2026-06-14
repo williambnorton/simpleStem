@@ -6747,6 +6747,7 @@ async function sendMidiNow(event) {
 }
 
 function setupMidiUI() {
+  setupMidiActionRow();
   const lane = document.getElementById('midi-lane');
   if (!lane) return;
   lane.addEventListener('click', (e) => {
@@ -6856,6 +6857,137 @@ function setupMidiUI() {
       markAutomationDirty();
     });
   }
+
+  // ── MIDI action row: +MIDI button + 5 user-configurable preset slots ───
+  // Replaces the crosshair-cursor "click anywhere on the lane to add" UX.
+  // Each preset stores a (label, lingo, actions[]) tuple. Left-click fires
+  // every action in the preset at the current playhead position. Right-
+  // click opens the preset editor so the user can rebrand a slot.
+  const PRESET_STORAGE_KEY = 'simpleStem.midiPresets.v1';
+  const PRESET_SLOTS = 5;
+
+  function loadPresets() {
+    try {
+      const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(arr) && arr.length === PRESET_SLOTS) return arr;
+    } catch (e) {}
+    return Array.from({ length: PRESET_SLOTS }, () => ({ label: '', lingo: '', actions: [] }));
+  }
+  function savePresets(arr) {
+    try { localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  // Derive a short MIDI lingo (e.g. "PC4:3+CC4:121=0") from the actions
+  // array. The user can override this in the preset editor.
+  function deriveLingo(actions) {
+    if (!Array.isArray(actions) || !actions.length) return '';
+    return actions.map(a => {
+      if (a.type === 'pc') return `PC${a.channel}:${a.program}`;
+      if (a.type === 'cc') return `CC${a.channel}:${a.controller}=${a.value}`;
+      if (a.type === 'note_on')  return `N+${a.channel}:${a.note}v${a.velocity}`;
+      if (a.type === 'note_off') return `N-${a.channel}:${a.note}`;
+      if (a.type === 'mute')     return `M-${a.stem}`;
+      if (a.type === 'unmute')   return `M+${a.stem}`;
+      if (a.type === 'fade')     return `${(a.stem||'?')[0].toUpperCase()}${a.level}`;
+      return a.type;
+    }).join('+');
+  }
+  function renderPresetSlots() {
+    const host = document.getElementById('midi-preset-slots');
+    if (!host) return;
+    const presets = loadPresets();
+    host.innerHTML = '';
+    presets.forEach((p, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'midi-preset-slot' + (p.actions?.length ? '' : ' empty');
+      btn.dataset.idx = String(i);
+      const lingo = (p.lingo || deriveLingo(p.actions) || 'M' + (i + 1));
+      const human = p.label || 'configure me';
+      btn.innerHTML = `<span class="midi-preset-lingo">${escapeHtml(lingo)}</span>` +
+                      `<span class="midi-preset-human">${escapeHtml(human)}</span>`;
+      btn.title = p.actions?.length
+        ? `Left-click: fire ${p.actions.length} action(s) at the playhead. Right-click: edit this preset.`
+        : 'Right-click (or left-click) to configure this preset.';
+      btn.addEventListener('click', (e) => {
+        if (!p.actions?.length) { openPresetEditor(i); return; }
+        firePresetAtPlayhead(i);
+      });
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openPresetEditor(i);
+      });
+      host.appendChild(btn);
+    });
+  }
+  function firePresetAtPlayhead(idx) {
+    if (!automationCurrentBase) return;
+    const presets = loadPresets();
+    const p = presets[idx];
+    if (!p || !p.actions?.length) return;
+    const t = currentPlayheadSec();
+    p.actions.forEach((a, i) => {
+      // Stagger by 1 ms so the dispatcher fires them in order on replay.
+      const ev = Object.assign({}, a, {
+        t: t + i * 0.001,
+        label: p.label || deriveLingo([a]),
+        fired: true,
+      });
+      automationEvents.push(ev);
+      try { fireAutomationEvent(ev); } catch (e) { console.warn('[preset] fire failed:', e); }
+    });
+    automationEvents.sort((a, b) => a.t - b.t);
+    renderAutomationLane();
+    markAutomationDirty();
+  }
+  function openPresetEditor(idx) {
+    const presets = loadPresets();
+    const p = presets[idx] || { label: '', lingo: '', actions: [] };
+    const label = prompt(
+      `Preset slot ${idx + 1} — human label (e.g. "MarshallStackDist")`,
+      p.label || ''
+    );
+    if (label === null) return;
+    const lingo = prompt(
+      `Preset slot ${idx + 1} — short MIDI lingo (e.g. "PC4:3+CC4:121")`,
+      p.lingo || deriveLingo(p.actions) || ''
+    );
+    if (lingo === null) return;
+    const actionsJson = prompt(
+      `Preset slot ${idx + 1} — actions JSON. Each entry needs at least "type" and (for MIDI) "channel".\n\n` +
+      `Examples:\n` +
+      `  [{"type":"pc","device":"helix","channel":4,"program":3},\n` +
+      `   {"type":"cc","device":"helix","channel":4,"controller":121,"value":0}]\n\n` +
+      `  [{"type":"cc","device":"xr18","channel":5,"controller":91,"value":127}]`,
+      JSON.stringify(p.actions || [], null, 0)
+    );
+    if (actionsJson === null) return;
+    let actions;
+    try {
+      actions = JSON.parse(actionsJson);
+      if (!Array.isArray(actions)) throw new Error('actions must be an array');
+    } catch (e) {
+      alert(`Couldn't parse actions JSON: ${e.message}\nLeaving slot unchanged.`);
+      return;
+    }
+    presets[idx] = { label: label.trim(), lingo: lingo.trim(), actions };
+    savePresets(presets);
+    renderPresetSlots();
+  }
+
+  function setupMidiActionRow() {
+    const addBtn = document.getElementById('midi-btn-add-event');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        if (!automationCurrentBase) { alert('Load a song first.'); return; }
+        openMidiModal(null);
+        const timeEl = document.getElementById('midi-f-time');
+        if (timeEl) timeEl.value = currentPlayheadSec().toFixed(2);
+      });
+    }
+    renderPresetSlots();
+  }
+  // Expose so song load + setupMidiUI() can call it.
+  window.__renderPresetSlots = renderPresetSlots;
 
   // Lane toolbar — SAVE ACTIONS commits in-memory events to metadata.json;
   // CLEAR ACTIONS wipes them (and saves the empty list so the wipe sticks).

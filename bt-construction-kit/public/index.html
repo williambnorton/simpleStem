@@ -269,6 +269,16 @@
                Right-aligned so it sits beneath the lane's marker area
                without overlapping the playback slider below. -->
           <div class="automation-toolbar-row">
+            <!-- LEFT side of the row: MIDI action buttons.
+                 +MIDI opens the full modal at the playhead; the 5 preset
+                 slots fire a pre-configured action with one click. Right-
+                 click any preset to edit its label + MIDI payload. The
+                 crosshair-cursor approach was removed because it grabbed
+                 pointer events from the section dividers below. -->
+            <div class="midi-action-row" id="midi-action-row">
+              <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the MIDI event editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ MIDI</button>
+              <div class="midi-preset-slots" id="midi-preset-slots"></div>
+            </div>
             <div class="automation-toolbar" id="midi-lane-toolbar">
               <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
               <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
