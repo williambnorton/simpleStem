@@ -6046,34 +6046,41 @@ function attachSectionDividerHandlers(node, idx) {
   // little drag handle (a vertical grip) and a delete × button so it's
   // obvious you can either move or remove the divider. Both stay on
   // while the mouse is anywhere over the divider OR its handle.
+  // Delete the divider at idx so the PREVIOUS section extends forward
+  // through where the following section was (per user spec: "press the
+  // delete button and make the previous section extend to include the
+  // following section").
+  //
+  // Sections are stored as their END timestamps. Section idx is the band
+  // that ends at sections[idx].t; section idx+1 ends at sections[idx+1].t.
+  // To make section idx absorb section idx+1, set sections[idx].t to
+  // sections[idx+1].t (so idx's band now stretches forward) and then
+  // remove sections[idx+1] entirely.
+  //
+  // If the divider is the LAST one (no idx+1), the song ends without a
+  // named section past the divider — just remove the divider.
+  const deleteThisSection = (ev) => {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    if (idx + 1 < automationSections.length) {
+      automationSections[idx].t = automationSections[idx + 1].t;
+      automationSections.splice(idx + 1, 1);
+    } else {
+      automationSections.splice(idx, 1);
+    }
+    renderAutomationLane();
+    markAutomationDirty();
+  };
+
   if (!node.querySelector('.section-divider-handle')) {
     const handle = document.createElement('span');
     handle.className = 'section-divider-handle';
-    handle.title = 'Drag to move (snaps to detected boundaries). Click × or right-click to delete.';
-    handle.innerHTML = '<span class="sdh-grip">⋮⋮</span><button class="sdh-del" title="Delete this section">×</button>';
+    handle.title = 'Drag to move (snaps to detected boundaries). Click × or right-click to delete — the previous section extends through where this one was.';
+    handle.innerHTML = '<span class="sdh-grip">⋮⋮</span><button class="sdh-del" title="Delete this section (previous section extends forward)">×</button>';
     node.appendChild(handle);
-    // Delete button — same effect as right-click.
-    handle.querySelector('.sdh-del').addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      automationSections.splice(idx, 1);
-      renderAutomationLane();
-      markAutomationDirty();
-    });
-    // Stop drag from initiating when the user is interacting with the
-    // delete button.
+    handle.querySelector('.sdh-del').addEventListener('click', deleteThisSection);
     handle.querySelector('.sdh-del').addEventListener('mousedown', (ev) => ev.stopPropagation());
   }
-  // Right-click anywhere on the divider → remove that section. Same as
-  // clicking the × button. Keep the right-click path so muscle memory
-  // from earlier rounds still works.
-  node.addEventListener('contextmenu', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    automationSections.splice(idx, 1);
-    renderAutomationLane();
-    markAutomationDirty();
-  });
+  node.addEventListener('contextmenu', deleteThisSection);
   node.addEventListener('mousedown', (ev) => {
     // Ignore drag start if the user grabbed the delete button.
     if (ev.target.closest('.sdh-del')) return;

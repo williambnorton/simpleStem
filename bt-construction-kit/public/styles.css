@@ -1450,12 +1450,13 @@ select {
   position: relative;
 }
 
-/* "Visualizer" badge in the lower-right of the canvas area — moved off
-   the top so it no longer overlaps the STEMS/SUM toggle (which used to
-   sit just to its left). */
+/* "Visualizer" badge in the upper-right of the canvas area. The
+   STEMS/SUM toggle that used to overlap it has moved OUT of the canvas
+   overlay and lives next to the visualizer as a real flex item, so
+   the label is safe up top again. */
 .visualizer-label {
   position: absolute;
-  bottom: 6px; right: 8px;
+  top: 8px; right: 12px;
   z-index: 2;
   pointer-events: none;
   font-family: 'Space Grotesk', sans-serif;
@@ -3299,31 +3300,38 @@ input:checked + .slider-round:before {
 /* Visualizer SUM ↔ STEMS toggle. Tucked into the upper-right of the
    visualization area, beside the "Visualizer" label. Click flips between
    one combined waveform and six per-stem lanes (V/D/B/G/P/O). */
+/* STEMS / SUM toggle — a real flex item to the LEFT of the visualizer
+   canvas. NOT positioned absolutely anymore: it used to sit on top of
+   the waveform and obscure section labels. Tall pill so it reads
+   clearly even at a glance during a take. Two visible states:
+   - default (SUM): outline-style
+   - active (STEMS): filled green */
 .viz-mode-btn {
-  position: absolute;
-  /* Bottom-right of the canvas, immediately left of the Visualizer
-     label — keeps both pieces of chrome in one corner instead of
-     overlapping at the top edge. */
-  bottom: 6px; right: 86px;
-  z-index: 4;
-  background: rgba(0, 0, 0, 0.55);
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.6px;
-  padding: 3px 8px;
+  padding: 4px 10px;
+  margin-right: 8px;
   cursor: pointer;
   transition: var(--transition-smooth);
 }
 .viz-mode-btn:hover {
-  background: rgba(46, 204, 113, 0.35);
+  background: rgba(46, 204, 113, 0.20);
   border-color: var(--color-green);
 }
 .viz-mode-btn.viz-mode-stems {
-  background: rgba(46, 204, 113, 0.45);
+  background: rgba(46, 204, 113, 0.55);
   color: #fff;
   border-color: var(--color-green);
 }
@@ -4505,12 +4513,20 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .automation-section-divider {
   position: absolute;
   top: 0; bottom: 0;
-  width: 12px;
-  margin-left: -6px;
+  /* Wide invisible hit area (24px) so hovering NEAR the divider lights
+     it up — easier than pixel-hunting for the 1px visible line. The
+     visible orange line lives in ::after and stays thin. */
+  width: 24px;
+  margin-left: -12px;
   background: transparent;
   cursor: ew-resize;
   pointer-events: auto;
   z-index: 2;
+}
+/* Hover highlight ring — a soft column of orange around the visible
+   line so the user knows which divider they're about to grab/delete. */
+.automation-section-divider:hover {
+  background: rgba(255, 140, 0, 0.18);
 }
 .automation-section-divider::after {
   content: "";
