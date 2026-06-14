@@ -213,6 +213,15 @@ Object.keys(audioElements).forEach(chan => {
 
 // Initialize the app
 window.addEventListener('DOMContentLoaded', () => {
+  // Flip the user-gesture flag on the FIRST real input. Web Audio needs a
+  // gesture before audioCtx.destination.maxChannelCount reports the actual
+  // device channel count (XR18 → 18, not 2). loadSong checks this flag and
+  // defers initAudioCtx() until after the first gesture, so auto-restore on
+  // boot doesn't trap us in a frozen 2-channel context.
+  const markGesture = () => { window.__hadUserGesture = true; };
+  ['pointerdown','keydown','touchstart'].forEach(ev =>
+    window.addEventListener(ev, markGesture, { once: true, capture: true })
+  );
   fetchLibrary();
   setupEventListeners();
   loadSetlistFromLocalStorage();
@@ -3622,7 +3631,16 @@ function renderRoutingButtons() { renderRoutingGrids(); }
 // Load song into the mixer
 function loadSong(song, opts) {
   opts = opts || {};
-  initAudioCtx();
+  // Defer AudioContext creation until the FIRST user gesture has actually
+  // happened. Browsers freeze destination.maxChannelCount at ctx-creation
+  // time, AND they only see the true device channel count after a user
+  // gesture has activated audio output. If we create the ctx during boot
+  // auto-restore (no user gesture yet), the XR18 reports as 2-ch stereo
+  // and stays that way forever — until the user finally clicks something,
+  // which used to require a page reload. By deferring init to here-with-
+  // gesture (or to togglePlayPause), the FIRST play click finds the XR18.
+  const userGestureSeen = !!(window.__hadUserGesture) || !!opts.autoplay;
+  if (userGestureSeen) initAudioCtx();
   rememberLastVariantCode(song);
 
   if (audioCtx && audioCtx.state === 'suspended') {
@@ -3668,7 +3686,12 @@ function loadSong(song, opts) {
   // Restore master gain to the user's slider level (undoes any prior fade-out
   // without overriding the volume they've set on the right-rail slider).
   currentMasterVolume = els.masterVol ? parseFloat(els.masterVol.value) : 1.0;
-  masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+  // Guarded: when called from auto-restore before any user gesture, audioCtx
+  // is intentionally still null (see deferred-init note above). togglePlayPause
+  // will set the master gain properly on first play.
+  if (audioCtx && masterGainNode) {
+    masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+  }
 
   // Active row highlight: a merged row is active when ANY of its variants matches the loaded song.
   document.querySelectorAll('.song-row').forEach(row => {
@@ -5992,6 +6015,21 @@ async function setupSeamlessLoop(startT, endT) {
 }
 
 function tearDownSeamlessLoop() {
+  // Where in the section the AudioBufferSource was audibly playing right NOW.
+  // We hand that timestamp to the MediaElement so playback continues from the
+  // audible position instead of jumping to wherever the (silent) MediaElement
+  // had advanced to. The user wants "just stop wrapping" — keep the playhead
+  // where it sounds, not where the MediaElement clock happened to land.
+  let handoffT = null;
+  if (audioCtx && sectionLooperRange && Object.keys(loopBufferSources).length > 0) {
+    const sectionLen = sectionLooperRange.endT - sectionLooperRange.startT;
+    if (sectionLen > 0) {
+      const elapsed = audioCtx.currentTime - loopStartedAtCtxT;
+      const offsetInSection = ((loopInitialOffset + elapsed) % sectionLen + sectionLen) % sectionLen;
+      handoffT = sectionLooperRange.startT + offsetInSection;
+    }
+  }
+
   for (const [chan, src] of Object.entries(loopBufferSources || {})) {
     try { src.stop(); src.disconnect(); } catch (e) {}
     const nodes = stripNodes[chan];
@@ -6005,6 +6043,14 @@ function tearDownSeamlessLoop() {
     const ae = audioElements[chan];
     if (ae && typeof vol === 'number') {
       try { ae.volume = vol; } catch (e) {}
+    }
+  }
+  // Snap every MediaElement to the audible handoff position so the timeline
+  // and the audio agree.
+  if (handoffT !== null && Number.isFinite(handoffT)) {
+    for (const ae of Object.values(audioElements)) {
+      if (!ae || !audioHasSrc(ae)) continue;
+      try { ae.currentTime = handoffT; } catch (e) {}
     }
   }
   loopSavedAEVolumes = {};
@@ -6217,10 +6263,11 @@ function recordFadeEvent(stem, level, atTime) {
   if (!automationCurrentBase) return;
   const t = (typeof atTime === 'number') ? atTime : currentPlayheadSec();
   const ev = { t, type: 'fade', stem, level: Math.max(0, Math.min(10, level)), fired: true };
-  // Dedup: if there's already a fade event for this stem within 50 ms,
-  // overwrite its level rather than adding a new one. Stops a fader drag
-  // from spraying 30 events per second onto the timeline.
-  const NEAR = 0.05;
+  // Dedup window: collapse multiple fader landings within the SAME SECOND
+  // into one event holding the FINAL value. Two fader moves > 1s apart on
+  // the same stem stay as two distinct envelope points. Per user spec:
+  // "ramp consolidated to 1 event if fades are in the same second."
+  const NEAR = 1.0;
   const recent = automationEvents.findLast?.(e => e.type === 'fade' && e.stem === stem && Math.abs(e.t - t) < NEAR);
   if (recent) {
     recent.level = ev.level;

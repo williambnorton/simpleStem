@@ -91,24 +91,23 @@ webloc_url() {
 }
 
 # Resolve "TITLE<TAB>ARTIST" from a yt-dlp .info.json.
-# Prefer YouTube-Music track/artist tags; else split "Artist - Title";
-# else use the video title with the uploader as artist.
+# Trust YouTube's metadata verbatim:
+#   title  = the video 'title' field, no parsing
+#   artist = YouTube Music 'artist' tag if present, else 'uploader'/'channel'
+# The previous heuristic split titles on " - " into artist/title, which got
+# things backwards whenever the YouTube convention was "Song - Artist (Lyrics)"
+# instead of "Artist - Song" — Amy Winehouse Valerie (Lyrics) ingested as
+# title="Amy Winehouse (Lyrics)" / artist="Valerie", etc. User prefers a
+# deterministic, verbatim title and will manually fix messy YouTube titles.
 title_artist() {
   "$VENV_PY" - "$1" <<'PY'
 import json, sys
 info = json.load(open(sys.argv[1]))
-track  = (info.get('track')  or '').strip()
-artist = (info.get('artist') or info.get('creator') or '').strip()
-title  = (info.get('title')  or '').strip()
+title    = (info.get('title')  or '').strip()
+artist   = (info.get('artist') or info.get('creator') or '').strip()
 uploader = (info.get('uploader') or info.get('channel') or '').strip()
-if track and artist:
-    t, a = track, artist
-elif ' - ' in title:
-    a, t = title.split(' - ', 1)
-    a, t = a.strip(), t.strip()
-else:
-    t, a = title, uploader
-print(f"{t}\t{a}")
+a = artist or uploader
+print(f"{title}\t{a}")
 PY
 }
 
