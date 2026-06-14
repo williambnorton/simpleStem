@@ -1450,10 +1450,12 @@ select {
   position: relative;
 }
 
-/* "Visualizer" badge in the upper-right of the canvas area */
+/* "Visualizer" badge in the lower-right of the canvas area — moved off
+   the top so it no longer overlaps the STEMS/SUM toggle (which used to
+   sit just to its left). */
 .visualizer-label {
   position: absolute;
-  top: 8px; right: 12px;
+  bottom: 6px; right: 8px;
   z-index: 2;
   pointer-events: none;
   font-family: 'Space Grotesk', sans-serif;
@@ -3299,7 +3301,10 @@ input:checked + .slider-round:before {
    one combined waveform and six per-stem lanes (V/D/B/G/P/O). */
 .viz-mode-btn {
   position: absolute;
-  top: 8px; right: 70px;
+  /* Bottom-right of the canvas, immediately left of the Visualizer
+     label — keeps both pieces of chrome in one corner instead of
+     overlapping at the top edge. */
+  bottom: 6px; right: 86px;
   z-index: 4;
   background: rgba(0, 0, 0, 0.55);
   color: rgba(255, 255, 255, 0.85);
