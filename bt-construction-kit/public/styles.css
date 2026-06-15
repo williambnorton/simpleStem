@@ -4552,6 +4552,66 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
    the hit area while reaching for a button. */
 .midi-event-marker { z-index: 1; }
 
+/* Section-picker click-in toggle row + the band's click-in badge */
+.section-picker-clickin-row {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+.section-picker-clickin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.9);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.section-picker-clickin-btn.active {
+  background: rgba(46, 204, 113, 0.35);
+  border-color: var(--color-green);
+  color: #fff;
+}
+.section-picker-clickin-state {
+  margin-left: auto;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.section-click-in-badge {
+  margin-left: 4px;
+  font-size: 0.62rem;
+  color: var(--color-green, #2ecc71);
+  opacity: 0.95;
+  letter-spacing: 1px;
+}
+
+/* Favorite star — sits to the right of the play button on each library row.
+   Empty star (☆) when not favorited, gold star (★) when favorited. */
+.song-fav-star {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+  transition: var(--transition-smooth);
+}
+.song-fav-star:hover { color: #ffc107; }
+.song-fav-star.on    { color: #ffc107; text-shadow: 0 0 6px rgba(255, 193, 7, 0.5); }
+.song-fav-inline {
+  color: #ffc107;
+  font-size: 0.78rem;
+  vertical-align: 1px;
+  margin-left: 2px;
+}
+
 /* Marker — wider chip that holds a label like "V0" or "M4P12". Width is
    auto so longer labels grow it; markers center on their timestamp via the
    translateX(-50%) trick. */

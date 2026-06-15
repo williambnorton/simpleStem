@@ -51,8 +51,11 @@ STEMS = ["vocals", "drums", "bass", "guitar", "piano", "other"]
 SAMPLE_RATE = 44100
 HOP_LENGTH = 4410  # 100 ms hop at 44.1 kHz → 10 Hz envelope
 RMS_FRAME = 8820   # 200 ms RMS frame
-MIN_SPACING_SEC = 6.0        # shortest plausible section length
-THRESHOLD_FRACTION = 0.35    # peak must reach ≥ 35% of global max
+MIN_SPACING_SEC = 10.0       # shortest plausible section length (bumped
+                             # from 6 — real-gig feedback: 6 s produced
+                             # ~2x the sections most songs actually have)
+THRESHOLD_FRACTION = 0.50    # peak must reach ≥ 50% of global max (bumped
+                             # from 0.35 for the same reason)
 SMOOTH_FRAMES = 3            # 3 frames = 300 ms moving-average smoothing
 
 

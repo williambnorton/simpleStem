@@ -384,7 +384,14 @@ function setupGigSidebar() {
 // gigs.
 const YOUTUBE_SYNC_GIG_SLUG    = '__youtube_sync__';
 const MANUAL_SETLISTS_GIG_SLUG = '__manual_setlists__';
-const SYNTHETIC_GIG_SLUGS = new Set([YOUTUBE_SYNC_GIG_SLUG, MANUAL_SETLISTS_GIG_SLUG]);
+const RECENTS_GIG_SLUG         = '__recents__';
+const FAVORITES_GIG_SLUG       = '__favorites__';
+const SYNTHETIC_GIG_SLUGS = new Set([
+  YOUTUBE_SYNC_GIG_SLUG,
+  MANUAL_SETLISTS_GIG_SLUG,
+  RECENTS_GIG_SLUG,
+  FAVORITES_GIG_SLUG,
+]);
 
 // localStorage warm-cache keys. We paint the sidebar from these before the
 // server responds so the picker feels instant. Then we revalidate against
@@ -460,6 +467,11 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
       `<option value="${MANUAL_SETLISTS_GIG_SLUG}">✎ Manual Setlists (${manualSetlists.length})</option>`
     );
   }
+  // Recents + Favorites pseudo-gigs — always offered. Songs you've loaded
+  // recently land in Recents (cap 50); songs starred via the title-row
+  // star button land in Favorites (cap 50).
+  options.push(`<option value="${RECENTS_GIG_SLUG}">⟲ Recents (last 50)</option>`);
+  options.push(`<option value="${FAVORITES_GIG_SLUG}">★ Favorites</option>`);
   for (const g of gigs) {
     options.push(`<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`);
   }
@@ -472,6 +484,7 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   const slugExists = (s) => {
     if (s === YOUTUBE_SYNC_GIG_SLUG)    return playlistSetlists.length > 0;
     if (s === MANUAL_SETLISTS_GIG_SLUG) return manualSetlists.length > 0;
+    if (s === RECENTS_GIG_SLUG || s === FAVORITES_GIG_SLUG) return true;
     return gigs.some(g => g.slug === s);
   };
   if (initial && slugExists(initial)) {
@@ -534,19 +547,62 @@ async function loadSyntheticGig(slug, wantOrigin, readOnly, title) {
 const loadYoutubeSyncGig    = () => loadSyntheticGig(YOUTUBE_SYNC_GIG_SLUG,    'playlist', true,  'YouTube Sync');
 const loadManualSetlistsGig = () => loadSyntheticGig(MANUAL_SETLISTS_GIG_SLUG, 'manual',   false, 'Manual Setlists');
 
+// Recents pseudo-gig: a single setlist whose songs are the last 50
+// the user loaded. Read-only — the source of truth is /api/recents on
+// the Performer; editing the songs in the sidebar here would be lost
+// on the next page reload. Newest first.
+async function loadRecentsGig() {
+  let entries = [];
+  try {
+    const r = await fetch('/api/recents');
+    if (r.ok) entries = (await r.json()).entries || [];
+  } catch (e) {}
+  const songs = entries.map(e => ({ song_base: e.base, title: '', at: e.at }));
+  return {
+    slug: RECENTS_GIG_SLUG, title: 'Recents (last 50)',
+    readOnly: true, synthetic: true, syntheticKind: 'recents',
+    setlists: [{ title: 'Recently played', songs, origin: 'recents' }],
+  };
+}
+
+// Favorites pseudo-gig: every song with meta.favorite=true, newest-
+// favorited first, capped at 50.
+async function loadFavoritesGig() {
+  let entries = [];
+  try {
+    const r = await fetch('/api/favorites');
+    if (r.ok) entries = (await r.json()).entries || [];
+  } catch (e) {}
+  const songs = entries.map(e => ({ song_base: e.base, title: e.title || '', artist: e.artist || '' }));
+  return {
+    slug: FAVORITES_GIG_SLUG, title: 'Favorites',
+    readOnly: true, synthetic: true, syntheticKind: 'favorites',
+    setlists: [{ title: 'Starred songs', songs, origin: 'favorites' }],
+  };
+}
+
 async function loadActiveGig(slug) {
   if (!slug) { activeGig = null; renderGigSidebar(); return; }
   // Synthetic gigs (YouTube Sync, Manual Setlists) — built client-side from
   // the SETLISTS/ folder. They live in JS only; no GIGS/<slug>.json.
   if (SYNTHETIC_GIG_SLUGS.has(slug)) {
     try {
-      activeGig = slug === YOUTUBE_SYNC_GIG_SLUG
-        ? await loadYoutubeSyncGig()
-        : await loadManualSetlistsGig();
+      if (slug === YOUTUBE_SYNC_GIG_SLUG) {
+        activeGig = await loadYoutubeSyncGig();
+      } else if (slug === MANUAL_SETLISTS_GIG_SLUG) {
+        activeGig = await loadManualSetlistsGig();
+      } else if (slug === RECENTS_GIG_SLUG) {
+        activeGig = await loadRecentsGig();
+      } else if (slug === FAVORITES_GIG_SLUG) {
+        activeGig = await loadFavoritesGig();
+      }
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
-        const placeholderTitle = slug === YOUTUBE_SYNC_GIG_SLUG
-          ? '(no playlist setlists yet)'
-          : '(no manual setlists yet — save one from the planner)';
+        const placeholderTitle =
+          slug === YOUTUBE_SYNC_GIG_SLUG    ? '(no playlist setlists yet)' :
+          slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — save one from the planner)' :
+          slug === RECENTS_GIG_SLUG         ? '(no recently played songs yet)' :
+          slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
+                                              '(empty)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
       // Restore the previously-active setlist if we remember one.
@@ -2404,10 +2460,38 @@ function renderLibrary() {
     // Title  (play button on the left starts STEMS variant immediately)
     const titleCell = document.createElement('div');
     titleCell.className = 'song-title-cell';
+    // Favorite star: pulls the flag off the stems variant; click toggles.
+    const stemsVarForStar = merged.variants.find(v => v.type === 'stems');
+    const isFav = !!(stemsVarForStar && stemsVarForStar.favorite);
+    const favStarHTML = stemsVarForStar
+      ? `<button class="song-fav-star${isFav ? ' on' : ''}" title="${isFav ? 'Favorite — click to unstar' : 'Click to favorite'}">${isFav ? '★' : '☆'}</button>`
+      : '';
     titleCell.innerHTML = `
       <button class="play-row-btn" title="Play stems"><i data-lucide="play"></i></button>
-      <span>${merged.title}</span>
+      ${favStarHTML}
+      <span>${escapeHtml(merged.title)}${isFav ? ' <span class="song-fav-inline" title="Favorite">★</span>' : ''}</span>
     `;
+    const favBtn = titleCell.querySelector('.song-fav-star');
+    if (favBtn && stemsVarForStar) {
+      favBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const newVal = !isFav;
+        favBtn.classList.toggle('on', newVal);
+        favBtn.textContent = newVal ? '★' : '☆';
+        try {
+          await fetch(`/api/song/${encodeURIComponent(stemsVarForStar.folderName)}/favorite`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ favorite: newVal }),
+          });
+          // Reflect on the in-memory variant so subsequent renders match.
+          stemsVarForStar.favorite = newVal;
+          if (newVal) stemsVarForStar.favorited_at = new Date().toISOString();
+        } catch (err) {
+          console.warn('[favorite] save failed:', err);
+        }
+      });
+    }
     const playBtn = titleCell.querySelector('.play-row-btn');
     playBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3903,6 +3987,13 @@ function loadSong(song, opts) {
   if (songBaseForPrecache) {
     fetch(`/api/precache/stems/${encodeURIComponent(songBaseForPrecache)}`, { method: 'POST' })
       .catch(() => {});
+    // Log to Recents so the synthetic __recents__ pseudo-gig shows the
+    // last 50 things you actually loaded. Performer-side; survives reloads.
+    fetch('/api/recents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base: songBaseForPrecache }),
+    }).catch(() => {});
   }
   // Render variant picker (Source: STEMS / -V-G-B / -V-G / DO ...)
   renderVariantPicker(song);
@@ -4286,10 +4377,53 @@ function startSyncLoop() {
   const masterTrack = activeTracks[0];
   const masterAe = audioElements[masterTrack];
   
+  // Track which section's clickIn pre-roll we've already scheduled so we
+  // don't re-fire the same one every 100ms.
+  let lastClickInSectionIdx = -1;
   syncInterval = setInterval(() => {
     if (!isPlaying) return;
 
     let masterTime = masterAe.currentTime;
+
+    // Section-attached click pre-roll: when the playhead approaches the
+    // start of a section whose clickIn flag is true, fire 4 beats of click
+    // timed to land exactly at the section boundary. Skips the FIRST
+    // section because that case is handled by togglePlayPause's
+    // pre-roll (4 silent clicks before audio starts).
+    if (audioCtx && Array.isArray(automationSections) && automationSections.length > 1) {
+      const bpm = (currentSong && currentSong.practiceBpm) || 120;
+      const beatSec = 60 / bpm;
+      const window = 4 * beatSec + 0.15;
+      // section[i].startT = i==0 ? 0 : automationSections[i-1].t. Walk only
+      // mid-song sections (i >= 1).
+      const sorted = automationSections.slice().sort((a, b) => a.t - b.t);
+      for (let i = 1; i < sorted.length; i++) {
+        if (!sorted[i] || !sorted[i].clickIn) continue;
+        const startT = sorted[i - 1].t;
+        const dt = startT - masterTime;
+        if (dt >= 0 && dt < window && lastClickInSectionIdx !== i) {
+          // Schedule 4 clicks landing on startT - 4*beatSec ... startT.
+          // audioCtx time of the first click = current ctx time + (dt - 4*beatSec).
+          const startCtxT = audioCtx.currentTime + (dt - 4 * beatSec);
+          for (let k = 0; k < 4; k++) {
+            try { fireClickAt(Math.max(audioCtx.currentTime, startCtxT + k * beatSec), true); }
+            catch (e) {}
+          }
+          lastClickInSectionIdx = i;
+          break;
+        }
+      }
+      // Reset the "already scheduled" guard when the playhead moves well
+      // past or before any pending section start so subsequent crossings
+      // re-fire (covers seek + LOOPER wrap).
+      if (lastClickInSectionIdx >= 0) {
+        const sec = sorted[lastClickInSectionIdx];
+        const startT = sorted[lastClickInSectionIdx - 1]?.t || 0;
+        if (sec && (masterTime > startT + 1 || masterTime < startT - 8)) {
+          lastClickInSectionIdx = -1;
+        }
+      }
+    }
 
     // Section LOOPER: while seamless AudioBuffer loop is playing, the
     // MediaElement is silenced but still advances. Rewind it 50ms early
@@ -4532,7 +4666,10 @@ async function togglePlayPause() {
   // Count-in TRUE PRE-ROLL: schedule 4 clicks, then start the song on what
   // would be beat 5. Wrapped in try/finally so the button + flag always
   // reset even if the pre-roll throws or is interrupted.
-  if (automationCountIn && isFreshStart && audioCtx) {
+  // Section-aware: fires if either the legacy song-level automationCountIn
+  // is set OR the first section has clickIn=true (section-attached click).
+  const firstSectionClickIn = !!(automationSections && automationSections[0] && automationSections[0].clickIn);
+  if ((automationCountIn || firstSectionClickIn) && isFreshStart && audioCtx) {
     countInInProgress = true;
     els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
     els.btnPlay.disabled = true;
@@ -6007,8 +6144,9 @@ function renderSectionBands(container, dur) {
     band.style.left  = startPct + '%';
     band.style.width = widthPct + '%';
     band.style.background = color.bg;
-    band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s`;
-    band.innerHTML = `<span class="automation-section-label" data-section-idx="${i}" title="Click to change section type">${escapeHtml(color.name)}</span>`;
+    const clickInBadge = s.clickIn ? ' <span class="section-click-in-badge" title="4-beat click pre-roll before this section">♩♩♩♩</span>' : '';
+    band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s${s.clickIn ? ' · click 4 beats in' : ''}`;
+    band.innerHTML = `<span class="automation-section-label" data-section-idx="${i}" title="Click to change section type / click-in">${escapeHtml(color.name)}${clickInBadge}</span>`;
     container.appendChild(band);
     // Click the label to open the picker. Use mousedown so the click
     // doesn't bubble to the lane (which would drop a new event).
@@ -6678,6 +6816,27 @@ function openSectionPicker(idx, anchor) {
     });
     grid.appendChild(cell);
   }
+  // Click-in toggle: 4-beat pre-roll click before this section starts.
+  // For section 0 (starts at t=0) that's a silent pre-roll before audio.
+  // For mid-song sections it fires as the playhead approaches.
+  const clickInRow = document.createElement('div');
+  clickInRow.className = 'section-picker-clickin-row';
+  const isOn = !!automationSections[idx]?.clickIn;
+  clickInRow.innerHTML =
+    `<button class="section-picker-clickin-btn${isOn ? ' active' : ''}" type="button">` +
+    `<span class="section-picker-clickin-icon">♩♩♩♩</span>` +
+    `<span class="section-picker-clickin-label">Click 4 beats in</span>` +
+    `<span class="section-picker-clickin-state">${isOn ? 'ON' : 'OFF'}</span>` +
+    `</button>`;
+  clickInRow.querySelector('button').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!automationSections[idx]) return;
+    automationSections[idx].clickIn = !automationSections[idx].clickIn;
+    renderAutomationLane();
+    markAutomationDirty();
+    closeSectionPicker();
+  });
+  grid.appendChild(clickInRow);
   // Position near the anchor (clicked label). Use viewport coords.
   const r = anchor.getBoundingClientRect();
   picker.style.display = 'block';

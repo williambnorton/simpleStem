@@ -394,6 +394,11 @@ async function scanStems() {
         bandRequired = Array.isArray(mj.band_required) ? mj.band_required : null;
         drumPattern = mj.drum_pattern || null;
         readiness = mj.readiness || null;
+        // Favorite flag + timestamp — surfaced so the client renders a
+        // star next to the song name and the Favorites pseudo-gig can
+        // aggregate them.
+        var favorite_meta = !!mj.favorite;
+        var favorited_at_meta = mj.favorited_at || null;
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -431,6 +436,9 @@ async function scanStems() {
       band_required: bandRequired,
       drum_pattern: drumPattern,
       readiness: readiness,
+      // Favorite — set via PUT /api/song/:base/favorite.
+      favorite: (typeof favorite_meta !== 'undefined') ? favorite_meta : false,
+      favorited_at: (typeof favorited_at_meta !== 'undefined') ? favorited_at_meta : null,
       stems: stems,
       cached: isStemsFolderCached(folder),
       logicProjectName: logicProjectName,
@@ -1939,6 +1947,11 @@ app.put('/api/song/:base/automation', (req, res) => {
           .map(x => ({
             t: Math.round(x.t * 1000) / 1000,
             color: Math.max(1, Math.min(9, parseInt(x.color, 10) || 1)),
+            // Click-in: 4-beat metronome pre-roll fires before this section
+            // starts. Per-section flag — sets first-section pre-roll AND
+            // mid-song "approach" pre-roll when the playhead enters this
+            // section's window.
+            clickIn: !!x.clickIn,
           }))
           .sort((a, b) => a.t - b.t)
       : [];
@@ -1947,6 +1960,79 @@ app.put('/api/song/:base/automation', (req, res) => {
     meta.countIn    = countIn;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
     res.json({ ok: true, automation: clean, sections: cleanSections, countIn });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Per-song favorite flag ─────────────────────────────────────────────────
+// Toggles meta.favorite (bool). The library scanner surfaces it in each
+// stems row; the client renders a yellow star next to the song name and
+// a synthetic Favorites pseudo-gig aggregates all songs where the flag
+// is true. No restem / no audio change — purely a marker.
+app.put('/api/song/:base/favorite', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const flag = !!(req.body && req.body.favorite);
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.favorite = flag;
+    if (flag) meta.favorited_at = new Date().toISOString();
+    else      delete meta.favorited_at;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, favorite: flag });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Recents: rolling log of the last 50 songs the operator loaded ──────────
+// File lives at <root>/RECENTS.json — { entries: [{ base, at }, ...] }.
+// Performer-owned, NOT git-tracked. POST = log a load. GET = read list.
+const RECENTS_PATH = path.join(SIMPLE_STEM_ROOT, 'RECENTS.json');
+const RECENTS_CAP  = 50;
+
+function loadRecents() {
+  try {
+    if (!fs.existsSync(RECENTS_PATH)) return { entries: [] };
+    const raw = JSON.parse(fs.readFileSync(RECENTS_PATH, 'utf8'));
+    return { entries: Array.isArray(raw?.entries) ? raw.entries : [] };
+  } catch (e) { return { entries: [] }; }
+}
+function saveRecents(r) {
+  try { fs.writeFileSync(RECENTS_PATH, JSON.stringify(r, null, 2) + '\n'); }
+  catch (e) { console.warn('[recents] save failed:', e.message); }
+}
+
+app.get('/api/recents', (req, res) => {
+  res.json(loadRecents());
+});
+
+app.post('/api/recents', (req, res) => {
+  const base = (req.body && req.body.base) || '';
+  if (!base || typeof base !== 'string') {
+    return res.status(400).json({ error: 'need { base: "<song_folder>" }' });
+  }
+  const r = loadRecents();
+  // Dedupe: drop any prior entries with the same base — most-recent wins.
+  const entries = r.entries.filter(e => e.base !== base);
+  entries.unshift({ base, at: new Date().toISOString() });
+  // Cap at RECENTS_CAP.
+  r.entries = entries.slice(0, RECENTS_CAP);
+  saveRecents(r);
+  res.json({ ok: true, count: r.entries.length });
+});
+
+// Favorites listing — walks the library cache and returns the bases of
+// every song with meta.favorite === true. Caps at RECENTS_CAP so the
+// client's synthetic gig stays manageable.
+app.get('/api/favorites', (req, res) => {
+  try {
+    const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+    const favs = songs
+      .filter(s => s.type === 'stems' && s.favorite === true)
+      .map(s => ({ base: s.folderName, title: s.title, artist: s.artist, favorited_at: s.favorited_at || null }))
+      .sort((a, b) => (b.favorited_at || '').localeCompare(a.favorited_at || ''))
+      .slice(0, RECENTS_CAP);
+    res.json({ entries: favs });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

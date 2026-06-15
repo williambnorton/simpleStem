@@ -207,6 +207,8 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         'band_required':      meta.get('band_required'),
         'drum_pattern':       meta.get('drum_pattern'),
         'readiness':          meta.get('readiness'),
+        'favorite':           bool(meta.get('favorite')),
+        'favorited_at':       meta.get('favorited_at'),
         'stems': stems,
         'cached': False,
         'logicProjectName': find_logicx(files_in_folder),
