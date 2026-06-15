@@ -2986,6 +2986,15 @@ function initAudioCtx() {
   loadRoutingMatrix();
   applyRouting();
 
+  // Expose audio-graph internals on window for DevTools probing. Lets us
+  // read stripGain values, master gain, loop buffer count, etc. live
+  // from the console without sprinkling more console.log statements.
+  window.audioCtx        = audioCtx;
+  window.stripNodes      = stripNodes;
+  window.masterGainNode  = masterGainNode;
+  window.audioElements   = audioElements;
+  window.loopBufferSources = loopBufferSources;
+
   initVisualizer(analyserNode);
 }
 
@@ -6440,6 +6449,11 @@ async function setupSeamlessLoop(startT, endT) {
       const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
       src.start(0, offset);
       sources[chan] = src;
+      // Debug: log the chain so we can verify gain at engage time. The
+      // user reported the loop kicks in "very loud" — this trace tells
+      // us whether stripGain matches the fader at the moment audio
+      // starts flowing through the BufferSource.
+      console.log(`[loop-debug] ${chan}: stripGain=${nodes.stripGain.gain.value.toFixed(3)} masterGain=${masterGainNode.gain.value.toFixed(3)} bufChans=${buf.numberOfChannels} faderUI=${document.getElementById('fader-'+chan)?.value}`);
     } catch (e) {
       console.warn(`[loop] couldn't seamless-loop ${chan}:`, e.message);
       try { nodes.source.connect(nodes.stripGain); } catch (_) {}
