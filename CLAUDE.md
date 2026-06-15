@@ -61,6 +61,36 @@ Why this split (reversed from the original):
 - **Don't** change the `metadata.json` schema without also updating
   `metadata.py` and `catalog.py` — see Conventions.
 
+## Which machine runs what
+
+Every command set Claude writes must explicitly say which machine it runs on.
+The user has hit confusion in the past from "run this" with no machine hint.
+Pick from this table:
+
+| Operation | Machine | Why |
+|---|---|---|
+| Ingest a `.webloc` (drop into `INCOMING_WEBLOC/`) | **Librarian** | `webloc_watch.sh` runs here, downloads source.wav into the STEMS cache, writes the metadata job into `STEM_QUEUE/`. |
+| `webloc_watch.sh` | **Librarian** | Daemonized by `librarian.sh start`. |
+| `metadata.py` (analyzing source.wav for BPM/key) | **Librarian** | Called by `webloc_watch.sh` after the slice is ready. |
+| `mpb_sync.py` / `./librarian.sh sheet` | **Librarian** | Pulls the Google Sheet songlist and writes singer/band/drum-pattern fields. |
+| `catalog.py` / `./librarian.sh catalog` | **Librarian** | **Owner of `CATALOG.json`.** Runs hourly via `librarian.sh start`; you can re-trigger by hand. Performer reads a mirror of the file. |
+| `queue_runner.sh` (Demucs queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs Demucs, writes 6 stems + m4a mixdowns. |
+| `stem.sh` (single-job demucs render) | **Performer** | Called by `queue_runner.sh`. |
+| `bt-construction-kit/` Express server | **Performer** | `performer.sh start` brings up the portal at `:3000`. |
+| `backfill_section_detect.sh` | **Performer** | Needs the demucs venv's `librosa`. |
+| `backfill_m4a_stems.sh` | **Performer** | Uses ffmpeg; operates on cached stems. |
+| `migrate_per_folder_loops.sh` | **Either** | Just file moves; Performer is the safer default since it has the full STEMS cache. |
+| `section_detect.py` (single-song) | **Performer** | Same reason as the backfill — librosa lives in the demucs venv. |
+| `post_process.py` / `loop_detect.py` | **Performer** | Both run as part of `stem.sh`. |
+| MIDI sidecar (`midi_sidecar.py`) | **Performer** | Drives the user's Helix / XR18 / Logic via macOS MIDI ports — must be on the gig laptop. |
+| Editing `bt-construction-kit/` source | **Performer** | The Performer is the primary editor and pushes; the Librarian pulls. |
+| Editing `catalog.py` / `mpb_sync.py` / shared `.sh` | **Either, but commit + push from the Performer** | Drive sync of `.git` is unreliable; canonical writes go through GitHub. |
+| `git pull` / `git push` | **Both, never simultaneously** | Drive sync corrupts `.git` if both machines `git` at the same time. |
+
+**When a command set says "on the Performer:" run it on the laptop; "on the
+Librarian:" run it on the Mac mini.** If a step has to happen on both, the
+command set lists them in order (e.g. push from Performer → pull on Librarian).
+
 ## File map
 
 Pipeline (acquisition machine):
