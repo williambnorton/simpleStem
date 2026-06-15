@@ -4844,7 +4844,17 @@ function applyMixerVolumes() {
     }
 
     ae.volume = targetVolume * master;
-    
+    // ALSO set the Web Audio stripGain — once an audio element is
+    // captured by createMediaElementSource (which all stems are, for
+    // routing + XR18 multi-channel out), mediaElement.volume has NO
+    // effect on the audible path. The Web Audio graph uses the gain
+    // node. Without this line every song has been playing at the gain
+    // node's default 1.0 regardless of fader position, which is the
+    // "very loud" bug the user reported during the gig.
+    if (stripNodes && stripNodes[chan] && stripNodes[chan].stripGain) {
+      stripNodes[chan].stripGain.gain.value = targetVolume * master;
+    }
+
     if (strip) {
       if (targetVolume > 0 && isPlaying) {
         strip.classList.add('active-playing');
