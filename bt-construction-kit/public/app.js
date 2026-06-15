@@ -4650,6 +4650,12 @@ async function togglePlayPause() {
     clearInterval(syncInterval);
     stopBeatingVisualizer();
     stopPlayheadSaverAndFlush();
+    // Stop the seamless-loop BufferSources too. Pausing the MediaElement
+    // alone wasn't enough — the BufferSources run on the AudioContext's
+    // own clock and kept playing the loop until the user loaded a new
+    // song. Now: hit Stop, LOOPER stops with it (and disengages so the
+    // green pill UI also reflects the new state).
+    try { stopLooperIfActive(); } catch (e) { console.warn('[stop] looper teardown failed:', e); }
     applyMixerVolumes();
     lucide.createIcons();
     return;
@@ -6419,8 +6425,18 @@ async function setupSeamlessLoop(startT, endT) {
       src.loop = true;
       src.loopStart = 0;
       src.loopEnd = loopLen / sr;
+      // Disconnect the MediaElementSource from EVERYTHING (no args) before
+      // wiring the BufferSource in. The previous targeted form
+      // .disconnect(nodes.stripGain) silently no-ops if the connection
+      // shape doesn't match what the spec expects — and on at least some
+      // Chrome versions it does no-op, leaving BOTH the MediaElement and
+      // the BufferSource feeding stripGain. That doubled the signal,
+      // which the user reported as "section goes very loud" at 20%
+      // faders. Full disconnect + reconnect on teardown is the robust
+      // path. The .source-only outgoing connection is reattached in
+      // tearDownSeamlessLoop, so playback resumes cleanly.
+      try { nodes.source.disconnect(); } catch (e) {}
       src.connect(nodes.stripGain);
-      try { nodes.source.disconnect(nodes.stripGain); } catch (e) {}
       const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
       src.start(0, offset);
       sources[chan] = src;
