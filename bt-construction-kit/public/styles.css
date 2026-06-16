@@ -5013,3 +5013,68 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-modal-status { margin-top: 10px; font-size: 11px; min-height: 14px; color: var(--text-dim, #aaa); }
 .midi-modal-status.error { color: #e74c3c; }
 .midi-modal-status.ok { color: var(--color-green, #2ecc71); }
+
+/* ── HOLODECK voice control ─────────────────────────────────────────────── */
+/* Mic button + level meter, sized to look like an accessory of the LOOPER
+   group (matches .looper-side-btn). When listening, the button pulses
+   yellow; the meter bar underneath shows the operator the mic is hot. */
+.holodeck-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+#btn-holodeck {
+  position: relative;
+}
+#btn-holodeck.active {
+  background: rgba(241, 196, 15, 0.25) !important;
+  border-color: var(--color-yellow) !important;
+  color: var(--color-yellow) !important;
+  box-shadow: 0 0 8px rgba(241, 196, 15, 0.5) inset;
+  animation: holodeck-pulse 1.6s ease-in-out infinite;
+}
+@keyframes holodeck-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(241, 196, 15, 0.5) inset; }
+  50%      { box-shadow: 0 0 18px rgba(241, 196, 15, 0.85) inset; }
+}
+.holodeck-meter {
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.holodeck-meter-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to right, #2ecc71, #f1c40f, #e74c3c);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 60ms linear;
+}
+
+/* Status ribbon at the top of the page (HOLODECK heard X, OK/error). */
+.holodeck-status {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483646;
+  background: rgba(15, 44, 77, 0.96);
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 18px;
+  border: 1.5px solid var(--color-yellow, #f1c40f);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  max-width: 80vw;
+  text-align: center;
+  pointer-events: none;
+}
+.holodeck-status.error {
+  border-color: var(--color-red, #e74c3c);
+  background: rgba(120, 30, 30, 0.96);
+}

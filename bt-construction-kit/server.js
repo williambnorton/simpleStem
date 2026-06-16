@@ -2085,6 +2085,172 @@ app.get('/api/favorites', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── HOLODECK named snapshots ────────────────────────────────────────────────
+// A snapshot is a complete copy of every editable file in the portal's state
+// — GIGS/, SETLISTS/, RECENTS.json, and each song's metadata.json (which
+// holds singer assignment, automation events, sections, favorite flag). It
+// also carries a JSON blob of the client's localStorage + in-memory mixer
+// state so the audible mix is reproducible on restore. Triggered by voice
+// (HOLODECK, save this as 'before joyce setlist') or button. The folder is
+// SNAPSHOTS/<name>/ alongside the rest of the project. Designed so a
+// non-technical operator can experiment freely; every change is reversible.
+const SNAPSHOTS_DIR = path.join(SIMPLE_STEM_ROOT, 'SNAPSHOTS');
+try { if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true }); } catch (e) {}
+
+function safeSnapshotName(raw) {
+  const s = String(raw || '').replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 64).replace(/\s+/g, '_');
+  return s || null;
+}
+function copyDirSync(src, dst) {
+  if (!fs.existsSync(src)) return;
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) copyDirSync(s, d);
+    else if (e.isFile()) fs.copyFileSync(s, d);
+  }
+}
+
+app.post('/api/snapshot/save', (req, res) => {
+  const name = safeSnapshotName(req.body && req.body.name);
+  if (!name) return res.status(400).json({ error: 'invalid name' });
+  const snapDir = path.join(SNAPSHOTS_DIR, name);
+  try {
+    if (fs.existsSync(snapDir)) {
+      // Overwrite an existing snapshot by archiving it first.
+      fs.renameSync(snapDir, snapDir + '.bak_' + Date.now());
+    }
+    fs.mkdirSync(snapDir, { recursive: true });
+    copyDirSync(path.join(SIMPLE_STEM_ROOT, 'GIGS'),     path.join(snapDir, 'GIGS'));
+    copyDirSync(path.join(SIMPLE_STEM_ROOT, 'SETLISTS'), path.join(snapDir, 'SETLISTS'));
+    const recents = path.join(SIMPLE_STEM_ROOT, 'RECENTS.json');
+    if (fs.existsSync(recents)) fs.copyFileSync(recents, path.join(snapDir, 'RECENTS.json'));
+    // Snapshot every song's metadata.json (small JSON files; the audio is
+    // not duplicated — the audio is content-addressed by folder name).
+    const metaDir = path.join(snapDir, 'STEMS_META');
+    fs.mkdirSync(metaDir, { recursive: true });
+    try {
+      for (const folder of fs.readdirSync(STEMS_DIR)) {
+        const meta = path.join(STEMS_DIR, folder, 'metadata.json');
+        if (fs.existsSync(meta)) fs.copyFileSync(meta, path.join(metaDir, folder + '.json'));
+      }
+    } catch (e) { console.warn('[snapshot] meta scan partial:', e.message); }
+    const manifest = {
+      name,
+      created_at: new Date().toISOString(),
+      version: BOOT_VERSION,
+      client_state: req.body.client_state || null,
+    };
+    fs.writeFileSync(path.join(snapDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    console.log(`[snapshot] saved "${name}"`);
+    res.json({ ok: true, name, created_at: manifest.created_at });
+  } catch (e) {
+    console.error('[snapshot] save failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/snapshot/list', (req, res) => {
+  try {
+    const list = [];
+    if (fs.existsSync(SNAPSHOTS_DIR)) {
+      for (const e of fs.readdirSync(SNAPSHOTS_DIR, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name.includes('.bak_')) continue;
+        const manifestPath = path.join(SNAPSHOTS_DIR, e.name, 'manifest.json');
+        if (!fs.existsSync(manifestPath)) continue;
+        try {
+          const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          list.push({ name: m.name, created_at: m.created_at, version: m.version });
+        } catch (err) {}
+      }
+    }
+    list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    res.json({ snapshots: list });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/snapshot/restore/:name', (req, res) => {
+  const name = safeSnapshotName(req.params.name);
+  if (!name) return res.status(400).json({ error: 'invalid name' });
+  const snapDir = path.join(SNAPSHOTS_DIR, name);
+  if (!fs.existsSync(snapDir)) return res.status(404).json({ error: 'snapshot not found' });
+  try {
+    const gigs = path.join(snapDir, 'GIGS');
+    if (fs.existsSync(gigs)) {
+      const target = path.join(SIMPLE_STEM_ROOT, 'GIGS');
+      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      copyDirSync(gigs, target);
+    }
+    const setlists = path.join(snapDir, 'SETLISTS');
+    if (fs.existsSync(setlists)) {
+      const target = path.join(SIMPLE_STEM_ROOT, 'SETLISTS');
+      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      copyDirSync(setlists, target);
+    }
+    const recents = path.join(snapDir, 'RECENTS.json');
+    if (fs.existsSync(recents)) fs.copyFileSync(recents, path.join(SIMPLE_STEM_ROOT, 'RECENTS.json'));
+    const metaDir = path.join(snapDir, 'STEMS_META');
+    if (fs.existsSync(metaDir)) {
+      for (const f of fs.readdirSync(metaDir)) {
+        if (!f.endsWith('.json')) continue;
+        const folder = f.slice(0, -5);
+        const target = path.join(STEMS_DIR, folder, 'metadata.json');
+        if (fs.existsSync(path.dirname(target))) {
+          try { fs.copyFileSync(path.join(metaDir, f), target); } catch (e) {}
+        }
+      }
+    }
+    let clientState = null;
+    const manifestPath = path.join(snapDir, 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      try {
+        const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        clientState = m.client_state;
+      } catch (e) {}
+    }
+    // Force a library refresh on the next read.
+    libraryCache = null;
+    try { refreshLibraryCache('snapshot-restore', true); } catch (e) {}
+    console.log(`[snapshot] restored "${name}"`);
+    res.json({ ok: true, name, client_state: clientState });
+  } catch (e) {
+    console.error('[snapshot] restore failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/snapshot/diff/:name', (req, res) => {
+  const name = safeSnapshotName(req.params.name);
+  if (!name) return res.status(400).json({ error: 'invalid name' });
+  const snapDir = path.join(SNAPSHOTS_DIR, name);
+  if (!fs.existsSync(snapDir)) return res.status(404).json({ error: 'snapshot not found' });
+  const changes = [];
+  function diffOne(snapSub, liveSub, prefix) {
+    const a = path.join(snapDir, snapSub);
+    const b = path.join(SIMPLE_STEM_ROOT, liveSub);
+    const aF = fs.existsSync(a) ? fs.readdirSync(a) : [];
+    const bF = fs.existsSync(b) ? fs.readdirSync(b) : [];
+    const all = new Set([...aF, ...bF]);
+    for (const f of all) {
+      const aP = path.join(a, f);
+      const bP = path.join(b, f);
+      if (!fs.existsSync(aP)) { changes.push(prefix + f + ' (added)');   continue; }
+      if (!fs.existsSync(bP)) { changes.push(prefix + f + ' (removed)'); continue; }
+      try {
+        const aS = fs.readFileSync(aP, 'utf8');
+        const bS = fs.readFileSync(bP, 'utf8');
+        if (aS !== bS) changes.push(prefix + f + ' (modified)');
+      } catch (e) {}
+    }
+  }
+  try {
+    diffOne('GIGS',     'GIGS',     'GIGS/');
+    diffOne('SETLISTS', 'SETLISTS', 'SETLISTS/');
+    res.json({ name, changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── MIDI sidecar proxy ──────────────────────────────────────────────────────
 // The sidecar (midi_sidecar.py) runs on :5555. We proxy here so the client
 // stays same-origin and gets a friendly error when the sidecar is down.

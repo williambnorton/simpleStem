@@ -353,6 +353,13 @@
                      operate on the current SECTION, not the whole song. -->
                 <button id="btn-click-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="Toggle click track (per-section: drives the section's click feel during playback)"><i data-lucide="alarm-clock"></i></button>
                 <button id="btn-count-in-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="Count-in 4 beats for the current section before playback"><i data-lucide="hash"></i><span class="ci-num">4</span></button>
+                <!-- HOLODECK voice control. Click to start listening; say
+                     "HOLODECK, ..." to issue a command. The level meter
+                     under the icon shows the system is hearing the room. -->
+                <div class="holodeck-wrap">
+                  <button id="btn-holodeck" class="control-btn toggle-btn looper-side-btn hover-glow" type="button" title="Click to start HOLODECK voice control"><i data-lucide="mic"></i></button>
+                  <div class="holodeck-meter"><div id="holodeck-mic-level" class="holodeck-meter-fill"></div></div>
+                </div>
               </div>
               <fieldset class="pitch-fix-pane">
                 <legend class="pitch-fix-legend-hidden" aria-hidden="true">Pitch Fix</legend>
@@ -733,6 +740,7 @@
   <!-- Audio Context scripts -->
   <script src="visualizer.js"></script>
   <script src="app.js"></script>
+  <script src="mic_listener.js"></script>
   
   <script>
     // Initialize Lucide Icons initially
