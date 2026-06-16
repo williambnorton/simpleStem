@@ -146,6 +146,28 @@
     librarySearch(q);
     setTimeout(() => clickQ('.song-row'), 350);
   }
+  // "Play <song name>" — filter the library to the query, then click the
+  // first row's play button (the .play-row-btn — that's the codepath in
+  // app.js that calls loadSong with { autoplay: true }). If no row
+  // appears after the search, fall back to a TTS "not found" reply so
+  // the operator hears the failure mode.
+  function libraryPlay(q) {
+    librarySearch(q);
+    setTimeout(() => {
+      const row = document.querySelector('.song-list-body .song-row');
+      if (!row) { tts(`No song matching ${q}.`); return; }
+      const playBtn = row.querySelector('.play-row-btn');
+      if (playBtn) {
+        playBtn.click();
+        const titleEl = row.querySelector('.song-title-cell span');
+        const heard = titleEl ? titleEl.textContent.trim() : q;
+        showStatus(`▶ Playing: ${heard}`);
+      } else {
+        // Older builds without per-row play button: fall back to row click.
+        row.click();
+      }
+    }, 400);
+  }
 
   function switchToGig(slug) {
     const picker = document.getElementById('gig-picker');
@@ -263,7 +285,12 @@
   const SEC  = '(intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook)';
   const SING = '(bill|matt|dan|jd)';
   const COMMANDS = [
-    // Transport
+    // Transport. The bare "play" / "pause" toggles the current song; the
+    // longer forms ("play back in black") interpret the trailing text as
+    // a library search and play the top match with autoplay. Order matters
+    // here only for readability — each regex is anchored ^...$, so they
+    // do not overlap.
+    { re: new RegExp('^play (?:me |the song )?(.+)$'), fn: (m) => libraryPlay(m[1]) },
     { re: new RegExp('^play$'),         fn: () => clickById('btn-play-pause') },
     { re: new RegExp('^pause$'),        fn: () => clickById('btn-play-pause') },
     { re: new RegExp('^stop$'),         fn: () => clickById('btn-stop') },
