@@ -84,7 +84,11 @@ function audioHasSrc(ae) {
 const mixerState = {
   volumes: { vocals: 0.8, drums: 0.8, bass: 0.8, guitar: 0.8, piano: 0.8, other: 0.8 },
   muted:   { vocals: false, drums: false, bass: false, guitar: false, piano: false, other: false },
-  soloed:  { vocals: false, drums: false, bass: false, guitar: false, piano: false, other: false }
+  soloed:  { vocals: false, drums: false, bass: false, guitar: false, piano: false, other: false },
+  // Per-strip boost in dB. 0 (off), 5, or 10. Mutually exclusive — selecting
+  // +5 turns off +10 and vice versa, clicking the same selection again turns
+  // boost off. Riding stripGain so it stays consistent with the LOOPER path.
+  boost:   { vocals: 0, drums: 0, bass: 0, guitar: 0, piano: 0, other: 0 },
 };
 
 // UI Elements
@@ -386,11 +390,30 @@ const YOUTUBE_SYNC_GIG_SLUG    = '__youtube_sync__';
 const MANUAL_SETLISTS_GIG_SLUG = '__manual_setlists__';
 const RECENTS_GIG_SLUG         = '__recents__';
 const FAVORITES_GIG_SLUG       = '__favorites__';
+// Per-singer + RoundRobin pseudo-gigs. Each one is a single read-only setlist
+// filtered from mergedLibrary by singer_lead. RoundRobin alternates singers
+// so any one of them gets to step away briefly without dead air.
+const BILL_GIG_SLUG  = '__bill_songs__';
+const MATT_GIG_SLUG  = '__matt_songs__';
+const DAN_GIG_SLUG   = '__dan_songs__';
+const JD_GIG_SLUG    = '__jd_songs__';
+const ROUND_ROBIN_GIG_SLUG = '__round_robin__';
+const SINGER_GIG_MAP = {
+  [BILL_GIG_SLUG]: 'Bill',
+  [MATT_GIG_SLUG]: 'Matt',
+  [DAN_GIG_SLUG]:  'Dan',
+  [JD_GIG_SLUG]:   'JD',
+};
 const SYNTHETIC_GIG_SLUGS = new Set([
   YOUTUBE_SYNC_GIG_SLUG,
   MANUAL_SETLISTS_GIG_SLUG,
   RECENTS_GIG_SLUG,
   FAVORITES_GIG_SLUG,
+  BILL_GIG_SLUG,
+  MATT_GIG_SLUG,
+  DAN_GIG_SLUG,
+  JD_GIG_SLUG,
+  ROUND_ROBIN_GIG_SLUG,
 ]);
 
 // localStorage warm-cache keys. We paint the sidebar from these before the
@@ -472,6 +495,27 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   // star button land in Favorites (cap 50).
   options.push(`<option value="${RECENTS_GIG_SLUG}">⟲ Recents (last 50)</option>`);
   options.push(`<option value="${FAVORITES_GIG_SLUG}">★ Favorites</option>`);
+  // Per-singer pseudo-gigs (Bill / Matt / Dan / JD) + RoundRobin alternation.
+  // Counts come from mergedLibrary's stems variants when it's ready; before
+  // the library lands we still offer the option so the picker is stable.
+  const singerCount = (who) => {
+    if (!Array.isArray(mergedLibrary)) return null;
+    let n = 0;
+    for (const m of mergedLibrary) {
+      const v = m.variants.find(x => x.type === 'stems');
+      if (v && (v.singer_lead || '').toLowerCase() === who.toLowerCase()) n++;
+    }
+    return n;
+  };
+  const sgLabel = (who, slug) => {
+    const n = singerCount(who);
+    return `<option value="${slug}">🎤 ${who} Songs${n != null ? ' (' + n + ')' : ''}</option>`;
+  };
+  options.push(sgLabel('Bill', BILL_GIG_SLUG));
+  options.push(sgLabel('Matt', MATT_GIG_SLUG));
+  options.push(sgLabel('Dan',  DAN_GIG_SLUG));
+  options.push(sgLabel('JD',   JD_GIG_SLUG));
+  options.push(`<option value="${ROUND_ROBIN_GIG_SLUG}">🎙 RoundRobin (singer-alternated)</option>`);
   for (const g of gigs) {
     options.push(`<option value="${escapeHtml(g.slug)}">${escapeHtml(g.title)} (${g.setlist_count})</option>`);
   }
@@ -485,6 +529,7 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
     if (s === YOUTUBE_SYNC_GIG_SLUG)    return playlistSetlists.length > 0;
     if (s === MANUAL_SETLISTS_GIG_SLUG) return manualSetlists.length > 0;
     if (s === RECENTS_GIG_SLUG || s === FAVORITES_GIG_SLUG) return true;
+    if (s in SINGER_GIG_MAP || s === ROUND_ROBIN_GIG_SLUG) return true;
     return gigs.some(g => g.slug === s);
   };
   if (initial && slugExists(initial)) {
@@ -565,6 +610,70 @@ async function loadRecentsGig() {
   };
 }
 
+// Per-singer pseudo-gig builder. Filters mergedLibrary's stems variants by
+// singer_lead (case-insensitive). Read-only — no SETLISTS file backs it.
+function loadSingerGig(slug, who) {
+  const songs = [];
+  if (Array.isArray(mergedLibrary)) {
+    for (const m of mergedLibrary) {
+      const v = m.variants.find(x => x.type === 'stems');
+      if (!v) continue;
+      if ((v.singer_lead || '').toLowerCase() === who.toLowerCase()) {
+        songs.push({ song_base: v.folderName, title: m.title, artist: m.artist });
+      }
+    }
+  }
+  songs.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  return {
+    slug, title: `${who} Songs`,
+    readOnly: true, synthetic: true, syntheticKind: 'singer',
+    setlists: [{ title: `Lead: ${who}`, songs, origin: 'singer' }],
+  };
+}
+
+// RoundRobin pseudo-gig: interleaves Bill/Matt/Dan/JD songs so any one of them
+// can step away briefly without leaving dead air. Each singer's list is
+// shuffled, then we round-robin through the queues until all are drained.
+function loadRoundRobinGig() {
+  const buckets = { Bill: [], Matt: [], Dan: [], JD: [] };
+  if (Array.isArray(mergedLibrary)) {
+    for (const m of mergedLibrary) {
+      const v = m.variants.find(x => x.type === 'stems');
+      if (!v) continue;
+      const lead = (v.singer_lead || '').trim();
+      const cap = lead && lead[0].toUpperCase() + lead.slice(1).toLowerCase();
+      if (buckets[cap]) {
+        buckets[cap].push({ song_base: v.folderName, title: m.title, artist: m.artist });
+      }
+    }
+  }
+  // Shuffle each bucket independently (Fisher-Yates).
+  for (const k of Object.keys(buckets)) {
+    const arr = buckets[k];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  const order = ['Bill', 'Matt', 'Dan', 'JD'];
+  const songs = [];
+  let any = true;
+  while (any) {
+    any = false;
+    for (const who of order) {
+      if (buckets[who].length) {
+        songs.push(buckets[who].shift());
+        any = true;
+      }
+    }
+  }
+  return {
+    slug: ROUND_ROBIN_GIG_SLUG, title: 'RoundRobin',
+    readOnly: true, synthetic: true, syntheticKind: 'round_robin',
+    setlists: [{ title: 'Bill → Matt → Dan → JD …', songs, origin: 'round_robin' }],
+  };
+}
+
 // Favorites pseudo-gig: every song with meta.favorite=true, newest-
 // favorited first, capped at 50.
 async function loadFavoritesGig() {
@@ -595,6 +704,10 @@ async function loadActiveGig(slug) {
         activeGig = await loadRecentsGig();
       } else if (slug === FAVORITES_GIG_SLUG) {
         activeGig = await loadFavoritesGig();
+      } else if (slug in SINGER_GIG_MAP) {
+        activeGig = loadSingerGig(slug, SINGER_GIG_MAP[slug]);
+      } else if (slug === ROUND_ROBIN_GIG_SLUG) {
+        activeGig = loadRoundRobinGig();
       }
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
         const placeholderTitle =
@@ -602,6 +715,8 @@ async function loadActiveGig(slug) {
           slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — save one from the planner)' :
           slug === RECENTS_GIG_SLUG         ? '(no recently played songs yet)' :
           slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
+          (slug in SINGER_GIG_MAP)          ? `(no ${SINGER_GIG_MAP[slug]} songs yet — set Singer in the library row)` :
+          slug === ROUND_ROBIN_GIG_SLUG     ? '(no singer-tagged songs yet — set Singer in the library rows)' :
                                               '(empty)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
@@ -1139,12 +1254,37 @@ function renderOneGigSetlist(sl, idx) {
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
+    // Favorite star pulled from the merged record's stems variant, mirroring
+    // what the library row shows so the two surfaces never disagree.
+    const sidebarStemsVar = merged && merged.variants.find(v => v.type === 'stems');
+    const sidebarIsFav = !!(sidebarStemsVar && sidebarStemsVar.favorite);
+    const sidebarStar = sidebarStemsVar
+      ? `<button class="sls-star${sidebarIsFav ? ' on' : ''}" title="${sidebarIsFav ? 'Favorite — click to unstar' : 'Click to favorite'}">${sidebarIsFav ? '★' : '☆'}</button>`
+      : '<span class="sls-star sls-star-blank"></span>';
     row.innerHTML = `
       <span class="sls-grip">⋮⋮</span>
+      ${sidebarStar}
       <span class="sls-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
       <span class="sls-artist">${escapeHtml(artist)}</span>
       <button class="sls-del" title="Remove from setlist">×</button>
     `;
+    const sidebarStarBtn = row.querySelector('.sls-star');
+    if (sidebarStarBtn && sidebarStemsVar) {
+      sidebarStarBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const newVal = !sidebarIsFav;
+        sidebarStarBtn.classList.toggle('on', newVal);
+        sidebarStarBtn.textContent = newVal ? '★' : '☆';
+        try {
+          await fetch(`/api/song/${encodeURIComponent(sidebarStemsVar.folderName)}/favorite`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ favorite: newVal }),
+          });
+          sidebarStemsVar.favorite = newVal;
+        } catch (err) { console.warn('[favorite] sidebar save failed:', err); }
+      });
+    }
     row.querySelector('.sls-del').addEventListener('click', e => {
       e.stopPropagation();
       sl.songs.splice(songIdx, 1);
@@ -2354,37 +2494,64 @@ function renderStats(stats) {
     els.countFast.textContent = stats.bpmDistribution.fast;
   }
   
-  // Render key spread spread in sidebar
-  const keys = Object.keys(stats.keyDistribution).sort();
-  if (keys.length > 0) {
-    const keyContainer = document.createElement('div');
-    keyContainer.className = 'key-dist-grid';
-    
+  // Render Key Signature counts (read-only, sorted by count desc). Used to
+  // be clickable filter pills, but the count is what's useful — clicking
+  // duplicates what the Key dropdown already does and just adds noise.
+  const statsCard = document.querySelector('.tempo-dist-card');
+  const keys = Object.keys(stats.keyDistribution).sort(
+    (a, b) => (stats.keyDistribution[b] || 0) - (stats.keyDistribution[a] || 0) || a.localeCompare(b)
+  );
+  // Replace any previously-rendered key block.
+  document.querySelectorAll('.lib-stat-block').forEach(el => el.remove());
+  if (keys.length > 0 && statsCard) {
+    const block = document.createElement('div');
+    block.className = 'lib-stat-block lib-stat-keys';
+    const h = document.createElement('h4');
+    h.className = 'sub-title';
+    h.innerHTML = '<i data-lucide="key" style="width:12px;display:inline;vertical-align:middle;margin-right:4px;"></i> Songs by Key';
+    block.appendChild(h);
+    const list = document.createElement('div');
+    list.className = 'lib-stat-rows';
     keys.forEach(k => {
-      const pill = document.createElement('div');
-      pill.className = 'key-pill hover-glow';
-      pill.textContent = `${k} (${stats.keyDistribution[k]})`;
-      pill.title = `${stats.keyDistribution[k]} tracks in the key of ${k}`;
-      pill.addEventListener('click', () => {
-        els.filterKey.value = k;
-        applyFilters();
-      });
-      keyContainer.appendChild(pill);
+      const row = document.createElement('div');
+      row.className = 'lib-stat-row';
+      row.innerHTML = `<span class="lib-stat-name">${escapeHtml(k)}</span><span class="lib-stat-count">${stats.keyDistribution[k]}</span>`;
+      list.appendChild(row);
     });
-    
-    const statsCard = document.querySelector('.tempo-dist-card');
-    const existing = document.querySelector('.key-dist-grid');
-    if (existing) existing.remove();
-    
-    const keyHeader = document.createElement('h4');
-    keyHeader.className = 'sub-title';
-    keyHeader.style.marginTop = '16px';
-    keyHeader.innerHTML = '<i data-lucide="key" style="width:12px;display:inline;vertical-align:middle;margin-right:4px;"></i> Key Signature Spread';
-    
-    statsCard.appendChild(keyHeader);
-    statsCard.appendChild(keyContainer);
-    lucide.createIcons();
+    block.appendChild(list);
+    statsCard.appendChild(block);
   }
+  // Singer counts (Bill / Matt / Dan / JD / All / (unassigned)). Read-only.
+  if (statsCard && stats.singerDistribution) {
+    const block = document.createElement('div');
+    block.className = 'lib-stat-block lib-stat-singers';
+    const h = document.createElement('h4');
+    h.className = 'sub-title';
+    h.innerHTML = '<i data-lucide="mic" style="width:12px;display:inline;vertical-align:middle;margin-right:4px;"></i> Songs by Singer';
+    block.appendChild(h);
+    const list = document.createElement('div');
+    list.className = 'lib-stat-rows';
+    const order = ['Bill', 'Matt', 'Dan', 'JD', 'All'];
+    const seen = new Set();
+    const drop = (name, label) => {
+      const n = stats.singerDistribution[name] || 0;
+      if (!n) return;
+      const row = document.createElement('div');
+      row.className = 'lib-stat-row';
+      row.innerHTML = `<span class="lib-stat-name">${escapeHtml(label || name)}</span><span class="lib-stat-count">${n}</span>`;
+      list.appendChild(row);
+      seen.add(name);
+    };
+    order.forEach(name => drop(name));
+    // Anything not in the canonical order (e.g. "(unassigned)" or freeform) gets dropped after.
+    Object.keys(stats.singerDistribution)
+      .filter(k => !seen.has(k))
+      .sort((a, b) => stats.singerDistribution[b] - stats.singerDistribution[a])
+      .forEach(k => drop(k));
+    block.appendChild(list);
+    statsCard.appendChild(block);
+  }
+  lucide.createIcons();
 }
 
 // Populate keys filter dropdown
@@ -2531,76 +2698,55 @@ function renderLibrary() {
     keyCell.className = 'song-key-cell';
     keyCell.textContent = merged.key || '--';
 
-    // Format chips: 5 fixed slots (STEMS, -V, -V-G, -V-G-B, DO) that line up
-    // column-by-column with the header filter buttons. Missing variants get
-    // an invisible placeholder so the columns stay aligned across rows.
-    // Extras (Logic, drum loops, unknown variant codes) wrap to a second row.
-    const formatCell = document.createElement('div');
-    formatCell.className = 'song-format-cell';
+    // Duration cell — mm:ss from the primary variant's duration field.
+    // Falls back to '--' when the metadata didn't carry a duration.
+    const durationCell = document.createElement('div');
+    durationCell.className = 'song-duration-cell';
+    const durSec = merged.duration;
+    if (typeof durSec === 'number' && Number.isFinite(durSec) && durSec > 0) {
+      const mm = Math.floor(durSec / 60);
+      const ss = Math.round(durSec - mm * 60);
+      durationCell.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+    } else {
+      durationCell.textContent = '--';
+    }
 
-    const stemsVariant = merged.variants.find(v => v.type === 'stems');
-
-    const SLOT_CODES = ['STEMS', '-V', '-V-G', '-V-G-B', 'DO'];
-    const slotVariant = code => {
-      if (code === 'STEMS') return merged.variants.find(v => v.type === 'stems');
-      return merged.variants.find(v => v.type !== 'stems' && v.variantCode === code);
-    };
-
-    const makeVariantChip = (v) => {
-      const chip = document.createElement('button');
-      const isStems = v.type === 'stems';
-      const cachedCls = v.cached ? ' chip-cached' : '';
-      const activeCls = currentSong && currentSong.id === v.id ? ' chip-active' : '';
-      chip.className = `format-chip ${isStems ? 'chip-stems' : 'chip-m4a'}${cachedCls}${activeCls}`;
-      chip.title = v.cached
-        ? `${v.variantLabel} — cached, plays instantly`
-        : `${v.variantLabel} — NOT cached; click will fetch from Drive (may spin during gig)`;
-      chip.dataset.variantId = v.id;
-      // Label only — no leading icon. The chip IS the play button; an extra
-      // glyph just steals pixels in the already-narrow Format column. STEMS
-      // is identified by the green pill, m4a variants by their code.
-      const label = isStems ? 'STEMS' : v.variantCode;
-      // Keep a download glyph for uncached m4a (signals 'will spin'); other
-      // states render the label only.
-      if (!isStems && !v.cached) {
-        chip.innerHTML = `<i data-lucide="download" style="width:9px;height:9px;"></i> ${label}`;
-      } else {
-        chip.textContent = label;
-      }
-      chip.addEventListener('click', e => {
-        e.stopPropagation();
-        loadSong(v, { autoplay: true });
+    // Singer cell — opens a pulldown on click to edit singer_lead locally.
+    // Reads stems variant's singer_lead (populated by mpb_sync.py or
+    // edited here via PATCH /api/song/:base/singer).
+    const singerCell = document.createElement('div');
+    singerCell.className = 'song-singer-cell';
+    const stemsVarForSinger = merged.variants.find(v => v.type === 'stems');
+    const SINGER_CHOICES = ['', 'Bill', 'Matt', 'Dan', 'JD', 'All'];
+    const currentSinger = (stemsVarForSinger && stemsVarForSinger.singer_lead) || '';
+    if (stemsVarForSinger && stemsVarForSinger.folderName) {
+      const sel = document.createElement('select');
+      sel.className = 'singer-select';
+      sel.title = 'Lead singer for this song (saved locally to metadata.json; the next mpb_sync may overwrite this if the sheet says otherwise)';
+      SINGER_CHOICES.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name || '—';
+        if (name === currentSinger) opt.selected = true;
+        sel.appendChild(opt);
       });
-      return chip;
-    };
-
-    // Library rows used to show 5 variant chips (STEMS / -V / -V-G / -V-G-B /
-    // DO) plus drum-loop chips. Every song is now treated as stems and the
-    // mixdowns live only on Drive (EZPerformer reads them), so those chips
-    // were noise — the green STEMS pill on every row, the Lundefined drum
-    // chips for songs whose loops weren't in the cache. All removed.
-    // Only the Logic chip stays, since it's a yellow indicator for a real
-    // sibling artifact (the .logicx project) the user might want to open.
-    const stemsForLogic = merged.variants.find(v => v.type === 'stems');
-    if (stemsForLogic && stemsForLogic.logicProjectName && stemsForLogic.folderName) {
-      const chip = document.createElement('button');
-      chip.className = 'format-chip chip-logic';
-      chip.title = `Open ${stemsForLogic.logicProjectName} in a new Logic Pro instance`;
-      chip.innerHTML = '<i data-lucide="layers-3" style="width:10px;height:10px;"></i> Logic';
-      chip.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        chip.disabled = true;
+      sel.addEventListener('click', e => e.stopPropagation());
+      sel.addEventListener('change', async () => {
+        const newSinger = sel.value;
         try {
-          const r = await fetch(`/api/song/${encodeURIComponent(stemsForLogic.folderName)}/open-in-logic`, { method: 'POST' });
-          const d = await r.json();
-          if (!r.ok) throw new Error(d.error || 'failed');
+          await fetch(`/api/song/${encodeURIComponent(stemsVarForSinger.folderName)}/singer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ singer_lead: newSinger }),
+          });
+          stemsVarForSinger.singer_lead = newSinger || null;
         } catch (err) {
-          alert(`Couldn't open in Logic: ${err.message}`);
-        } finally {
-          setTimeout(() => { chip.disabled = false; }, 1500);
+          console.warn('[singer] save failed:', err);
         }
       });
-      formatCell.appendChild(chip);
+      singerCell.appendChild(sel);
+    } else {
+      singerCell.textContent = '--';
     }
 
     // Action — Load button removed. Clicking the row loads the song (wired
@@ -2621,9 +2767,10 @@ function renderLibrary() {
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
+    row.appendChild(durationCell);
     row.appendChild(bpmCell);
     row.appendChild(keyCell);
-    row.appendChild(formatCell);
+    row.appendChild(singerCell);
     row.appendChild(actionCell);
 
     // Row click default: load the preferred variant (-V-G m4a usually) into
@@ -3022,7 +3169,12 @@ function initAudioCtx() {
 // their value but the audio graph stays masterGain → destination.
 
 let pitchShifter = null;
-let pitchSemis = 0;   // -12..+12
+// SEMI is now quantized to half-steps from -3 to +3 (13 positions). FINE
+// stays as integer cents -50..+50 for fine tuning between half-steps.
+const SEMI_MIN = -3;
+const SEMI_MAX = 3;
+const SEMI_STEP = 0.5;
+let pitchSemis = 0;   // -3..+3, step 0.5
 let pitchCents = 0;   // -50..+50
 let pitchSaveTimer = null;
 // loadPitchState used to seed from localStorage; pitch is now per-song, so
@@ -3085,7 +3237,7 @@ function setupPitchShifter() {
 
 function updatePitchKnobUI(which) {
   const val = which === 'coarse' ? pitchSemis : pitchCents;
-  const max = which === 'coarse' ? 12 : 50;
+  const max = which === 'coarse' ? SEMI_MAX : 50;
   const knob = document.getElementById(`knob-${which}`);
   const valEl = document.getElementById(`val-${which}`);
   if (knob) {
@@ -3097,38 +3249,66 @@ function updatePitchKnobUI(which) {
     }
   }
   if (valEl) {
-    valEl.textContent = val > 0 ? `+${val}` : `${val}`;
+    let label;
+    if (which === 'coarse') {
+      // Half-step display: integers as-is, halves as "½".
+      const sign = val > 0 ? '+' : (val < 0 ? '-' : '');
+      const mag = Math.abs(val);
+      const whole = Math.floor(mag);
+      const half = (mag - whole) >= 0.25;
+      if (val === 0) label = '0';
+      else if (whole === 0) label = `${sign}½`;
+      else if (half)        label = `${sign}${whole}½`;
+      else                  label = `${sign}${whole}`;
+    } else {
+      label = val > 0 ? `+${val}` : `${val}`;
+    }
+    valEl.textContent = label;
     valEl.classList.toggle('nonzero', val !== 0);
   }
 }
 
 function setPitch(which, value) {
-  const max = which === 'coarse' ? 12 : 50;
-  value = Math.max(-max, Math.min(max, Math.round(value)));
-  if (which === 'coarse') pitchSemis = value;
-  else pitchCents = value;
+  if (which === 'coarse') {
+    // Snap to nearest half-step in [-3..+3]. This is the only legal grid
+    // for the SEMI knob now — no in-between values.
+    const snapped = Math.round(value / SEMI_STEP) * SEMI_STEP;
+    pitchSemis = Math.max(SEMI_MIN, Math.min(SEMI_MAX, snapped));
+  } else {
+    pitchCents = Math.max(-50, Math.min(50, Math.round(value)));
+  }
   updatePitchKnobUI(which);
   applyPitchToShifter();
   savePitchState();
 }
 
 function renderSemiKnobMarks() {
-  // Draws 13 marks in a ring just outside the SEMI knob, alternating · and #.
-  // Mark 6 (center, at top) is the "0" indicator and is highlighted.
+  // Draws 13 tick marks around the SEMI knob — one per legal stop in the
+  // [-3, +3] half-step quantization. Index 0..12 maps to values -3, -2.5,
+  // -2, -1.5, -1, -0.5, 0, +0.5, +1, +1.5, +2, +2.5, +3. Whole-step ticks
+  // render as full digits (-3..+3); half-step ticks render as a short dash.
+  // The center tick at value 0 is highlighted.
   const marksHost = document.querySelector('#knob-coarse .semi-knob-marks');
   if (!marksHost) return;
   if (marksHost.childElementCount > 0) return; // already rendered
   const TOTAL = 13;
-  const ARC_DEG = 270;           // span from -135° to +135°
-  const RADIUS_PX = 26;          // distance from knob center to mark
+  const ARC_DEG = 270;
+  const RADIUS_PX = 26;
   for (let i = 0; i < TOTAL; i++) {
-    const t = i / (TOTAL - 1);           // 0..1
+    const t = i / (TOTAL - 1);
     const deg = -ARC_DEG / 2 + t * ARC_DEG;
-    const isSharp = (i % 2) === 1;
-    const isZero = i === Math.floor(TOTAL / 2);
+    const value = SEMI_MIN + i * SEMI_STEP;        // -3, -2.5, -2, ..., +3
+    const isWhole = Number.isInteger(value);
+    const isZero  = value === 0;
     const span = document.createElement('span');
-    span.className = 'semi-knob-mark' + (isSharp ? ' sharp' : '') + (isZero ? ' zero' : '');
-    span.textContent = isSharp ? '#' : '·';
+    span.className = 'semi-knob-mark'
+      + (isWhole ? ' whole' : ' half')
+      + (isZero  ? ' zero'  : '');
+    if (isWhole) {
+      span.textContent = value > 0 ? `+${value}` : `${value}`;
+    } else {
+      span.textContent = '·';
+    }
     span.style.transform = `rotate(${deg}deg) translateY(-${RADIUS_PX}px) rotate(${-deg}deg)`;
     marksHost.appendChild(span);
   }
@@ -3141,15 +3321,17 @@ function setupPitchKnobs() {
     const knob = document.getElementById(`knob-${which}`);
     if (!knob) return;
     let startY = 0, startVal = 0;
-    // Drag sensitivity — coarse is coarser per pixel so the 24-unit range
-    // requires noticeable arm motion; fine is 1 cent per pixel.
-    const PIXELS_PER_UNIT = which === 'coarse' ? 6 : 1;
+    // Drag sensitivity. COARSE is now 13 positions (-3..+3 in 0.5 steps);
+    // 24 px per 0.5-step gives a 144-px sweep for the full range — same
+    // total arm motion as the old -12..+12-by-1 design. FINE stays 1 cent/px.
+    const PIXELS_PER_STEP = which === 'coarse' ? 24 : 1;
+    const VALUE_PER_STEP  = which === 'coarse' ? SEMI_STEP : 1;
 
     const onMove = e => {
       const y = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       const dy = startY - y; // dragging up = positive
-      const delta = Math.round(dy / PIXELS_PER_UNIT);
-      setPitch(which, startVal + delta);
+      const steps = Math.round(dy / PIXELS_PER_STEP);
+      setPitch(which, startVal + steps * VALUE_PER_STEP);
     };
     const onUp = () => {
       knob.classList.remove('dragging');
@@ -3173,14 +3355,16 @@ function setupPitchKnobs() {
     knob.addEventListener('dblclick', () => setPitch(which, 0));
     knob.addEventListener('wheel', e => {
       e.preventDefault();
-      const step = e.deltaY < 0 ? 1 : -1;
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const step = which === 'coarse' ? SEMI_STEP : 1;
       const cur = which === 'coarse' ? pitchSemis : pitchCents;
-      setPitch(which, cur + step);
+      setPitch(which, cur + dir * step);
     }, { passive: false });
     knob.addEventListener('keydown', e => {
       const cur = which === 'coarse' ? pitchSemis : pitchCents;
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setPitch(which, cur + 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setPitch(which, cur - 1); }
+      const step = which === 'coarse' ? SEMI_STEP : 1;
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setPitch(which, cur + step); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setPitch(which, cur - step); }
       if (e.key === '0')         { e.preventDefault(); setPitch(which, 0); }
     });
   });
@@ -3193,8 +3377,9 @@ function setupPitchKnobs() {
       e.preventDefault();
       const which = btn.dataset.knob;
       const dir = parseInt(btn.dataset.dir, 10) || 0;
+      const step = which === 'coarse' ? SEMI_STEP : 1;
       const cur = which === 'coarse' ? pitchSemis : pitchCents;
-      setPitch(which, cur + dir);
+      setPitch(which, cur + dir * step);
     });
   });
 
@@ -3867,7 +4052,29 @@ function injectStripRoutingButtons() {
 
     const bottomRow = document.createElement('div');
     bottomRow.className = 'pos-bottom-row';
+    // Boost buttons flank the D button: +5 dB on the left, +10 dB on the
+    // right. Mutually exclusive 3-state latch (off → +5 → off, off → +10 → off).
+    const makeBoost = (db) => {
+      const b = document.createElement('button');
+      b.className = `boost-btn boost-${db}`;
+      b.textContent = `+${db}`;
+      b.title = `Boost this strip by +${db} dB (mutually exclusive with the other boost button; click again to disable)`;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const cur = mixerState.boost[chan] || 0;
+        mixerState.boost[chan] = (cur === db) ? 0 : db;
+        // Reflect latched state on both buttons in this strip.
+        strip.querySelectorAll('.boost-btn').forEach(btn => {
+          const bdb = parseInt(btn.className.match(/boost-(\d+)/)[1], 10);
+          btn.classList.toggle('latched', mixerState.boost[chan] === bdb);
+        });
+        applyMixerVolumes();
+      });
+      return b;
+    };
+    bottomRow.appendChild(makeBoost(5));
     bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
+    bottomRow.appendChild(makeBoost(10));
 
     const numericRow = document.createElement('div');
     numericRow.className = 'pos-numeric-row';
@@ -4038,6 +4245,42 @@ function loadSong(song, opts) {
 
   els.trackTitle.textContent = song.title;
   els.trackArtist.textContent = song.artist;
+  // Player-pane favorite star — find the stems variant for this song so we
+  // can read/write the favorite flag without needing to look up by folder
+  // again on every click.
+  try {
+    const starBtn = document.getElementById('active-track-star');
+    if (starBtn) {
+      const merged = mergedLibrary.find(m => m.variants.some(v => v.id === song.id));
+      const stemsVar = merged && merged.variants.find(v => v.type === 'stems');
+      if (stemsVar && stemsVar.folderName) {
+        const isFav = !!stemsVar.favorite;
+        starBtn.style.display = '';
+        starBtn.textContent = isFav ? '★' : '☆';
+        starBtn.classList.toggle('on', isFav);
+        starBtn.title = isFav ? 'Favorite — click to unstar' : 'Click to favorite';
+        starBtn.onclick = async (e) => {
+          e.stopPropagation();
+          const newVal = !stemsVar.favorite;
+          stemsVar.favorite = newVal;
+          starBtn.textContent = newVal ? '★' : '☆';
+          starBtn.classList.toggle('on', newVal);
+          starBtn.title = newVal ? 'Favorite — click to unstar' : 'Click to favorite';
+          try {
+            await fetch(`/api/song/${encodeURIComponent(stemsVar.folderName)}/favorite`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ favorite: newVal }),
+            });
+          } catch (err) { console.warn('[favorite] player-pane save failed:', err); }
+          if (typeof renderLibrary === 'function') renderLibrary();
+          if (typeof renderGigSidebar === 'function') renderGigSidebar();
+        };
+      } else {
+        starBtn.style.display = 'none';
+      }
+    }
+  } catch (e) {}
   els.activeBpm.textContent = song.practiceBpm || '--';
   els.activeKey.textContent = song.key || '--';
   if (els.activeKeySignature) {
@@ -4861,8 +5104,14 @@ function applyMixerVolumes() {
     // path (which doesn't go through ae). LOOPER then sounded amplified
     // even though it was just at the correct level.
     if (ae.volume !== 1) { try { ae.volume = 1; } catch (e) {} }
+    // Per-strip boost multiplier: +5 dB ≈ 1.778x, +10 dB ≈ 3.162x. The
+    // boost is applied on top of the fader x master product so engaging
+    // a boost lifts the channel without changing fader position or the
+    // recorded automation values.
+    const boostDb = (mixerState.boost && mixerState.boost[chan]) || 0;
+    const boostMul = boostDb ? Math.pow(10, boostDb / 20) : 1;
     if (stripNodes && stripNodes[chan] && stripNodes[chan].stripGain) {
-      stripNodes[chan].stripGain.gain.value = targetVolume * master;
+      stripNodes[chan].stripGain.gain.value = targetVolume * master * boostMul;
     }
 
     if (strip) {

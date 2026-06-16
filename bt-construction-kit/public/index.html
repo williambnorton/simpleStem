@@ -177,6 +177,7 @@
                 </button>
               </div>
               <h1 class="track-title">
+                <button id="active-track-star" class="active-track-star" title="Click to favorite" style="display:none;">☆</button>
                 <span id="active-track-title">Song Title</span><span id="active-track-sep" class="track-sep"> &mdash; </span><span id="active-track-artist">Artist Name</span>
               </h1>
             </div>
@@ -312,8 +313,6 @@
               <button id="btn-play-pause" class="control-btn play-btn hover-glow" title="Play"><i data-lucide="play" id="play-icon"></i></button>
               <button id="btn-go-next" class="control-btn hover-glow" title="Next song in the active setlist"><i data-lucide="skip-forward"></i></button>
               <button id="btn-loop-toggle" class="control-btn toggle-btn hover-glow" title="Toggle Looping"><i data-lucide="repeat"></i></button>
-              <button id="btn-click-toggle" class="control-btn toggle-btn hover-glow" title="Toggle click track (uses the song BPM)"><i data-lucide="alarm-clock"></i></button>
-              <button id="btn-count-in-toggle" class="control-btn toggle-btn hover-glow" title="Count-in: when ON, pressing Play first plays 4 clicks at the song BPM. State saved with the song."><i data-lucide="hash"></i><span class="ci-num">4</span></button>
               <button id="btn-speed-dialog" class="control-btn hover-glow" title="Playback Speed">
                 <i data-lucide="gauge"></i>
                 <span id="speed-display-mini" class="speed-mini-label">1.00x</span>
@@ -350,9 +349,13 @@
                   <span class="looper-btn-label">LOOPER</span>
                   <span class="looper-btn-sub" id="looper-section-text">no section</span>
                 </button>
+                <!-- Click track + Count-in live next to LOOPER now: they
+                     operate on the current SECTION, not the whole song. -->
+                <button id="btn-click-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="Toggle click track (per-section: drives the section's click feel during playback)"><i data-lucide="alarm-clock"></i></button>
+                <button id="btn-count-in-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="Count-in 4 beats for the current section before playback"><i data-lucide="hash"></i><span class="ci-num">4</span></button>
               </div>
               <fieldset class="pitch-fix-pane">
-                <legend>Pitch Fix</legend>
+                <legend class="pitch-fix-legend-hidden" aria-hidden="true">Pitch Fix</legend>
                 <div class="pitch-knob-cell" data-knob="fine">
                   <div class="pitch-knob-steppers">
                     <button class="pitch-step-btn" data-knob="fine" data-dir="-1" title="−1 cent">−</button>
@@ -366,17 +369,20 @@
                 </div>
                 <div class="pitch-knob-cell" data-knob="coarse">
                   <div class="pitch-knob-steppers">
-                    <button class="pitch-step-btn" data-knob="coarse" data-dir="-1" title="−1 half-step">−</button>
-                    <button class="pitch-step-btn" data-knob="coarse" data-dir="+1" title="+1 half-step">+</button>
+                    <button class="pitch-step-btn" data-knob="coarse" data-dir="-1" title="−½ step">−</button>
+                    <button class="pitch-step-btn" data-knob="coarse" data-dir="+1" title="+½ step">+</button>
                   </div>
-                  <div class="pitch-knob semi-knob" id="knob-coarse" tabindex="0" title="Half-steps. Drag up/down or use −/+ buttons; double-click resets to 0.">
+                  <div class="pitch-knob semi-knob" id="knob-coarse" tabindex="0" title="Half-step pitch — quantized to ½-step increments from −3 to +3. Drag, scroll, or use −/+ buttons; double-click resets to 0.">
                     <div class="semi-knob-marks" aria-hidden="true"></div>
                     <div class="pitch-knob-indicator"></div>
                   </div>
                   <div class="pitch-knob-label">SEMI</div>
                   <div class="pitch-knob-value" id="val-coarse">0</div>
                 </div>
-                <button id="btn-pitch-reset" class="pitch-reset-btn" type="button" title="Zero both knobs — no pitch shift">RESET</button>
+                <div class="pitch-reset-stack">
+                  <div class="pitch-reset-label">PITCH FIX</div>
+                  <button id="btn-pitch-reset" class="pitch-reset-btn" type="button" title="Zero both knobs — no pitch shift">RESET</button>
+                </div>
               </fieldset>
             </div>
           </div>
@@ -580,17 +586,10 @@
               <div class="col-select" style="width: 45px; cursor: default;">Set</div>
               <div class="col-title" data-sort="title">Song Title <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-duration" data-sort="duration">Dur <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-type">
-                <span class="format-filter-row" id="format-filter-row">
-                  <button class="ff-btn" data-code="STEMS" title="Filter: only songs with stems">STEMS</button>
-                  <button class="ff-btn" data-code="-V" title="Filter: only songs with -V">-V</button>
-                  <button class="ff-btn" data-code="-V-G" title="Filter: only songs with -V-G">-V-G</button>
-                  <button class="ff-btn" data-code="-V-G-B" title="Filter: only songs with -V-G-B">-V-G-B</button>
-                  <button class="ff-btn" data-code="DO" title="Filter: only songs with DO">DO</button>
-                </span>
-              </div>
+              <div class="col-singer" data-sort="singer">Singer <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-action">Action</div>
             </div>
             

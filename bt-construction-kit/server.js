@@ -626,7 +626,13 @@ async function buildLibraryData() {
     keyDistribution: uniqueSongs.reduce((acc, s) => {
       if (s.key) acc[s.key] = (acc[s.key] || 0) + 1;
       return acc;
-    }, {})
+    }, {}),
+    singerDistribution: uniqueSongs.reduce((acc, s) => {
+      const who = (s.singer_lead || '').trim();
+      const k = who || '(unassigned)';
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {}),
   };
 
   return { stats, songs: allSongs };
@@ -968,7 +974,13 @@ app.get('/api/library__old', (req, res) => {
           acc[s.key] = (acc[s.key] || 0) + 1;
         }
         return acc;
-      }, {})
+      }, {}),
+      singerDistribution: allSongs.reduce((acc, s) => {
+        const who = (s.singer_lead || '').trim();
+        const k = who || '(unassigned)';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
     };
 
     res.json({
@@ -1981,6 +1993,26 @@ app.put('/api/song/:base/favorite', (req, res) => {
     else      delete meta.favorited_at;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
     res.json({ ok: true, favorite: flag });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Local singer_lead override. The Mitchell Park Band Google Sheet is the
+// authoritative source for singer assignments, and the next mpb_sync run
+// will overwrite this field. This endpoint is for in-portal quick edits
+// when the sheet is behind or wrong.
+app.put('/api/song/:base/singer', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const raw = (req.body && req.body.singer_lead);
+  const singer = (typeof raw === 'string' ? raw : '').trim();
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    if (singer) meta.singer_lead = singer;
+    else        delete meta.singer_lead;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, singer_lead: singer || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
