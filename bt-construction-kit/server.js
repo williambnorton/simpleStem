@@ -2006,10 +2006,25 @@ app.put('/api/song/:base/favorite', (req, res) => {
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
     meta.favorite = flag;
-    if (flag) meta.favorited_at = new Date().toISOString();
+    const at = flag ? new Date().toISOString() : null;
+    if (flag) meta.favorited_at = at;
     else      delete meta.favorited_at;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
-    res.json({ ok: true, favorite: flag });
+    // Patch libraryCache in place so GET /api/favorites returns the new
+    // state immediately. Without this, the song stays at favorite: false
+    // in the cached songs[] until the next CATALOG.json rebuild (could be
+    // hours), and the Favorites pseudo-gig appears not to reflect the star.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) {
+          row.favorite = flag;
+          row.favorited_at = at;
+        }
+      }
+    } catch (e) { console.warn('[favorite] cache patch failed:', e.message); }
+    res.json({ ok: true, favorite: flag, favorited_at: at });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2029,6 +2044,16 @@ app.put('/api/song/:base/singer', (req, res) => {
     if (singer) meta.singer_lead = singer;
     else        delete meta.singer_lead;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    // Same in-place cache patch as the favorite handler — without it the
+    // singer pseudo-gigs (Bill / Matt / Dan / JD Songs) keep showing the
+    // stale assignment until the next CATALOG.json rebuild.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.singer_lead = singer || null;
+      }
+    } catch (e) { console.warn('[singer] cache patch failed:', e.message); }
     res.json({ ok: true, singer_lead: singer || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
