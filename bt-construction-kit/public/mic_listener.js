@@ -24,7 +24,7 @@
   let meterRAF = 0;
   let listening = false;
 
-  // --- status ribbon ----------------------------------------------------
+  // --- status ribbon (toast for transient messages) ---------------------
   function ensureRibbon() {
     let el = document.getElementById('holodeck-status');
     if (el) return el;
@@ -42,6 +42,125 @@
     el.style.display = '';
     clearTimeout(el._h);
     el._h = setTimeout(() => { el.style.display = 'none'; }, ms);
+  }
+
+  // --- HOLODECK console (floating panel) --------------------------------
+  // A persistent bottom-right panel that gives the operator visibility
+  // into what HOLODECK is hearing and how each phrase is being processed.
+  // Contains a real segmented VU meter, the raw recognized transcript,
+  // the parsed command (after the wake word is stripped), the dispatch
+  // result, and a rolling log of the last 8 recognitions. This is the
+  // primary diagnostic surface when commands stop working.
+  const VU_SEGMENTS = 20;
+  const LOG_MAX = 8;
+  const transcriptLog = [];   // newest first; each { kind, raw, parsed, result, at }
+  let peakHoldLevel = 0;
+  let peakHoldT = 0;
+
+  function ensureConsole() {
+    let el = document.getElementById('holodeck-console');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'holodeck-console';
+    el.className = 'holodeck-console';
+    el.innerHTML = `
+      <div class="hc-header">
+        <span class="hc-title">HOLODECK Console</span>
+        <span class="hc-state" id="hc-state">○ stopped</span>
+        <button class="hc-close" id="hc-close" title="Hide console (HOLODECK keeps listening)" type="button">×</button>
+      </div>
+      <div class="hc-vu-row">
+        <span class="hc-vu-label">MIC</span>
+        <div class="hc-vu" id="hc-vu" aria-label="microphone level">
+          ${Array.from({ length: VU_SEGMENTS }, (_, i) => `<span class="hc-vu-seg" data-i="${i}"></span>`).join('')}
+          <span class="hc-vu-peak" id="hc-vu-peak"></span>
+        </div>
+        <span class="hc-vu-db" id="hc-vu-db">-∞</span>
+      </div>
+      <div class="hc-now">
+        <div class="hc-row"><span class="hc-row-key">Heard</span><span class="hc-row-val" id="hc-heard">—</span></div>
+        <div class="hc-row"><span class="hc-row-key">Command</span><span class="hc-row-val" id="hc-cmd">—</span></div>
+        <div class="hc-row"><span class="hc-row-key">Result</span><span class="hc-row-val" id="hc-res">—</span></div>
+      </div>
+      <div class="hc-log-head">Recent</div>
+      <div class="hc-log" id="hc-log"></div>
+    `;
+    document.body.appendChild(el);
+    document.getElementById('hc-close').addEventListener('click', () => { el.style.display = 'none'; });
+    return el;
+  }
+  function showConsole(show) {
+    const el = ensureConsole();
+    el.style.display = show ? '' : 'none';
+  }
+  function setConsoleState(text, cls) {
+    const el = document.getElementById('hc-state');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'hc-state ' + (cls || '');
+  }
+
+  // Update the VU meter from the analyser's current RMS level (0..1).
+  function setVU(level) {
+    const segs = document.querySelectorAll('#hc-vu .hc-vu-seg');
+    const lit = Math.round(level * VU_SEGMENTS);
+    segs.forEach((s, i) => s.classList.toggle('lit', i < lit));
+    // Peak hold: track the highest level seen recently, drop slowly.
+    const now = performance.now();
+    if (level >= peakHoldLevel) {
+      peakHoldLevel = level;
+      peakHoldT = now;
+    } else if (now - peakHoldT > 800) {
+      peakHoldLevel = Math.max(0, peakHoldLevel - 0.02);
+    }
+    const peakEl = document.getElementById('hc-vu-peak');
+    if (peakEl) peakEl.style.left = `calc(${Math.min(1, peakHoldLevel) * 100}% - 2px)`;
+    // dB-ish readout (rough): 20·log10(level). -inf when silent.
+    const dbEl = document.getElementById('hc-vu-db');
+    if (dbEl) {
+      const db = level > 0.001 ? Math.max(-40, Math.min(0, 20 * Math.log10(level))).toFixed(0) : null;
+      dbEl.textContent = db === null ? '-∞' : (db + ' dB');
+    }
+  }
+
+  // Push a recognition into the log + update the "now" rows. kind is
+  // 'cmd' (recognized + dispatched OK), 'unk' (HOLODECK heard but no
+  // matching command), 'nowake' (heard but wake word was absent).
+  function logRecognition(kind, raw, parsed, result) {
+    transcriptLog.unshift({ kind, raw, parsed, result, at: new Date() });
+    if (transcriptLog.length > LOG_MAX) transcriptLog.length = LOG_MAX;
+    // Refresh "now" rows
+    const heardEl = document.getElementById('hc-heard');
+    const cmdEl   = document.getElementById('hc-cmd');
+    const resEl   = document.getElementById('hc-res');
+    if (heardEl) heardEl.textContent = raw || '—';
+    if (cmdEl) {
+      cmdEl.textContent = parsed || (kind === 'nowake' ? '(no wake word)' : '—');
+      cmdEl.classList.toggle('faded', !parsed);
+    }
+    if (resEl) {
+      resEl.textContent = result || '—';
+      resEl.classList.remove('ok', 'err', 'meh');
+      resEl.classList.add(kind === 'cmd' ? 'ok' : kind === 'unk' ? 'err' : 'meh');
+    }
+    // Refresh log
+    const logEl = document.getElementById('hc-log');
+    if (logEl) {
+      logEl.innerHTML = transcriptLog.map(e => {
+        const icon = e.kind === 'cmd' ? '✓' : e.kind === 'unk' ? '✗' : '○';
+        const iconCls = e.kind === 'cmd' ? 'ok' : e.kind === 'unk' ? 'err' : 'meh';
+        const time = e.at.toLocaleTimeString([], { hour12: false });
+        const label = e.parsed ? e.parsed : e.raw;
+        return `<div class="hc-log-row">
+          <span class="hc-log-icon ${iconCls}">${icon}</span>
+          <span class="hc-log-time">${time}</span>
+          <span class="hc-log-text" title="${escapeAttr(e.raw)}">${escapeAttr(label)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+  function escapeAttr(s) {
+    return String(s == null ? '' : s).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
   }
   function tts(text) {
     try {
@@ -358,22 +477,31 @@
     { re: new RegExp('^what changed since (.+)$'),                      fn: (m) => diffSnapshot(m[1]) },
   ];
 
-  function dispatch(command) {
+  // Dispatch returns one of 'ok', 'err'. raw is the original transcript
+  // (with wake word) so the console can show what HOLODECK actually heard,
+  // not just the stripped command.
+  function dispatch(command, raw) {
     for (const c of COMMANDS) {
       const m = command.match(c.re);
       if (m) {
         try {
           c.fn(m);
           showStatus(`✓ ${command}`);
+          logRecognition('cmd', raw || command, command, '✓ executed');
         } catch (e) {
           console.error('[HOLODECK] command error:', e);
           showStatus(`✗ ${command} — ${e.message}`, 4000, true);
+          logRecognition('unk', raw || command, command, '✗ ' + e.message);
         }
-        return true;
+        return 'ok';
       }
     }
     showStatus(`✗ Unknown: "${command}"`, 3500, true);
-    return false;
+    logRecognition('unk', raw || command, command, '✗ no matching command');
+    // Spoken feedback so the operator knows the failure was at parse,
+    // not at recognition. Kept short so it doesn't step on the band.
+    try { tts(`I didn't understand "${command}".`); } catch (e) {}
+    return 'err';
   }
 
   // --- mic + recognition ------------------------------------------------
@@ -422,6 +550,8 @@
     listening = true;
     setMicButtonState(true);
     showStatus('🎤 HOLODECK listening. Say "HOLODECK, ..." to command.', 4500);
+    showConsole(true);
+    setConsoleState('● listening', 'on');
   }
 
   function stopListening() {
@@ -435,7 +565,9 @@
     analyser = null;
     cancelAnimationFrame(meterRAF);
     setMicLevel(0);
+    setVU(0);
     setMicButtonState(false);
+    setConsoleState('○ stopped', '');
     showStatus('HOLODECK stopped listening.', 2500);
   }
 
@@ -444,7 +576,13 @@
       const r = event.results[i];
       if (!r.isFinal) continue;
       const transcript = (r[0].transcript || '').trim();
-      if (!WAKE.test(transcript)) continue;
+      // Log everything, including phrases without the wake word, so the
+      // operator can see what HOLODECK is actually hearing. The wake-word
+      // filter is only the gate that decides whether to ACT on a phrase.
+      if (!WAKE.test(transcript)) {
+        logRecognition('nowake', transcript, null, '○ no wake word');
+        continue;
+      }
       const command = transcript
         .replace(WAKE, '')
         .replace(/^[,\s]+/, '')
@@ -453,9 +591,10 @@
         .toLowerCase();
       if (!command) {
         showStatus('HOLODECK heard you. Awaiting command...');
+        logRecognition('nowake', transcript, null, '○ wake word only');
         continue;
       }
-      dispatch(command);
+      dispatch(command, transcript);
     }
   }
 
@@ -469,7 +608,9 @@
       sum += v * v;
     }
     const rms = Math.sqrt(sum / data.length);
-    setMicLevel(Math.min(1, rms * 4));
+    const level = Math.min(1, rms * 4);
+    setMicLevel(level);
+    setVU(level);
     meterRAF = requestAnimationFrame(drawMeter);
   }
   function setMicLevel(level) {

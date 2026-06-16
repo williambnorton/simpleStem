@@ -5078,3 +5078,185 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   border-color: var(--color-red, #e74c3c);
   background: rgba(120, 30, 30, 0.96);
 }
+
+/* ── HOLODECK console panel ────────────────────────────────────────────── */
+/* Floating bottom-right diagnostic surface with a segmented VU meter, a
+   "now" block showing the most recent recognition's raw + parsed +
+   result, and a rolling log of the last 8 phrases the recognizer
+   produced. Designed to give the operator full visibility into what
+   HOLODECK is hearing so failures (wake word missed, command not in
+   the vocabulary, dispatch error) are diagnosable at a glance. */
+.holodeck-console {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 320px;
+  z-index: 2147483645;
+  background: rgba(15, 30, 50, 0.96);
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  border: 1.5px solid var(--color-yellow, #f1c40f);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 10px 12px 12px 12px;
+  font-size: 12px;
+  user-select: none;
+}
+.hc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hc-title {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  color: var(--color-yellow, #f1c40f);
+  flex: 1;
+}
+.hc-state {
+  font-size: 11px;
+  color: #aaa;
+  font-weight: 600;
+}
+.hc-state.on { color: #2ecc71; }
+.hc-close {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.hc-close:hover { color: #fff; }
+
+/* VU meter row */
+.hc-vu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.hc-vu-label {
+  font-size: 9px;
+  font-weight: 800;
+  color: #aaa;
+  letter-spacing: 0.5px;
+  width: 24px;
+}
+.hc-vu {
+  flex: 1;
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+  padding: 2px;
+}
+.hc-vu-seg {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 1px;
+  transition: background 60ms linear;
+}
+.hc-vu-seg.lit:nth-child(-n+12) { background: #2ecc71; }
+.hc-vu-seg.lit:nth-child(n+13):nth-child(-n+16) { background: #f1c40f; }
+.hc-vu-seg.lit:nth-child(n+17) { background: #e74c3c; }
+.hc-vu-peak {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 2px;
+  background: #fff;
+  border-radius: 1px;
+  pointer-events: none;
+  transition: left 60ms linear;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.7);
+}
+.hc-vu-db {
+  width: 44px;
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #ccc;
+}
+
+/* "Now" block */
+.hc-now {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.hc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.hc-row + .hc-row { margin-top: 3px; }
+.hc-row-key {
+  width: 56px;
+  font-weight: 700;
+  color: #aaa;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.hc-row-val {
+  flex: 1;
+  color: #fff;
+  word-break: break-word;
+}
+.hc-row-val.faded { color: #666; font-style: italic; }
+.hc-row-val.ok { color: #2ecc71; }
+.hc-row-val.err { color: #e74c3c; }
+.hc-row-val.meh { color: #999; }
+
+/* Log */
+.hc-log-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 4px;
+}
+.hc-log {
+  max-height: 140px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  padding: 4px 0;
+}
+.hc-log::-webkit-scrollbar { width: 6px; }
+.hc-log::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+.hc-log-row {
+  display: grid;
+  grid-template-columns: 16px 48px 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.hc-log-row:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+.hc-log-icon { font-weight: 800; text-align: center; }
+.hc-log-icon.ok  { color: #2ecc71; }
+.hc-log-icon.err { color: #e74c3c; }
+.hc-log-icon.meh { color: #777; }
+.hc-log-time {
+  font-size: 9px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+.hc-log-text {
+  color: #ddd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
