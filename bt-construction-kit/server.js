@@ -661,6 +661,23 @@ function refreshLibraryCache(reason, force) {
         try {
           const fromCatalog = await tryLoadFromCatalog();
           if (fromCatalog) {
+            // Augment the catalog stats with singerDistribution. catalog.py
+            // (Librarian) doesn't compute it yet — we derive it on the
+            // Performer from the same songs[] payload so the analytics
+            // sidebar shows Bill/Matt/Dan/JD counts without requiring a
+            // Librarian-side change.
+            try {
+              if (fromCatalog.data && fromCatalog.data.songs && !fromCatalog.data.stats?.singerDistribution) {
+                const dist = {};
+                for (const s of fromCatalog.data.songs) {
+                  if (s.type !== 'stems') continue;
+                  const who = (s.singer_lead || '').trim() || '(unassigned)';
+                  dist[who] = (dist[who] || 0) + 1;
+                }
+                fromCatalog.data.stats = fromCatalog.data.stats || {};
+                fromCatalog.data.stats.singerDistribution = dist;
+              }
+            } catch (e) { console.warn('[lib] singerDistribution augment failed:', e.message); }
             libraryCache = {
               scannedAt: fromCatalog.scannedAt || new Date().toISOString(),
               checkedAt: new Date().toISOString(),

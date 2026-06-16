@@ -1847,12 +1847,17 @@ select {
   line-height: 1;
 }
 .boost-btn:hover { color: var(--text-main); border-color: var(--color-yellow); }
+/* Higher-specificity + !important so the latched yellow always wins against
+   the un-latched .boost-btn baseline. Without these the latched state
+   showed the un-latched grey/white in Chrome MCP captures — symptom of a
+   later .boost-btn rule shadow somewhere else in the cascade. */
+.channel-strip .boost-btn.latched,
 .boost-btn.latched {
-  background: rgba(241, 196, 15, 0.25);
-  border-color: var(--color-yellow);
-  color: var(--color-yellow);
-  font-weight: 900;
-  box-shadow: 0 0 6px rgba(241, 196, 15, 0.35) inset;
+  background: rgba(241, 196, 15, 0.25) !important;
+  border-color: var(--color-yellow) !important;
+  color: var(--color-yellow) !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 6px rgba(241, 196, 15, 0.35) inset !important;
 }
 .pos-middle-row {
   display: flex;

@@ -223,6 +223,28 @@ live ONLY on the client (no `GIGS/` file):
 Both pseudo-gigs appear at the top of the gig picker before any real
 gig. Real gigs (Joyce, Sunday_Practice, …) follow.
 
+In addition to those two, the picker exposes seven more synthetic
+pseudo-gigs, all built from `mergedLibrary` on the client (no
+`GIGS/` or `SETLISTS/` files back them):
+
+- **`__recents__`** — last 50 songs the operator loaded (read from
+  `RECENTS.json` via `GET /api/recents`).
+- **`__favorites__`** — every song with `meta.favorite === true`
+  (read from each `metadata.json` via `GET /api/favorites`).
+- **`__bill_songs__` / `__matt_songs__` / `__dan_songs__` /
+  `__jd_songs__`** — singer-filtered. Each one matches stems whose
+  `metadata.singer_lead` equals the singer's first name
+  (case-insensitive). Songs are sorted alphabetically.
+- **`__round_robin__`** — interleaves the four singer buckets.
+  Each bucket is independently Fisher-Yates shuffled, then the
+  setlist is built by round-robin (Bill → Matt → Dan → JD → Bill …)
+  until every bucket drains. Useful when one singer needs to step
+  away mid-set without leaving dead air.
+
+All seven are read-only. To stop seeing a song in a singer
+pseudo-gig, change `singer_lead` either via the sheet (canonical)
+or via the new in-row pulldown (`PUT /api/song/:base/singer`).
+
 ### Song timeline + MIDI automation
 
 A song carries a synchronized timeline in its `metadata.json` under an
@@ -342,13 +364,72 @@ field. This is NOT YET WIRED — see the roadmap.
   been touched by `mpb_sync.py` also carry the MPB Songlist fields
   `singer_raw`, `singer_lead`, `singer_backup`, `singer_group_vocal`,
   `band_required` (list, e.g. `["Bill","Matt","Dan"]`), and `readiness`
-  (`"InTheCan"`/`"Rehearse"`/`"tbd"`). **Producers:** `metadata.py` (audio
-  analysis), `mpb_sync.py` (Songlist fields). **Consumer:**
-  `bt-construction-kit/server.js`. Change all of them together.
+  (`"InTheCan"`/`"Rehearse"`/`"tbd"`). Portal-side editable fields are
+  `favorite` (bool) + `favorited_at` (ISO timestamp) — set via
+  `PUT /api/song/:base/favorite`, used by the title-row star widget and
+  the `__favorites__` pseudo-gig — and `singer_lead` itself, set via
+  `PUT /api/song/:base/singer` (the in-row pulldown). The next
+  `mpb_sync.py` may overwrite `singer_lead` if the band sheet still
+  carries an older value; in-portal edits are intentional triage, not
+  the canonical source. **Producers:** `metadata.py` (audio analysis),
+  `mpb_sync.py` (Songlist fields), `server.js` (portal edits via the
+  two `PUT` endpoints above). **Consumer:** `bt-construction-kit/server.js`.
+  Change all of them together.
 - **Version stamp**: the portal's brand chip displays a build timestamp
   derived from the newest mtime across the code files, formatted
   `V1.MMDDHHMM` (e.g. `V1.06071402`). No manual bumping — when Drive syncs
   newer files to a machine, `BOOT_VERSION` advances on the next restart.
+
+## Player UI conventions (recent additions)
+
+These are load-bearing — if you're touching the player surface,
+respect them or update this list.
+
+- **Per-strip boost (+5 / +10 dB).** Two small latching buttons flank
+  the D routing button on every channel strip. Mutually exclusive
+  3-state (off → +5 → off | off → +10 → off). Backed by
+  `mixerState.boost[chan]` and multiplied into `stripGain.gain.value`
+  alongside `(fader * master)`. Engaging boost does NOT change the
+  fader value or recorded automation — it's a pure gain trim sitting
+  on top.
+- **stripGain is the single source of truth for audible level.** Do
+  NOT write to `audioElement.volume` to change loudness — Chrome
+  double-attenuates captured `MediaElementSource` audio (element
+  volume AND downstream gain both apply), which makes the LOOPER
+  appear louder than normal playback. `audioElement.volume` is
+  pinned at 1.0; everything routes through `stripGain`.
+- **LOOPER uses per-strip `mediaMute` GainNodes, not disconnect.**
+  Chrome stops advancing `currentTime` on a `MediaElement` whose
+  source has no destination, so we mute via `mediaMute.gain.value = 0`
+  during a LOOPER engagement instead of calling `source.disconnect()`.
+  When the LOOPER disengages we hand off back to the `MediaElement`
+  by restoring `mediaMute.gain.value = 1`.
+- **LOOPER generation counter.** `setupSeamlessLoop` reads a generation
+  on entry and re-checks after every `await`; `tearDownSeamlessLoop`
+  bumps the counter. Every `AudioBufferSourceNode` that gets created
+  is added to `allLoopBufferSources` so teardown can stop ANY that
+  survived an interrupted setup. Don't reintroduce single-generation
+  state.
+- **Click + Count-in live next to LOOPER, not in the transport row.**
+  Both buttons act on the current SECTION's `clickIn` flag, not the
+  whole song. The `.looper-side-btn` style keeps them visually
+  accessory rather than primary transport.
+- **SEMI pitch knob is quantized.** Range is `[-3, +3]` in 0.5
+  increments (13 stops). Drag / wheel / -/+ stepper / arrow keys
+  all snap to the half-step grid. FINE remains ±50 cents in 1-cent
+  steps. Combined value is fed to `playbackRate` per stem; tempo and
+  pitch are intentionally coupled (Tone.PitchShift between
+  MediaElementSource and stripGain stalls the decoder, so we don't
+  use it).
+- **Library row columns.** Set / Title (with ☆ star) / Artist /
+  Duration / Tempo / Key / Singer (pulldown) / Action (⋯ menu). The
+  former `-V / -V-G / -V-G-B / DO` chip column was dropped — those
+  variants are EZPerformer-only now.
+- **Stars on three surfaces.** Library row title, sidebar setlist
+  row, and active-track title in the player. All three read/write
+  `meta.favorite` through `PUT /api/song/:base/favorite` and mutate
+  the in-memory `mergedLibrary` variant so the other surfaces update
+  on the next render.
 
 ## Git & sync
 

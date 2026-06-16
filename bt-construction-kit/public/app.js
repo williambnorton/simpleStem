@@ -2740,6 +2740,27 @@ function renderLibrary() {
             body: JSON.stringify({ singer_lead: newSinger }),
           });
           stemsVarForSinger.singer_lead = newSinger || null;
+          // Refresh the gig picker so the "🎤 Bill Songs (N)" counts update
+          // immediately. paintGigPicker reads mergedLibrary fresh on each
+          // call. If we're currently inside a singer pseudo-gig, also
+          // reload it so the song shows up / disappears.
+          try {
+            const picker = document.getElementById('gig-picker');
+            const activeSlug = picker && picker.value;
+            const gigs = readCache(GIGS_CACHE_KEY) || [];
+            const cachedSetlists = readCache(SETLISTS_CACHE_KEY) || [];
+            paintGigPicker(
+              gigs,
+              cachedSetlists.filter(s => s.origin === 'playlist'),
+              cachedSetlists.filter(s => (s.origin || 'manual') === 'manual'),
+            );
+            if (picker) picker.value = activeSlug;
+            if (activeSlug in SINGER_GIG_MAP || activeSlug === ROUND_ROBIN_GIG_SLUG) {
+              await loadActiveGig(activeSlug);
+            }
+          } catch (e) {
+            console.warn('[singer] picker refresh failed:', e);
+          }
         } catch (err) {
           console.warn('[singer] save failed:', err);
         }

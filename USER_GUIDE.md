@@ -12,165 +12,219 @@ you instead.
 ## What this is
 
 A web page (we call it "the portal") that runs on the band's MacBook. It
-shows every song the band has ever asked for, along with versions you can
-play instantly:
+shows every song the band has ever asked for, lets you play each one with
+the original mix or as 6 separated stems (vocals · drums · bass · guitar
+· piano · other), and lets you group songs into setlists tied to real
+gigs.
 
-- **Full mix** — the original, untouched, for reference listening.
-- **Minus mixes** — the original with some instruments stripped out, so the
-  player whose part is missing can sing or play along live.
-  - `-V` — minus vocals (sing over the band)
-  - `-V-G` — minus vocals and guitar (guitar player practice)
-  - `-V-G-B` — minus vocals, guitar, and bass (rhythm-section practice)
-  - `DO` — drums only (a click track for the drummer)
-- **Stems** — every instrument as its own track, with faders. Lets you
-  rebalance the band live: turn the vocal down, pull the guitar up, mute
-  drums, whatever.
-
-You can chain songs into a **setlist** with start times and play them through
-in order for a gig.
+You can drive it from a touch screen, a phone, or a regular keyboard —
+the controls are sized for the stage.
 
 ---
 
 ## Getting started
 
-Open `http://localhost:3000` on whichever Mac is running the portal. You'll
+Open `http://localhost:3000` on the MacBook running the portal. You'll
 see three regions:
 
 ```
-┌───────────────┬──────────────────────────────────┬─────────────────┐
-│  Left rail    │   Player & mixer (top half)      │  Setlist        │
-│  search,      │   Library table (bottom half)    │  planner        │
-│  filters,     │                                  │                 │
-│  stats        │                                  │                 │
-└───────────────┴──────────────────────────────────┴─────────────────┘
+┌───────────────────┬──────────────────────────────────────────┐
+│  Gig sidebar      │   Player + Stem Mixer (top)              │
+│  - active gig     │   Library table (bottom)                 │
+│  - setlists       │                                          │
+│  - songs in order │   [tabs] Library · Loop Library          │
+└───────────────────┴──────────────────────────────────────────┘
 ```
 
-The left rail is for finding songs. The center is for playing them and
-rebalancing the mix. The right rail is for building a setlist.
+The sidebar drives WHAT to play (gig → setlist → song); the player area
+drives HOW it sounds.
 
 ---
 
 ## Adding a song from YouTube
 
-Paste a YouTube link into the **"Paste a YouTube URL"** box on the left rail
-and click **Add**. The song goes into a queue; over the next 10–25 minutes it
-gets downloaded, analyzed (BPM and key), and separated into stems. While that
-happens you can keep using everything else.
+Type or paste a YouTube link into the **"Paste YouTube URL + Enter"** box
+in the library header and hit Enter. The song goes into a queue; the next
+10–25 minutes the laptop downloads it, analyzes BPM + key, and separates
+the audio into 6 stems. While that happens you can keep using everything
+else.
 
-You can paste any of these:
+You can paste:
 
 - A single video — `https://www.youtube.com/watch?v=...`
-- A playlist — `https://www.youtube.com/playlist?list=...` (each video
-  becomes its own song, grouped into a setlist with the playlist's name)
-- A chaptered "full album" video — each chapter becomes its own song
+- A playlist — every video becomes its own song, automatically grouped
+  into a setlist with the playlist's name.
+- A chaptered "full album" video — each chapter becomes its own song.
 
-When the song is ready, it appears in the library with green chips for every
-format you can play. Until then, the "Queue empty / N awaiting render" status
-in the toolbar tells you how many songs are still cooking.
-
----
-
-## Finding a song
-
-The library is the table at the bottom of the page. Each row is a song.
-Above the table, you have:
-
-- **Search** — type a title, artist, or partial — matches narrow the table
-  live.
-- **All / Stems / M4As** — filter to songs with stems (full mixer), with
-  m4a minus-mixes (single-fader playback), or both.
-- **Any Key / Any Tempo** — narrow to a specific musical key or tempo band.
-- **Library analytics** — sidebar shows the count of songs in each tempo
-  bucket (slow / medium / fast) and which keys are over-represented.
-
-To play a song, click anywhere on its row (or hit the play button next to
-the title for an instant start, or **Load** in the Action column to load it
-without playing).
+When the song is ready it appears in the library with a green STEMS chip
+and a duration. The queue counter in the toolbar tells you how many songs
+are still cooking behind it.
 
 ---
 
-## What the chips mean
+## The library row
 
-Each row shows chips for what's available:
+Each row is one song. Reading left to right:
 
-| Chip | What it is | When to use |
-|---|---|---|
-| **STEMS** (purple) | 6 separate tracks, with the full mixer | When you want to rebalance the band live |
-| **READY** (green) | Stems are pre-cached on disk; will start instantly | Use this for the song you're about to play live |
-| **-V** | Source minus vocals — single AAC file | Sing-along practice |
-| **-V-G** | Source minus vocals and guitar | Guitar practice |
-| **-V-G-B** | Source minus vocals, guitar, and bass | Rhythm-section practice |
-| **DO** | Drums only | Drummer practice / click track |
+| Column | What's in it |
+|---|---|
+| **SET** | Checkbox — adds the song to the active setlist's batch queue |
+| **★ / Title** | Yellow star toggles Favorites; clicking the row loads the song |
+| **Artist** | |
+| **Dur** | mm:ss — total song length |
+| **Tempo** | BPM (and original BPM if it differs after pitch-shift) |
+| **Key** | Musical key |
+| **Singer** | Pulldown: Bill / Matt / Dan / JD / All / — |
+| **Action** | `⋯` — per-song menu (metadata, refetch, options) |
 
-Clicking a chip directly loads *that* variant. Clicking the row picks the
-richest available variant (stems if present, otherwise the best m4a).
+Click anywhere on the row to load the song with stems. The little play
+icon next to the title starts it immediately. The star icon next to the
+title (and on every other surface showing this song) marks it a Favorite.
+
+---
+
+## Picking a gig
+
+The picker at the top of the sidebar lists every real gig (Joyce,
+Sunday_Practice, May Day 26, …) plus several synthetic gigs that the
+portal builds on the fly:
+
+| Gig | What it contains |
+|---|---|
+| ▶ **YouTube Sync** | Every setlist that came from a YouTube playlist |
+| ✎ **Manual Setlists** | Every setlist you saved by hand in the planner |
+| ⟲ **Recents** | The last 50 songs you loaded |
+| ★ **Favorites** | Every song with the star turned on |
+| 🎤 **Bill Songs** | Every song where Singer = Bill (and Matt / Dan / JD) |
+| 🎙 **RoundRobin** | Every singer-tagged song, alternating Bill → Matt → Dan → JD |
+
+The four singer gigs + RoundRobin are great when a member is going to
+sit a set out — pick the RoundRobin gig and the next song never lands
+on the missing singer. Set who sings each song with the **Singer**
+column dropdown in the library row, or let the Mitchell Park Band
+sheet drive it automatically.
+
+---
+
+## Building a setlist
+
+Two ways:
+
+1. **Batch-add from the library.** Check the SET box on every song you
+   want, then click the green + on any ghost row that appears in the
+   sidebar. All checked songs land in the setlist in one shot.
+2. **Drag and drop.** Drag a song row between setlists inside the same
+   gig.
+
+To save a brand-new setlist that's not part of any real gig, type a
+title in the "+ New Manual Setlist" entry — it'll appear under the
+Manual Setlists synthetic gig and survive restarts.
 
 ---
 
 ## Playing a song
 
-Once a song is loaded, the player section (top half) shows the title, BPM,
-key, and a waveform/scrubber. Standard transport controls:
+The player lives above the library and gives you:
 
+- Big ★ next to the title (Favorite toggle)
 - **▶ / ‖** play / pause
-- **■** stop (also resets position)
-- **⤺** loop the current selection
-- **1.00x** tempo dial — slow the song down for learning (or speed it up if
-  you're feeling brave)
+- **■** stop
+- **⏭** next song in the active setlist
+- **⟲** plain looping toggle
+- **Speed** — slow it down 0.5×–1.5× for practice (pitch follows speed)
 
-Above the waveform, the **Outro Jam Stretch** toggle extends the song's last
-loop section (2x / 4x / 8x / ∞) for soloing — useful when the band wants to
-keep going past the song's recorded ending.
+Below those, the **LOOPER** button + **Pitch Fix** panel:
+
+- **LOOPER** — loops the SECTION the playhead is currently in (sections
+  are the colored boundaries on the timeline; place them with the
+  number keys 1–9 during playback, drag the orange divider to move
+  one). The big LOOPER button shows the section name and time range
+  while engaged.
+- **Click track** (alarm-clock icon) — plays a four-on-the-floor click
+  at the song BPM during the current section.
+- **Count-in 4** (hash icon) — plays four beats of clicks BEFORE the
+  section starts.
+- **Pitch Fix** — two knobs:
+  - **CENT** — fine tune ±50 cents in 1-cent steps.
+  - **SEMI** — half-steps in 0.5 increments, capped at ±3. The marked
+    stops are −3, −2½, −2, −1½, −1, −½, 0, +½, +1, +1½, +2, +2½, +3.
+    Drag, scroll, use −/+, or arrow keys. The numbered stops around
+    the dial show where you'll land.
+  - **RESET** zeroes both. (Pitch resets at song change too.)
 
 ---
 
 ## The Stem Mixer
 
-When you load a song with STEMS available, the **Stem Mixer Console** in the
-middle of the page gives you a fader per instrument:
+One strip per instrument: Vocals · Drums · Bass · Guitar · Piano · Other.
 
-- Vocals · Drums · Bass · Guitar · Piano · Other
+For each strip:
 
-For each channel:
+- **Fader** — volume.
+- **M** — mute the channel.
+- **S** — solo the channel (everything else mutes).
+- **+5 / +10** — boost the strip by +5 dB or +10 dB. They're latching
+  3-state buttons: click +5 to engage, click again to disengage. +5 and
+  +10 are mutually exclusive on the same strip. Boost rides on top of
+  the fader; it does NOT change the fader position or any recorded
+  automation.
+- **Routing buttons** (V/O/L/R/G/B/P/D + numbered) — send this stem to
+  one or more XR18 output channels. The "home" channel for each stem
+  (V for vocals, D for drums, etc.) is highlighted by default. Click
+  numbers (3–10, 17–18) to add extra outputs.
 
-- **Fader** — volume
-- **M** — mute this channel (won't play at all)
-- **S** — solo this channel (everything else mutes)
-- **Loop** buttons (next to faders, when present) — play just this stem
-  through a detected jam loop
-
-Use solo to learn a part. Use mute to make a practice track on the fly —
-mute the singer so you can sing, mute the bass so the bassist can play
-along. The **Reset Faders** button at the right snaps everything back to
-neutral.
-
----
-
-## Loops
-
-The portal automatically detects the most-repeated sections of a song
-(verse, chorus, bridge, etc.) and offers them as loops. You can play just
-the **drums** of a chorus on repeat while the bassist practices their part
-over it, or jam over the song's main groove indefinitely.
-
-Loops appear as buttons next to each stem channel once they've been
-detected. Up to 4 loops per stem; loop1 is usually the chorus or main groove.
+When no XR18 is connected the strips still light up — the audio just
+goes to the laptop's built-in output.
 
 ---
 
-## Setlists
+## Sections + the section toolbar
 
-The right rail is the **Setlist Planner**. To build a setlist:
+While a song plays, press number keys 1–9 to drop a section divider
+at the playhead. The section gets a color (1=red, 2=orange, …) and a
+short label like "intro" or "chorus". Drag a divider with the mouse
+to move it; if the LOOPER is engaged it follows automatically.
 
-1. Check the box in the **SET** column of each song you want to add.
-2. Each song shows up in the right rail with a default start time; drag
-   the handle (`∷`) to reorder.
-3. Type a name in **Setlist Name**, pick a **Start Time**, and click
-   **Save**.
-4. When it's gig night, hit the saved setlist from **Saved SetLists** —
-   the planner loads it and the player walks through in order.
+The section editor below the timeline lets you:
 
-Use the **Clear** button at the top right to start a fresh setlist.
+- Click a divider to rename / recolor it.
+- Hover and hit Delete/Backspace to remove a divider — the previous
+  section absorbs the gap.
+- Toggle a section's **Click 4 beats in** flag so the click-track + 4
+  pre-roll fire automatically when you start playback at the top of
+  that section.
+
+Section boundaries snap to a detected onset within ±2 seconds; the
+faint grey ticks on the timeline show where the auto-detector thought
+sections start.
+
+---
+
+## MIDI automation
+
+A song can carry a small timeline of events that fire as the playhead
+moves through it — typically Helix patch changes, XR18 fader rides,
+or Logic Pro automation. The lane just below the visualizer is the
+editor. M / V / D / B / G / P / O / F block-letter markers represent
+the different event types; drag to move, click to edit, Delete to
+remove.
+
+For now events fire as one-shots (no continuous ramps); set up the
+ramp targets on the receiving gear if you need a fade.
+
+---
+
+## Library Analytics (sidebar)
+
+Bottom of the sidebar:
+
+- **Songs by Tempo** — how many slow / medium / fast songs you've got.
+- **Songs by Key** — count per key, sorted by count (read-only — use
+  the Key dropdown to filter).
+- **Songs by Singer** — Bill / Matt / Dan / JD / All / (unassigned).
+
+These are derived from `metadata.json`; the Singer counts reflect the
+in-row dropdown + the Mitchell Park Band sheet sync.
 
 ---
 
@@ -178,65 +232,82 @@ Use the **Clear** button at the top right to start a fresh setlist.
 
 ### Practicing a song at home
 
-1. Find the song in the library (search by title).
-2. Click **Load** to bring it into the player.
-3. In the **Stem Mixer**, solo or mute the parts you want to focus on.
-4. Drop the tempo dial to **0.75x** or **0.80x** to learn fast passages.
-5. Use a **Loop** button on a stem to repeat just that section.
+1. Find the song. Click the title to load it.
+2. In the Stem Mixer, solo or mute the parts to focus on. Boost a
+   quiet stem with +5 or +10 dB if you need to hear it without
+   touching the fader curve.
+3. Drop **Speed** to 0.75× or 0.80× to learn fast passages.
+4. Place section markers, then engage **LOOPER** to repeat the tricky
+   section.
 
 ### Preparing for a gig
 
-1. Build the setlist (check the SET boxes, name it, save it).
-2. The night before, click the songs you're about to play and let them
-   pre-cache — the chip will turn green (**READY**). This means they'll
-   play instantly with no buffering, even if the WiFi is bad at the venue.
-3. On gig night, load the saved setlist. Each song will be ready to go.
+1. Build the setlist in the gig sidebar (drag from library, batch-
+   add via checkboxes, or pull singer pseudo-gigs together).
+2. Star the setlist's songs as Favorites so they're easy to relocate.
+3. Click each row a day in advance so the audio caches locally.
+4. The night of the gig, flip **Gig Mode** on to hide anything that
+   isn't cached and could spin on cell-tether bandwidth.
 
-### Learning a song you don't know
+### Sitting a singer out for a set
 
-1. Paste the YouTube URL into the **"Paste a YouTube URL"** box.
-2. Wait for the song to appear in the library (10–25 min for the first
-   render; you'll see it in the queue status while it cooks).
-3. Once ready, click **Load** and use the **Stem Mixer** to solo your
-   instrument's part. Listen to it on repeat with the loop feature.
+1. Open the **🎙 RoundRobin** pseudo-gig.
+2. Confirm the missing singer's name in the Library Analytics → Songs
+   by Singer is reasonable; tag mis-assigned songs by changing the
+   row's Singer dropdown.
+3. Skip the missing singer's slots in the RoundRobin's sequence (or
+   manually drop those songs from your real gig's setlist).
 
-### Pulling up a key/tempo-specific track for a singer
+### Adding a song you just heard at a venue
 
-1. Use the **Any Key** filter to find every song in that key.
-2. Or use **Any Tempo** to find songs at the singer's tempo range.
-3. Click the song to audition; the player shows BPM and key in the
-   header for confirmation.
+1. Paste the YouTube URL in the library header and hit Enter.
+2. Walk away for 10–25 minutes (it's CPU-bound).
+3. When the green STEMS chip shows up, set the Singer column to
+   whoever in the band is going to sing it.
 
 ---
 
 ## Troubleshooting
 
 **The song I added doesn't show up.**
-Check the queue indicator in the toolbar. If it shows "N awaiting render",
-your song is in line. If it's empty and the song still isn't there, the
-download may have failed silently — try pasting the URL again.
+Check the queue chip in the toolbar. If it says "N awaiting render",
+your song is in line. If it's idle and the song still isn't there,
+the download may have failed silently — try pasting the URL again.
 
 **Audio is slow to start, then stutters.**
-First play of an uncached song streams from cloud storage and can take a
-few seconds. Subsequent plays are instant. Look for the **READY** green
-chip — those songs are pre-cached and start instantly.
+First play of an uncached song streams from Drive while the cache
+warms in the background. Subsequent plays are instant. Flip Gig Mode
+on for shows to hide anything that hasn't been pre-cached.
 
-**The mixer disappears when I load a song.**
-That song doesn't have STEMS available (no purple chip on the row). Only
-songs marked **STEMS** have the full mixer. You can still load and play
-the song's m4a versions via the format chips.
+**LOOPER engages but the level jumps.**
+Should be fixed — boost (+5/+10) is independent of LOOPER. If you
+still hear a jump, check that the boost on the strip you're listening
+to isn't latched.
 
-**The song's tempo or key is wrong.**
-Both are auto-detected and occasionally miss. They're labels, not active
-processing — the audio itself is correct.
+**Sections aren't where I want them.**
+Drop them with number keys 1–9 while playing; drag the orange divider
+afterward to nudge. Delete a divider by hovering it and pressing
+Delete/Backspace.
+
+**The Singer dropdown change disappeared after a day.**
+The band's Google Sheet ("New Mitchell Park Song List") is the
+authoritative source. The portal pulls it daily, which can overwrite
+an in-portal edit. Update the sheet for permanent changes; use the
+in-row dropdown for one-off triage.
+
+**Pitch Fix only goes to ±3 half-steps.**
+By design — the band's vocal comfort range rarely needs more, and
+capping it keeps the dial precise. Anything bigger should be a
+re-render rather than a real-time shift.
 
 **The Re-stem in Logic button** (under each song's `⋯` options menu)
-is for advanced use only; ignore it unless you've been shown how to set
-it up.
+is for advanced use only; ignore it unless you've been shown how to
+set it up.
 
 ---
 
 ## More
 
 - For the band's developer / forker — [ARCHITECTURE.md](ARCHITECTURE.md).
+- For Claude-the-coding-agent — [CLAUDE.md](CLAUDE.md).
 - The full project repo — [github.com/williambnorton/simpleStem](https://github.com/williambnorton/simpleStem).
