@@ -6404,93 +6404,107 @@ function toggleSectionLooper() {
 
 // Stored so we can restore the volumes the user had before LOOPER engaged.
 let loopSavedAEVolumes = {};
+// Monotonic counter — every setup invocation captures the current value,
+// every tearDown bumps it. If a setup finds the counter changed under
+// its feet, it was aborted (user toggled the LOOPER while async work
+// was in flight) and must clean up any sources it already created.
+let loopGeneration = 0;
+// EVERY BufferSourceNode the LOOPER has ever created lives here until it's
+// stopped + disconnected. tearDown walks this set as the source of truth
+// so orphan sources from cancelled-mid-decode setups can't keep playing.
+const allLoopBufferSources = new Set();
 
 async function setupSeamlessLoop(startT, endT) {
   if (!audioCtx) return;
-  // Belt and suspenders: ALSO silence the MediaElement's own volume so the
-  // original song can't bleed through even if a stale Web Audio connection
-  // survives somewhere. We'll restore these on tearDown.
-  loopSavedAEVolumes = {};
-  for (const [chan, ae] of Object.entries(audioElements)) {
-    if (ae) {
-      loopSavedAEVolumes[chan] = ae.volume;
-      try { ae.volume = 0; } catch (e) {}
-    }
-  }
-
-  const sources = {};
-  for (const chan of Object.keys(audioElements)) {
+  const myGen = ++loopGeneration;
+  // Decode all 6 stems IN PARALLEL. The old code awaited each one
+  // sequentially — for ~300 ms decode × 6 stems that was the "2 second
+  // silence at engage" the user reported. Parallel decode collapses
+  // that to ~300 ms, plus the actual buffer-source wiring is now
+  // synchronous so all six stems start at the SAME audioCtx instant
+  // (no perceptible lead-in stagger).
+  const channels = Object.keys(audioElements);
+  const decoded = await Promise.all(channels.map(async (chan) => {
     const ae = audioElements[chan];
-    if (!ae || !ae.src) continue;
+    if (!ae || !ae.src) return null;
     const nodes = stripNodes[chan];
-    if (!nodes) continue;
+    if (!nodes) return null;
     try {
       const resp = await fetch(ae.src);
+      if (myGen !== loopGeneration) return null;       // aborted mid-flight
       const arr = await resp.arrayBuffer();
+      if (myGen !== loopGeneration) return null;
       const fullBuffer = await audioCtx.decodeAudioData(arr);
+      if (myGen !== loopGeneration) return null;
       const sr = fullBuffer.sampleRate;
       const startSample = Math.max(0, Math.floor(startT * sr));
       const endSample = Math.min(fullBuffer.length, Math.floor(endT * sr));
       const loopLen = endSample - startSample;
-      if (loopLen <= 0) continue;
-      const buf = audioCtx.createBuffer(fullBuffer.numberOfChannels, loopLen, sr);
-      for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
-        buf.getChannelData(ch).set(
-          fullBuffer.getChannelData(ch).subarray(startSample, endSample)
-        );
-      }
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      src.loopStart = 0;
-      src.loopEnd = loopLen / sr;
-      // Disconnect the MediaElementSource from EVERYTHING (no args) before
-      // wiring the BufferSource in. The previous targeted form
-      // .disconnect(nodes.stripGain) silently no-ops if the connection
-      // shape doesn't match what the spec expects — and on at least some
-      // Chrome versions it does no-op, leaving BOTH the MediaElement and
-      // the BufferSource feeding stripGain. That doubled the signal,
-      // which the user reported as "section goes very loud" at 20%
-      // faders. Full disconnect + reconnect on teardown is the robust
-      // path. The .source-only outgoing connection is reattached in
-      // tearDownSeamlessLoop, so playback resumes cleanly.
-      try { nodes.source.disconnect(); } catch (e) {}
-      src.connect(nodes.stripGain);
-      const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
-      src.start(0, offset);
-      sources[chan] = src;
-      // Debug: log the chain so we can verify gain at engage time. The
-      // user reported the loop kicks in "very loud" — this trace tells
-      // us whether stripGain matches the fader at the moment audio
-      // starts flowing through the BufferSource.
-      console.log(`[loop-debug] ${chan}: stripGain=${nodes.stripGain.gain.value.toFixed(3)} masterGain=${masterGainNode.gain.value.toFixed(3)} bufChans=${buf.numberOfChannels} faderUI=${document.getElementById('fader-'+chan)?.value}`);
+      if (loopLen <= 0) return null;
+      return { chan, ae, nodes, fullBuffer, startSample, loopLen, sr };
     } catch (e) {
-      console.warn(`[loop] couldn't seamless-loop ${chan}:`, e.message);
-      try { nodes.source.connect(nodes.stripGain); } catch (_) {}
-      // If this stem fails, restore its volume so it isn't silently dropped.
-      if (ae && typeof loopSavedAEVolumes[chan] === 'number') {
-        try { ae.volume = loopSavedAEVolumes[chan]; } catch (_) {}
-      }
+      console.warn(`[loop] decode failed for ${chan}:`, e.message);
+      return null;
     }
+  }));
+
+  // If we were aborted between dispatch and now, do nothing — tearDown
+  // already ran (or is about to). Don't create sources we can't track.
+  if (myGen !== loopGeneration) return;
+
+  const sources = {};
+  for (const item of decoded.filter(Boolean)) {
+    const { chan, ae, nodes, fullBuffer, startSample, loopLen, sr } = item;
+    const buf = audioCtx.createBuffer(fullBuffer.numberOfChannels, loopLen, sr);
+    for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
+      buf.getChannelData(ch).set(
+        fullBuffer.getChannelData(ch).subarray(startSample, startSample + loopLen)
+      );
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.loopStart = 0;
+    src.loopEnd = loopLen / sr;
+    // Full disconnect of MediaElementSource — prevents the original audio
+    // path from doubling with the BufferSource. Reattached in tearDown.
+    try { nodes.source.disconnect(); } catch (e) {}
+    src.connect(nodes.stripGain);
+    const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
+    src.start(0, offset);
+    sources[chan] = src;
+    allLoopBufferSources.add(src);
   }
+
+  // One last abort check — tearDown could have fired during the sync
+  // wiring above (it's fast but not zero-latency on slow devices).
+  if (myGen !== loopGeneration) {
+    for (const src of Object.values(sources)) {
+      try { src.stop(); src.disconnect(); } catch (e) {}
+      allLoopBufferSources.delete(src);
+    }
+    return;
+  }
+
   loopBufferSources = sources;
   loopStartedAtCtxT = audioCtx.currentTime;
   const firstChan = Object.keys(sources)[0];
   loopInitialOffset = firstChan
     ? Math.max(0, audioElements[firstChan].currentTime - startT)
     : 0;
-  console.log(`[loop] seamless loop engaged: ${Object.keys(sources).length} stems, ` +
+  console.log(`[loop] engaged gen=${myGen}: ${Object.keys(sources).length} stems, ` +
               `region ${startT.toFixed(2)}s → ${endT.toFixed(2)}s`);
 }
 
 function tearDownSeamlessLoop() {
-  // Where in the section the AudioBufferSource was audibly playing right NOW.
-  // We hand that timestamp to the MediaElement so playback continues from the
-  // audible position instead of jumping to wherever the (silent) MediaElement
-  // had advanced to. The user wants "just stop wrapping" — keep the playhead
-  // where it sounds, not where the MediaElement clock happened to land.
+  // Bump the generation so any in-flight setupSeamlessLoop bails out
+  // before it creates buffer sources we can't track.
+  loopGeneration++;
+
+  // Compute the audible position WITHIN the section so we can hand the
+  // playhead off to the MediaElement after teardown.
   let handoffT = null;
-  if (audioCtx && sectionLooperRange && Object.keys(loopBufferSources).length > 0) {
+  if (audioCtx && sectionLooperRange && loopBufferSources && Object.keys(loopBufferSources).length > 0) {
     const sectionLen = sectionLooperRange.endT - sectionLooperRange.startT;
     if (sectionLen > 0) {
       const elapsed = audioCtx.currentTime - loopStartedAtCtxT;
@@ -6499,29 +6513,43 @@ function tearDownSeamlessLoop() {
     }
   }
 
-  for (const [chan, src] of Object.entries(loopBufferSources || {})) {
-    try { src.stop(); src.disconnect(); } catch (e) {}
-    const nodes = stripNodes[chan];
+  // Stop + disconnect EVERY BufferSource the LOOPER ever made, not just
+  // the ones in the "current" loopBufferSources map. The previous code
+  // missed orphans created by mid-decode aborts, which is how the loop
+  // kept playing after the LOOPER was toggled off.
+  for (const src of allLoopBufferSources) {
+    try { src.stop(); } catch (e) {}
+    try { src.disconnect(); } catch (e) {}
+  }
+  allLoopBufferSources.clear();
+
+  // Reattach every stem's MediaElementSource so playback can resume.
+  for (const chan of Object.keys(audioElements)) {
+    const nodes = stripNodes && stripNodes[chan];
     if (audioCtx && nodes && nodes.source && nodes.stripGain) {
       try { nodes.source.connect(nodes.stripGain); } catch (e) {}
     }
   }
-  // Restore the per-stem AudioElement volumes we saved at engage time. If
-  // tearDown is called without a prior engage (defensive), this is a no-op.
+
+  // Restore per-stem MediaElement.volume values we saved at engage time
+  // (in case anything reads them — the audible path doesn't, but other
+  // code might).
   for (const [chan, vol] of Object.entries(loopSavedAEVolumes)) {
     const ae = audioElements[chan];
     if (ae && typeof vol === 'number') {
       try { ae.volume = vol; } catch (e) {}
     }
   }
-  // Snap every MediaElement to the audible handoff position so the timeline
-  // and the audio agree.
+
+  // Snap MediaElements to the audible handoff position so the timeline
+  // UI and the audio agree.
   if (handoffT !== null && Number.isFinite(handoffT)) {
     for (const ae of Object.values(audioElements)) {
       if (!ae || !audioHasSrc(ae)) continue;
       try { ae.currentTime = handoffT; } catch (e) {}
     }
   }
+
   loopSavedAEVolumes = {};
   loopBufferSources = {};
   loopStartedAtCtxT = 0;
