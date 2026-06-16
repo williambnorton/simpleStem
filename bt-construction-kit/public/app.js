@@ -2972,14 +2972,23 @@ function initAudioCtx() {
   Object.keys(audioElements).forEach(chan => {
     const ae = audioElements[chan];
     const source = audioCtx.createMediaElementSource(ae);
-    const stripGain = audioCtx.createGain();  // pre-split gain (mute/solo
-                                              // applied via ae.volume; this
-                                              // is a placeholder for future
-                                              // per-strip routing gain).
+    const stripGain = audioCtx.createGain();  // pre-split gain (fader value
+                                              // × master; set by
+                                              // applyMixerVolumes).
+    // mediaMute sits between MediaElementSource and stripGain so the
+    // LOOPER can silence the original audio WITHOUT disconnecting the
+    // graph. Chrome stops advancing currentTime on a captured
+    // MediaElement when its source has no output destination, which
+    // froze the playhead UI during LOOPER. Keeping the connection but
+    // setting mediaMute.gain to 0 silences the audio path while leaving
+    // the element happily ticking.
+    const mediaMute = audioCtx.createGain();
+    mediaMute.gain.value = 1;
     const splitter = audioCtx.createChannelSplitter(2);
-    source.connect(stripGain);
+    source.connect(mediaMute);
+    mediaMute.connect(stripGain);
     stripGain.connect(splitter);
-    stripNodes[chan] = { source, stripGain, splitter };
+    stripNodes[chan] = { source, mediaMute, stripGain, splitter };
     trackSources[chan] = source;
   });
 
@@ -6466,9 +6475,11 @@ async function setupSeamlessLoop(startT, endT) {
     src.loop = true;
     src.loopStart = 0;
     src.loopEnd = loopLen / sr;
-    // Full disconnect of MediaElementSource — prevents the original audio
-    // path from doubling with the BufferSource. Reattached in tearDown.
-    try { nodes.source.disconnect(); } catch (e) {}
+    // Silence the MediaElement path via mediaMute (NOT a disconnect)
+    // so Chrome keeps advancing currentTime — which the sync loop reads
+    // to animate the playhead. The BufferSource feeds stripGain in
+    // parallel; mediaMute=0 means the MediaElement audio adds nothing.
+    if (nodes.mediaMute) nodes.mediaMute.gain.value = 0;
     src.connect(nodes.stripGain);
     const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
     src.start(0, offset);
@@ -6513,21 +6524,21 @@ function tearDownSeamlessLoop() {
     }
   }
 
-  // Stop + disconnect EVERY BufferSource the LOOPER ever made, not just
-  // the ones in the "current" loopBufferSources map. The previous code
-  // missed orphans created by mid-decode aborts, which is how the loop
-  // kept playing after the LOOPER was toggled off.
+  // Stop + disconnect EVERY BufferSource the LOOPER ever made.
   for (const src of allLoopBufferSources) {
     try { src.stop(); } catch (e) {}
     try { src.disconnect(); } catch (e) {}
   }
   allLoopBufferSources.clear();
 
-  // Reattach every stem's MediaElementSource so playback can resume.
+  // Un-mute the MediaElement path on every strip so regular playback is
+  // audible again. We never disconnected source → mediaMute → stripGain
+  // (that's what froze the playhead), so there's nothing to reconnect —
+  // just lift the mute.
   for (const chan of Object.keys(audioElements)) {
     const nodes = stripNodes && stripNodes[chan];
-    if (audioCtx && nodes && nodes.source && nodes.stripGain) {
-      try { nodes.source.connect(nodes.stripGain); } catch (e) {}
+    if (nodes && nodes.mediaMute) {
+      try { nodes.mediaMute.gain.value = 1; } catch (e) {}
     }
   }
 
