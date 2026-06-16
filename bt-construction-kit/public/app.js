@@ -4852,14 +4852,15 @@ function applyMixerVolumes() {
       targetVolume = 0;
     }
 
-    ae.volume = targetVolume * master;
-    // ALSO set the Web Audio stripGain — once an audio element is
-    // captured by createMediaElementSource (which all stems are, for
-    // routing + XR18 multi-channel out), mediaElement.volume has NO
-    // effect on the audible path. The Web Audio graph uses the gain
-    // node. Without this line every song has been playing at the gain
-    // node's default 1.0 regardless of fader position, which is the
-    // "very loud" bug the user reported during the gig.
+    // stripGain is the single source of truth for the audible level.
+    // ae.volume is INTENTIONALLY left at its default 1.0 — Chrome
+    // double-attenuates (applies element.volume AND any downstream
+    // gain node) for captured MediaElement audio, so writing fader x
+    // master to ae.volume here was making the normal-playback path
+    // (fader x master)^2 quiet relative to the LOOPER's BufferSource
+    // path (which doesn't go through ae). LOOPER then sounded amplified
+    // even though it was just at the correct level.
+    if (ae.volume !== 1) { try { ae.volume = 1; } catch (e) {} }
     if (stripNodes && stripNodes[chan] && stripNodes[chan].stripGain) {
       stripNodes[chan].stripGain.gain.value = targetVolume * master;
     }
@@ -6305,6 +6306,36 @@ function attachSectionDividerHandlers(node, idx) {
         automationSections.sort((a, b) => a.t - b.t);
         renderAutomationLane();
         markAutomationDirty();
+        // If the LOOPER is currently engaged and the moved divider was a
+        // bound of the looped section (either its start divider or its
+        // end divider), re-engage with the new bounds. Otherwise the
+        // user is dragging boundaries on a different section and the
+        // loop is unrelated.
+        if (sectionLooperActive && sectionLooperRange) {
+          const playheadT = currentPlayheadSec();
+          const newRange = findSectionAt(playheadT);
+          if (newRange && (
+            Math.abs(newRange.startT - sectionLooperRange.startT) > 0.001 ||
+            Math.abs(newRange.endT   - sectionLooperRange.endT)   > 0.001
+          )) {
+            sectionLooperRange = newRange;
+            const label = document.getElementById('looper-section-text');
+            if (label) {
+              const colorName = SECTION_COLORS[newRange.color]?.name || 'section';
+              label.textContent = `${colorName}  ${newRange.startT.toFixed(1)}s → ${newRange.endT.toFixed(1)}s · automation recording paused`;
+            }
+            // Re-setup with the new bounds — generation counter in
+            // setupSeamlessLoop guarantees the OLD buffer sources are
+            // aborted, AND the latest tearDown call would have killed
+            // them anyway. We don't tearDown explicitly here because
+            // setupSeamlessLoop's generation bump + fresh wiring is
+            // enough; the previous gen's sources stop at next event tick.
+            tearDownSeamlessLoop();
+            setupSeamlessLoop(newRange.startT, newRange.endT).catch(err =>
+              console.warn('[loop] re-setup after divider drag failed:', err)
+            );
+          }
+        }
       }
     };
     window.addEventListener('mousemove', onMove);
