@@ -5315,3 +5315,69 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   font-weight: 900 !important;
   box-shadow: 0 0 8px rgba(231, 76, 60, 0.5) inset !important;
 }
+
+/* Match boost buttons to the D button: same height, spread evenly across
+   the bottom row so the 5 buttons (+5, +10, D, +20, +50) form a balanced
+   row instead of clustering small around D. Each child takes 1 unit of
+   flex so widths divide the row evenly; the gap between them is the
+   existing .pos-bottom-row gap (4px). The font-size matches the D button
+   (14px) so the row reads as a coherent control surface. */
+.pos-bottom-row > .boost-btn,
+.pos-bottom-row > .pos-btn {
+  flex: 1 1 0;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The D button keeps its yellow-instrument styling but loses the fixed
+   30px width so it stretches like the boost buttons in the same row. */
+.pos-bottom-row > .pos-D {
+  width: auto;
+  font-size: 14px;
+}
+
+/* HOLODECK console -- diagnostic block (mic picker + state readouts) */
+.hc-diag {
+  background: rgba(0, 0, 0, 0.32);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.hc-diag-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.hc-diag-row + .hc-diag-row { margin-top: 3px; }
+.hc-diag-key {
+  width: 56px;
+  font-weight: 700;
+  color: #aaa;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.hc-diag-val {
+  flex: 1;
+  color: #fff;
+  word-break: break-word;
+}
+.hc-mic-select {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.hc-mic-select:focus { outline: 1px solid var(--color-yellow); }

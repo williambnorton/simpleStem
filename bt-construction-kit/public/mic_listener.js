@@ -69,8 +69,26 @@
         <span class="hc-state" id="hc-state">○ stopped</span>
         <button class="hc-close" id="hc-close" title="Hide console (HOLODECK keeps listening)" type="button">×</button>
       </div>
+      <div class="hc-diag">
+        <div class="hc-diag-row">
+          <span class="hc-diag-key">Mic</span>
+          <select id="hc-mic-select" class="hc-mic-select" title="Switch microphone input">
+            <option value="">(default)</option>
+          </select>
+        </div>
+        <div class="hc-diag-row">
+          <span class="hc-diag-key">Stream</span><span class="hc-diag-val" id="hc-stream-state">—</span>
+        </div>
+        <div class="hc-diag-row">
+          <span class="hc-diag-key">AudioCtx</span><span class="hc-diag-val" id="hc-actx-state">—</span>
+        </div>
+        <div class="hc-diag-row">
+          <span class="hc-diag-key">RMS</span><span class="hc-diag-val" id="hc-rms">0.000</span>
+          <span class="hc-diag-key" style="margin-left:8px;">Peak</span><span class="hc-diag-val" id="hc-peakraw">0</span>
+        </div>
+      </div>
       <div class="hc-vu-row">
-        <span class="hc-vu-label">MIC</span>
+        <span class="hc-vu-label">VU</span>
         <div class="hc-vu" id="hc-vu" aria-label="microphone level">
           ${Array.from({ length: VU_SEGMENTS }, (_, i) => `<span class="hc-vu-seg" data-i="${i}"></span>`).join('')}
           <span class="hc-vu-peak" id="hc-vu-peak"></span>
@@ -87,7 +105,35 @@
     `;
     document.body.appendChild(el);
     document.getElementById('hc-close').addEventListener('click', () => { el.style.display = 'none'; });
+    populateMicSelector();
+    document.getElementById('hc-mic-select').addEventListener('change', async (e) => {
+      const deviceId = e.target.value;
+      try { localStorage.setItem('holodeck_mic_id', deviceId); } catch (er) {}
+      if (listening) {
+        await stopListening();
+        await new Promise(r => setTimeout(r, 200));
+        startListening();
+      }
+    });
     return el;
+  }
+
+  // Populate the device picker from enumerateDevices(). Labels are only
+  // available after the user has granted mic permission at least once;
+  // before that the dropdown shows "(microphone N)" placeholders.
+  async function populateMicSelector() {
+    const sel = document.getElementById('hc-mic-select');
+    if (!sel) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      const saved = (() => { try { return localStorage.getItem('holodeck_mic_id') || ''; } catch (e) { return ''; } })();
+      sel.innerHTML = '<option value="">(default)</option>' + mics.map((d, i) => {
+        const label = d.label || `microphone ${i + 1}`;
+        const selected = d.deviceId === saved ? ' selected' : '';
+        return `<option value="${d.deviceId}"${selected}>${label.replace(/[<>"&]/g, '')}</option>`;
+      }).join('');
+    } catch (e) { console.warn('[HOLODECK] enumerateDevices failed:', e); }
   }
   function showConsole(show) {
     const el = ensureConsole();
@@ -514,21 +560,42 @@
       return;
     }
 
+    // Use the saved deviceId if the operator picked a specific mic via
+    // the console's dropdown. Falls back to the browser default when no
+    // pick has been saved.
+    let savedMic = '';
+    try { savedMic = localStorage.getItem('holodeck_mic_id') || ''; } catch (e) {}
+    const constraints = savedMic
+      ? { audio: { deviceId: { exact: savedMic } } }
+      : { audio: true };
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
-      showStatus('Microphone permission denied.', 6000, true);
+      console.warn('[HOLODECK] getUserMedia failed:', e);
+      showStatus('Microphone permission denied or device unavailable.', 6000, true);
       return;
     }
+    // After the first permission grant, device labels become available --
+    // refresh the picker so the operator sees real names.
+    populateMicSelector();
 
     // Level meter
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Chrome sometimes starts the context in 'suspended' state until a
+      // user gesture has fully propagated. Force-resume so the analyser
+      // actually receives audio frames; otherwise drawMeter sees all-
+      // 128 byte values and the meter is stuck at 0.
+      if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch (e) { console.warn('[HOLODECK] audioCtx resume failed:', e); }
+      }
       const src = audioCtx.createMediaStreamSource(mediaStream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
       src.connect(analyser);
       drawMeter();
+      console.log('[HOLODECK] mic up:', mediaStream.getAudioTracks().map(t => t.label || '(no label)').join(', '), '| audioCtx:', audioCtx.state);
     } catch (e) { console.warn('[HOLODECK] meter init failed:', e); }
 
     // Speech recognition
@@ -598,19 +665,42 @@
     }
   }
 
+  let _diagFrameCounter = 0;
   function drawMeter() {
     if (!analyser) return;
     const data = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteTimeDomainData(data);
-    let sum = 0;
+    let sum = 0, peakRaw = 0;
     for (let i = 0; i < data.length; i++) {
       const v = (data[i] - 128) / 128;
       sum += v * v;
+      const av = Math.abs(data[i] - 128);
+      if (av > peakRaw) peakRaw = av;
     }
     const rms = Math.sqrt(sum / data.length);
     const level = Math.min(1, rms * 4);
     setMicLevel(level);
     setVU(level);
+    // Update numeric diagnostic readouts at ~4 Hz so the values are
+    // readable without strobing.
+    if ((_diagFrameCounter++ & 15) === 0) {
+      const rmsEl = document.getElementById('hc-rms');
+      const peakEl = document.getElementById('hc-peakraw');
+      if (rmsEl)  rmsEl.textContent  = rms.toFixed(3);
+      if (peakEl) peakEl.textContent = String(peakRaw);
+      const actx = document.getElementById('hc-actx-state');
+      if (actx) actx.textContent = audioCtx ? audioCtx.state : '—';
+      const ss = document.getElementById('hc-stream-state');
+      if (ss && mediaStream) {
+        const tracks = mediaStream.getAudioTracks();
+        const t = tracks[0];
+        if (t) {
+          ss.textContent = `${t.readyState} · ${t.label.slice(0, 32) || '(no label)'}${t.muted ? ' · OS-muted' : ''}`;
+        } else {
+          ss.textContent = 'no track';
+        }
+      }
+    }
     meterRAF = requestAnimationFrame(drawMeter);
   }
   function setMicLevel(level) {
