@@ -8321,19 +8321,20 @@ async function setupAiSetlistBuilder() {
     } catch (e) { console.warn('[aism] HOLODECK.stop() failed:', e); }
     setAismState('● requesting mic…', 'on');
 
-    // Always request the system default mic, NOT the picker's specific
-    // device. Using { deviceId: { exact: X } } makes Chrome open device
-    // X exclusively on macOS, after which Web Speech's internal capture
-    // returns silent frames -- onstart/onaudiostart/onaudioend cycle
-    // without any onspeechstart. By using { audio: true } both getUserMedia
-    // (VU meter) and SpeechRecognition open the same default device that
-    // Chrome can multiplex. The picker is now purely informational.
-    const constraints = { audio: true };
+    // Honor the picker's device selection as a PREFERENCE (deviceId
+    // without `exact`). Using `exact` blocks Web Speech's parallel
+    // capture; using `{ audio: true }` lets Chrome pick its own default,
+    // which on macOS is often the first device enumerated (e.g. an
+    // XR18 audio interface) regardless of what the user set in System
+    // Settings. The picker preference routes the VU meter correctly.
+    // Web Speech still uses Chrome's per-site default mic, which the
+    // operator must set separately at chrome://settings/content/microphone.
     let savedMic = '';
     try { savedMic = localStorage.getItem(AISM_KEY) || ''; } catch (e) {}
-    if (savedMic) {
-      console.log('[aism] ignoring saved aiSetlistMicId=' + savedMic.slice(0, 8) + '… to avoid exclusive-open conflict with Web Speech');
-    }
+    const constraints = savedMic
+      ? { audio: { deviceId: savedMic } }
+      : { audio: true };
+    console.log('[aism] requesting mic with constraints:', JSON.stringify(constraints));
     try {
       micStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
@@ -8424,11 +8425,10 @@ async function setupAiSetlistBuilder() {
           // silent stretch, even mid-session. Don't alarm the operator.
           setAismState('● listening (waiting for speech)', 'on');
         } else if (noSpeechStreak >= 3) {
-          // Three in a row strongly implies the SR engine is bound to a
-          // mic that's silent. Most common cause: picker's mic ≠ Chrome's
-          // default mic (Web Speech can't be pointed at a specific
-          // device). Pause the restart loop and surface the fix path.
-          setAismState('✗ no speech heard — set this mic as the macOS default input', 'err');
+          // Three in a row strongly implies SR is bound to a silent mic.
+          // Web Speech ignores the picker — it uses Chrome's per-site
+          // default. The fix is at chrome://settings/content/microphone.
+          setAismState('✗ no speech — open chrome://settings/content/microphone and set the right mic', 'err');
           micRestartReq = false;
         }
       } else {
