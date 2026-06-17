@@ -3584,9 +3584,13 @@ function applyRouting() {
   Object.values(stripNodes).forEach(s => {
     try { s.splitter.disconnect(); } catch (e) {}
   });
-  Object.entries(routingMatrix).forEach(([chan, routes]) => {
+  // Iterate every stem strip (not just routingMatrix entries) so that a
+  // strip with no matrix entry at all (e.g. piano dropped from a stale
+  // saved matrix) still gets the L+R fallback below.
+  Object.keys(stripNodes).forEach(chan => {
     const s = stripNodes[chan];
-    if (!s || !routes.length) return;
+    if (!s) return;
+    const routes = routingMatrix[chan] || [];
     const sorted = [...routes].sort((a, b) => a - b);
     // Filter out output indices that don't exist on the current device.
     // When every route is out of range (e.g. a strip whose only target is
@@ -3595,22 +3599,51 @@ function applyRouting() {
     // the splitter never connects to anything and the stem is silent
     // even though its meter shows signal.
     const inRange = sorted.filter(out => out < outputChannelCount);
-    const effective = inRange.length ? inRange : [0, 1];
+    const fallback = !inRange.length;
+    const effective = fallback ? [0, 1] : inRange;
+    if (fallback) {
+      // Self-heal so the UI matches what we actually routed.
+      routingMatrix[chan] = [0, 1];
+      console.warn(`[routing] ${chan}: all routes were out of range; fell back to L+R and persisted.`);
+    }
     if (effective.length === 1) {
-      // Single channel selected → fold L+R into that channel as mono sum.
       const out = effective[0];
       try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
       try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
     } else {
-      // ≥2 channels: even-positioned selections receive L, odd-positioned
-      // receive R. Selection [0,1,2,3,4,5] → L→0,2,4 / R→1,3,5 — the
-      // "three amps per side from 6 AUX channels" pattern.
       effective.forEach((out, i) => {
         try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
       });
     }
   });
+  // Persist any self-heals from the loop above, then re-render the UI
+  // so the buttons match what is actually playing.
+  try { saveRoutingMatrix(); } catch (e) {}
+  try { renderRoutingButtons(); } catch (e) {}
 }
+
+// DevTools helper: print a per-stem dump of routingMatrix, mute/solo
+// state, stripGain value, and whether the splitter has any connections.
+// Call from console as window.debugRouting().
+window.debugRouting = function () {
+  const out = [];
+  Object.keys(stripNodes || {}).forEach(chan => {
+    const s = stripNodes[chan];
+    out.push({
+      chan,
+      routes:      (routingMatrix[chan] || []).join(',') || '(empty)',
+      muted:       !!(mixerState && mixerState.muted   && mixerState.muted[chan]),
+      soloed:      !!(mixerState && mixerState.soloed  && mixerState.soloed[chan]),
+      fader:       mixerState && mixerState.volumes && +mixerState.volumes[chan]?.toFixed?.(3),
+      boost:       (mixerState && mixerState.boost    && mixerState.boost[chan]) || 0,
+      stripGain:   s && s.stripGain && +s.stripGain.gain.value.toFixed(3),
+      mediaMute:   s && s.mediaMute && +s.mediaMute.gain.value.toFixed(3),
+    });
+  });
+  console.table(out);
+  console.log('outputChannelCount =', outputChannelCount, 'masterGain =', masterGainNode?.gain?.value);
+  return out;
+};
 
 function toggleStripChannel(chan, channelIdx) {
   const current = routingMatrix[chan] || [];
@@ -3632,17 +3665,22 @@ function applyRoutingForStem(chan) {
   if (!s || !masterMerger) return;
   try { s.splitter.disconnect(); } catch (e) {}
   const routes = routingMatrix[chan] || [];
-  if (!routes.length) return;
   const sorted = [...routes].sort((a, b) => a - b);
   // Filter out any output indices that don't exist on the current device.
   // Without this, a stem whose ONLY routes are XR18 channels (e.g. Piano's
-  // home channel 14 = XR18 ch15) goes silent in stereo-only mode -- the
-  // splitter never gets connected to anything reachable. The stem still
-  // has signal (meter shows it) but nothing reaches the destination, so
-  // even +10 dB boost + Solo produces no sound. Fall back to L+R when
-  // every route is out of range.
+  // home channel 14 = XR18 ch15) goes silent in stereo-only mode.
   const inRange = sorted.filter(out => out < outputChannelCount);
-  const effective = inRange.length ? inRange : [0, 1];
+  const fallback = !inRange.length;
+  const effective = fallback ? [0, 1] : inRange;
+  // Self-heal: when the fallback fires, also write the corrected routing
+  // back into routingMatrix so the UI buttons reflect what is actually
+  // playing, and the saved matrix stops being broken on the next reload.
+  if (fallback) {
+    routingMatrix[chan] = [0, 1];
+    try { saveRoutingMatrix(); } catch (e) {}
+    try { renderRoutingButtons(); } catch (e) {}
+    console.warn(`[routing] ${chan}: all routes were out of range; fell back to L+R and persisted.`);
+  }
   if (effective.length === 1) {
     const out = effective[0];
     try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
