@@ -533,16 +533,19 @@
         try {
           c.fn(m);
           showStatus(`✓ ${command}`);
+          flashCommand('✓ ' + command, 'cmd');
           logRecognition('cmd', raw || command, command, '✓ executed');
         } catch (e) {
           console.error('[HOLODECK] command error:', e);
           showStatus(`✗ ${command} — ${e.message}`, 4000, true);
+          flashCommand('✗ ' + command, 'unk');
           logRecognition('unk', raw || command, command, '✗ ' + e.message);
         }
         return 'ok';
       }
     }
     showStatus(`✗ Unknown: "${command}"`, 3500, true);
+    flashCommand('✗ ' + command, 'unk');
     logRecognition('unk', raw || command, command, '✗ no matching command');
     // Spoken feedback so the operator knows the failure was at parse,
     // not at recognition. Kept short so it doesn't step on the band.
@@ -598,10 +601,13 @@
       console.log('[HOLODECK] mic up:', mediaStream.getAudioTracks().map(t => t.label || '(no label)').join(', '), '| audioCtx:', audioCtx.state);
     } catch (e) { console.warn('[HOLODECK] meter init failed:', e); }
 
-    // Speech recognition
+    // Speech recognition. interimResults: true so we can show the
+    // operator the live transcript as they're speaking, not just after
+    // they pause. Only FINAL results trigger command dispatch -- interim
+    // text only updates the "Heard" line in the console + the flash.
     recognition = new SR();
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = 'en-US';
     recognition.onresult = handleResult;
     recognition.onerror = (e) => {
@@ -641,12 +647,20 @@
   function handleResult(event) {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const r = event.results[i];
-      if (!r.isFinal) continue;
       const transcript = (r[0].transcript || '').trim();
+      // Interim results: show them live in the console + the flash so
+      // the operator sees what HOLODECK thinks they're saying AS they
+      // speak. Do NOT dispatch -- only final results trigger commands.
+      if (!r.isFinal) {
+        updateInterim(transcript);
+        continue;
+      }
+      // Final results: log + dispatch.
       // Log everything, including phrases without the wake word, so the
       // operator can see what HOLODECK is actually hearing. The wake-word
       // filter is only the gate that decides whether to ACT on a phrase.
       if (!WAKE.test(transcript)) {
+        clearInterim();
         logRecognition('nowake', transcript, null, '○ no wake word');
         continue;
       }
@@ -656,6 +670,7 @@
         .replace(/[.,!?]+$/, '')
         .trim()
         .toLowerCase();
+      clearInterim();
       if (!command) {
         showStatus('HOLODECK heard you. Awaiting command...');
         logRecognition('nowake', transcript, null, '○ wake word only');
@@ -663,6 +678,46 @@
       }
       dispatch(command, transcript);
     }
+  }
+
+  // Live "Heard" line update during interim recognition.
+  function updateInterim(transcript) {
+    const heardEl = document.getElementById('hc-heard');
+    if (heardEl) {
+      heardEl.textContent = transcript + ' …';
+      heardEl.classList.add('interim');
+    }
+    flashCommand(transcript, 'interim');
+  }
+  function clearInterim() {
+    const heardEl = document.getElementById('hc-heard');
+    if (heardEl) heardEl.classList.remove('interim');
+  }
+
+  // Big heads-up flash overlay: pops the recognized command in large
+  // text in the center-top of the screen for ~1.5 seconds. Two states:
+  //   'interim' (yellow, dashed border, "…" suffix) -- live transcript
+  //   'cmd'     (green, solid border)               -- dispatched OK
+  //   'unk'     (red,   solid border)               -- failed match
+  let _flashEl = null;
+  let _flashHideTimer = 0;
+  function ensureFlash() {
+    if (_flashEl) return _flashEl;
+    _flashEl = document.createElement('div');
+    _flashEl.id = 'holodeck-flash';
+    _flashEl.className = 'holodeck-flash';
+    _flashEl.style.display = 'none';
+    document.body.appendChild(_flashEl);
+    return _flashEl;
+  }
+  function flashCommand(text, kind, ms) {
+    const el = ensureFlash();
+    el.textContent = text;
+    el.className = 'holodeck-flash kind-' + (kind || 'cmd');
+    el.style.display = '';
+    clearTimeout(_flashHideTimer);
+    const hideAfter = ms || (kind === 'interim' ? 1500 : 1800);
+    _flashHideTimer = setTimeout(() => { el.style.display = 'none'; }, hideAfter);
   }
 
   let _diagFrameCounter = 0;

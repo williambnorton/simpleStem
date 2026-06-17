@@ -5381,3 +5381,60 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   cursor: pointer;
 }
 .hc-mic-select:focus { outline: 1px solid var(--color-yellow); }
+
+/* HOLODECK live transcript styling */
+.hc-row-val.interim {
+  color: #f1c40f;
+  font-style: italic;
+}
+
+/* Big heads-up flash banner for what HOLODECK heard. Pops up near the
+   top of the screen for a second or two so the operator can see the
+   recognized command without having to look at the console panel.
+   Three states distinguished by color:
+   - interim (yellow, dashed): live transcript still being recognized
+   - cmd     (green, solid):   final command, dispatched OK
+   - unk     (red, solid):     final command, no match / error */
+.holodeck-flash {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 14px 28px;
+  border-radius: 16px;
+  border: 3px solid #f1c40f;
+  background: rgba(0, 0, 0, 0.88);
+  color: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  max-width: 86vw;
+  text-align: center;
+  pointer-events: none;
+  animation: holodeck-flash-in 140ms ease-out;
+}
+.holodeck-flash.kind-interim {
+  border-style: dashed;
+  border-color: #f1c40f;
+  color: #f1c40f;
+  font-style: italic;
+  font-size: 22px;
+  background: rgba(0, 0, 0, 0.72);
+}
+.holodeck-flash.kind-cmd {
+  border-color: #2ecc71;
+  color: #2ecc71;
+  background: rgba(10, 30, 18, 0.92);
+}
+.holodeck-flash.kind-unk {
+  border-color: #e74c3c;
+  color: #e74c3c;
+  background: rgba(40, 12, 12, 0.92);
+}
+@keyframes holodeck-flash-in {
+  from { transform: translate(-50%, -8px); opacity: 0; }
+  to   { transform: translate(-50%, 0);     opacity: 1; }
+}
