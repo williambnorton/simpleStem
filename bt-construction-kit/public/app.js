@@ -6095,13 +6095,15 @@ function setupEventListeners() {
     });
   }
 
-  // Setlist Controls
-  els.btnClearSetlist.addEventListener('click', clearSetlist);
-  els.setlistStartTime.addEventListener('change', () => {
+  // Setlist Controls — these legacy DOM nodes were removed when the
+  // Setlist tab was replaced with the AI Setlist Builder. Guard each
+  // attach so the boot path doesn't crash on a null reference.
+  if (els.btnClearSetlist) els.btnClearSetlist.addEventListener('click', clearSetlist);
+  if (els.setlistStartTime) els.setlistStartTime.addEventListener('change', () => {
     saveSetlistStartTime();
     calculateSetlistTimes();
   });
-  els.setlistName.addEventListener('input', saveSetlistName);
+  if (els.setlistName) els.setlistName.addEventListener('input', saveSetlistName);
   
   // Mixer faders
   CHANNELS.forEach(chan => {
