@@ -2391,8 +2391,9 @@ select {
 .active-track-star {
   background: transparent;
   border: none;
-  color: var(--text-dim);
+  color: #111;                       /* dark outline for visibility on white */
   font-size: 22px;
+  font-weight: 700;
   line-height: 1;
   padding: 0 8px 0 0;
   cursor: pointer;
@@ -2406,8 +2407,9 @@ select {
 .sls-star {
   background: transparent;
   border: none;
-  color: var(--text-dim);
-  font-size: 13px;
+  color: #111;                       /* dark outline for visibility on white */
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1;
   padding: 0 4px;
   cursor: pointer;
@@ -4747,8 +4749,9 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .song-fav-star {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 0.95rem;
+  color: #111;                       /* dark outline for visibility on white */
+  font-size: 1.05rem;
+  font-weight: 700;
   cursor: pointer;
   padding: 0 3px;
   line-height: 1;

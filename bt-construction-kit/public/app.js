@@ -3588,19 +3588,24 @@ function applyRouting() {
     const s = stripNodes[chan];
     if (!s || !routes.length) return;
     const sorted = [...routes].sort((a, b) => a - b);
-    if (sorted.length === 1) {
+    // Filter out output indices that don't exist on the current device.
+    // When every route is out of range (e.g. a strip whose only target is
+    // an XR18 channel while we're in stereo-only mode), fall back to L+R
+    // so the stem still produces audible output. Without this fallback,
+    // the splitter never connects to anything and the stem is silent
+    // even though its meter shows signal.
+    const inRange = sorted.filter(out => out < outputChannelCount);
+    const effective = inRange.length ? inRange : [0, 1];
+    if (effective.length === 1) {
       // Single channel selected → fold L+R into that channel as mono sum.
-      const out = sorted[0];
-      if (out < outputChannelCount) {
-        try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
-        try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
-      }
+      const out = effective[0];
+      try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
+      try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
     } else {
       // ≥2 channels: even-positioned selections receive L, odd-positioned
-      // receive R. Selection [0,1,2,3,4,5] → L→0,2,4 / R→1,3,5 — exactly the
+      // receive R. Selection [0,1,2,3,4,5] → L→0,2,4 / R→1,3,5 — the
       // "three amps per side from 6 AUX channels" pattern.
-      sorted.forEach((out, i) => {
-        if (out >= outputChannelCount) return;
+      effective.forEach((out, i) => {
         try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
       });
     }
@@ -3629,15 +3634,21 @@ function applyRoutingForStem(chan) {
   const routes = routingMatrix[chan] || [];
   if (!routes.length) return;
   const sorted = [...routes].sort((a, b) => a - b);
-  if (sorted.length === 1) {
-    const out = sorted[0];
-    if (out < outputChannelCount) {
-      try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
-      try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
-    }
+  // Filter out any output indices that don't exist on the current device.
+  // Without this, a stem whose ONLY routes are XR18 channels (e.g. Piano's
+  // home channel 14 = XR18 ch15) goes silent in stereo-only mode -- the
+  // splitter never gets connected to anything reachable. The stem still
+  // has signal (meter shows it) but nothing reaches the destination, so
+  // even +10 dB boost + Solo produces no sound. Fall back to L+R when
+  // every route is out of range.
+  const inRange = sorted.filter(out => out < outputChannelCount);
+  const effective = inRange.length ? inRange : [0, 1];
+  if (effective.length === 1) {
+    const out = effective[0];
+    try { s.splitter.connect(masterMerger, 0, out); } catch (e) {}
+    try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
   } else {
-    sorted.forEach((out, i) => {
-      if (out >= outputChannelCount) return;
+    effective.forEach((out, i) => {
       try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
     });
   }
