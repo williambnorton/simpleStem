@@ -8321,11 +8321,19 @@ async function setupAiSetlistBuilder() {
     } catch (e) { console.warn('[aism] HOLODECK.stop() failed:', e); }
     setAismState('● requesting mic…', 'on');
 
+    // Always request the system default mic, NOT the picker's specific
+    // device. Using { deviceId: { exact: X } } makes Chrome open device
+    // X exclusively on macOS, after which Web Speech's internal capture
+    // returns silent frames -- onstart/onaudiostart/onaudioend cycle
+    // without any onspeechstart. By using { audio: true } both getUserMedia
+    // (VU meter) and SpeechRecognition open the same default device that
+    // Chrome can multiplex. The picker is now purely informational.
+    const constraints = { audio: true };
     let savedMic = '';
     try { savedMic = localStorage.getItem(AISM_KEY) || ''; } catch (e) {}
-    const constraints = savedMic
-      ? { audio: { deviceId: { exact: savedMic } } }
-      : { audio: true };
+    if (savedMic) {
+      console.log('[aism] ignoring saved aiSetlistMicId=' + savedMic.slice(0, 8) + '… to avoid exclusive-open conflict with Web Speech');
+    }
     try {
       micStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
