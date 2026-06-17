@@ -621,52 +621,46 @@
         <section class="setlist-section glass">
           <div class="setlist-header">
             <div class="title-area">
-              <h2>Setlist Planner</h2>
-              <span class="sub" id="setlist-stats-label">0 tracks // 0 min total</span>
-            </div>
-            <div class="setlist-actions">
-              <button id="btn-save-setlist" class="btn-secondary" title="Save current as a manual SetList"><i data-lucide="save"></i> Save</button>
-              <button id="btn-clear-setlist" class="btn-secondary" title="Clear Setlist"><i data-lucide="trash-2"></i> Clear</button>
+              <h2>AI Setlist Builder</h2>
+              <span class="sub">Paste the event details. The AI uses your library and the criteria to build a timed setlist.</span>
             </div>
           </div>
 
-          <!-- Saved SetLists (playlist-synced + manual) maintained by the Librarian -->
-          <div class="setlists-box glass-card">
-            <div class="setlists-box-header">
-              <span class="label"><i data-lucide="list-music"></i> Saved SetLists</span>
-              <button id="btn-refresh-setlists" class="btn-icon" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+          <div class="ai-setlist-builder glass-card">
+            <label for="ai-setlist-prompt" class="ai-setlist-label">
+              <i data-lucide="sparkles"></i> Describe the gig
+              <button id="btn-ai-setlist-mic" class="ai-setlist-mic-btn" type="button" title="Click to dictate the description; click again to stop">
+                <i data-lucide="mic"></i>
+                <span class="ai-mic-label">Speak</span>
+              </button>
+            </label>
+            <textarea id="ai-setlist-prompt" class="ai-setlist-prompt"
+              rows="7"
+              placeholder="Example:&#10;&#10;We have a gig at the Stand Up for Science rally in downtown Palo Alto on July 3rd. We follow speeches and want to keep people around with upbeat, fun, danceable classic rock starting around 6:30PM and playing a few sets until 9PM. No more than 2 Matt songs in a row. Around sunset have Harvest Moon. Finish with AC/DC and Led Zeppelin and other hard rock."></textarea>
+
+            <!-- Chatbot selection — query each in parallel; user picks
+                 the favored output from the results below. Persisted to
+                 localStorage so each operator's preference sticks. -->
+            <div class="ai-bot-row">
+              <span class="ai-bot-row-label">Query:</span>
+              <div id="ai-bot-checkboxes" class="ai-bot-checkboxes"></div>
             </div>
 
-            <!-- Stemming progress (driven by /api/queue; idle when nothing rendering) -->
-            <div id="stem-progress" class="stem-progress" style="display:none;">
-              <div class="stem-progress-row">
-                <span id="stem-progress-label" class="stem-progress-label">Stemming…</span>
-                <span id="stem-progress-count" class="stem-progress-count">0/0</span>
-              </div>
-              <div class="stem-progress-track"><div id="stem-progress-fill" class="stem-progress-fill"></div></div>
-              <span id="stem-progress-now" class="stem-progress-now"></span>
-            </div>
-            <div id="setlists-list" class="setlists-list">
-              <span class="setlists-empty">No saved SetLists yet.</span>
+            <div class="ai-setlist-controls">
+              <button id="btn-ai-setlist-generate" class="btn-secondary ai-setlist-go" type="button" title="Send the prompt to every selected chatbot via the KBM bridge">
+                <i data-lucide="wand-2"></i> Generate Setlist
+              </button>
+              <span id="ai-setlist-status" class="ai-setlist-status"></span>
             </div>
           </div>
 
-          <div class="setlist-name-box glass-card">
-            <span class="label"><i data-lucide="tag"></i> Setlist Name:</span>
-            <input type="text" id="setlist-name" class="glass-select setlist-name-input" placeholder="Untitled Setlist" maxlength="60">
-          </div>
-
-          <div class="setlist-timing-box glass-card">
-            <span class="label"><i data-lucide="clock"></i> Start Time:</span>
-            <input type="time" id="setlist-start-time" class="glass-select time-picker" value="16:00">
-          </div>
-          
-          <div class="setlist-dropzone" id="setlist-songs-container">
-            <div class="empty-state">
-              <i data-lucide="clipboard-list" style="width: 32px; height: 32px;"></i>
-              <p>No tracks added to setlist yet. Use the library "Set" checkboxes to add songs.</p>
-            </div>
-          </div>
+          <!-- Results: one card per selected bot. Each shows that
+               bot's flow rationale, its setlist table, and a Save
+               button that persists THAT bot's setlist as a manual
+               setlist. A "Paste response here" textarea offers a
+               manual fallback when the operator runs the chat
+               themselves instead of via a macro. -->
+          <div id="ai-setlist-results" class="ai-setlist-results" style="display:none;"></div>
         </section>
         </section><!-- /tab-pane:setlist -->
 

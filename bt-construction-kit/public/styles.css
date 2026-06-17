@@ -5466,3 +5466,364 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .clear-solos-btn:active {
   transform: translateY(1px);
 }
+
+/* ── AI Setlist Builder (Setlist tab) ──────────────────────────────────── */
+.ai-setlist-builder {
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.ai-setlist-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text-main);
+}
+.ai-setlist-prompt {
+  width: 100%;
+  min-height: 140px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-main);
+  resize: vertical;
+}
+.ai-setlist-prompt:focus { outline: 2px solid var(--color-yellow); }
+.ai-setlist-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.ai-setlist-go {
+  background: rgba(241, 196, 15, 0.2);
+  border: 1.5px solid var(--color-yellow);
+  color: var(--color-yellow);
+  font-weight: 800;
+  padding: 8px 18px;
+}
+.ai-setlist-go:hover:not(:disabled) {
+  background: rgba(241, 196, 15, 0.35);
+  box-shadow: 0 0 12px rgba(241, 196, 15, 0.4);
+}
+.ai-setlist-go:disabled { opacity: 0.5; cursor: wait; }
+.ai-setlist-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.ai-setlist-status.loading { color: var(--color-yellow); }
+.ai-setlist-status.ok      { color: var(--color-green); font-style: normal; }
+.ai-setlist-status.err     { color: var(--color-red);   font-style: normal; }
+
+.ai-setlist-result {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+.ai-setlist-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.ai-setlist-result-head h3 { margin: 0; font-size: 16px; }
+.ai-setlist-summary { color: var(--text-dim); font-size: 12px; }
+.ai-setlist-rationale {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.04);
+  border-left: 3px solid var(--color-yellow);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 0 4px 4px 0;
+}
+
+.ai-setlist-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.ai-setlist-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ai-setlist-table th,
+.ai-setlist-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.ai-setlist-table th {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  background: rgba(0, 0, 0, 0.04);
+}
+.ai-col-time { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-col-title { font-weight: 600; }
+.ai-col-artist { color: var(--text-muted); }
+.ai-col-singer { font-weight: 700; color: var(--color-yellow); }
+.ai-col-key    { font-variant-numeric: tabular-nums; }
+.ai-col-bpm    { font-variant-numeric: tabular-nums; }
+.ai-col-dur    { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+.ai-setlist-save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 12px;
+}
+.ai-setlist-save-name {
+  flex: 1 1 280px;
+  min-width: 200px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.ai-setlist-save-name:focus { outline: 2px solid var(--color-yellow); }
+.ai-setlist-savebtn {
+  background: rgba(46, 204, 113, 0.18);
+  border: 1px solid rgba(46, 204, 113, 0.5);
+  color: var(--color-green);
+  font-weight: 700;
+  padding: 7px 14px;
+}
+.ai-setlist-savebtn:hover:not(:disabled) {
+  background: rgba(46, 204, 113, 0.3);
+  box-shadow: 0 0 10px rgba(46, 204, 113, 0.35);
+}
+.ai-setlist-save-status { font-size: 12px; color: var(--text-dim); font-style: italic; }
+.ai-setlist-save-status.loading { color: var(--color-yellow); }
+.ai-setlist-save-status.ok      { color: var(--color-green); font-style: normal; }
+.ai-setlist-save-status.err     { color: var(--color-red);   font-style: normal; }
+
+/* AI Setlist Builder v2 — voice mic button on the label */
+.ai-setlist-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+}
+.ai-setlist-mic-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-main);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.ai-setlist-mic-btn:hover {
+  border-color: var(--color-yellow);
+  color: var(--color-yellow);
+}
+.ai-setlist-mic-btn.active {
+  background: rgba(241, 196, 15, 0.25);
+  border-color: var(--color-yellow);
+  color: var(--color-yellow);
+  animation: ai-mic-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ai-mic-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(241, 196, 15, 0.35) inset; }
+  50%      { box-shadow: 0 0 14px rgba(241, 196, 15, 0.75) inset; }
+}
+
+/* Prominent rationale card -- the headliner of the result panel. The
+   band leader reads this to understand why the AI chose these songs in
+   this order. Sits above the row-by-row table. */
+.ai-setlist-rationale-card {
+  background: rgba(241, 196, 15, 0.08);
+  border: 1.5px solid var(--color-yellow);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+}
+.ai-rationale-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--color-yellow);
+  margin-bottom: 8px;
+}
+.ai-setlist-rationale {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-main);
+  white-space: pre-wrap;
+}
+/* Per-row "Why here" reason column (legacy v2 — no longer rendered;
+   styles kept in case the column comes back). */
+.ai-col-reason-head { white-space: nowrap; }
+.ai-col-reason {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+/* ── AI Setlist Builder v3: multi-bot ─────────────────────────────── */
+
+/* Chatbot checkbox row above the textarea. Each bot is a chip-style
+   checkbox; checked = highlighted in yellow to mirror the rationale
+   accent color. */
+.ai-bot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+}
+.ai-bot-row-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ai-bot-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ai-bot-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.ai-bot-checkbox:hover { background: rgba(255,255,255,0.06); }
+.ai-bot-checkbox input { margin: 0; cursor: pointer; }
+.ai-bot-checkbox:has(input:checked) {
+  background: rgba(241, 196, 15, 0.14);
+  border-color: var(--color-yellow);
+  color: var(--text-main);
+}
+.ai-bot-name { font-weight: 600; }
+
+/* Per-bot result cards. One section per bot we asked, rendered in
+   the order the operator picked. Each card shows status badge,
+   rationale, setlist table, and its own Save button so the operator
+   can persist whichever bot's plan they prefer. */
+.ai-setlist-results {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 14px;
+}
+.ai-bot-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.ai-bot-card.ready  { border-color: var(--color-green); }
+.ai-bot-card.error  { border-color: var(--color-red);   }
+.ai-bot-card.pending { border-color: var(--border-subtle); opacity: 0.85; }
+.ai-bot-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ai-bot-card-head h3 { margin: 0; font-size: 16px; }
+.ai-bot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.ai-bot-badge.pending { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+.ai-bot-badge.ok       { background: rgba( 30, 200, 120, 0.15); color: var(--color-green); }
+.ai-bot-badge.err      { background: rgba(220,  70,  70, 0.15); color: var(--color-red);   }
+.ai-bot-badge i { width: 14px; height: 14px; }
+
+.ai-bot-summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.ai-bot-pending-msg, .ai-bot-error-msg {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+.ai-bot-error-msg { color: var(--color-red); }
+.ai-bot-raw {
+  background: rgba(255,255,255,0.04);
+  padding: 8px 12px;
+  border-radius: 6px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* Manual-paste fallback (collapsed by default while pending,
+   auto-expanded on parse error). */
+.ai-bot-paste-fallback { margin-top: 8px; font-size: 12px; }
+.ai-bot-paste-fallback summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+.ai-bot-paste {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  padding: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-main);
+  resize: vertical;
+}
+.ai-bot-paste-btn { margin-top: 6px; }
+.ai-bot-paste-status {
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}

@@ -246,6 +246,7 @@ window.addEventListener('DOMContentLoaded', () => {
   try { initVisualizer(null); } catch (e) { console.warn('[viz] eager init failed:', e); }
   try { setupSectionDividerKeyboard(); } catch (e) { console.warn('[section] kbd setup failed:', e); }
   setupTabs();
+  setupAiSetlistBuilder();
   setupDrumLoopsTab();
   setupLoopSequenceUI();
   setupGigMode();
@@ -8120,4 +8121,407 @@ function setupMidiUI() {
     automationLastTime = now;
     if (anyFired) renderAutomationLane();
   }, 33);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// AI Setlist Builder (v3 — multi-bot)
+//
+// Operator types or dictates a gig description, picks which chatbots
+// to query via checkboxes (Claude / ChatGPT / Gemini / DeepSeek /
+// Perplexity / Grok 3 — all on by default, persisted to localStorage),
+// then clicks Generate. The server writes the prompt to disk and kicks
+// off a Keyboard Maestro macro that drives each selected bot's web UI
+// in Chrome. The browser polls every 4 s and renders each bot's reply
+// in its own card as it lands. Each card has its own Save button so
+// the operator can pick whichever flow they like best.
+//
+// Manual-paste fallback: each pending bot card carries a textarea +
+// Submit button. If the operator doesn't have a macro for that bot
+// (or it's misbehaving), they can run the chat themselves, paste the
+// reply into the textarea, hit Submit. The portal writes it to the
+// per-bot response file and the next poll picks it up like a macro
+// would have.
+async function setupAiSetlistBuilder() {
+  const promptEl    = document.getElementById('ai-setlist-prompt');
+  const goBtn       = document.getElementById('btn-ai-setlist-generate');
+  const micBtn      = document.getElementById('btn-ai-setlist-mic');
+  const statusEl    = document.getElementById('ai-setlist-status');
+  const checkboxesEl= document.getElementById('ai-bot-checkboxes');
+  const resultsEl   = document.getElementById('ai-setlist-results');
+  if (!promptEl || !goBtn || !checkboxesEl || !resultsEl) return;
+
+  // ── Chatbot checkboxes ────────────────────────────────────────────
+  // Fetch the supported bot list from the server (single source of
+  // truth) and render checkboxes. Selection persists to localStorage.
+  const BOTS_KEY = 'simpleStem.aiSetlistBots';
+  let bots = [];
+  try {
+    const r = await fetch('/api/setlist/ai-bots');
+    const d = await r.json();
+    bots = d.bots || [];
+  } catch (e) { console.warn('[ai-setlist] bot list fetch failed:', e); }
+  if (!bots.length) {
+    bots = [
+      { id: 'claude',     name: 'Claude' },
+      { id: 'chatgpt',    name: 'ChatGPT' },
+      { id: 'gemini',     name: 'Gemini' },
+      { id: 'deepseek',   name: 'DeepSeek' },
+      { id: 'perplexity', name: 'Perplexity' },
+      { id: 'grok',       name: 'Grok 3' },
+    ];
+  }
+  // Load saved selection; default to all selected.
+  let selected;
+  try {
+    const raw = localStorage.getItem(BOTS_KEY);
+    selected = raw ? JSON.parse(raw) : null;
+  } catch (e) { selected = null; }
+  if (!Array.isArray(selected) || !selected.length) selected = bots.map(b => b.id);
+  checkboxesEl.innerHTML = bots.map(b => `
+    <label class="ai-bot-checkbox">
+      <input type="checkbox" value="${b.id}" ${selected.includes(b.id) ? 'checked' : ''}>
+      <span class="ai-bot-name">${escapeHtml(b.name)}</span>
+    </label>
+  `).join('');
+  checkboxesEl.addEventListener('change', () => {
+    const chosen = Array.from(checkboxesEl.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+    try { localStorage.setItem(BOTS_KEY, JSON.stringify(chosen)); } catch (e) {}
+  });
+  function readSelectedBots() {
+    return Array.from(checkboxesEl.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+  }
+
+  let pollTimer = null;
+  let currentJobBots = [];
+
+  // ── Voice input for the prompt textarea ────────────────────────────
+  // Click the mic button → dictate → click again to stop. Final results
+  // are appended to the textarea. Uses the same Web Speech API HOLODECK
+  // uses, but with NO wake word -- the operator pressed a button so the
+  // intent is unambiguous.
+  let micRecognition = null;
+  let micActive = false;
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        statusEl.textContent = 'Voice recognition not supported in this browser.';
+        statusEl.className = 'ai-setlist-status err';
+        return;
+      }
+      if (micActive) {
+        try { micRecognition && micRecognition.stop(); } catch (e) {}
+        return;
+      }
+      micRecognition = new SR();
+      micRecognition.continuous = true;
+      micRecognition.interimResults = true;
+      micRecognition.lang = 'en-US';
+      let committedLen = promptEl.value.length;
+      let lastInterim = '';
+      micRecognition.onresult = (ev) => {
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const r = ev.results[i];
+          const txt = (r[0].transcript || '').trim();
+          if (r.isFinal) {
+            const sep = promptEl.value.length && !promptEl.value.endsWith(' ') ? ' ' : '';
+            promptEl.value = promptEl.value + sep + txt;
+            committedLen = promptEl.value.length;
+            lastInterim = '';
+          } else {
+            const sep = committedLen && promptEl.value[committedLen - 1] !== ' ' ? ' ' : '';
+            promptEl.value = promptEl.value.slice(0, committedLen) + sep + txt;
+            lastInterim = txt;
+          }
+        }
+        promptEl.scrollTop = promptEl.scrollHeight;
+      };
+      micRecognition.onend = () => {
+        micActive = false;
+        micBtn.classList.remove('active');
+        const lab = micBtn.querySelector('.ai-mic-label');
+        if (lab) lab.textContent = 'Speak';
+      };
+      micRecognition.onerror = (ev) => {
+        console.warn('[ai-setlist mic]', ev.error);
+      };
+      micRecognition.start();
+      micActive = true;
+      micBtn.classList.add('active');
+      const lab = micBtn.querySelector('.ai-mic-label');
+      if (lab) lab.textContent = 'Listening…';
+    });
+  }
+
+  // ── Generate (fires off one KBM job per selected bot) ──────────────
+  goBtn.addEventListener('click', async () => {
+    const description = (promptEl.value || '').trim();
+    if (!description) {
+      setStatus('Type or dictate a description first.', 'err');
+      return;
+    }
+    const chosen = readSelectedBots();
+    if (!chosen.length) {
+      setStatus('Select at least one chatbot to query.', 'err');
+      return;
+    }
+    cancelPolling();
+    goBtn.disabled = true;
+    setStatus(`Submitting to ${chosen.length} bot(s) via the KBM bridge…`, 'loading');
+    currentJobBots = chosen.slice();
+    // Don't render cards yet — wait until we have a jobId so the paste
+    // fallback in each pending card actually points somewhere.
+    try {
+      const r = await fetch('/api/setlist/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, bots: chosen }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setStatus('✗ ' + (d.error || 'submit failed'), 'err');
+        goBtn.disabled = false;
+        return;
+      }
+      const jobId = d.job_id;
+      setStatus(`Job ${jobId} submitted to ${chosen.length} bot(s) (library ${d.library_size} songs). Waiting…`, 'loading');
+      attachJobToCards(jobId);
+      pollTimer = setInterval(() => pollOnce(jobId), 4000);
+      pollOnce(jobId);
+    } catch (e) {
+      setStatus('✗ ' + e.message, 'err');
+      goBtn.disabled = false;
+    }
+  });
+
+  async function pollOnce(jobId) {
+    try {
+      const r = await fetch('/api/setlist/ai-generate/poll/' + encodeURIComponent(jobId));
+      const d = await r.json();
+      // d = { overall: 'pending'|'partial'|'ready', elapsed_sec, library_size, bots: { id: {status, ...} } }
+      renderResults(d, currentJobBots, jobId);
+      if (d.overall === 'ready' || d.overall === 'failed') {
+        cancelPolling();
+        goBtn.disabled = false;
+        const readyCount = Object.values(d.bots || {}).filter(b => b.status === 'ready').length;
+        setStatus(`✓ ${readyCount}/${currentJobBots.length} bot(s) returned a setlist in ${d.elapsed_sec}s. Pick the one you like.`, readyCount ? 'ok' : 'err');
+      } else if (d.overall === 'partial') {
+        const readyCount = Object.values(d.bots || {}).filter(b => b.status === 'ready').length;
+        setStatus(`${readyCount}/${currentJobBots.length} ready (${d.elapsed_sec}s) — still waiting on others…`, 'loading');
+      } else {
+        setStatus(`Waiting for replies… (${d.elapsed_sec}s)`, 'loading');
+      }
+    } catch (e) {
+      console.warn('[ai-setlist poll]', e);
+    }
+  }
+  function cancelPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  // ── Render the per-bot result cards ────────────────────────────────
+  // `botStatusMap` may be null (initial pending render) or the server's
+  // poll payload. `botIds` is the list of bots we asked for; we always
+  // render a card per bot so the order stays stable.
+  function renderResults(d, botIds, jobId) {
+    if (!botIds || !botIds.length) {
+      resultsEl.style.display = 'none';
+      resultsEl.innerHTML = '';
+      return;
+    }
+    const botMap = (d && d.bots) || {};
+    const elapsed = d ? d.elapsed_sec : 0;
+    const byId = Object.fromEntries(bots.map(b => [b.id, b]));
+    resultsEl.style.display = '';
+    resultsEl.innerHTML = botIds.map(id => {
+      const meta = byId[id] || { id, name: id };
+      const state = botMap[id] || { status: 'pending' };
+      return renderBotCard(meta, state, elapsed, jobId);
+    }).join('');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
+    // Wire each card
+    botIds.forEach(id => {
+      const state = botMap[id] || { status: 'pending' };
+      wireBotCard(id, state, jobId);
+    });
+  }
+
+  function renderBotCard(meta, state, elapsed, jobId) {
+    const status = state.status || 'pending';
+    let badge = '<span class="ai-bot-badge pending"><i data-lucide="loader"></i> Waiting</span>';
+    if (status === 'ready') badge = '<span class="ai-bot-badge ok"><i data-lucide="check-circle"></i> Ready</span>';
+    else if (status === 'error') badge = '<span class="ai-bot-badge err"><i data-lucide="alert-triangle"></i> Failed</span>';
+
+    let body = '';
+    if (status === 'pending') {
+      body = `
+        <div class="ai-bot-pending">
+          <p class="ai-bot-pending-msg">${jobId ? `Waiting for ${escapeHtml(meta.name)} to reply (${elapsed}s elapsed)…` : 'Will start when you click Generate.'}</p>
+          ${jobId ? `
+            <details class="ai-bot-paste-fallback">
+              <summary>Or paste the reply yourself</summary>
+              <textarea class="ai-bot-paste" data-bot="${meta.id}" rows="6" placeholder="Paste the chatbot's full reply (JSON block included) and click Submit."></textarea>
+              <button class="btn-secondary ai-bot-paste-btn" data-bot="${meta.id}" type="button">Submit pasted reply</button>
+              <span class="ai-bot-paste-status" data-bot="${meta.id}"></span>
+            </details>` : ''}
+        </div>`;
+    } else if (status === 'error') {
+      body = `
+        <div class="ai-bot-error">
+          <p class="ai-bot-error-msg">${escapeHtml(state.error || 'Reply could not be parsed.')}</p>
+          ${state.raw ? `<details><summary>Raw reply (first 800 chars)</summary><pre class="ai-bot-raw">${escapeHtml(state.raw)}</pre></details>` : ''}
+          ${jobId ? `
+            <details class="ai-bot-paste-fallback" open>
+              <summary>Paste a corrected reply</summary>
+              <textarea class="ai-bot-paste" data-bot="${meta.id}" rows="6" placeholder="Paste the JSON-bearing reply and click Submit."></textarea>
+              <button class="btn-secondary ai-bot-paste-btn" data-bot="${meta.id}" type="button">Submit pasted reply</button>
+              <span class="ai-bot-paste-status" data-bot="${meta.id}"></span>
+            </details>` : ''}
+        </div>`;
+    } else {
+      // ready
+      const setlist = state.setlist || [];
+      const rationale = (state.rationale || '') + (state.dropped_unknown_count
+        ? ` (Note: dropped ${state.dropped_unknown_count} song(s) the AI proposed that aren't in the library.)`
+        : '');
+      body = `
+        <div class="ai-bot-summary">≈ ${state.total_minutes || 0} min total · ${setlist.length} songs</div>
+        <div class="ai-setlist-rationale-card">
+          <div class="ai-rationale-label"><i data-lucide="book-open-text"></i> Flow rationale</div>
+          <p class="ai-setlist-rationale">${escapeHtml(rationale)}</p>
+        </div>
+        <div class="ai-setlist-table-wrap">
+          <table class="ai-setlist-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Song</th><th>Artist</th><th>Singer</th>
+                <th>Key</th><th>BPM</th><th>Dur</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${setlist.map(s => `
+                <tr>
+                  <td class="ai-col-time">${escapeHtml(s.time || '')}</td>
+                  <td class="ai-col-title">${escapeHtml(s.title || '')}</td>
+                  <td class="ai-col-artist">${escapeHtml(s.artist || '')}</td>
+                  <td class="ai-col-singer">${escapeHtml(s.singer || '')}</td>
+                  <td class="ai-col-key">${escapeHtml(s.key || '')}</td>
+                  <td class="ai-col-bpm">${s.bpm != null ? s.bpm : '—'}</td>
+                  <td class="ai-col-dur">${s.duration_min != null ? s.duration_min : '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="ai-setlist-save">
+          <input type="text" class="ai-setlist-save-name" data-bot="${meta.id}" placeholder="Save as… (e.g. '${escapeHtml(meta.name)} — Stand Up for Science')" maxlength="80">
+          <button class="btn-secondary ai-setlist-savebtn" data-bot="${meta.id}" type="button">
+            <i data-lucide="save"></i> Save ${escapeHtml(meta.name)}'s setlist
+          </button>
+          <span class="ai-setlist-save-status" data-bot="${meta.id}"></span>
+        </div>`;
+    }
+    return `
+      <section class="ai-bot-card ${status}" data-bot="${meta.id}">
+        <header class="ai-bot-card-head">
+          <h3>${escapeHtml(meta.name)}</h3>
+          ${badge}
+        </header>
+        ${body}
+      </section>`;
+  }
+
+  function attachJobToCards(jobId) {
+    // After generate, re-render so cards know which jobId to send
+    // paste requests to. We call renderResults again with no payload,
+    // which just rebuilds pending cards but now with jobId wired in.
+    renderResults(null, currentJobBots, jobId);
+  }
+
+  function wireBotCard(botId, state, jobId) {
+    if (state.status === 'ready') {
+      const saveBtn  = resultsEl.querySelector(`.ai-setlist-savebtn[data-bot="${botId}"]`);
+      const nameEl2  = resultsEl.querySelector(`.ai-setlist-save-name[data-bot="${botId}"]`);
+      const statusEl2= resultsEl.querySelector(`.ai-setlist-save-status[data-bot="${botId}"]`);
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          const songs = (state.setlist || []).map(s => s.song_base).filter(Boolean);
+          if (!songs.length) {
+            statusEl2.textContent = 'Nothing to save.';
+            statusEl2.className = 'ai-setlist-save-status err';
+            return;
+          }
+          const botName = (bots.find(b => b.id === botId) || {}).name || botId;
+          const title = (nameEl2.value || '').trim() || `${botName} setlist ${new Date().toLocaleDateString()}`;
+          saveBtn.disabled = true;
+          statusEl2.textContent = 'Saving…';
+          statusEl2.className = 'ai-setlist-save-status loading';
+          try {
+            const r = await fetch('/api/setlists', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title, songs }),
+            });
+            const d = await r.json();
+            if (!r.ok) {
+              statusEl2.textContent = '✗ ' + (d.error || 'failed');
+              statusEl2.className = 'ai-setlist-save-status err';
+              return;
+            }
+            statusEl2.textContent = `✓ Saved as "${title}" — open Manual Setlists to play.`;
+            statusEl2.className = 'ai-setlist-save-status ok';
+            try { refreshGigList(); } catch (e) {}
+          } catch (e) {
+            statusEl2.textContent = '✗ ' + e.message;
+            statusEl2.className = 'ai-setlist-save-status err';
+          } finally {
+            saveBtn.disabled = false;
+          }
+        });
+      }
+    }
+    // Manual paste fallback wiring (present for pending + error states)
+    if (jobId && (state.status === 'pending' || state.status === 'error')) {
+      const pasteBtn   = resultsEl.querySelector(`.ai-bot-paste-btn[data-bot="${botId}"]`);
+      const pasteArea  = resultsEl.querySelector(`.ai-bot-paste[data-bot="${botId}"]`);
+      const pasteStatus= resultsEl.querySelector(`.ai-bot-paste-status[data-bot="${botId}"]`);
+      if (pasteBtn && pasteArea) {
+        pasteBtn.addEventListener('click', async () => {
+          const text = (pasteArea.value || '').trim();
+          if (!text) {
+            pasteStatus.textContent = 'Paste the reply first.';
+            return;
+          }
+          pasteBtn.disabled = true;
+          pasteStatus.textContent = 'Submitting…';
+          try {
+            const r = await fetch(`/api/setlist/ai-generate/paste/${encodeURIComponent(jobId)}/${encodeURIComponent(botId)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            });
+            const d = await r.json();
+            if (!r.ok) {
+              pasteStatus.textContent = '✗ ' + (d.error || 'submit failed');
+              return;
+            }
+            pasteStatus.textContent = '✓ Got it — refreshing on next poll.';
+            // Trigger an immediate poll so the card flips to ready right away
+            pollOnce(jobId);
+          } catch (e) {
+            pasteStatus.textContent = '✗ ' + e.message;
+          } finally {
+            pasteBtn.disabled = false;
+          }
+        });
+      }
+    }
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'ai-setlist-status ' + (cls || '');
+  }
 }
