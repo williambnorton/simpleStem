@@ -399,6 +399,11 @@
             <div class="mixer-header">
               <h3 class="section-title"><i data-lucide="sliders"></i> Stem Mixer Console</h3>
               <!-- Pitch Fix pane moved out to sit next to LOOPER (06/2026). -->
+              <!-- Master SOLO clear: enabled only when at least one strip is
+                   soloed. Click to clear every solo at once. Sits next to
+                   the collapse arrow so it lives with the other mixer-level
+                   controls. -->
+              <button id="btn-clear-all-solos" class="btn-mixer-master clear-solos-btn" type="button" disabled title="No solos active">SOLO</button>
               <!-- Collapse-mixer toggle: clicking this shrinks the entire top
                    pane down to just title / BPM / key / drum-pattern, so the
                    library and gig sidebar get more room. -->

@@ -5245,6 +5245,18 @@ function toggleLooping() {
 }
 
 // Mixer Math faders
+// Sync the master "Clear all solos" button enabled/disabled state to
+// whether any strip is currently soloed. Greyed out (disabled, low
+// opacity) when zero solos are active; lit-orange when ≥ 1 is.
+function updateClearAllSolosBtn() {
+  const btn = document.getElementById('btn-clear-all-solos');
+  if (!btn) return;
+  const anyActive = mixerState && mixerState.soloed && Object.values(mixerState.soloed).some(Boolean);
+  btn.disabled = !anyActive;
+  btn.classList.toggle('armed', anyActive);
+  btn.title = anyActive ? 'Click to clear every solo' : 'No solos active';
+}
+
 function applyMixerVolumes() {
   // M4A playback uses the drums element as a single-track carrier — bypass
   // the multitrack mixer (mute/solo/faders) so leftover stems state can't
@@ -6136,8 +6148,32 @@ function setupEventListeners() {
       soloBtn.classList.toggle('active', mixerState.soloed[chan]);
       applyMixerVolumes();
       saveMixerState();
+      updateClearAllSolosBtn();
     });
   });
+
+  // Master SOLO clear: one-click "drop every solo." Enabled only while
+  // at least one strip is soloed; otherwise greyed out. Lives in the
+  // mixer-header row next to the collapse arrow so it sits with the
+  // mixer-level (not strip-level) controls.
+  const clearSolosBtn = document.getElementById('btn-clear-all-solos');
+  if (clearSolosBtn) {
+    clearSolosBtn.addEventListener('click', () => {
+      let cleared = 0;
+      Object.keys(mixerState.soloed).forEach(chan => {
+        if (mixerState.soloed[chan]) cleared++;
+        mixerState.soloed[chan] = false;
+        const b = document.getElementById(`solo-${chan}`);
+        if (b) b.classList.remove('active');
+      });
+      if (cleared) {
+        applyMixerVolumes();
+        saveMixerState();
+      }
+      updateClearAllSolosBtn();
+    });
+    updateClearAllSolosBtn();
+  }
   
   // Reset Faders button removed per Bill — kept null-guard in case any other
   // call site still references btnResetMixer (none currently). Faders stay

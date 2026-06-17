@@ -5438,3 +5438,38 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   from { transform: translate(-50%, -8px); opacity: 0; }
   to   { transform: translate(-50%, 0);     opacity: 1; }
 }
+
+/* Master SOLO clear button at the top of the Stem Mixer Console. Sits
+   next to the collapse arrow. Greyed out when no strip is currently
+   soloed; lit orange when at least one is. One click drops every solo. */
+.clear-solos-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 5px 14px;
+  margin-right: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: not-allowed;
+  transition: var(--transition-smooth);
+}
+.clear-solos-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.clear-solos-btn.armed {
+  background: rgba(241, 196, 15, 0.22);
+  color: #f1c40f;
+  border-color: #f1c40f;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(241, 196, 15, 0.35);
+  pointer-events: auto;
+  opacity: 1;
+}
+.clear-solos-btn.armed:hover {
+  background: rgba(241, 196, 15, 0.32);
+  box-shadow: 0 0 12px rgba(241, 196, 15, 0.5);
+}
