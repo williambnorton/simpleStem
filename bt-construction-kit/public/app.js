@@ -8196,62 +8196,235 @@ async function setupAiSetlistBuilder() {
   let pollTimer = null;
   let currentJobBots = [];
 
-  // ── Voice input for the prompt textarea ────────────────────────────
-  // Click the mic button → dictate → click again to stop. Final results
-  // are appended to the textarea. Uses the same Web Speech API HOLODECK
-  // uses, but with NO wake word -- the operator pressed a button so the
-  // intent is unambiguous.
+  // ── Voice input + microphone panel ─────────────────────────────────
+  // Two parallel mic captures, same pattern HOLODECK uses:
+  //
+  //   (a) navigator.mediaDevices.getUserMedia → AudioContext → AnalyserNode
+  //       drives the VU meter, RMS/peak readouts, AudioCtx state, stream
+  //       state — proves the system is HEARING the operator even when the
+  //       speech engine is misbehaving.
+  //
+  //   (b) Web Speech API SpeechRecognition handles the actual transcription;
+  //       interim results stream into the "Heard" line live, final results
+  //       commit into the prompt textarea.
+  //
+  // Mic device picker writes to its own localStorage key (aiSetlistMicId)
+  // so the operator can use a different mic here than HOLODECK uses.
+  const panelEl   = document.getElementById('aism-panel');
+  const stateEl   = document.getElementById('aism-state');
+  const micSelect = document.getElementById('aism-mic-select');
+  const vuEl      = document.getElementById('aism-vu');
+  const vuDbEl    = document.getElementById('aism-vu-db');
+  const rmsEl     = document.getElementById('aism-rms');
+  const peakRawEl = document.getElementById('aism-peak');
+  const streamEl  = document.getElementById('aism-stream');
+  const actxEl    = document.getElementById('aism-actx');
+  const heardEl   = document.getElementById('aism-heard');
+  const AISM_KEY  = 'aiSetlistMicId';
+  const AISM_VU_SEGMENTS = 20;
+
+  if (vuEl && !vuEl.children.length) {
+    vuEl.innerHTML = Array.from({ length: AISM_VU_SEGMENTS },
+      (_, i) => `<span class="aism-vu-seg" data-i="${i}"></span>`).join('');
+  }
+
+  async function populateAismMicList() {
+    if (!micSelect) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      let saved = '';
+      try { saved = localStorage.getItem(AISM_KEY) || ''; } catch (e) {}
+      micSelect.innerHTML = '<option value="">(default)</option>' + mics.map((d, i) => {
+        const label = (d.label || `microphone ${i + 1}`).replace(/[<>"&]/g, '');
+        const selected = d.deviceId === saved ? ' selected' : '';
+        return `<option value="${d.deviceId}"${selected}>${label}</option>`;
+      }).join('');
+    } catch (e) { console.warn('[ai-setlist mic] enumerateDevices failed:', e); }
+  }
+
   let micRecognition = null;
-  let micActive = false;
-  if (micBtn) {
-    micBtn.addEventListener('click', () => {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        statusEl.textContent = 'Voice recognition not supported in this browser.';
-        statusEl.className = 'ai-setlist-status err';
-        return;
+  let micActive      = false;
+  let micStream      = null;
+  let micAudioCtx    = null;
+  let micAnalyser    = null;
+  let micRAF         = 0;
+  let micRestartReq  = false;
+  let committedLen   = 0;
+  let _diagFrame     = 0;
+
+  function setAismState(text, cls) {
+    if (!stateEl) return;
+    stateEl.textContent = text;
+    stateEl.className = 'aism-state ' + (cls || '');
+  }
+  function setAismVU(level) {
+    if (!vuEl) return;
+    const segs = vuEl.querySelectorAll('.aism-vu-seg');
+    const lit = Math.round(level * AISM_VU_SEGMENTS);
+    segs.forEach((s, i) => s.classList.toggle('lit', i < lit));
+    if (vuDbEl) {
+      const db = level > 0.001 ? Math.max(-40, Math.min(0, 20 * Math.log10(level))).toFixed(0) : null;
+      vuDbEl.textContent = db === null ? '-∞' : (db + ' dB');
+    }
+  }
+  function drawAismMeter() {
+    if (!micAnalyser) return;
+    const data = new Uint8Array(micAnalyser.frequencyBinCount);
+    micAnalyser.getByteTimeDomainData(data);
+    let sum = 0, peakRaw = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+      const av = Math.abs(data[i] - 128);
+      if (av > peakRaw) peakRaw = av;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    const level = Math.min(1, rms * 4);
+    setAismVU(level);
+    // Slow the numeric readouts so they're legible (~4 Hz).
+    if ((_diagFrame++ & 15) === 0) {
+      if (rmsEl)     rmsEl.textContent = rms.toFixed(3);
+      if (peakRawEl) peakRawEl.textContent = String(peakRaw);
+      if (actxEl)    actxEl.textContent = micAudioCtx ? micAudioCtx.state : '—';
+      if (streamEl && micStream) {
+        const t = micStream.getAudioTracks()[0];
+        streamEl.textContent = t
+          ? `${t.readyState} · ${(t.label || '(no label)').slice(0, 32)}${t.muted ? ' · OS-muted' : ''}`
+          : 'no track';
       }
-      if (micActive) {
-        try { micRecognition && micRecognition.stop(); } catch (e) {}
-        return;
+    }
+    micRAF = requestAnimationFrame(drawAismMeter);
+  }
+
+  async function startAismMic() {
+    if (micActive) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setStatus('Voice recognition not supported in this browser.', 'err');
+      return;
+    }
+    if (panelEl) panelEl.style.display = '';
+    setAismState('● requesting mic…', 'on');
+
+    let savedMic = '';
+    try { savedMic = localStorage.getItem(AISM_KEY) || ''; } catch (e) {}
+    const constraints = savedMic
+      ? { audio: { deviceId: { exact: savedMic } } }
+      : { audio: true };
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      console.warn('[ai-setlist mic] getUserMedia failed:', e);
+      setAismState('✗ mic blocked', 'err');
+      setStatus('Microphone permission denied or device unavailable.', 'err');
+      return;
+    }
+    populateAismMicList();
+
+    try {
+      micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (micAudioCtx.state === 'suspended') {
+        try { await micAudioCtx.resume(); } catch (e) {}
       }
-      micRecognition = new SR();
-      micRecognition.continuous = true;
-      micRecognition.interimResults = true;
-      micRecognition.lang = 'en-US';
-      let committedLen = promptEl.value.length;
-      let lastInterim = '';
-      micRecognition.onresult = (ev) => {
-        for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const r = ev.results[i];
-          const txt = (r[0].transcript || '').trim();
-          if (r.isFinal) {
-            const sep = promptEl.value.length && !promptEl.value.endsWith(' ') ? ' ' : '';
-            promptEl.value = promptEl.value + sep + txt;
-            committedLen = promptEl.value.length;
-            lastInterim = '';
-          } else {
-            const sep = committedLen && promptEl.value[committedLen - 1] !== ' ' ? ' ' : '';
-            promptEl.value = promptEl.value.slice(0, committedLen) + sep + txt;
-            lastInterim = txt;
+      const src = micAudioCtx.createMediaStreamSource(micStream);
+      micAnalyser = micAudioCtx.createAnalyser();
+      micAnalyser.fftSize = 256;
+      micAnalyser.smoothingTimeConstant = 0.5;
+      src.connect(micAnalyser);
+      drawAismMeter();
+    } catch (e) { console.warn('[ai-setlist mic] meter init failed:', e); }
+
+    // Speech recognition. Interim results stream into the "Heard" line
+    // live so the operator sees what the engine thinks they're saying.
+    // Only final results commit into the prompt textarea.
+    committedLen = promptEl.value.length;
+    micRecognition = new SR();
+    micRecognition.continuous     = true;
+    micRecognition.interimResults = true;
+    micRecognition.lang           = 'en-US';
+    micRecognition.onresult = (ev) => {
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        const txt = (r[0].transcript || '').trim();
+        if (r.isFinal) {
+          const sep = promptEl.value.length && !promptEl.value.endsWith(' ') ? ' ' : '';
+          promptEl.value = promptEl.value + sep + txt;
+          committedLen = promptEl.value.length;
+          if (heardEl) {
+            heardEl.textContent = txt;
+            heardEl.classList.remove('interim');
+          }
+        } else {
+          const sep = committedLen && promptEl.value[committedLen - 1] !== ' ' ? ' ' : '';
+          promptEl.value = promptEl.value.slice(0, committedLen) + sep + txt;
+          if (heardEl) {
+            heardEl.textContent = txt + ' …';
+            heardEl.classList.add('interim');
           }
         }
-        promptEl.scrollTop = promptEl.scrollHeight;
-      };
-      micRecognition.onend = () => {
-        micActive = false;
-        micBtn.classList.remove('active');
-        const lab = micBtn.querySelector('.ai-mic-label');
-        if (lab) lab.textContent = 'Speak';
-      };
-      micRecognition.onerror = (ev) => {
-        console.warn('[ai-setlist mic]', ev.error);
-      };
-      micRecognition.start();
-      micActive = true;
-      micBtn.classList.add('active');
+      }
+      promptEl.scrollTop = promptEl.scrollHeight;
+    };
+    micRecognition.onerror = (ev) => {
+      console.warn('[ai-setlist mic]', ev.error);
+      setAismState('✗ ' + (ev.error || 'recognition error'), 'err');
+    };
+    // Web Speech auto-stops after a silent pause; if the operator is
+    // still in "listening" mode, transparently restart so they don't have
+    // to keep clicking.
+    micRecognition.onend = () => {
+      if (micActive && micRestartReq) {
+        setTimeout(() => { try { micRecognition && micRecognition.start(); } catch (e) {} }, 200);
+      }
+    };
+    try { micRecognition.start(); }
+    catch (e) { console.warn('[ai-setlist mic] start failed:', e); }
+
+    micActive = true;
+    micRestartReq = true;
+    micBtn.classList.add('active');
+    const lab = micBtn.querySelector('.ai-mic-label');
+    if (lab) lab.textContent = 'Listening…';
+    setAismState('● listening', 'on');
+  }
+
+  function stopAismMic() {
+    micActive = false;
+    micRestartReq = false;
+    try { micRecognition && micRecognition.stop(); } catch (e) {}
+    try { micStream && micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { micAudioCtx && micAudioCtx.close(); } catch (e) {}
+    cancelAnimationFrame(micRAF);
+    micRecognition = null;
+    micStream      = null;
+    micAudioCtx    = null;
+    micAnalyser    = null;
+    setAismVU(0);
+    if (micBtn) {
+      micBtn.classList.remove('active');
       const lab = micBtn.querySelector('.ai-mic-label');
-      if (lab) lab.textContent = 'Listening…';
+      if (lab) lab.textContent = 'Speak';
+    }
+    setAismState('○ stopped', '');
+  }
+
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      if (micActive) stopAismMic();
+      else startAismMic();
+    });
+  }
+
+  if (micSelect) {
+    micSelect.addEventListener('change', async (e) => {
+      const deviceId = e.target.value;
+      try { localStorage.setItem(AISM_KEY, deviceId); } catch (er) {}
+      if (micActive) {
+        stopAismMic();
+        await new Promise(r => setTimeout(r, 150));
+        startAismMic();
+      }
     });
   }
 

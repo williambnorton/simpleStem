@@ -638,6 +638,46 @@
               rows="7"
               placeholder="Example:&#10;&#10;We have a gig at the Stand Up for Science rally in downtown Palo Alto on July 3rd. We follow speeches and want to keep people around with upbeat, fun, danceable classic rock starting around 6:30PM and playing a few sets until 9PM. No more than 2 Matt songs in a row. Around sunset have Harvest Moon. Finish with AC/DC and Led Zeppelin and other hard rock."></textarea>
 
+            <!-- Microphone panel — opened by the Speak button above. Same
+                 diagnostic surface as HOLODECK's console (mic picker, VU
+                 meter, RMS/peak readouts, stream + actx state) so the
+                 operator can confirm the system is HEARING them even when
+                 the transcription engine is slow or wrong. Hidden until
+                 Speak is clicked the first time. -->
+            <div id="aism-panel" class="aism-panel" style="display:none;">
+              <div class="aism-head">
+                <span class="aism-title"><i data-lucide="mic"></i> Microphone</span>
+                <span class="aism-state" id="aism-state">○ idle</span>
+              </div>
+              <div class="aism-diag">
+                <div class="aism-diag-row">
+                  <span class="aism-key">Mic</span>
+                  <select id="aism-mic-select" class="aism-mic-select" title="Switch microphone input">
+                    <option value="">(default)</option>
+                  </select>
+                </div>
+                <div class="aism-diag-row">
+                  <span class="aism-key">Stream</span><span class="aism-val" id="aism-stream">—</span>
+                </div>
+                <div class="aism-diag-row">
+                  <span class="aism-key">AudioCtx</span><span class="aism-val" id="aism-actx">—</span>
+                </div>
+                <div class="aism-diag-row">
+                  <span class="aism-key">RMS</span><span class="aism-val" id="aism-rms">0.000</span>
+                  <span class="aism-key" style="margin-left:8px;">Peak</span><span class="aism-val" id="aism-peak">0</span>
+                </div>
+              </div>
+              <div class="aism-vu-row">
+                <span class="aism-vu-label">VU</span>
+                <div class="aism-vu" id="aism-vu" aria-label="microphone level"></div>
+                <span class="aism-vu-db" id="aism-vu-db">-∞</span>
+              </div>
+              <div class="aism-trans">
+                <div class="aism-key">Heard</div>
+                <div class="aism-trans-val" id="aism-heard">—</div>
+              </div>
+            </div>
+
             <!-- Chatbot selection — query each in parallel; user picks
                  the favored output from the results below. Persisted to
                  localStorage so each operator's preference sticks. -->

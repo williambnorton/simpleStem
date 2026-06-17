@@ -5688,6 +5688,128 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   line-height: 1.4;
 }
 
+/* ── AI Setlist Builder: microphone diagnostic panel ─────────────── */
+
+/* Same visual language as HOLODECK's console (it's the same job in a
+   different surface). Mounts under the prompt textarea, hidden until
+   the Speak button is clicked for the first time. */
+.aism-panel {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  font-size: 12px;
+}
+.aism-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.aism-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.aism-title i { width: 14px; height: 14px; }
+.aism-state {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.aism-state.on  { color: var(--color-green); }
+.aism-state.err { color: var(--color-red); }
+
+.aism-diag {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 18px;
+  margin-bottom: 8px;
+}
+.aism-diag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.aism-key {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.aism-val { color: var(--text-main); }
+.aism-mic-select {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* VU meter — 20 segments, lit ones turn yellow→red toward the top. */
+.aism-vu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.aism-vu-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 22px;
+}
+.aism-vu {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  height: 14px;
+}
+.aism-vu-seg {
+  flex: 1;
+  background: rgba(255,255,255,0.07);
+  border-radius: 2px;
+  transition: background 60ms;
+}
+.aism-vu-seg.lit { background: var(--color-green); }
+.aism-vu-seg.lit[data-i="14"],
+.aism-vu-seg.lit[data-i="15"],
+.aism-vu-seg.lit[data-i="16"] { background: var(--color-yellow); }
+.aism-vu-seg.lit[data-i="17"],
+.aism-vu-seg.lit[data-i="18"],
+.aism-vu-seg.lit[data-i="19"] { background: var(--color-red); }
+.aism-vu-db {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 48px;
+  text-align: right;
+}
+
+.aism-trans .aism-key { display: block; margin-bottom: 2px; }
+.aism-trans-val {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-main);
+  min-height: 16px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  word-break: break-word;
+}
+.aism-trans-val.interim { color: var(--color-yellow); font-style: italic; }
+
 /* ── AI Setlist Builder v3: multi-bot ─────────────────────────────── */
 
 /* Chatbot checkbox row above the textarea. Each bot is a chip-style
