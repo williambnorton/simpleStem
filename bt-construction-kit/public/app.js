@@ -8227,6 +8227,10 @@ async function setupAiSetlistBuilder() {
     vuEl.innerHTML = Array.from({ length: AISM_VU_SEGMENTS },
       (_, i) => `<span class="aism-vu-seg" data-i="${i}"></span>`).join('');
   }
+  // Populate the mic dropdown at boot. Labels are anonymous ("microphone
+  // 1", etc) until the operator grants mic permission once; clicking
+  // Speak the first time will re-populate with real device names.
+  populateAismMicList().catch(() => {});
 
   async function populateAismMicList() {
     if (!micSelect) return;
@@ -8304,7 +8308,6 @@ async function setupAiSetlistBuilder() {
       setStatus('Voice recognition not supported in this browser.', 'err');
       return;
     }
-    if (panelEl) panelEl.style.display = '';
     setAismState('● requesting mic…', 'on');
 
     let savedMic = '';
