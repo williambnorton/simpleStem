@@ -8341,12 +8341,27 @@ async function setupAiSetlistBuilder() {
     // Speech recognition. Interim results stream into the "Heard" line
     // live so the operator sees what the engine thinks they're saying.
     // Only final results commit into the prompt textarea.
+    //
+    // Diagnostics: every lifecycle event logs to the console with the
+    // [aism] tag, and the state badge reflects what stage the engine is
+    // in. If VU is moving but text isn't appearing, the badge will say
+    // why -- e.g. "✗ not-allowed", "✗ network", or "● running (no result yet)".
     committedLen = promptEl.value.length;
+    let lastRecogError = null;
+    let resultsSeen    = 0;
     micRecognition = new SR();
     micRecognition.continuous     = true;
     micRecognition.interimResults = true;
     micRecognition.lang           = 'en-US';
+    micRecognition.onstart      = () => { console.log('[aism] recog onstart');      setAismState('● running (no result yet)', 'on'); };
+    micRecognition.onaudiostart = () => { console.log('[aism] recog onaudiostart'); };
+    micRecognition.onspeechstart= () => { console.log('[aism] recog onspeechstart');setAismState('● hearing speech', 'on'); };
+    micRecognition.onspeechend  = () => { console.log('[aism] recog onspeechend'); };
+    micRecognition.onaudioend   = () => { console.log('[aism] recog onaudioend'); };
+    micRecognition.onnomatch    = () => { console.log('[aism] recog onnomatch'); };
     micRecognition.onresult = (ev) => {
+      resultsSeen++;
+      console.log('[aism] recog onresult', resultsSeen, 'results so far');
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const r = ev.results[i];
         const txt = (r[0].transcript || '').trim();
@@ -8358,6 +8373,7 @@ async function setupAiSetlistBuilder() {
             heardEl.textContent = txt;
             heardEl.classList.remove('interim');
           }
+          setAismState('✓ committed phrase', 'on');
         } else {
           const sep = committedLen && promptEl.value[committedLen - 1] !== ' ' ? ' ' : '';
           promptEl.value = promptEl.value.slice(0, committedLen) + sep + txt;
@@ -8365,24 +8381,42 @@ async function setupAiSetlistBuilder() {
             heardEl.textContent = txt + ' …';
             heardEl.classList.add('interim');
           }
+          setAismState('● hearing speech', 'on');
         }
       }
       promptEl.scrollTop = promptEl.scrollHeight;
     };
     micRecognition.onerror = (ev) => {
-      console.warn('[ai-setlist mic]', ev.error);
-      setAismState('✗ ' + (ev.error || 'recognition error'), 'err');
+      lastRecogError = ev.error || 'unknown';
+      console.warn('[aism] recog onerror:', lastRecogError, ev);
+      setAismState('✗ ' + lastRecogError, 'err');
     };
-    // Web Speech auto-stops after a silent pause; if the operator is
-    // still in "listening" mode, transparently restart so they don't have
-    // to keep clicking.
+    // Web Speech auto-stops after a silent pause. Transparent restart on
+    // benign transient ends (no-speech, aborted, audio-capture-eof). Stop
+    // restarting on permanent errors so we don't burn cycles silently.
     micRecognition.onend = () => {
+      console.log('[aism] recog onend (last error:', lastRecogError, ')');
+      const PERMANENT = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported']);
+      if (PERMANENT.has(lastRecogError)) {
+        console.warn('[aism] permanent recognition error, not restarting:', lastRecogError);
+        setAismState('✗ ' + lastRecogError + ' (mic stopped)', 'err');
+        return;
+      }
       if (micActive && micRestartReq) {
-        setTimeout(() => { try { micRecognition && micRecognition.start(); } catch (e) {} }, 200);
+        setTimeout(() => {
+          try { micRecognition && micRecognition.start(); }
+          catch (e) { console.warn('[aism] restart failed:', e); }
+        }, 200);
       }
     };
-    try { micRecognition.start(); }
-    catch (e) { console.warn('[ai-setlist mic] start failed:', e); }
+    try {
+      micRecognition.start();
+      console.log('[aism] recog.start() called (continuous=true interim=true lang=en-US)');
+    }
+    catch (e) {
+      console.warn('[aism] recog.start() threw:', e);
+      setAismState('✗ start threw: ' + e.message, 'err');
+    }
 
     micActive = true;
     micRestartReq = true;
