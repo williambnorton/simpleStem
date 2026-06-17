@@ -629,10 +629,6 @@
           <div class="ai-setlist-builder glass-card">
             <label for="ai-setlist-prompt" class="ai-setlist-label">
               <i data-lucide="sparkles"></i> Describe the gig
-              <button id="btn-ai-setlist-mic" class="ai-setlist-mic-btn" type="button" title="Click to dictate the description; click again to stop">
-                <i data-lucide="mic"></i>
-                <span class="ai-mic-label">Speak</span>
-              </button>
             </label>
             <textarea id="ai-setlist-prompt" class="ai-setlist-prompt"
               rows="7"
@@ -647,6 +643,10 @@
             <div id="aism-panel" class="aism-panel">
               <div class="aism-head">
                 <span class="aism-title"><i data-lucide="mic"></i> Microphone</span>
+                <button id="btn-ai-setlist-mic" class="ai-setlist-mic-btn" type="button" title="Click to dictate; click again to stop. Words appear live in the Heard line, then commit into the gig description at each sentence boundary.">
+                  <i data-lucide="mic"></i>
+                  <span class="ai-mic-label">Speak</span>
+                </button>
                 <span class="aism-state" id="aism-state">○ idle</span>
               </div>
               <div class="aism-diag">
