@@ -2300,9 +2300,17 @@ function preferredPlayVariant(merged) {
     if (code === 'STEMS') return merged.variants.find(v => v.type === 'stems');
     return merged.variants.find(v => v.type === 'm4a' && v.variantCode === code);
   };
+  // STEMS-first. The portal is the stage mixer; the -V / -V-G / -V-G-B / DO
+  // m4a variants are EZPerformer-only artifacts and should not auto-load
+  // here. Previously the "last variant code" preference would stick on an
+  // m4a code and force later songs into m4a backing-track mode, hiding the
+  // stem mixer for songs that actually had stems. Now STEMS wins whenever
+  // it exists; lastCode is only honored for songs that don't have STEMS.
+  const stems = byCode('STEMS');
+  if (stems) return stems;
   let lastCode = null;
   try { lastCode = localStorage.getItem('bt_last_variant_code'); } catch (e) {}
-  if (lastCode) {
+  if (lastCode && lastCode !== 'STEMS') {
     const match = byCode(lastCode);
     if (match) return match;
   }
@@ -2398,7 +2406,9 @@ async function fetchLibrary() {
     }
     
     renderStats(data.stats);
+    applyLibrarySort();
     renderLibrary();
+    setupLibrarySortHandlers();
     populateKeyFilter(data.songs);
     
     let ageStr = '';
@@ -2564,6 +2574,72 @@ function populateKeyFilter(songs) {
     opt.textContent = k;
     els.filterKey.appendChild(opt);
   });
+}
+
+// Library column sort. Tracks the active sort key (title / artist /
+// duration / bpm / key / singer / drum) and direction. Clicking a header
+// the first time sorts ascending; clicking it again flips to descending;
+// clicking a third time clears the sort and returns to the default
+// (alphabetical by title). The sort applies to filteredLibrary so it
+// works alongside search + key/tempo filters.
+let librarySortKey = null;       // null = default (title ASC)
+let librarySortDir = 'asc';      // 'asc' | 'desc'
+
+function librarySortValue(m, key) {
+  const stems = m.variants && m.variants.find(v => v.type === 'stems');
+  switch (key) {
+    case 'title':    return (m.title || '').toLowerCase();
+    case 'artist':   return (m.artist || '').toLowerCase();
+    case 'duration': return (typeof m.duration === 'number' && Number.isFinite(m.duration)) ? m.duration : -1;
+    case 'bpm':      return (typeof m.practiceBpm === 'number' && m.practiceBpm > 0) ? m.practiceBpm : -1;
+    case 'key':      return (m.key || '').toLowerCase();
+    case 'singer':   return (stems && stems.singer_lead || '').toLowerCase();
+    case 'drum':     return (stems && stems.drum_pattern || '').toLowerCase();
+    default:         return (m.title || '').toLowerCase();
+  }
+}
+function applyLibrarySort() {
+  if (!librarySortKey) {
+    filteredLibrary.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    return;
+  }
+  const dir = librarySortDir === 'desc' ? -1 : 1;
+  filteredLibrary.sort((a, b) => {
+    const va = librarySortValue(a, librarySortKey);
+    const vb = librarySortValue(b, librarySortKey);
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+}
+function updateSortHeaderIndicators() {
+  document.querySelectorAll('.song-table-header [data-sort]').forEach(el => {
+    el.classList.remove('sort-asc', 'sort-desc');
+    if (librarySortKey && el.dataset.sort === librarySortKey) {
+      el.classList.add(librarySortDir === 'desc' ? 'sort-desc' : 'sort-asc');
+    }
+  });
+}
+function setupLibrarySortHandlers() {
+  document.querySelectorAll('.song-table-header [data-sort]').forEach(el => {
+    if (el._sortBound) return;
+    el._sortBound = true;
+    el.addEventListener('click', () => {
+      const key = el.dataset.sort;
+      if (librarySortKey !== key) {
+        librarySortKey = key;
+        librarySortDir = 'asc';
+      } else if (librarySortDir === 'asc') {
+        librarySortDir = 'desc';
+      } else {
+        librarySortKey = null;
+        librarySortDir = 'asc';
+      }
+      applyLibrarySort();
+      updateSortHeaderIndicators();
+      renderLibrary();
+    });
+  });
+  updateSortHeaderIndicators();
 }
 
 // Render Song Library Browser
@@ -2785,6 +2861,16 @@ function renderLibrary() {
       else alert('This song has no stems folder yet — options apply to stemmed songs.');
     });
 
+    // Drum machine pattern cell — opaque string from the band sheet
+    // (e.g. "120@96", "95UduHop", "ACTUAL"). Just displayed as text; the
+    // band reads it as their cue to set the drum machine pattern.
+    const drumCell = document.createElement('div');
+    drumCell.className = 'song-drum-cell';
+    const stemsForDrum = merged.variants.find(v => v.type === 'stems');
+    const drumPattern = stemsForDrum && stemsForDrum.drum_pattern;
+    drumCell.textContent = drumPattern || '—';
+    if (drumPattern) drumCell.title = `Drum pattern: ${drumPattern}`;
+
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
@@ -2792,6 +2878,7 @@ function renderLibrary() {
     row.appendChild(bpmCell);
     row.appendChild(keyCell);
     row.appendChild(singerCell);
+    row.appendChild(drumCell);
     row.appendChild(actionCell);
 
     // Row click default: load the preferred variant (-V-G m4a usually) into
@@ -3067,6 +3154,7 @@ function applyFilters() {
   });
   
   els.countLabel.textContent = `Found ${filteredLibrary.length} tracks matching filters`;
+  applyLibrarySort();
   renderLibrary();
 }
 

@@ -2246,7 +2246,7 @@ select {
 
 .song-table-header {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 60px 75px 55px 95px 60px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 55px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-dim);
@@ -2280,7 +2280,7 @@ select {
 
 .song-row {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 60px 75px 55px 95px 60px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 55px;
   align-items: center;
   padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -5260,3 +5260,36 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Library: drum column + sort indicators ────────────────────────────── */
+.song-drum-cell {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-drum {
+  cursor: pointer;
+  user-select: none;
+}
+/* Sortable headers: hand cursor, active indicator + arrow */
+.song-table-header [data-sort] {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.song-table-header [data-sort]:hover { color: var(--text-main); }
+.song-table-header [data-sort].sort-asc,
+.song-table-header [data-sort].sort-desc {
+  color: var(--color-yellow);
+  font-weight: 800;
+}
+.song-table-header [data-sort].sort-asc .sort-icon,
+.song-table-header [data-sort].sort-desc .sort-icon {
+  display: none;
+}
+.song-table-header [data-sort].sort-asc::after  { content: ' ▲'; font-size: 9px; color: var(--color-yellow); }
+.song-table-header [data-sort].sort-desc::after { content: ' ▼'; font-size: 9px; color: var(--color-yellow); }
