@@ -8321,18 +8321,19 @@ async function setupAiSetlistBuilder() {
     } catch (e) { console.warn('[aism] HOLODECK.stop() failed:', e); }
     setAismState('● requesting mic…', 'on');
 
-    // Honor the picker's device selection as a PREFERENCE (deviceId
-    // without `exact`). Using `exact` blocks Web Speech's parallel
-    // capture; using `{ audio: true }` lets Chrome pick its own default,
-    // which on macOS is often the first device enumerated (e.g. an
-    // XR18 audio interface) regardless of what the user set in System
-    // Settings. The picker preference routes the VU meter correctly.
-    // Web Speech still uses Chrome's per-site default mic, which the
-    // operator must set separately at chrome://settings/content/microphone.
+    // Picker drives the VU meter via { deviceId: { exact: X } }. Without
+    // `exact`, Chrome treats the deviceId as a soft preference and silently
+    // falls back to its own chosen default (often the first audio device,
+    // which on this rig is the XR18 — silent when powered off).
+    //
+    // `exact` does NOT affect Web Speech. SR is independently hard-bound
+    // to Chrome's per-site default mic, configured at
+    // chrome://settings/content/microphone. So the picker controls VU,
+    // Chrome's per-site setting controls SR — two separate dials.
     let savedMic = '';
     try { savedMic = localStorage.getItem(AISM_KEY) || ''; } catch (e) {}
     const constraints = savedMic
-      ? { audio: { deviceId: savedMic } }
+      ? { audio: { deviceId: { exact: savedMic } } }
       : { audio: true };
     console.log('[aism] requesting mic with constraints:', JSON.stringify(constraints));
     try {
