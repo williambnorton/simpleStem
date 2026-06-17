@@ -2684,20 +2684,20 @@ function renderLibrary() {
     checkbox.className = 'song-checkbox';
     const stemsVarForBatch = merged.variants.find(v => v.type === 'stems');
     const songBaseForBatch = stemsVarForBatch && stemsVarForBatch.folderName;
-    checkbox.checked = setlist.some(item => item.id === primary.id)
-      || (songBaseForBatch && batchSelectedBases.has(songBaseForBatch));
+    // Checkbox is pure batch-select marker. Decoupled from the legacy
+    // `setlist` array (which had its own UI pane that is now gone, but
+    // the variable is still used internally by various restore paths).
+    // Checked iff the song's base is in the batch selection set.
+    checkbox.checked = !!(songBaseForBatch && batchSelectedBases.has(songBaseForBatch));
     checkbox.addEventListener('click', e => e.stopPropagation());
     checkbox.addEventListener('change', () => {
-      if (checkbox.checked) addToSetlist(primary);
-      else removeFromSetlist(primary.id);
-      // Batch-select side: track the song_base too. Only stemmed songs go
-      // in (unstemmed ones can't be played from the active setlist).
-      if (songBaseForBatch) {
-        if (checkbox.checked) batchSelectedBases.add(songBaseForBatch);
-        else batchSelectedBases.delete(songBaseForBatch);
-        // Re-render the gig sidebar so ghost rows reflect the new batch.
-        if (typeof renderGigSidebar === 'function') renderGigSidebar();
-      }
+      if (!songBaseForBatch) return;   // unstemmed song can't be batched
+      if (checkbox.checked) batchSelectedBases.add(songBaseForBatch);
+      else batchSelectedBases.delete(songBaseForBatch);
+      // Re-render the gig sidebar so ghost rows reflect the new batch.
+      // Click any of the green + buttons on those ghosts to commit them
+      // all into the active setlist and clear the checkboxes.
+      if (typeof renderGigSidebar === 'function') renderGigSidebar();
     });
     selectCell.appendChild(checkbox);
 
@@ -4352,7 +4352,14 @@ function loadSong(song, opts) {
   // via the loop button if they want).
   isLooping = !!song.isDrumLoop;
   if (els.btnLoop) els.btnLoop.classList.toggle('active', isLooping);
-  
+
+  // Reset playback speed to 1.0× on every song load. Carrying a slowed
+  // tempo across songs in a setlist is rarely what the operator wants
+  // (they slowed Song A for a rehearsal pass, then Song B starts in
+  // slo-mo without warning). Mirrors the LOOPER reset above.
+  setPlaybackSpeed(1.0);
+  if (els.speedSlider) els.speedSlider.value = '1';
+
   // Restore master gain to the user's slider level (undoes any prior fade-out
   // without overriding the volume they've set on the right-rail slider).
   currentMasterVolume = els.masterVol ? parseFloat(els.masterVol.value) : 1.0;
@@ -7340,7 +7347,15 @@ function setupStemHotkeys() {
     const tgt = e.target;
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
                 tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
-    if (!automationCurrentBase) return;   // no song loaded → ignore
+    // Spacebar — transport play/pause. Works regardless of whether a song
+    // is loaded yet; the play button handles the no-song case itself.
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      const btn = document.getElementById('btn-play-pause');
+      if (btn) btn.click();
+      return;
+    }
+    if (!automationCurrentBase) return;   // no song loaded → ignore everything below
     const k = e.key;
     // Stem mute/unmute toggle: V/D/B/G/P/O
     const stem = stemMap[k.toLowerCase()];

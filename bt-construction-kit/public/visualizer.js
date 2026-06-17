@@ -280,7 +280,6 @@ function draw() {
       { key: 'other',  color: 'rgba(255, 152, 0, 0.95)',  label: 'O' },
     ];
     const laneH = height / STEM_ORDER.length;
-    const labelPadLeft = 18;   // reserve space at the left for the label
     ctx.font = 'bold 13px "Space Grotesk", sans-serif';
     ctx.textBaseline = 'middle';
     for (let li = 0; li < STEM_ORDER.length; li++) {
@@ -297,29 +296,35 @@ function draw() {
         ctx.lineTo(width, laneTop);
         ctx.stroke();
       }
-      // Stem label — solid color so it stays legible over section bands.
-      // Black halo around the letter for extra punch against any band fill.
+      if (peaks) {
+        // Peaks span the FULL canvas width [0, width], matching the
+        // playhead and beat grid coordinate system. An earlier version
+        // reserved an 18 px label gutter and drew peaks at [18, width],
+        // which shifted the audio waveform ~half a measure to the RIGHT
+        // of the playhead — the playhead appeared to lead the audio.
+        // Now the label sits ON TOP of the leftmost peaks (usually a
+        // silent intro), and time t is at x = t/duration*width
+        // EVERYWHERE on the canvas.
+        const bucketW = width / peaks.length;
+        ctx.fillStyle = color;
+        for (let i = 0; i < peaks.length; i++) {
+          const p = peaks[i];
+          const scaled = Math.min(1, Math.sqrt(p) * 1.15);
+          const barH = scaled * (laneH * 0.88);
+          const x = i * bucketW;
+          const w = Math.max(0.6, bucketW - 0.3);
+          ctx.fillRect(x, laneMid - barH / 2, w, barH);
+        }
+      }
+      // Stem label — drawn AFTER the peaks so it sits visibly on top of
+      // the (usually quiet) first-bucket waveform. Black halo for punch
+      // over any section-band overlay.
       ctx.textAlign = 'left';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.strokeText(label, 4, laneMid);
       ctx.fillStyle = color;
       ctx.fillText(label, 4, laneMid);
-      if (!peaks) continue;
-      // Always draw at FULL strength — visualizer is a song reference,
-      // not a live mix meter. Volume / mute / solo are unrelated.
-      const drawX0 = labelPadLeft;
-      const drawW  = width - labelPadLeft;
-      const bucketW = drawW / peaks.length;
-      ctx.fillStyle = color;
-      for (let i = 0; i < peaks.length; i++) {
-        const p = peaks[i];
-        const scaled = Math.min(1, Math.sqrt(p) * 1.15);
-        const barH = scaled * (laneH * 0.88);
-        const x = drawX0 + i * bucketW;
-        const w = Math.max(0.6, bucketW - 0.3);
-        ctx.fillRect(x, laneMid - barH / 2, w, barH);
-      }
     }
   }
 
