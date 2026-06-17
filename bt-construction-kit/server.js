@@ -2313,34 +2313,63 @@ app.post('/api/midi/send', async (req, res) => {
   }
 });
 
-// Hard delete a song: remove its STEMS folder, its M4A files, and its cache.
-// Body must include { confirm: "<base>" } matching the song id — a deliberate
-// guard against accidental deletes. This is NOT reversible.
+// Hard delete a song: remove its STEMS folder (if present), its M4A files,
+// and its cache. Body must include { confirm: "<base>" } matching the song
+// id — a deliberate guard against accidental deletes. NOT reversible.
+//
+// Two modes:
+//   - stems+m4a: the base names a STEMS folder; folder + matching m4a + caches go.
+//   - m4a-only:  the base does NOT have a STEMS folder, but there are m4a files
+//                that share that base prefix (e.g. orphaned variants like
+//                Harvest_Moon_..._Neil_Young_-V-G-B.m4a with no stems folder).
+//                Just the m4a files + their caches are removed.
 app.delete('/api/song/:base', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
-  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song not found' });
   if (!req.body || req.body.confirm !== s.b) {
     return res.status(400).json({ error: 'confirmation mismatch — send { confirm: "<base>" }' });
   }
+  const stemsExists = fs.existsSync(s.dir);
+  // Find every m4a file that starts with the base prefix. The trailing
+  // underscore guards against partial matches (e.g. base "Mary" matching
+  // "Mary_Jane's_Last_Dance.m4a" — only ones with "_" after the prefix).
+  let m4aMatches = [];
+  try {
+    for (const f of fs.readdirSync(M4A_DIR)) {
+      if (f.startsWith(s.b + '_') && f.endsWith('.m4a')) m4aMatches.push(f);
+    }
+  } catch (e) {}
+  if (!stemsExists && m4aMatches.length === 0) {
+    return res.status(404).json({ error: 'nothing to delete: no stems folder and no matching m4a files' });
+  }
   try {
     let removedM4a = 0;
-    // STEMS folder (+ its cache)
-    fs.rmSync(s.dir, { recursive: true, force: true });
-    fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true });
-    // M4A files for this base (+ their cache)
+    if (stemsExists) {
+      fs.rmSync(s.dir, { recursive: true, force: true });
+      try { fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true }); } catch (e) {}
+    }
+    for (const f of m4aMatches) {
+      try { fs.rmSync(path.join(M4A_DIR, f), { force: true }); } catch (e) {}
+      try { fs.rmSync(path.join(AUDIO_CACHE_M4A, f), { force: true }); } catch (e) {}
+      removedM4a++;
+    }
+    console.log(`[delete] ${s.b}: ${stemsExists ? 'removed STEMS folder + ' : ''}${removedM4a} m4a`);
+    // Patch libraryCache in place so the deleted song disappears from the
+    // portal immediately, even before the next CATALOG.json rebuild.
     try {
-      for (const f of fs.readdirSync(M4A_DIR)) {
-        if (f.startsWith(s.b + '_') && f.endsWith('.m4a')) {
-          fs.rmSync(path.join(M4A_DIR, f), { force: true });
-          fs.rmSync(path.join(AUDIO_CACHE_M4A, f), { force: true });
-          removedM4a++;
-        }
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        libraryCache.data.songs = songs.filter(x => {
+          if (x.type === 'stems' && x.folderName === s.b) return false;
+          if (x.type === 'm4a'   && x.fileName && m4aMatches.includes(x.fileName)) return false;
+          return true;
+        });
       }
-    } catch (e) {}
-    console.log(`[delete] ${s.b}: removed STEMS folder + ${removedM4a} m4a`);
-    refreshLibraryCache('song-deleted', true);
-    res.json({ ok: true, base: s.b, removedM4a });
+    } catch (e) { console.warn('[delete] cache patch failed:', e.message); }
+    // Also kick off a background refresh in case the Librarian has rebuilt
+    // CATALOG.json — picks up any non-obvious changes too.
+    try { refreshLibraryCache('song-deleted', true); } catch (e) {}
+    res.json({ ok: true, base: s.b, removedM4a, stemsFolderExisted: stemsExists });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

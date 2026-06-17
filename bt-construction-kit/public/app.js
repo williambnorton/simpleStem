@@ -2851,14 +2851,30 @@ function renderLibrary() {
     const actionCell = document.createElement('div');
     actionCell.className = 'col-action';
     actionCell.innerHTML = `<button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;">⋯</button>`;
-    // song_base = the stems folder name (canonical key for the per-song API)
+    // song_base = the stems folder name (canonical key for the per-song API).
+    // For m4a-only rows (orphaned variants with no stems folder yet) we fall
+    // back to the m4a-derived "stripped" base name -- the same name a STEMS
+    // folder would have if it existed, which is also the prefix the server's
+    // DELETE endpoint uses to find and remove the matching m4a files. This
+    // lets the user delete orphaned m4a sets (e.g. duplicate Harvest Moon
+    // uploads with no stems) through the ⋯ menu instead of being stuck.
     const stemsVar = merged.variants.find(v => v.type === 'stems');
-    const songBase = stemsVar && stemsVar.folderName;
+    let songBase = stemsVar && stemsVar.folderName;
+    if (!songBase) {
+      const m4aVar = merged.variants.find(v => v.type === 'm4a' && v.fileName);
+      if (m4aVar) {
+        let stripped = m4aVar.fileName.replace(/\.m4a$/i, '');
+        for (const suf of ['_-V-G-B', '_-V-G', '_-V-B', '_-V', '_DO']) {
+          if (stripped.endsWith(suf)) { stripped = stripped.slice(0, -suf.length); break; }
+        }
+        songBase = stripped;
+      }
+    }
     const menuBtn = actionCell.querySelector('.song-menu-btn');
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (songBase) openSongMenu(songBase, merged);
-      else alert('This song has no stems folder yet — options apply to stemmed songs.');
+      else alert('This song has no playable files — cannot open options.');
     });
 
     // Drum machine pattern cell — opaque string from the band sheet
