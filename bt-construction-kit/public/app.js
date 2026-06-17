@@ -5245,16 +5245,18 @@ function toggleLooping() {
 }
 
 // Mixer Math faders
-// Sync the master "Clear all solos" button enabled/disabled state to
-// whether any strip is currently soloed. Greyed out (disabled, low
-// opacity) when zero solos are active; lit-orange when ≥ 1 is.
+// Master "Clear all solos" button visibility: shown ONLY when at least
+// one strip is soloed. When visible it is always in the active state --
+// clicking it drops every solo at once. When no solos are active the
+// button is hidden entirely so it doesn't clutter the mixer header.
 function updateClearAllSolosBtn() {
   const btn = document.getElementById('btn-clear-all-solos');
   if (!btn) return;
   const anyActive = mixerState && mixerState.soloed && Object.values(mixerState.soloed).some(Boolean);
-  btn.disabled = !anyActive;
+  btn.style.display = anyActive ? '' : 'none';
+  btn.disabled = false;
   btn.classList.toggle('armed', anyActive);
-  btn.title = anyActive ? 'Click to clear every solo' : 'No solos active';
+  btn.title = 'Click to clear every solo';
 }
 
 function applyMixerVolumes() {
