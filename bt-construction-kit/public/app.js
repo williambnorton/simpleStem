@@ -4226,18 +4226,24 @@ function injectStripRoutingButtons() {
 
     const bottomRow = document.createElement('div');
     bottomRow.className = 'pos-bottom-row';
-    // Boost buttons flank the D button: +5 dB on the left, +10 dB on the
-    // right. Mutually exclusive 3-state latch (off → +5 → off, off → +10 → off).
+    // Boost buttons flank the D button: gentle (+5 / +10) for live mix
+    // shaping, extreme (+20 / +50) as diagnostic probes -- "what's actually
+    // in this stem if I crank it through the noise floor?" +20 dB ≈ 10x,
+    // +50 dB ≈ 316x, which WILL clip anything with real content but lets
+    // the operator hear faint bleed (e.g. Demucs leaks). Mutually exclusive
+    // 5-state latch (off → +N → off; selecting any one turns the others off).
     const makeBoost = (db) => {
       const b = document.createElement('button');
-      b.className = `boost-btn boost-${db}`;
+      b.className = `boost-btn boost-${db}` + (db >= 20 ? ' boost-extreme' : '');
       b.textContent = `+${db}`;
-      b.title = `Boost this strip by +${db} dB (mutually exclusive with the other boost button; click again to disable)`;
+      const isExtreme = db >= 20;
+      b.title = isExtreme
+        ? `Boost this strip by +${db} dB (~${db === 20 ? '10x' : '316x'} gain). DIAGNOSTIC -- will clip real signal. Use to hear faint bleed.`
+        : `Boost this strip by +${db} dB. Click again to disable; mutually exclusive with other boost buttons.`;
       b.addEventListener('click', e => {
         e.stopPropagation();
         const cur = mixerState.boost[chan] || 0;
         mixerState.boost[chan] = (cur === db) ? 0 : db;
-        // Reflect latched state on both buttons in this strip.
         strip.querySelectorAll('.boost-btn').forEach(btn => {
           const bdb = parseInt(btn.className.match(/boost-(\d+)/)[1], 10);
           btn.classList.toggle('latched', mixerState.boost[chan] === bdb);
@@ -4247,8 +4253,10 @@ function injectStripRoutingButtons() {
       return b;
     };
     bottomRow.appendChild(makeBoost(5));
-    bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
     bottomRow.appendChild(makeBoost(10));
+    bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
+    bottomRow.appendChild(makeBoost(20));
+    bottomRow.appendChild(makeBoost(50));
 
     const numericRow = document.createElement('div');
     numericRow.className = 'pos-numeric-row';

@@ -5296,3 +5296,22 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .song-table-header [data-sort].sort-asc::after  { content: ' ▲'; font-size: 9px; color: var(--color-yellow); }
 .song-table-header [data-sort].sort-desc::after { content: ' ▼'; font-size: 9px; color: var(--color-yellow); }
+
+/* +20 / +50 boost buttons are diagnostic-grade -- they will clip real
+   signal and are meant for "is anything in this stem at all" probing,
+   not for live mix shaping. Styled red-tinged to remind the operator
+   these are not the gentle +5/+10 they should use during a gig. */
+.boost-btn.boost-extreme {
+  color: #c94444;
+}
+.boost-btn.boost-extreme:hover {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+.boost-btn.boost-extreme.latched {
+  background: rgba(231, 76, 60, 0.28) !important;
+  border-color: #e74c3c !important;
+  color: #fff !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.5) inset !important;
+}
