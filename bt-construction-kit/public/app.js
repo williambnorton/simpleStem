@@ -8386,14 +8386,36 @@ async function setupAiSetlistBuilder() {
       }
       promptEl.scrollTop = promptEl.scrollHeight;
     };
+    // Reset the no-speech counter every time real speech is heard, so
+    // a brief silent stretch doesn't accumulate into the "stop trying"
+    // threshold. onspeechstart is the trustworthy signal here.
+    const _origSpeechStart = micRecognition.onspeechstart;
+    micRecognition.onspeechstart = (ev) => {
+      noSpeechStreak = 0;
+      if (typeof _origSpeechStart === 'function') _origSpeechStart(ev);
+    };
+    let noSpeechStreak = 0;
     micRecognition.onerror = (ev) => {
       lastRecogError = ev.error || 'unknown';
       console.warn('[aism] recog onerror:', lastRecogError, ev);
-      setAismState('✗ ' + lastRecogError, 'err');
+      if (lastRecogError === 'no-speech') {
+        noSpeechStreak++;
+        if (noSpeechStreak === 1) {
+          // First no-speech is normal — Web Speech fires it after every
+          // silent stretch, even mid-session. Don't alarm the operator.
+          setAismState('● listening (waiting for speech)', 'on');
+        } else if (noSpeechStreak >= 3) {
+          // Three in a row strongly implies the SR engine is bound to a
+          // mic that's silent. Most common cause: picker's mic ≠ Chrome's
+          // default mic (Web Speech can't be pointed at a specific
+          // device). Pause the restart loop and surface the fix path.
+          setAismState('✗ no speech heard — set this mic as the macOS default input', 'err');
+          micRestartReq = false;
+        }
+      } else {
+        setAismState('✗ ' + lastRecogError, 'err');
+      }
     };
-    // Web Speech auto-stops after a silent pause. Transparent restart on
-    // benign transient ends (no-speech, aborted, audio-capture-eof). Stop
-    // restarting on permanent errors so we don't burn cycles silently.
     micRecognition.onend = () => {
       console.log('[aism] recog onend (last error:', lastRecogError, ')');
       const PERMANENT = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported']);
@@ -8403,10 +8425,13 @@ async function setupAiSetlistBuilder() {
         return;
       }
       if (micActive && micRestartReq) {
+        // Back off slightly on no-speech to avoid log spam, otherwise
+        // restart quickly.
+        const delay = lastRecogError === 'no-speech' ? 500 : 200;
         setTimeout(() => {
           try { micRecognition && micRecognition.start(); }
           catch (e) { console.warn('[aism] restart failed:', e); }
-        }, 200);
+        }, delay);
       }
     };
     try {
