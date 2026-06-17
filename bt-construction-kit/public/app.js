@@ -1384,7 +1384,7 @@ function attachGigDragHandlers(wrap, songsEl) {
         fromSetlist: Number(row.dataset.setlistIdx),
         fromSong:    Number(row.dataset.songIdx),
       };
-      e.dataTransfer.setData('application/x-simpleStem-song', JSON.stringify(payload));
+      e.dataTransfer.setData('application/x-simplestem-song', JSON.stringify(payload));
       e.dataTransfer.effectAllowed = 'copyMove';
       row.classList.add('sls-drag');
     });
@@ -1405,7 +1405,7 @@ function attachGigDragHandlers(wrap, songsEl) {
     e.preventDefault();
     wrap.dataset.dropTarget = 'false';
     let payload;
-    try { payload = JSON.parse(e.dataTransfer.getData('application/x-simpleStem-song')); }
+    try { payload = JSON.parse(e.dataTransfer.getData('application/x-simplestem-song')); }
     catch (err) { return; }
     if (!activeGig) return;
     const fromSl = activeGig.setlists[payload.fromSetlist];
@@ -1444,7 +1444,7 @@ function attachGigDragHandlers(wrap, songsEl) {
 }
 
 function hasOurPayload(e) {
-  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('application/x-simpleStem-song');
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('application/x-simplestem-song');
 }
 
 // Bridges: callers from before the gig rewrite (loadSong, addToSetlist,
