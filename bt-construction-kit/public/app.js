@@ -8308,6 +8308,17 @@ async function setupAiSetlistBuilder() {
       setStatus('Voice recognition not supported in this browser.', 'err');
       return;
     }
+    // Chrome enforces ONE active SpeechRecognition per page. If HOLODECK
+    // is currently listening, the new SR call immediately ends (onstart
+    // → onaudiostart → onaudioend → onend with null error). Stop HOLODECK
+    // first to free the engine.
+    try {
+      if (window.HOLODECK && typeof window.HOLODECK.stop === 'function') {
+        console.log('[aism] stopping HOLODECK to free the Web Speech engine');
+        window.HOLODECK.stop();
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch (e) { console.warn('[aism] HOLODECK.stop() failed:', e); }
     setAismState('● requesting mic…', 'on');
 
     let savedMic = '';
