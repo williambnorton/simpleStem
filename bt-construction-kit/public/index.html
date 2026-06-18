@@ -6,17 +6,20 @@
   <title>simpleStem</title>
   <meta name="description" content="Build backing tracks, mix stems, loop segments, and plan setlist timings with professional Web Audio playback.">
   
-  <!-- Modern Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-  
-  <!-- Lucide Icons for premium visual cues -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Tone.js — used for the master-bus pitch shifter (PitchShift). Granular
-       FFT shift preserves tempo while moving the song up or down in pitch.
-       Loaded from CDN; only the PitchShift node is used. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.0.4/Tone.js"></script>
+  <!-- Fonts: Google Fonts CDN intentionally NOT loaded. Falls back to the
+       OS system stack (Inter on recent macOS / Windows, Roboto on Android,
+       etc.) which keeps the portal usable when the laptop has no internet
+       at a gig. The CSS font-family declarations end with sans-serif so
+       the fallback chain works whatever the OS provides. -->
+
+  <!-- Lucide icons + Tone.js are bundled LOCALLY under public/vendor/.
+       Earlier these loaded from unpkg / cdnjs; if the network was down
+       at the gig (no tether yet), lucide would be undefined at boot and
+       fetchLibrary's catch handler -- which calls lucide.createIcons() --
+       would itself throw, leaving the page stuck on "Error opening
+       Library". Local copies make the portal fully offline-capable. -->
+  <script src="vendor/lucide.min.js"></script>
+  <script src="vendor/Tone.js"></script>
   
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="styles.css">

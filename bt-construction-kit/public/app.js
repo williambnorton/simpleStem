@@ -2424,15 +2424,22 @@ async function fetchLibrary() {
     // than waiting for the next poll tick (which could be up to 4–20s away).
     if (typeof cacheStatusRefresh === 'function') cacheStatusRefresh();
   } catch (err) {
-    console.error(err);
+    console.error('[fetchLibrary]', err);
+    // The catch handler used to call lucide.createIcons() unconditionally.
+    // If Lucide failed to load (was a CDN script pre-bundling), that call
+    // threw on top of the original error and the operator saw a blank
+    // page instead of the diagnostic message. Guard the icon refresh and
+    // include the underlying error text so future failures are debuggable
+    // without DevTools.
     els.songListBody.innerHTML = `
       <div class="empty-state">
         <i data-lucide="alert-triangle" class="text-red" style="width: 48px; height: 48px;"></i>
         <h2>Error Loading Library</h2>
-        <p>Failed to communicate with the construction kit server. Make sure Node is running on port 3000.</p>
+        <p>Couldn't reach the construction-kit server (port 3000). Make sure performer.sh is running.</p>
+        <pre style="font-size:11px;opacity:0.7;margin-top:8px;max-width:80%;white-space:pre-wrap;">${escapeHtml(String(err && err.message || err))}</pre>
       </div>
     `;
-    lucide.createIcons();
+    try { if (window.lucide) lucide.createIcons(); } catch (e) {}
   }
 }
 
