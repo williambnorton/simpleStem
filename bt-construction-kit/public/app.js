@@ -5147,11 +5147,29 @@ async function togglePlayPause() {
   const masterAe0 = activeElements[0];
   const isFreshStart = masterAe0.currentTime < 1.5;
 
-  // Count-in TRUE PRE-ROLL: schedule 4 clicks, then start the song on what
-  // would be beat 5. Wrapped in try/finally so the button + flag always
-  // reset even if the pre-roll throws or is interrupted.
+  // Count-in TRUE PRE-ROLL — aligned to the song's first detected onset.
+  //
+  // Old algorithm: 4 clicks ending at t=audio-start, audio starts on what
+  // would be beat 5. That works ONLY when the audio file's downbeat is at
+  // currentTime=0. Real songs start with a silent runup or an anacrusis,
+  // so when the count finished, the players hit silence instead of the
+  // downbeat -- and they stopped trusting the count-in.
+  //
+  // New algorithm: detect when the first real downbeat happens (via
+  // getBeatOffsetSec(), which walks window.songOnsetTimes -- the same
+  // onset table the visual click grid uses, so they always agree). Then
+  // project the 4 count clicks BACKWARDS from that moment so beat-1 of
+  // the song hits exactly where the count would call "five". Three cases:
+  //
+  //   firstDownbeat == 0      → audio waits 4 beats (original behavior)
+  //   firstDownbeat <  4 beats → audio starts after a short pre-roll;
+  //                              click 1 fires before audio.play()
+  //   firstDownbeat ≥ 4 beats → audio starts NOW (intro silence covers
+  //                              the count); the 4 clicks fire during
+  //                              the intro and land right before downbeat.
+  //
   // Section-aware: fires if either the legacy song-level automationCountIn
-  // is set OR the first section has clickIn=true (section-attached click).
+  // is set OR the first section has clickIn=true.
   const firstSectionClickIn = !!(automationSections && automationSections[0] && automationSections[0].clickIn);
   if ((automationCountIn || firstSectionClickIn) && isFreshStart && audioCtx) {
     countInInProgress = true;
@@ -5160,13 +5178,30 @@ async function togglePlayPause() {
     try {
       const bpm = (currentSong && currentSong.practiceBpm) || 120;
       const beatSec = 60 / bpm;
-      const clickStart = audioCtx.currentTime + 0.04;
-      for (let i = 0; i < 4; i++) {
-        try { fireClickAt(clickStart + i * beatSec, true); }
+      const songFirstBeat = getBeatOffsetSec();     // seconds into audio
+      const countDur      = 4 * beatSec;
+      // How long to delay audio.play() so we have room for all 4 clicks
+      // before the first audible downbeat. Zero when the song's intro is
+      // already at least 4 beats of silence.
+      const preRollSec    = Math.max(0, countDur - songFirstBeat);
+      const audioStartCtx = audioCtx.currentTime + 0.04 + preRollSec;
+      const firstDownbeatCtx = audioStartCtx + songFirstBeat;
+
+      console.log(`[count-in] bpm=${bpm}, beatSec=${beatSec.toFixed(3)}, ` +
+        `songFirstBeat=${songFirstBeat.toFixed(3)}s, preRoll=${preRollSec.toFixed(3)}s, ` +
+        `audio starts in ${(audioStartCtx - audioCtx.currentTime).toFixed(3)}s, ` +
+        `downbeat hits in ${(firstDownbeatCtx - audioCtx.currentTime).toFixed(3)}s`);
+
+      // Clicks 1..4 land one beat apart, with click 4 exactly one beat
+      // before the song's first downbeat. So the player counts
+      // "1-2-3-4" and the song says "[1]" right on the next beat.
+      for (let i = 1; i <= 4; i++) {
+        const t = firstDownbeatCtx - i * beatSec;
+        if (t < audioCtx.currentTime) continue;   // skip clicks already in the past
+        try { fireClickAt(t, true); }
         catch (e) { console.warn('[count-in] fireClickAt failed:', e); }
       }
-      const audioStartTime = clickStart + 4 * beatSec;
-      let waitMs = (audioStartTime - audioCtx.currentTime) * 1000;
+      let waitMs = (audioStartCtx - audioCtx.currentTime) * 1000;
       // Sanity-cap to 8 seconds (= 30 BPM × 4) so a NaN or runaway value
       // can't permanently freeze the UI. Anything under 30 BPM is unusual.
       waitMs = Math.max(0, Math.min(8000, isFinite(waitMs) ? waitMs : 0));
