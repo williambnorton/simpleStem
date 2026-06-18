@@ -5235,12 +5235,19 @@ async function refreshDrumMachinePick(drumPattern, bpm) {
   drumMachineFile  = resp.file;
   drumMachineAlternates = resp.alternates || [];
   // Label: pattern name or fallback to the picked file stem
-  const niceLabel = drumPattern || (resp.file || '').replace(/\.m4a$/i, '');
-  const tag = resp.source === 'exact' ? ''
+  // Label = the FILE we're actually going to play, not the requested name.
+  // Tag tells the operator which kind of fallback (if any) happened:
+  //   (none) = explicit exact match
+  //   ≈      = closest pattern in the SAME song-BPM family (preferred fallback)
+  //   ⏱      = exact metronome (110@bpm) match
+  //   m≈     = closest metronome (110@N) — last resort before "any file"
+  const fileLabel = (resp.file || '').replace(/\.m4a$/i, '');
+  const tag = resp.source === 'exact'           ? ''
+            : resp.source === 'family-near'     ? ' ≈'
             : resp.source === 'metronome-exact' ? ' ⏱'
-            : resp.source === 'metronome-near'  ? ' ≈'
+            : resp.source === 'metronome-near'  ? ' m≈'
             : '';
-  updateDrumChipLabel(niceLabel + tag);
+  updateDrumChipLabel(fileLabel + tag);
   // If the drum machine is currently playing, swap to the new file in place.
   if (drumMachineActive && drumMachineEl && drumMachineUrl) {
     drumMachineEl.src = drumMachineUrl;

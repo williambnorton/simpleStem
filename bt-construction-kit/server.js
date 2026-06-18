@@ -1315,63 +1315,107 @@ app.get('/api/drum-machine/pick', (req, res) => {
   const want = (req.query.drum_pattern || '').toString().trim();
   const bpm  = Number(req.query.bpm) || null;
 
+  // Index everything as parsed {bpm, pattern, filename}; ignore non-conforming.
+  const parsed = all.map(parseDrumName).filter(Boolean);
+
+  // Pre-compute groups by BPM for fast nearest-pattern-in-family lookup.
+  const byBpm = {};
+  for (const d of parsed) {
+    (byBpm[d.bpm] = byBpm[d.bpm] || []).push(d);
+  }
+
+  // Helper: pick the entry in `group` whose pattern is closest to target.
+  function nearestInGroup(group, target) {
+    if (!group || !group.length) return null;
+    let best = group[0];
+    let bestDist = Math.abs(best.pattern - target);
+    for (const d of group) {
+      const dist = Math.abs(d.pattern - target);
+      if (dist < bestDist) { best = d; bestDist = dist; }
+    }
+    return best;
+  }
+
   let chosen = null;
   let source = null;
 
-  // 1. Explicit match on metadata.drum_pattern
+  // 1. Explicit metadata.drum_pattern: try exact first, then nearest pattern
+  //    in the SAME BPM family. e.g. drum_pattern = "114@95":
+  //      a) try 114@95.m4a
+  //      b) if missing, look at every 114@*.m4a and pick the closest N to 95
+  //    This keeps the song's intended kit; only falls through to the
+  //    110@ metronome family if no same-BPM pattern exists at all.
   if (want) {
     const wantFile = `${want}.m4a`;
     if (all.includes(wantFile)) {
       chosen = wantFile;
       source = 'exact';
-    }
-  }
-
-  // 2. Metronome fallback: 110@<bpm>.m4a, then closest 110@N.m4a
-  if (!chosen && bpm) {
-    const metronomes = all
-      .map(parseDrumName)
-      .filter(d => d && d.bpm === 110);
-    if (metronomes.length) {
-      const exact = metronomes.find(d => d.pattern === bpm);
-      if (exact) {
-        chosen = exact.filename; source = 'metronome-exact';
-      } else {
-        let best = metronomes[0];
-        let bestDist = Math.abs(best.pattern - bpm);
-        for (const m of metronomes) {
-          const d = Math.abs(m.pattern - bpm);
-          if (d < bestDist) { best = m; bestDist = d; }
+    } else {
+      const m = /^(\d+)@(\d+)$/.exec(want);
+      if (m) {
+        const familyBpm = Number(m[1]);
+        const familyPat = Number(m[2]);
+        const near = nearestInGroup(byBpm[familyBpm], familyPat);
+        if (near) {
+          chosen = near.filename;
+          source = 'family-near';
         }
-        chosen = best.filename; source = 'metronome-near';
       }
     }
   }
 
-  // 3. Fallback: just the first pattern. Better than nothing.
+  // 2. Metronome fallback: 110@<bpm>.m4a, then nearest 110@N to song bpm.
+  if (!chosen && bpm) {
+    const metronomes = byBpm[110];
+    if (metronomes && metronomes.length) {
+      const exact = metronomes.find(d => d.pattern === bpm);
+      if (exact) {
+        chosen = exact.filename; source = 'metronome-exact';
+      } else {
+        const near = nearestInGroup(metronomes, bpm);
+        chosen = near.filename; source = 'metronome-near';
+      }
+    }
+  }
+
+  // 3. Last-ditch: just the first pattern. Better than silence.
   if (!chosen) {
     chosen = all[0];
     source = 'first-available';
   }
 
-  // Alternates for the right-click menu: every 110@N.m4a sorted by
-  // distance from the target bpm (closest first), capped to 12.
-  let alternates = all
-    .map(parseDrumName)
-    .filter(d => d && d.bpm === 110)
-    .sort((a, b) => Math.abs(a.pattern - (bpm || 100))
-                  - Math.abs(b.pattern - (bpm || 100)))
-    .slice(0, 12)
-    .map(d => d.filename);
-  // Also include the exact metadata pick at the top if it's not a 110@N
-  // pattern (so the override menu always shows it as the current selection).
-  if (chosen && !alternates.includes(chosen)) alternates.unshift(chosen);
+  // Right-click override menu. Show, in order:
+  //   - the chosen file (top, marked as current)
+  //   - every entry in the SAME BPM family as the chosen file, sorted by
+  //     pattern distance from the requested pattern (or the song BPM)
+  //   - then the 110@ metronome row
+  // Capped to 12 total.
+  const chosenParsed = parsed.find(d => d.filename === chosen) || null;
+  const familyBpm = chosenParsed ? chosenParsed.bpm : (bpm || 110);
+  const familyPat = chosenParsed ? chosenParsed.pattern : (bpm || 100);
+
+  const familyAlts = (byBpm[familyBpm] || [])
+    .slice()
+    .sort((a, b) => Math.abs(a.pattern - familyPat) - Math.abs(b.pattern - familyPat));
+  const metronomeAlts = (familyBpm === 110 ? [] : (byBpm[110] || []))
+    .slice()
+    .sort((a, b) => Math.abs(a.pattern - (bpm || 100)) - Math.abs(b.pattern - (bpm || 100)));
+
+  const altsOrdered = [];
+  const seen = new Set();
+  for (const d of [...familyAlts, ...metronomeAlts]) {
+    if (seen.has(d.filename)) continue;
+    seen.add(d.filename);
+    altsOrdered.push(d.filename);
+    if (altsOrdered.length >= 12) break;
+  }
+  if (chosen && !altsOrdered.includes(chosen)) altsOrdered.unshift(chosen);
 
   res.json({
     file: chosen,
     url: `/api/audio/drum-machine/${encodeURIComponent(chosen)}`,
     source,
-    alternates,
+    alternates: altsOrdered,
   });
 });
 
