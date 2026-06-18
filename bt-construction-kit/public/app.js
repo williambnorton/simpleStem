@@ -228,6 +228,7 @@ window.addEventListener('DOMContentLoaded', () => {
   );
   fetchLibrary();
   setupEventListeners();
+  setupDrumMachineButton();
   loadSetlistFromLocalStorage();
   loadMixerState();
   startWallClock();
@@ -4360,6 +4361,13 @@ function loadSong(song, opts) {
   isLooping = !!song.isDrumLoop;
   if (els.btnLoop) els.btnLoop.classList.toggle('active', isLooping);
 
+  // Drop the drum machine if it was engaged for the previous song.
+  // Otherwise a song-switch would leave the old pattern looping forever.
+  if (drumMachineActive) {
+    drumMachineRestoreSong = false;   // don't auto-resume the old song
+    disengageDrumMachine();
+  }
+
   // Reset playback speed to 1.0× on every song load. Carrying a slowed
   // tempo across songs in a setlist is rarely what the operator wants
   // (they slowed Song A for a rehearsal pass, then Song B starts in
@@ -4483,19 +4491,19 @@ function loadSong(song, opts) {
   if (els.activeKeySignature) {
     els.activeKeySignature.textContent = song.keySignature ? `(${song.keySignature})` : '';
   }
-  // Drum pattern pill — metadata.drum_pattern is an opaque string the
-  // librarian writes (e.g. "120@96" → BPM 120 on TR-808 pattern 96). Show
-  // it next to BPM/Key only when present; otherwise hide the pill entirely.
+  // Drum Machine button — ALWAYS visible now. Asks the server to pick the
+  // right DRUM_MACHINE/*.m4a for this song: prefers metadata.drum_pattern,
+  // falls back to the 110@<bpm> metronome series. Stash the chosen URL on
+  // window so the click handler can play it without re-querying. Cache
+  // alternates too for the right-click override menu.
   const drumPillEl = document.getElementById('active-meta-drum');
   const drumValEl  = document.getElementById('active-drum-value');
   const drumPattern = song.drum_pattern || song.drumPattern || '';
   if (drumPillEl && drumValEl) {
-    if (drumPattern) {
-      drumValEl.textContent = drumPattern;
-      drumPillEl.style.display = '';
-    } else {
-      drumPillEl.style.display = 'none';
-    }
+    drumPillEl.style.display = '';
+    drumValEl.textContent = drumPattern || (song.practiceBpm ? `≈${song.practiceBpm}` : '--');
+    refreshDrumMachinePick(drumPattern, song.practiceBpm).catch(e =>
+      console.warn('[drum-machine] pick failed:', e));
   }
   
   // Set all tracks to non-loop browser-wise to prevent wrap stutter
@@ -5174,6 +5182,181 @@ async function togglePlayPause() {
 
   applyMixerVolumes();
   lucide.createIcons();
+}
+
+// ─── Drum Machine button ──────────────────────────────────────────
+//
+// Top-of-screen Drum / pattern chip is always live. On load we ask the
+// server which file under DRUM_MACHINE/ to use for this song:
+//   - explicit metadata.drum_pattern → that file (source='exact')
+//   - else 110@<bpm> metronome series, nearest match (source='metronome-*')
+// Click toggles between backing track and drum loop. While the drum loop
+// is engaged the backing track is paused and the drum element plays on
+// loop through a dedicated source -> master-gain chain so the mixer's
+// master volume + the master mute behaviour still apply.
+// Right-click opens an override picker with nearby 110@N patterns.
+let drumMachineEl    = null;     // <audio> for the pattern, lazily created
+let drumMachineSrc   = null;     // MediaElementSource feeding masterMerger
+let drumMachineActive = false;
+let drumMachineUrl   = null;     // currently-selected URL (set by refresh)
+let drumMachineFile  = null;     // currently-selected filename
+let drumMachineAlternates = [];  // alternates for the right-click menu
+let drumMachineRestoreSong = false;  // were we mid-playback when engaged?
+
+function ensureDrumMachineEl() {
+  if (drumMachineEl) return drumMachineEl;
+  drumMachineEl = new Audio();
+  drumMachineEl.preload = 'auto';
+  drumMachineEl.loop = true;
+  drumMachineEl.crossOrigin = 'anonymous';
+  // Wire into the master bus AFTER the user gesture creates audioCtx.
+  // wireDrumMachineIntoMaster is called from togglePlayPause's gesture
+  // path AND from engageDrumMachine, whichever fires first.
+  return drumMachineEl;
+}
+
+function wireDrumMachineIntoMaster() {
+  if (!audioCtx || !masterGainNode || !drumMachineEl || drumMachineSrc) return;
+  try {
+    drumMachineSrc = audioCtx.createMediaElementSource(drumMachineEl);
+    drumMachineSrc.connect(masterGainNode);
+  } catch (e) { console.warn('[drum-machine] wireToMaster failed:', e); }
+}
+
+async function refreshDrumMachinePick(drumPattern, bpm) {
+  const q = new URLSearchParams();
+  if (drumPattern) q.set('drum_pattern', drumPattern);
+  if (bpm) q.set('bpm', String(bpm));
+  let resp;
+  try {
+    resp = await fetch('/api/drum-machine/pick?' + q.toString()).then(r => r.json());
+  } catch (e) {
+    drumMachineUrl = null; drumMachineFile = null; drumMachineAlternates = [];
+    updateDrumChipLabel(null, '?');
+    return;
+  }
+  drumMachineUrl   = resp.url;
+  drumMachineFile  = resp.file;
+  drumMachineAlternates = resp.alternates || [];
+  // Label: pattern name or fallback to the picked file stem
+  const niceLabel = drumPattern || (resp.file || '').replace(/\.m4a$/i, '');
+  const tag = resp.source === 'exact' ? ''
+            : resp.source === 'metronome-exact' ? ' ⏱'
+            : resp.source === 'metronome-near'  ? ' ≈'
+            : '';
+  updateDrumChipLabel(niceLabel + tag);
+  // If the drum machine is currently playing, swap to the new file in place.
+  if (drumMachineActive && drumMachineEl && drumMachineUrl) {
+    drumMachineEl.src = drumMachineUrl;
+    drumMachineEl.play().catch(() => {});
+  }
+}
+
+function updateDrumChipLabel(label, fallback) {
+  const v = document.getElementById('active-drum-value');
+  if (v) v.textContent = label || fallback || '--';
+}
+
+function engageDrumMachine() {
+  if (drumMachineActive || !drumMachineUrl) return;
+  initAudioCtx();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  const el = ensureDrumMachineEl();
+  wireDrumMachineIntoMaster();
+  drumMachineRestoreSong = isPlaying;
+  // Pause the backing track (do NOT stop -- preserve playhead so we can
+  // resume from the same spot when the user toggles back).
+  if (isPlaying) {
+    Object.values(audioElements).forEach(ae => { try { ae.pause(); } catch (e) {} });
+    isPlaying = false;
+    if (els.btnPlay) els.btnPlay.innerHTML = `<i data-lucide="play"></i>`;
+    if (window.lucide) lucide.createIcons();
+  }
+  el.src = drumMachineUrl;
+  el.currentTime = 0;
+  el.play().catch(e => console.warn('[drum-machine] play failed:', e));
+  drumMachineActive = true;
+  const pill = document.getElementById('active-meta-drum');
+  if (pill) pill.classList.add('active');
+}
+
+function disengageDrumMachine() {
+  if (!drumMachineActive) return;
+  try { drumMachineEl && drumMachineEl.pause(); } catch (e) {}
+  if (drumMachineEl) drumMachineEl.currentTime = 0;
+  drumMachineActive = false;
+  const pill = document.getElementById('active-meta-drum');
+  if (pill) pill.classList.remove('active');
+  // Resume the backing track only if we were playing when engaged.
+  if (drumMachineRestoreSong && currentSong) {
+    isPlaying = true;
+    if (els.btnPlay) els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
+    if (window.lucide) lucide.createIcons();
+    Object.values(audioElements).forEach(ae => {
+      if (!audioHasSrc(ae)) return;
+      ae.play().catch(() => {});
+    });
+  }
+  drumMachineRestoreSong = false;
+}
+
+function toggleDrumMachine() {
+  if (drumMachineActive) disengageDrumMachine();
+  else engageDrumMachine();
+}
+
+// Right-click context menu: list nearby 110@<bpm> alternates so the
+// operator can override the auto-pick mid-rehearsal without leaving
+// the player. Click an entry to swap.
+let _drumCtxMenuEl = null;
+function showDrumContextMenu(x, y) {
+  if (!drumMachineAlternates || drumMachineAlternates.length === 0) return;
+  hideDrumContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'drum-machine-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top  = `${y}px`;
+  menu.innerHTML = drumMachineAlternates.map(f => {
+    const isCurrent = (f === drumMachineFile);
+    return `<button class="drum-menu-item${isCurrent ? ' current' : ''}" data-file="${f}">${escapeHtml(f.replace(/\.m4a$/i, ''))}</button>`;
+  }).join('');
+  document.body.appendChild(menu);
+  _drumCtxMenuEl = menu;
+  menu.querySelectorAll('.drum-menu-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.file;
+      drumMachineFile = f;
+      drumMachineUrl  = `/api/audio/drum-machine/${encodeURIComponent(f)}`;
+      updateDrumChipLabel(f.replace(/\.m4a$/i, ''));
+      if (drumMachineActive && drumMachineEl) {
+        drumMachineEl.src = drumMachineUrl;
+        drumMachineEl.play().catch(() => {});
+      }
+      hideDrumContextMenu();
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener('click', hideDrumContextMenu, { once: true });
+  }, 0);
+}
+function hideDrumContextMenu() {
+  if (_drumCtxMenuEl) { _drumCtxMenuEl.remove(); _drumCtxMenuEl = null; }
+}
+
+// Wire the button once the DOM is up. Tolerant of multiple boot passes.
+function setupDrumMachineButton() {
+  const pill = document.getElementById('active-meta-drum');
+  if (!pill || pill.dataset.drumWired === '1') return;
+  pill.dataset.drumWired = '1';
+  pill.style.cursor = 'pointer';
+  pill.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleDrumMachine();
+  });
+  pill.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showDrumContextMenu(e.clientX, e.clientY);
+  });
 }
 
 // Stop Audio

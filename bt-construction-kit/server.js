@@ -97,6 +97,11 @@ const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
 // the older per-song STEMS/<song>/*_loop*.wav layout by migrate_loops.sh
 // and produced directly by stem.sh going forward.
 const LOOPS_DIR = `${SIMPLE_STEM_ROOT}/LOOPS`;
+// Drum-machine library: BPM@PATTERN.m4a files used by the top-of-screen
+// drum machine button. metronome patterns follow the 110@<bpm> convention
+// (110-series drum-machine settings) so we can synthesize a fallback when
+// a song has no explicit drum_pattern.
+const DRUM_MACHINE_DIR = `${SIMPLE_STEM_ROOT}/DRUM_MACHINE`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
@@ -1267,6 +1272,118 @@ app.get('/api/audio/m4a/:file', (req, res) => {
   res.sendFile(sourcePath, { dotfiles: 'allow' });
 });
 
+// ---------- DRUM MACHINE ---------------------------------------------------
+// DRUM_MACHINE/<bpm>@<pattern>.m4a holds one short loopable .m4a per pattern.
+// The portal calls /api/drum-machine/pick on song-load to decide which file
+// to use for the top-of-screen Drum Machine button:
+//   1. If the song's metadata.drum_pattern is set AND that file exists, use it.
+//   2. Else fall back to the metronome series 110@<bpm>.m4a; if exact is
+//      missing, pick the closest 110@N.m4a by BPM distance.
+//   3. Else (no DRUM_MACHINE/ files at all) return null.
+// /api/drum-machine/list returns the whole sorted list so the right-click
+// context menu can render an override picker.
+const AUDIO_CACHE_DRUM = path.join(AUDIO_CACHE_DIR, 'DRUM_MACHINE');
+try { fs.mkdirSync(AUDIO_CACHE_DRUM, { recursive: true }); } catch (e) {}
+
+function listDrumPatterns() {
+  if (!fs.existsSync(DRUM_MACHINE_DIR)) return [];
+  return fs.readdirSync(DRUM_MACHINE_DIR)
+    .filter(f => f.toLowerCase().endsWith('.m4a'))
+    .sort();
+}
+
+// Parse <bpm>@<pattern>.m4a -> { bpm, pattern }. Returns null on shape miss.
+function parseDrumName(filename) {
+  const m = /^(\d+)@(\d+)\.m4a$/i.exec(filename);
+  if (!m) return null;
+  return { bpm: Number(m[1]), pattern: Number(m[2]), filename };
+}
+
+app.get('/api/drum-machine/list', (req, res) => {
+  res.json({ patterns: listDrumPatterns() });
+});
+
+// Pick a drum file for the current song. Query params:
+//   ?drum_pattern=120@130  (from metadata.json; optional)
+//   ?bpm=92                 (fallback metronome target; optional but desired)
+// Response: { file, url, source: 'exact'|'metronome-exact'|'metronome-near'|null,
+//             alternates: [<filename>, ...]  -- 110@<near> options }
+app.get('/api/drum-machine/pick', (req, res) => {
+  const all = listDrumPatterns();
+  if (all.length === 0) return res.json({ file: null, url: null, source: null, alternates: [] });
+
+  const want = (req.query.drum_pattern || '').toString().trim();
+  const bpm  = Number(req.query.bpm) || null;
+
+  let chosen = null;
+  let source = null;
+
+  // 1. Explicit match on metadata.drum_pattern
+  if (want) {
+    const wantFile = `${want}.m4a`;
+    if (all.includes(wantFile)) {
+      chosen = wantFile;
+      source = 'exact';
+    }
+  }
+
+  // 2. Metronome fallback: 110@<bpm>.m4a, then closest 110@N.m4a
+  if (!chosen && bpm) {
+    const metronomes = all
+      .map(parseDrumName)
+      .filter(d => d && d.bpm === 110);
+    if (metronomes.length) {
+      const exact = metronomes.find(d => d.pattern === bpm);
+      if (exact) {
+        chosen = exact.filename; source = 'metronome-exact';
+      } else {
+        let best = metronomes[0];
+        let bestDist = Math.abs(best.pattern - bpm);
+        for (const m of metronomes) {
+          const d = Math.abs(m.pattern - bpm);
+          if (d < bestDist) { best = m; bestDist = d; }
+        }
+        chosen = best.filename; source = 'metronome-near';
+      }
+    }
+  }
+
+  // 3. Fallback: just the first pattern. Better than nothing.
+  if (!chosen) {
+    chosen = all[0];
+    source = 'first-available';
+  }
+
+  // Alternates for the right-click menu: every 110@N.m4a sorted by
+  // distance from the target bpm (closest first), capped to 12.
+  let alternates = all
+    .map(parseDrumName)
+    .filter(d => d && d.bpm === 110)
+    .sort((a, b) => Math.abs(a.pattern - (bpm || 100))
+                  - Math.abs(b.pattern - (bpm || 100)))
+    .slice(0, 12)
+    .map(d => d.filename);
+  // Also include the exact metadata pick at the top if it's not a 110@N
+  // pattern (so the override menu always shows it as the current selection).
+  if (chosen && !alternates.includes(chosen)) alternates.unshift(chosen);
+
+  res.json({
+    file: chosen,
+    url: `/api/audio/drum-machine/${encodeURIComponent(chosen)}`,
+    source,
+    alternates,
+  });
+});
+
+app.get('/api/audio/drum-machine/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(DRUM_MACHINE_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_DRUM, file);
+  if (!fs.existsSync(sourcePath)) return res.status(404).send('Drum pattern not found');
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
 // Serve loop files from the flat LOOPS/ folder. Mirrors the m4a endpoint.
 // Cache key: file basename. Files like
 //   drums_120_mary_janes_last_dance_18bars.m4a
@@ -1795,6 +1912,297 @@ app.post('/api/setlists', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── AI setlist builder (file + KBM bridge to claude.ai chat) ──────────────
+// We do NOT call Anthropic's API directly. Bill already has a Claude.ai
+// subscription and prefers driving the browser to spend that quota
+// instead of paying per-call for API tokens. The flow:
+//
+//   1. POST /api/setlist/ai-generate  -- write prompt.txt + library.json
+//      under SIMPLE_STEM_ROOT/AI_SETLIST/<job_id>/, kick off the bash
+//      bridge script that triggers a Keyboard Maestro macro, and return
+//      { job_id } immediately so the browser can poll.
+//   2. The KBM macro reads prompt.txt, pastes it into a Claude.ai chat
+//      tab in Chrome, waits for the reply, copies it back into
+//      response.txt under the same job folder. (Macro lives on the
+//      operator's mac; Bill builds it from the contract documented in
+//      AI_SETLIST/README.md alongside this codebase.)
+//   3. GET /api/setlist/ai-generate/poll/:job_id  -- when response.txt
+//      appears, parse the JSON out of it, cross-check song_base values
+//      against the library, return the setlist + rationale.
+//
+// 5-minute soft timeout. The browser polls every 4 s and shows elapsed
+// seconds + 'still waiting…' so the operator can see progress.
+
+const AI_SETLIST_DIR = path.join(SIMPLE_STEM_ROOT, 'AI_SETLIST');
+try { if (!fs.existsSync(AI_SETLIST_DIR)) fs.mkdirSync(AI_SETLIST_DIR, { recursive: true }); } catch (e) {}
+
+// Shared system prompt + library packaging used by both the API path
+// (kept around as a fallback) and the file+KBM bridge.
+function aiSetlistBuildPrompt(description, corpus) {
+  const SYS = `You are a setlist planner for a working cover band called the Mitchell Park Band. The band's working singers are Bill, Matt, Dan, and JD; other songs may be marked "All" for group vocals or "(unassigned)" if no lead has been chosen yet.
+
+You will receive:
+1. The band's full available library as a JSON array. Each song has: song_base (the canonical identifier you MUST return), title, artist, singer_lead, key, bpm, duration_sec, drum_pattern.
+2. A free-form description of an upcoming gig with timing, mood, and constraints.
+
+Build a timed, ordered setlist drawing songs ONLY from the supplied library. Respect the user's constraints (time of day, energy arc, genre, singer rotation rules, specific song requests, finishing songs). Compute each song's start time as the gig start time plus the cumulative duration of preceding songs plus ~20 seconds of changeover.
+
+What we care about is the FLOW — the sequence as a single aesthetic object. We do NOT want a per-song justification; we want one substantive rationale that explains the arc.`;
+
+  const SCHEMA = `Return ONLY valid JSON, no prose outside the JSON. Use exactly this schema:
+
+{
+  "flow_rationale": "4 to 8 sentences explaining the SHAPE of the setlist as a sequence: how the energy arc moves over time, how keys flow between consecutive songs, how the singer rotation is paced, and what overall aesthetic you went for (e.g. 'classic-rock-that-pulls-you-in-then-keeps-you-dancing'). Call out any constraint you couldn't fully meet and why.",
+  "setlist": [
+    {
+      "time": "6:30 PM",
+      "song_base": "exact song_base from the library",
+      "title": "exact title from the library",
+      "artist": "exact artist from the library",
+      "singer": "singer_lead from the library",
+      "key": "key from the library",
+      "bpm": 124,
+      "duration_min": 4
+    }
+  ]
+}
+
+Hard rules:
+- song_base MUST appear verbatim in the library JSON. Do not invent songs.
+- If the user says "no more than N <singer> songs in a row", enforce that.
+- If the user names a specific song that is not in the library, omit it and call it out in flow_rationale.
+- Do NOT add per-song "reason" fields. The flow_rationale covers the whole sequence.`;
+
+  const user =
+    `Band library (JSON array, ${corpus.length} songs):\n` +
+    '```json\n' + JSON.stringify(corpus) + '\n```\n\n' +
+    `Gig description from the band leader:\n${description}\n\n` +
+    SCHEMA +
+    `\n\nReply with the JSON object only — no preamble, no postscript.`;
+
+  return { system: SYS, user };
+}
+
+function aiSetlistCollectCorpus() {
+  const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+  return songs
+    .filter(s => s.type === 'stems')
+    .map(s => ({
+      song_base:    s.folderName,
+      title:        s.title,
+      artist:       s.artist,
+      singer_lead:  s.singer_lead || '(unassigned)',
+      key:          s.key || '?',
+      bpm:          s.practiceBpm || null,
+      duration_sec: s.duration || null,
+      drum_pattern: s.drum_pattern || null,
+    }));
+}
+
+// Canonical list of supported chatbots. The IDs are used in URLs, file
+// paths, and localStorage keys -- they MUST stay lowercase, ASCII, and
+// stable. Display names are operator-facing.
+const AI_SETLIST_BOTS = [
+  { id: 'claude',     name: 'Claude',     url: 'https://claude.ai/new' },
+  { id: 'chatgpt',    name: 'ChatGPT',    url: 'https://chatgpt.com/' },
+  { id: 'gemini',     name: 'Gemini',     url: 'https://gemini.google.com/' },
+  { id: 'deepseek',   name: 'DeepSeek',   url: 'https://chat.deepseek.com/' },
+  { id: 'perplexity', name: 'Perplexity', url: 'https://www.perplexity.ai/' },
+  { id: 'grok',       name: 'Grok 3',     url: 'https://grok.com/' },
+];
+const AI_SETLIST_BOT_IDS = new Set(AI_SETLIST_BOTS.map(b => b.id));
+
+// Helper: parse a raw chatbot reply (may be wrapped in prose) into the
+// expected { flow_rationale, setlist } shape. Cross-checks song_base
+// values against the live library and drops hallucinations. Returns
+// { ok: true, setlist, rationale, total_minutes, dropped_unknown_count }
+// or { ok: false, error, raw }.
+function aiSetlistParseReply(raw, corpus) {
+  const trimmed = String(raw || '').trim();
+  let parsed = null;
+  try { parsed = JSON.parse(trimmed); }
+  catch (e) {
+    const first = trimmed.indexOf('{');
+    const last  = trimmed.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      try { parsed = JSON.parse(trimmed.slice(first, last + 1)); } catch (e2) {}
+    }
+  }
+  if (!parsed || !Array.isArray(parsed.setlist)) {
+    return { ok: false, error: 'no JSON setlist found in reply', raw: trimmed.slice(0, 800) };
+  }
+  const known = new Set(corpus.map(c => c.song_base));
+  const cleaned = parsed.setlist.filter(s => s && typeof s.song_base === 'string' && known.has(s.song_base));
+  const dropped = parsed.setlist.length - cleaned.length;
+  const totalMin = cleaned.reduce((acc, s) => acc + (Number(s.duration_min) || 0), 0);
+  return {
+    ok: true,
+    setlist: cleaned,
+    rationale: parsed.flow_rationale || parsed.rationale || '',
+    total_minutes: Math.round(totalMin),
+    dropped_unknown_count: dropped,
+  };
+}
+
+app.post('/api/setlist/ai-generate', (req, res) => {
+  const description = (req.body && req.body.description || '').toString().trim();
+  if (!description) return res.status(400).json({ error: 'need { description }' });
+  if (description.length > 6000) return res.status(400).json({ error: 'description too long (cap 6000 chars)' });
+  // Bot list: client sends an array of chosen bot ids. Default to all.
+  let bots = Array.isArray(req.body && req.body.bots) ? req.body.bots : null;
+  if (!bots || !bots.length) bots = AI_SETLIST_BOTS.map(b => b.id);
+  bots = bots.filter(b => AI_SETLIST_BOT_IDS.has(b));
+  if (!bots.length) return res.status(400).json({ error: 'no valid bots selected' });
+
+  const corpus = aiSetlistCollectCorpus();
+  if (corpus.length === 0) return res.status(503).json({ error: 'library is empty; nothing to plan against' });
+
+  const jobId = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14) + '_' + Math.random().toString(36).slice(2, 6);
+  const jobDir = path.join(AI_SETLIST_DIR, jobId);
+  try { fs.mkdirSync(jobDir, { recursive: true }); }
+  catch (e) { return res.status(500).json({ error: 'mkdir failed: ' + e.message }); }
+
+  const { system, user } = aiSetlistBuildPrompt(description, corpus);
+  // One prompt file shared across all bots, since every bot gets the
+  // same question. The KBM macro (or the operator copy-pasting by hand)
+  // reads prompt.txt and pastes the contents into each selected bot.
+  const fullPrompt = `${system}\n\n---\n\n${user}\n`;
+  try {
+    fs.writeFileSync(path.join(jobDir, 'prompt.txt'), fullPrompt);
+    fs.writeFileSync(path.join(jobDir, 'library.json'), JSON.stringify(corpus, null, 2));
+    fs.writeFileSync(path.join(jobDir, 'meta.json'), JSON.stringify({
+      job_id: jobId,
+      created_at: new Date().toISOString(),
+      description,
+      library_size: corpus.length,
+      bots,
+      status: 'pending',
+    }, null, 2));
+    // Per-bot subdirs. The KBM macro writes <bot>/response.txt as each
+    // bot completes; the poll endpoint reads from these.
+    for (const b of bots) {
+      const dir = path.join(jobDir, b);
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+    }
+  } catch (e) {
+    return res.status(500).json({ error: 'write failed: ' + e.message });
+  }
+
+  // Kick off the bridge (detached, fire-and-forget). The bridge script
+  // gets the job_dir and the comma-separated bot list as its args. The
+  // KBM macro can read meta.json directly OR use those args.
+  const bridgeScript = path.join(__dirname, '..', 'bin', 'ai_setlist_kbm.sh');
+  const fallbackScript = path.join(__dirname, '..', 'ai_setlist_kbm.sh');
+  const scriptPath = fs.existsSync(bridgeScript) ? bridgeScript : fallbackScript;
+  if (fs.existsSync(scriptPath)) {
+    const { spawn } = require('child_process');
+    try {
+      const child = spawn('bash', [scriptPath, jobDir, bots.join(',')], { detached: true, stdio: 'ignore' });
+      child.unref();
+      console.log(`[ai-setlist] spawned ${path.basename(scriptPath)} for job ${jobId} (bots: ${bots.join(', ')})`);
+    } catch (e) {
+      console.warn('[ai-setlist] bridge spawn failed:', e.message);
+    }
+  } else {
+    console.warn(`[ai-setlist] bridge script not found at ${scriptPath} -- per-bot responses must be pasted manually`);
+  }
+
+  res.json({
+    ok: true,
+    job_id: jobId,
+    job_dir: jobDir,
+    bots,
+    library_size: corpus.length,
+    poll_url: `/api/setlist/ai-generate/poll/${jobId}`,
+  });
+});
+
+// Poll endpoint: returns per-bot status. Each bot is one of:
+//   pending — no <bot>/response.txt yet
+//   ready   — response parsed cleanly, includes setlist + rationale
+//   error   — response present but unparseable; includes raw text
+// The overall job is "ready" once at least one bot has produced a
+// parseable reply (the operator can still wait for more).
+app.get('/api/setlist/ai-generate/poll/:job_id', (req, res) => {
+  const jobId = String(req.params.job_id).replace(/[^A-Za-z0-9_]/g, '');
+  if (!jobId) return res.status(400).json({ error: 'bad job_id' });
+  const jobDir = path.join(AI_SETLIST_DIR, jobId);
+  if (!fs.existsSync(jobDir)) return res.status(404).json({ error: 'unknown job_id' });
+  const metaFile = path.join(jobDir, 'meta.json');
+  let meta = {};
+  try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf8')); } catch (e) {}
+  const createdAt = meta.created_at ? Date.parse(meta.created_at) : Date.now();
+  const elapsedSec = Math.round((Date.now() - createdAt) / 1000);
+  const botIds = Array.isArray(meta.bots) ? meta.bots : AI_SETLIST_BOTS.map(b => b.id);
+
+  const corpus = aiSetlistCollectCorpus();
+  const bots = {};
+  let anyReady = false;
+  let allDone  = true;
+
+  for (const id of botIds) {
+    const botDir = path.join(jobDir, id);
+    const responseFile = path.join(botDir, 'response.txt');
+    if (!fs.existsSync(responseFile)) {
+      bots[id] = { status: 'pending' };
+      allDone = false;
+      continue;
+    }
+    let raw = '';
+    try { raw = fs.readFileSync(responseFile, 'utf8'); }
+    catch (e) { bots[id] = { status: 'error', error: 'read failed: ' + e.message }; continue; }
+    const parsed = aiSetlistParseReply(raw, corpus);
+    if (!parsed.ok) {
+      bots[id] = { status: 'error', error: parsed.error, raw: parsed.raw };
+      continue;
+    }
+    bots[id] = {
+      status: 'ready',
+      setlist: parsed.setlist,
+      rationale: parsed.rationale,
+      total_minutes: parsed.total_minutes,
+      dropped_unknown_count: parsed.dropped_unknown_count,
+    };
+    anyReady = true;
+  }
+
+  res.json({
+    job_id: jobId,
+    elapsed_sec: elapsedSec,
+    overall: anyReady ? (allDone ? 'ready' : 'partial') : 'pending',
+    bots,
+    library_size: corpus.length,
+  });
+});
+
+// Manual paste endpoint: the operator runs a chatbot themselves
+// (because they don't have a KBM macro for it, or the macro failed)
+// and pastes the reply into the per-bot card in the portal. This
+// writes the text to <jobDir>/<bot>/response.txt so the next poll
+// picks it up alongside any other bot replies.
+app.post('/api/setlist/ai-generate/paste/:job_id/:bot', (req, res) => {
+  const jobId = String(req.params.job_id).replace(/[^A-Za-z0-9_]/g, '');
+  const bot   = String(req.params.bot).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!jobId || !AI_SETLIST_BOT_IDS.has(bot)) return res.status(400).json({ error: 'bad job_id or bot' });
+  const jobDir = path.join(AI_SETLIST_DIR, jobId);
+  const botDir = path.join(jobDir, bot);
+  if (!fs.existsSync(jobDir)) return res.status(404).json({ error: 'unknown job_id' });
+  const text = (req.body && req.body.text || '').toString();
+  if (!text.trim()) return res.status(400).json({ error: 'need { text }' });
+  try {
+    if (!fs.existsSync(botDir)) fs.mkdirSync(botDir, { recursive: true });
+    fs.writeFileSync(path.join(botDir, 'response.txt'), text);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Expose the supported bot list to the client so the checkboxes stay
+// in sync with the server's allow-list without hard-coding it on both
+// sides.
+app.get('/api/setlist/ai-bots', (req, res) => {
+  res.json({ bots: AI_SETLIST_BOTS });
 });
 
 // Version status: what the running process booted with, what's on disk now, and

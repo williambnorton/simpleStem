@@ -202,10 +202,18 @@
                   <span id="active-key-signature" class="stat-sig"></span>
                 </div>
               </div>
-              <div class="meta-stat-pill hover-glow" id="active-meta-drum" style="display:none;">
+              <!-- Drum Machine button. ALWAYS visible. Left-click toggles:
+                   pauses the backing track and plays DRUM_MACHINE/<pattern>.m4a
+                   on loop (or resumes the backing track if already on).
+                   Right-click pops a menu of nearby 110@<bpm> patterns to
+                   override the auto-pick. The value shown is the file the
+                   server picked: an explicit metadata.drum_pattern when
+                   present, else the closest 110@<bpm> metronome. -->
+              <div class="meta-stat-pill hover-glow drum-machine-btn" id="active-meta-drum"
+                   title="Left-click: drum machine ↔ backing track. Right-click: pick another pattern.">
                 <i data-lucide="drum" class="text-orange"></i>
                 <div>
-                  <span id="active-drum-value" class="stat-val">-</span>
+                  <span id="active-drum-value" class="stat-val">--</span>
                   <span class="stat-lbl">Drum</span>
                 </div>
               </div>

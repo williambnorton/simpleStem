@@ -347,6 +347,53 @@ select {
 }
 .meta-stat-pill i { width: 20px !important; height: 20px !important; }
 
+/* Drum Machine pill — always visible button. Active state pulses orange
+   when the drum loop is playing; click toggles between drum and backing
+   track. Right-click pops the alternates picker (.drum-machine-menu). */
+.drum-machine-btn {
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms;
+}
+.drum-machine-btn:hover {
+  background: rgba(255, 152, 0, 0.10);
+}
+.drum-machine-btn.active {
+  background: rgba(255, 152, 0, 0.18);
+  border: 1.5px solid rgba(255, 152, 0, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.18);
+}
+
+/* Right-click override menu */
+.drum-machine-menu {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  min-width: 140px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.drum-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-main);
+  cursor: pointer;
+}
+.drum-menu-item:hover { background: rgba(255, 152, 0, 0.14); }
+.drum-menu-item.current {
+  color: var(--color-yellow);
+  font-weight: 700;
+}
+
 /* Badges (STEMS / M4A BACKING TRACK) */
 .badge {
   background: #7c4dff !important;
