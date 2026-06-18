@@ -4363,10 +4363,7 @@ function loadSong(song, opts) {
 
   // Drop the drum machine if it was engaged for the previous song.
   // Otherwise a song-switch would leave the old pattern looping forever.
-  if (drumMachineActive) {
-    drumMachineRestoreSong = false;   // don't auto-resume the old song
-    disengageDrumMachine();
-  }
+  if (drumMachineActive) disengageDrumMachine();
 
   // Reset playback speed to 1.0× on every song load. Carrying a slowed
   // tempo across songs in a setlist is rarely what the operator wants
@@ -5201,7 +5198,6 @@ let drumMachineActive = false;
 let drumMachineUrl   = null;     // currently-selected URL (set by refresh)
 let drumMachineFile  = null;     // currently-selected filename
 let drumMachineAlternates = [];  // alternates for the right-click menu
-let drumMachineRestoreSong = false;  // were we mid-playback when engaged?
 
 function ensureDrumMachineEl() {
   if (drumMachineEl) return drumMachineEl;
@@ -5263,14 +5259,14 @@ function engageDrumMachine() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   const el = ensureDrumMachineEl();
   wireDrumMachineIntoMaster();
-  drumMachineRestoreSong = isPlaying;
-  // Pause the backing track (do NOT stop -- preserve playhead so we can
-  // resume from the same spot when the user toggles back).
-  if (isPlaying) {
-    Object.values(audioElements).forEach(ae => { try { ae.pause(); } catch (e) {} });
-    isPlaying = false;
-    if (els.btnPlay) els.btnPlay.innerHTML = `<i data-lucide="play"></i>`;
-    if (window.lucide) lucide.createIcons();
+  // FULL STOP of the backing track. Players asked for this at the gig:
+  // when they call for "just the drum machine", the backing track shouldn't
+  // be lurking paused -- it should be off. Pressing Play after disengaging
+  // the drum machine starts the song fresh from the top (or last saved
+  // playhead). This is intentional friction so a stem doesn't sneak back
+  // in mid-rehearsal.
+  if (isPlaying || Object.values(audioElements).some(audioHasSrc)) {
+    stopAudio();
   }
   el.src = drumMachineUrl;
   el.currentTime = 0;
@@ -5287,17 +5283,8 @@ function disengageDrumMachine() {
   drumMachineActive = false;
   const pill = document.getElementById('active-meta-drum');
   if (pill) pill.classList.remove('active');
-  // Resume the backing track only if we were playing when engaged.
-  if (drumMachineRestoreSong && currentSong) {
-    isPlaying = true;
-    if (els.btnPlay) els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
-    if (window.lucide) lucide.createIcons();
-    Object.values(audioElements).forEach(ae => {
-      if (!audioHasSrc(ae)) return;
-      ae.play().catch(() => {});
-    });
-  }
-  drumMachineRestoreSong = false;
+  // Backing track stays STOPPED. The operator presses Play (or spacebar)
+  // to start it again — explicit gesture, no surprise resume.
 }
 
 function toggleDrumMachine() {
