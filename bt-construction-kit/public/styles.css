@@ -357,11 +357,42 @@ select {
 .drum-machine-btn:hover {
   background: rgba(255, 152, 0, 0.10);
 }
+/* Active drum machine — slow orange pulse so you can spot it across the
+   room while playing. Also bump the label to bold + orange. */
 .drum-machine-btn.active {
-  background: rgba(255, 152, 0, 0.18);
-  border: 1.5px solid rgba(255, 152, 0, 0.85);
-  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.18);
+  background: rgba(255, 152, 0, 0.28);
+  border: 2px solid rgba(255, 152, 0, 0.95);
+  animation: drumPulse 1.2s ease-in-out infinite;
 }
+.drum-machine-btn.active .stat-val,
+.drum-machine-btn.active .stat-lbl {
+  color: #ff9800 !important;
+  font-weight: 800 !important;
+}
+@keyframes drumPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(255, 152, 0, 0.55); }
+  60%  { box-shadow: 0 0 0 14px rgba(255, 152, 0, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(255, 152, 0, 0); }
+}
+
+/* Heads-up text strip that appears under the title row while the drum
+   machine is engaged. Tells the operator "yes, what you're hearing is
+   the drum loop, not the song". */
+.drum-machine-banner {
+  display: none;
+  margin: 6px 0;
+  padding: 6px 12px;
+  background: rgba(255, 152, 0, 0.18);
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: #ff9800;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.drum-machine-banner.show { display: block; }
 
 /* Right-click override menu */
 .drum-machine-menu {

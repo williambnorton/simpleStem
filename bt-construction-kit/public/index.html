@@ -183,6 +183,13 @@
                 <button id="active-track-star" class="active-track-star" title="Click to favorite" style="display:none;">☆</button>
                 <span id="active-track-title">Song Title</span><span id="active-track-sep" class="track-sep"> &mdash; </span><span id="active-track-artist">Artist Name</span>
               </h1>
+              <!-- Drum machine status banner. Visible only while the drum
+                   pill is engaged. Mutually exclusive with backing-track
+                   playback so this also doubles as a "the song is NOT
+                   playing" reminder. -->
+              <div id="drum-machine-banner" class="drum-machine-banner">
+                <i data-lucide="drum"></i> Drum Machine playing — press Play to switch back to the song
+              </div>
             </div>
             <div class="track-meta-right">
               <!-- Layout: [BPM] [KEY] [tall digital clock]. Analog clock

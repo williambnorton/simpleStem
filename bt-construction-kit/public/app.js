@@ -5104,7 +5104,13 @@ async function togglePlayPause() {
     try { await audioCtx.resume(); } catch (e) {}
   }
 
-  const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
+  // Mutual exclusion: pressing Play disengages the drum machine if it's
+  // running. Drum machine and backing track never coexist.
+  if (drumMachineActive) {
+    disengageDrumMachine();
+  }
+
+  let activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
 
   if (isPlaying) {
     activeElements.forEach(ae => ae.pause());
@@ -5125,6 +5131,15 @@ async function togglePlayPause() {
   }
 
   if (activeElements.length === 0) {
+    // stopAudio() (called by engageDrumMachine) clears every audio element's
+    // src. When the operator hits Play after a drum-machine session, we
+    // need to reload the current song into the elements before starting.
+    // loadSong with autoplay:true handles both rehydration and start.
+    if (currentSong) {
+      console.log('[togglePlayPause] sources empty after stop; reloading currentSong with autoplay');
+      loadSong(currentSong, { autoplay: true });
+      return;
+    }
     console.warn('[togglePlayPause] no active audio elements; nothing to play');
     return;
   }
@@ -5281,6 +5296,9 @@ function engageDrumMachine() {
   drumMachineActive = true;
   const pill = document.getElementById('active-meta-drum');
   if (pill) pill.classList.add('active');
+  const banner = document.getElementById('drum-machine-banner');
+  if (banner) banner.classList.add('show');
+  if (window.lucide) lucide.createIcons();
 }
 
 function disengageDrumMachine() {
@@ -5290,6 +5308,8 @@ function disengageDrumMachine() {
   drumMachineActive = false;
   const pill = document.getElementById('active-meta-drum');
   if (pill) pill.classList.remove('active');
+  const banner = document.getElementById('drum-machine-banner');
+  if (banner) banner.classList.remove('show');
   // Backing track stays STOPPED. The operator presses Play (or spacebar)
   // to start it again — explicit gesture, no surprise resume.
 }
