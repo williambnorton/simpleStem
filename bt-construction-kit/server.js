@@ -1535,14 +1535,18 @@ app.post('/api/loops/from-url', (req, res) => {
   // 403 retries.
   const tempBase = path.join(CUSTOM_LOOPS_DIR, `${jobId}_full.m4a`);
 
+  // yt-dlp's default extractor (web client) with NO --download-sections
+  // and NO --force-keyframes-at-cuts. The 403 path was specifically from
+  // ffmpeg re-fetching a signed segment URL (the keyframes flag); just
+  // downloading the whole audio is reliable. Earlier code added
+  // --extractor-args youtube:player_client=ios as an extra 403 workaround;
+  // turns out the ios extractor doesn't expose an m4a-compatible format
+  // for every video ("Requested format is not available"), so we leave
+  // the extractor at its default.
   const ytArgs = [
     '-x',
     '--audio-format', 'm4a',
     '--audio-quality', '0',
-    // Workaround for 403s on web-client signed URLs: ask yt-dlp to use
-    // the iOS player client extractor, which produces different signed
-    // URLs that YouTube currently honors more reliably for raw audio.
-    '--extractor-args', 'youtube:player_client=ios',
     '--no-cache-dir',
     '--no-warnings',
     '--no-playlist',
