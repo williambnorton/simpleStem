@@ -403,10 +403,12 @@ fi
 
 # 3b) Encode each stem to m4a so the browser-side mixer can stream them
 #     directly (a stem WAV is ~30-50 MB; the same content at 256k AAC is
-#     ~5-8 MB — major cache + Drive sync win). The WAVs are kept by default
-#     so loop_detect / post_process can be re-run. Set DELETE_STEM_WAVS=1
-#     when invoking stem.sh to remove the WAVs after encoding (saves disk;
-#     the m4as are sufficient for normal stem-mixer use).
+#     ~5-8 MB — major cache + Drive sync win).
+#
+#     Per CLAUDE.md "File format policy: m4a only" — we now DELETE the
+#     stem .wav files after the m4a transcode completes by default.
+#     If you need the wavs for a post-processing pass (post_process.py /
+#     re-running loop_detect.py), set KEEP_STEM_WAVS=1 in the env.
 for stem in vocals drums bass other piano guitar; do
   stem_wav="$OUT_DIR/${stem}.wav"
   stem_m4a="$OUT_DIR/${stem}.m4a"
@@ -419,13 +421,28 @@ for stem in vocals drums bass other piano guitar; do
   ffmpeg -y -loglevel error -i "$stem_wav" -c:a aac -b:a 256k "$stem_m4a"
 done
 
-if [[ "${DELETE_STEM_WAVS:-0}" == "1" ]]; then
+# Default: delete stem .wav files after m4a transcode. Opt-out via
+# KEEP_STEM_WAVS=1 for post-process / re-loop workflows.
+if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
   for stem in vocals drums bass other piano guitar; do
     if [[ -f "$OUT_DIR/${stem}.m4a" && -f "$OUT_DIR/${stem}.wav" ]]; then
       rm -f "$OUT_DIR/${stem}.wav"
     fi
   done
-  echo ">> Deleted stem WAVs (DELETE_STEM_WAVS=1)."
+  echo ">> Deleted stem WAVs (m4a-only policy; set KEEP_STEM_WAVS=1 to keep)."
+fi
+# bass+drums.wav was an intermediate for loop_detect; clean it up unless
+# the operator has asked to keep the wavs around.
+if [[ "${KEEP_STEM_WAVS:-0}" != "1" && -f "$OUT_DIR/bass+drums.wav" ]]; then
+  rm -f "$OUT_DIR/bass+drums.wav"
+  echo ">> Deleted bass+drums.wav (loop intermediate)."
+fi
+# Any stray non-source loop wavs that earlier loop_detect builds left
+# behind (drums_loop*_Nbars.wav, bass_loop*_Nbars.wav, etc). The newer
+# loop_detect.py writes m4a directly so these usually aren't here on a
+# fresh render, but they accumulated on older songs.
+if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
+  rm -f "$OUT_DIR"/*_loop*_*bars.wav 2>/dev/null
 fi
 
 # 4) Mixdown loops: detect the most-repeated sections (from source.wav) and tile
