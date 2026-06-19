@@ -2694,6 +2694,88 @@ app.put('/api/song/:base/automation', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── ActionSequences per song ────────────────────────────────────────────
+// Sketch (metadata.json):
+//   actionSequences: [
+//     { id, label, armed, items: [
+//         { id, t, kind: 'play-sample', label, spec: { loopFile, mode,
+//           stopAt? }, trigger: 'auto' | 'manual' },
+//         ...
+//     ]},
+//     ...
+//   ]
+// Sequences are toggled on/off ('armed') before a gig. Only armed
+// sequences contribute buttons and auto-fires during playback.
+app.get('/api/song/:base/action-sequences', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.json({ base: s.b, actionSequences: [] });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    res.json({
+      base: s.b,
+      actionSequences: Array.isArray(meta.actionSequences) ? meta.actionSequences : [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/song/:base/action-sequences', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const seqs = (req.body && req.body.actionSequences) || [];
+  if (!Array.isArray(seqs)) return res.status(400).json({ error: 'need { actionSequences: [...] }' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
+
+  // Sanitize. Each sequence: {id, label, armed, items:[]}. Each item:
+  // {id, t, kind, label, spec, trigger}. Anything unknown is dropped.
+  const VALID_KINDS = new Set(['play-sample']);
+  const VALID_MODES = new Set(['overlay', 'replace', 'loop-until-t', 'one-shot']);
+  const cleanSeqs = seqs.filter(s => s && typeof s === 'object').map(seq => {
+    const items = Array.isArray(seq.items) ? seq.items : [];
+    const cleanItems = items.filter(it => it && VALID_KINDS.has(it.kind)).map(it => {
+      const out = {
+        id:    String(it.id || ('it_' + Date.now() + '_' + Math.random().toString(36).slice(2,6))).slice(0,40),
+        kind:  it.kind,
+        label: String(it.label || '').slice(0, 80),
+        trigger: it.trigger === 'manual' ? 'manual' : 'auto',
+      };
+      if (typeof it.t === 'number' && it.t >= 0) out.t = Math.round(it.t * 1000) / 1000;
+      if (it.kind === 'play-sample') {
+        const spec = it.spec || {};
+        out.spec = {
+          loopFile: String(spec.loopFile || '').slice(0, 200),
+          mode: VALID_MODES.has(spec.mode) ? spec.mode : 'overlay',
+        };
+        if (typeof spec.stopAt === 'number' && spec.stopAt > 0) {
+          out.spec.stopAt = Math.round(spec.stopAt * 1000) / 1000;
+        }
+      }
+      return out;
+    });
+    // Sort items by anchor time (manual-trigger items go at the end with t=null)
+    cleanItems.sort((a, b) => {
+      const ta = (typeof a.t === 'number') ? a.t : Infinity;
+      const tb = (typeof b.t === 'number') ? b.t : Infinity;
+      return ta - tb;
+    });
+    return {
+      id:    String(seq.id || ('as_' + Date.now() + '_' + Math.random().toString(36).slice(2,6))).slice(0,40),
+      label: String(seq.label || 'Untitled').slice(0, 80),
+      armed: seq.armed !== false,   // default armed
+      items: cleanItems,
+    };
+  });
+
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.actionSequences = cleanSeqs;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, actionSequences: cleanSeqs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Per-song favorite flag ─────────────────────────────────────────────────
 // Toggles meta.favorite (bool). The library scanner surfaces it in each
 // stems row; the client renders a yellow star next to the song name and

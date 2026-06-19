@@ -230,6 +230,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   setupDrumMachineButton();
   setupUrlLoopPanel();
+  setupSamplerPanel();
   loadSetlistFromLocalStorage();
   loadMixerState();
   startWallClock();
@@ -5660,6 +5661,8 @@ function setupUrlLoopPanel() {
     let d;
     try { d = await fetch('/api/custom-loops/list').then(r => r.json()); }
     catch (e) { return; }
+    // Tell the Sampler panel (and anything else listening) to refresh too.
+    try { window.dispatchEvent(new Event('custom-loops-changed')); } catch (e) {}
     const loops = d.loops || [];
     if (!loops.length) {
       list.innerHTML = '<li class="url-loop-empty">No snippets yet.</li>';
@@ -5711,6 +5714,243 @@ function setupUrlLoopPanel() {
   }
 
   refreshCustomLoopsList();
+}
+
+// ─── Sampler panel ─────────────────────────────────────────────────
+//
+// Lives in the Drum Loops tab next to the Loop Library. Lets the
+// operator turn CUSTOM_LOOPS samples into items inside the currently-
+// loaded song's ActionSequences. One song can have many sequences
+// (e.g. "Political satire", "Crowd participation"). Each sequence
+// holds 0+ items; an item is one sample with:
+//   - anchor t (current playhead at time of add, or 0)
+//   - kind: 'play-sample'
+//   - spec: { loopFile, mode }
+//   - trigger: 'auto' (fires when playhead crosses t) or 'manual'
+//     (only fires when the operator presses the button at gig time)
+//
+// Real-time play UI (chips on the main visualizer, armed/disarmed
+// toggles) will land in the next iteration. This panel is the
+// OFFLINE prep surface.
+function setupSamplerPanel() {
+  const panel    = document.getElementById('sampler-panel');
+  if (!panel) return;
+  const targetEl = document.getElementById('sampler-target');
+  const asPicker = document.getElementById('sampler-as-picker');
+  const asNewBtn = document.getElementById('sampler-as-new');
+  const asRenBtn = document.getElementById('sampler-as-rename');
+  const asArmEl  = document.getElementById('sampler-as-armed');
+  const sampList = document.getElementById('sampler-list');
+  const itemsList= document.getElementById('sampler-items-list');
+
+  // Local state. Loaded per song.
+  let samplerSong = null;          // currentSong reference at time of load
+  let actionSequences = [];        // [{id, label, armed, items: [...]}]
+  let activeSeqIdx = -1;
+  let saveTimer = null;
+
+  function scheduleSave() {
+    if (!samplerSong) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveActionSequences, 350);
+  }
+
+  async function saveActionSequences() {
+    if (!samplerSong) return;
+    const base = songBaseOf(samplerSong);
+    if (!base) return;
+    try {
+      await fetch(`/api/song/${encodeURIComponent(base)}/action-sequences`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionSequences }),
+      });
+    } catch (e) { console.warn('[sampler] save failed:', e); }
+  }
+
+  // Pull the song's actionSequences from the server. Creates a default
+  // sequence if the song has none yet so the picker is never empty.
+  async function loadForCurrentSong() {
+    samplerSong = currentSong || null;
+    if (!samplerSong) {
+      targetEl.textContent = 'no song loaded';
+      actionSequences = []; activeSeqIdx = -1;
+      renderSeqPicker(); renderItems();
+      return;
+    }
+    targetEl.textContent = (samplerSong.title || samplerSong.folderName || 'song');
+    const base = songBaseOf(samplerSong);
+    if (!base) return;
+    try {
+      const d = await fetch(`/api/song/${encodeURIComponent(base)}/action-sequences`).then(r => r.json());
+      actionSequences = Array.isArray(d.actionSequences) ? d.actionSequences : [];
+    } catch (e) {
+      console.warn('[sampler] load failed:', e);
+      actionSequences = [];
+    }
+    if (!actionSequences.length) {
+      actionSequences.push({
+        id: 'as_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+        label: 'Default',
+        armed: true,
+        items: [],
+      });
+    }
+    activeSeqIdx = 0;
+    renderSeqPicker(); renderItems();
+  }
+
+  function renderSeqPicker() {
+    asPicker.innerHTML = actionSequences.map((s, i) =>
+      `<option value="${i}">${escapeHtml(s.label || '(untitled)')}</option>`).join('');
+    asPicker.value = String(activeSeqIdx);
+    const cur = actionSequences[activeSeqIdx];
+    asArmEl.checked = cur ? cur.armed !== false : true;
+  }
+
+  function renderItems() {
+    if (!itemsList) return;
+    const cur = actionSequences[activeSeqIdx];
+    if (!cur || !cur.items.length) {
+      itemsList.innerHTML = '<li class="empty-state">No items yet. Pick a sample on the left and hit + Add.</li>';
+      return;
+    }
+    itemsList.innerHTML = cur.items.map((it, i) => {
+      const tlabel = (typeof it.t === 'number') ? formatTime(it.t) : 'manual';
+      const fname = (it.spec && it.spec.loopFile) || '?';
+      return `
+        <li class="sampler-item" data-i="${i}">
+          <span class="sampler-item-t">${tlabel}</span>
+          <span class="sampler-item-label">${escapeHtml(it.label || fname)}</span>
+          <span class="sampler-item-file">${escapeHtml(fname)}</span>
+          <span class="sampler-item-mode">${escapeHtml(it.spec && it.spec.mode || 'overlay')}</span>
+          <span class="sampler-item-trigger">${it.trigger === 'manual' ? 'M' : 'A'}</span>
+          <button class="sampler-item-del" title="Remove"><i data-lucide="x"></i></button>
+        </li>
+      `;
+    }).join('');
+    if (window.lucide) lucide.createIcons();
+    itemsList.querySelectorAll('.sampler-item').forEach(li => {
+      const i = Number(li.dataset.i);
+      li.querySelector('.sampler-item-del').addEventListener('click', () => {
+        cur.items.splice(i, 1);
+        renderItems(); scheduleSave();
+      });
+    });
+  }
+
+  async function refreshSampleList() {
+    let d;
+    try { d = await fetch('/api/custom-loops/list').then(r => r.json()); }
+    catch (e) { return; }
+    const loops = (d.loops || []).filter(l => !l.file.startsWith('raw_'));
+    if (!loops.length) {
+      sampList.innerHTML = '<div class="empty-state">No samples yet. Snip one above.</div>';
+      return;
+    }
+    sampList.innerHTML = loops.map(l => `
+      <div class="sampler-row" data-file="${escapeHtml(l.file)}">
+        <button class="sampler-play"  title="Audition"><i data-lucide="play"></i></button>
+        <span class="sampler-fname">${escapeHtml(l.file.replace(/\.m4a$/i, ''))}</span>
+        <button class="sampler-add"   title="Add to current sequence at playhead"><i data-lucide="plus"></i></button>
+      </div>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+    sampList.querySelectorAll('.sampler-row').forEach(row => {
+      const file = row.dataset.file;
+      row.querySelector('.sampler-play').addEventListener('click', () => auditionSample(file));
+      row.querySelector('.sampler-add').addEventListener('click', () => addSampleToActiveSequence(file));
+    });
+  }
+
+  function auditionSample(file) {
+    if (window._samplerAuditionAudio) {
+      try { window._samplerAuditionAudio.pause(); } catch (e) {}
+    }
+    const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
+    a.volume = 0.85;
+    a.play().catch(e => console.warn('[sampler audition] play failed:', e));
+    window._samplerAuditionAudio = a;
+  }
+
+  function addSampleToActiveSequence(file) {
+    if (!samplerSong) { alert('Load a song first.'); return; }
+    if (activeSeqIdx < 0 || !actionSequences[activeSeqIdx]) { alert('Pick or create an ActionSequence first.'); return; }
+    const cur = actionSequences[activeSeqIdx];
+
+    // Default anchor = current playhead in active audio elements (rounded
+    // to 0.1s for readability). 0 if no song is playing yet.
+    let t = 0;
+    try {
+      const ae = Object.values(audioElements).find(a => audioHasSrc(a));
+      if (ae) t = Math.max(0, Math.round((ae.currentTime || 0) * 10) / 10);
+    } catch (e) {}
+
+    const label = prompt(`Label for "${file}" (e.g. "fake quote", optional)?`, '') || '';
+    const trigger = confirm('Auto-fire when the playhead crosses this time?\nOK = auto, Cancel = manual button only') ? 'auto' : 'manual';
+
+    cur.items.push({
+      id: 'it_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      t: trigger === 'auto' ? t : undefined,
+      kind: 'play-sample',
+      label: label.trim(),
+      spec: { loopFile: file, mode: 'overlay' },
+      trigger,
+    });
+    renderItems(); scheduleSave();
+  }
+
+  // Wire ActionSequence picker + add/rename + armed toggle
+  asPicker.addEventListener('change', () => {
+    activeSeqIdx = Number(asPicker.value);
+    renderSeqPicker(); renderItems();
+  });
+  asNewBtn.addEventListener('click', () => {
+    if (!samplerSong) { alert('Load a song first.'); return; }
+    const label = prompt('Name for the new ActionSequence (e.g. "Political satire"):', '') || '';
+    if (!label.trim()) return;
+    actionSequences.push({
+      id: 'as_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      label: label.trim(),
+      armed: true,
+      items: [],
+    });
+    activeSeqIdx = actionSequences.length - 1;
+    renderSeqPicker(); renderItems(); scheduleSave();
+  });
+  asRenBtn.addEventListener('click', () => {
+    const cur = actionSequences[activeSeqIdx];
+    if (!cur) return;
+    const next = prompt('Rename ActionSequence:', cur.label || '');
+    if (next === null) return;
+    cur.label = next.trim() || cur.label;
+    renderSeqPicker(); scheduleSave();
+  });
+  asArmEl.addEventListener('change', () => {
+    const cur = actionSequences[activeSeqIdx];
+    if (!cur) return;
+    cur.armed = asArmEl.checked;
+    scheduleSave();
+  });
+
+  // Hook song-load -> reload sequences. The drum-machine pill already
+  // listens for song load via refreshDrumMachinePick; piggyback on a
+  // simple observer: poll currentSong every 500ms and reload when its
+  // id changes. Cheap and avoids wiring into the loadSong path.
+  let lastSongId = null;
+  setInterval(() => {
+    const id = currentSong && currentSong.id;
+    if (id !== lastSongId) {
+      lastSongId = id;
+      loadForCurrentSong();
+    }
+  }, 500);
+
+  refreshSampleList();
+  // Refresh the sample list when the snip panel saves a new file. The
+  // snip panel calls refreshCustomLoopsList() after each save; mirror
+  // that into this panel via a window-level event so both update.
+  window.addEventListener('custom-loops-changed', refreshSampleList);
 }
 
 // Stop Audio

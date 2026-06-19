@@ -834,6 +834,34 @@
               <div id="drumloops-grid" class="drumloops-grid">
                 <div class="loading-state"><div class="spinner"></div><span>Scanning LOOPS/ folder…</span></div>
               </div>
+
+              <!-- Sampler panel — sits next to the Loop Library. Lists
+                   every CUSTOM_LOOPS sample with Play / + Add / Delete.
+                   "+ Add" opens a dialog to attach the sample to the
+                   currently-loaded song as an item in one of its
+                   ActionSequences, anchored at the current playhead. -->
+              <aside class="sampler-panel" id="sampler-panel">
+                <div class="sampler-header">
+                  <h3><i data-lucide="sliders"></i> Sampler</h3>
+                  <span class="sampler-target" id="sampler-target">no song loaded</span>
+                </div>
+                <div class="sampler-actionseq-bar">
+                  <label class="sampler-as-label">Sequence:</label>
+                  <select id="sampler-as-picker" class="glass-select"></select>
+                  <button id="sampler-as-new"    class="btn-icon" title="New ActionSequence"><i data-lucide="plus"></i></button>
+                  <button id="sampler-as-rename" class="btn-icon" title="Rename ActionSequence"><i data-lucide="pencil"></i></button>
+                  <label class="sampler-armed-toggle" title="Armed = this sequence's buttons/auto-fires are active during playback">
+                    <input type="checkbox" id="sampler-as-armed"> armed
+                  </label>
+                </div>
+                <div class="sampler-list" id="sampler-list">
+                  <div class="empty-state">No samples yet. Snip one above.</div>
+                </div>
+                <div class="sampler-current-items" id="sampler-current-items">
+                  <h4>Items in this sequence</h4>
+                  <ul id="sampler-items-list"><li class="empty-state">No items yet.</li></ul>
+                </div>
+              </aside>
             </div>
           </section>
         </section><!-- /tab-pane:drumloops -->
