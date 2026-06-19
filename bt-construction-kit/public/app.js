@@ -1256,37 +1256,16 @@ function renderOneGigSetlist(sl, idx) {
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
-    // Favorite star pulled from the merged record's stems variant, mirroring
-    // what the library row shows so the two surfaces never disagree.
-    const sidebarStemsVar = merged && merged.variants.find(v => v.type === 'stems');
-    const sidebarIsFav = !!(sidebarStemsVar && sidebarStemsVar.favorite);
-    const sidebarStar = sidebarStemsVar
-      ? `<button class="sls-star${sidebarIsFav ? ' on' : ''}" title="${sidebarIsFav ? 'Favorite — click to unstar' : 'Click to favorite'}">${sidebarIsFav ? '★' : '☆'}</button>`
-      : '<span class="sls-star sls-star-blank"></span>';
+    // Sidebar setlist rows are pure: grip + title + delete. The favorite
+    // star lives on the library row and on the active-track title; showing
+    // it here too was redundant and ate horizontal space we need for the
+    // title itself.
     row.innerHTML = `
       <span class="sls-grip">⋮⋮</span>
-      ${sidebarStar}
       <span class="sls-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
       <span class="sls-artist">${escapeHtml(artist)}</span>
       <button class="sls-del" title="Remove from setlist">×</button>
     `;
-    const sidebarStarBtn = row.querySelector('.sls-star');
-    if (sidebarStarBtn && sidebarStemsVar) {
-      sidebarStarBtn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const newVal = !sidebarIsFav;
-        sidebarStarBtn.classList.toggle('on', newVal);
-        sidebarStarBtn.textContent = newVal ? '★' : '☆';
-        try {
-          await fetch(`/api/song/${encodeURIComponent(sidebarStemsVar.folderName)}/favorite`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ favorite: newVal }),
-          });
-          sidebarStemsVar.favorite = newVal;
-        } catch (err) { console.warn('[favorite] sidebar save failed:', err); }
-      });
-    }
     row.querySelector('.sls-del').addEventListener('click', e => {
       e.stopPropagation();
       sl.songs.splice(songIdx, 1);

@@ -658,7 +658,7 @@ select {
    ============================================================ */
 @media (min-width: 1600px) {
   .app-container {
-    grid-template-columns: 280px 1fr 84px !important;
+    grid-template-columns: 380px 1fr 84px !important;
   }
   /* Compact top pane is the default — these overrides used to enlarge the
      player on big screens but we're trading title size for screen real
@@ -676,7 +676,7 @@ select {
    ============================================================ */
 @media (min-width: 2200px) {
   .app-container {
-    grid-template-columns: 320px 1fr 96px !important;
+    grid-template-columns: 440px 1fr 96px !important;
     max-width: 2400px;
     margin: 0 auto;
   }
@@ -687,9 +687,9 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  /* Sidebar sized for the average song title; artist column is hidden in
-     setlist rows. Titles longer than ~30 chars get ellipsis. */
-  grid-template-columns: 280px 1fr 84px;
+  /* Sidebar wider so long song titles fit without ellipsis. Title-only
+     setlist rows (artist hidden) get most of the new width. */
+  grid-template-columns: 360px 1fr 84px;
   height: 100vh;
   width: 100vw;
 }
@@ -789,7 +789,9 @@ select {
   border-right: 1px solid var(--border-color);
   height: 100%;
   overflow-y: auto;
-  padding: 12px 14px;
+  /* Tight horizontal padding so the song title gets every available pixel.
+     Was 12px 14px — pulled in to 8px 6px to widen usable width by ~14px. */
+  padding: 10px 6px 10px 8px;
 }
 
 /* Custom Scrollbar */
@@ -1140,7 +1142,10 @@ select {
   flex-direction: column;
   height: 100vh;
   overflow-y: auto;
-  padding: 24px;
+  /* Tighter LEFT padding so the sidebar feels close to the main content.
+     Original 24px on all sides ate space; left dropped to 12px so the gap
+     between sidebar (now wider) and the player is half what it was. */
+  padding: 24px 24px 24px 12px;
   gap: 24px;
 }
 
@@ -2482,7 +2487,14 @@ select {
 .active-track-star.on { color: var(--color-yellow); }
 
 /* Sidebar setlist row star. */
+/* .sls-star and friends — legacy. The sidebar setlist no longer renders
+   a per-row star; the active-track header and the library row both show
+   favorite state already. Rules kept harmless in case any legacy markup
+   still reaches the page during a hot reload. */
 .sls-star {
+  display: none !important;
+}
+.sls-star-LEGACY-NOT-USED {
   background: transparent;
   border: none;
   color: #111;                       /* dark outline for visibility on white */
@@ -3825,8 +3837,8 @@ input:checked + .slider-round:before {
 }
 .gig-setlist[data-drop-target="true"] { border-color: var(--color-green); box-shadow: var(--glow-green); }
 .gig-setlist-head {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 6px; cursor: pointer;
   background: var(--bg-card-hover);
 }
 .gig-setlist-head:hover { background: var(--border-color); }
@@ -3850,7 +3862,9 @@ input:checked + .slider-round:before {
 }
 .gig-setlist-del:hover { color: var(--color-red); }
 
-.gig-setlist-body { padding: 6px 8px 8px; }
+/* Tightened from 6/8/8 -> 4/4/6 so song rows sit further left
+   inside their setlist container. Eats ~8px of indent. */
+.gig-setlist-body { padding: 4px 4px 6px; }
 .gig-setlist-toggle {
   width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 5px 10px;
@@ -3937,8 +3951,8 @@ input:checked + .slider-round:before {
   border-top: 2px solid rgba(127, 137, 153, 0.35);
 }
 .gig-setlist-songs {
-  margin-left: 12px;
-  padding-left: 8px;
+  margin-left: 4px;
+  padding-left: 4px;
   border-left: 1px dashed rgba(127, 137, 153, 0.4);
 }
 .sls-row {
@@ -3947,8 +3961,8 @@ input:checked + .slider-round:before {
 .sls-row::before {
   content: "";
   position: absolute;
-  left: -8px; top: 50%;
-  width: 6px; height: 0;
+  left: -4px; top: 50%;
+  width: 3px; height: 0;
   border-top: 1px dashed rgba(127, 137, 153, 0.4);
 }
 
@@ -4024,13 +4038,19 @@ input:checked + .slider-round:before {
 }
 .setlist-side-songs:empty { display: none; }
 .sls-row {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px;
   background: var(--bg-card); border: 1px solid var(--border-color);
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
 }
-.sls-row .sls-grip { color: var(--text-dim); cursor: grab; font-size: 12px; }
+.sls-row .sls-grip {
+  color: var(--text-dim); cursor: grab;
+  font-size: 11px;
+  /* Compact grip — was visually heavy at 12px with default kerning */
+  letter-spacing: -1px;
+  margin-right: 2px;
+}
 .sls-row .sls-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main); }
 /* Artist column hidden in the narrow sidebar — title is the only info shown */
 .sls-row .sls-artist { display: none; }
