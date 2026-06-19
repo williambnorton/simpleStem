@@ -671,13 +671,17 @@ select {
   border-right: 2px solid rgba(220, 70, 70, 0.95);
   pointer-events: none;
 }
+/* Playhead: black core with a thin white halo on each side. Black so
+   it stands out against the light-blue waveform; white halo guarantees
+   it remains visible if it ever crosses a darker / silent region. */
 .loop-trim-playhead {
   position: absolute;
   top: 0; bottom: 0;
-  width: 2px;
-  background: #fff;
+  width: 3px;
+  background: #000;
   pointer-events: none;
-  box-shadow: 0 0 4px rgba(255,255,255,0.6);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.9);
+  z-index: 4;
 }
 .loop-trim-handle {
   position: absolute;

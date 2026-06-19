@@ -5953,15 +5953,20 @@ function setupUrlLoopPanel() {
   }
 
   function playCustomLoop(file) {
+    // Always one-shot. Bill: "If I play a clip, it loops. I do not want
+    // it to loop. I want the clip to always play once." Clip auditions
+    // are for "does this sample sound right" -- never for jamming over.
     if (window._customLoopAudio) {
       try { window._customLoopAudio.pause(); } catch (e) {}
     }
     const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
-    a.loop = true;
-    a.volume = 0.8;
+    a.loop = false;
+    a.volume = 0.85;
+    a.addEventListener('ended', () => setStatus(`Played ${file}.`, ''));
     a.play().catch(e => console.warn('[custom-loop] play failed:', e));
     window._customLoopAudio = a;
-    setStatus(`▶ ${file} (looping). Click again to stop.`, 'ok');
+    setStatus(`▶ ${file}`, 'ok');
+    // Click ▶ again to stop early.
     const row = list.querySelector(`[data-file="${CSS.escape(file)}"] .url-loop-play`);
     if (row) {
       row.addEventListener('click', function once() {

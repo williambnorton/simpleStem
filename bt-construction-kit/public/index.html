@@ -816,7 +816,7 @@
                   <input type="text" id="loop-url" class="url-loop-url"
                          placeholder="https://www.youtube.com/watch?v=...&t=20s">
                   <input type="number" id="loop-start" class="url-loop-num" min="0" step="0.1" placeholder="start (s)" title="Start seconds — auto from &t= in the URL">
-                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="5" step="5" value="60" title="Scratch capture length (seconds). You'll trim from here.">
+                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="0" step="5" placeholder="(all)" title="Capture length in seconds. Leave blank to grab the WHOLE audio from the start point to the end of the video.">
                   <button id="btn-loop-from-url" class="btn-secondary"><i data-lucide="download"></i> Fetch</button>
                 </div>
                 <span id="loop-url-status" class="url-loop-status"></span>

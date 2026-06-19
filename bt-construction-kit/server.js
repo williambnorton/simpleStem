@@ -1484,13 +1484,16 @@ function sanitizeName(s) {
 app.post('/api/loops/from-url', (req, res) => {
   const url = (req.body && req.body.url || '').toString().trim();
   let startSec = Number(req.body && req.body.start_sec);
-  // Duration is OPTIONAL now. The capture grabs a generous chunk (60s
-  // default) and the operator trims interactively in the browser before
-  // saving the final cropped m4a. Cap at 10 min so a stray "0" doesn't
-  // download a whole 3-hour DJ set.
+  // Duration is OPTIONAL. Empty / 0 / missing means "grab the WHOLE
+  // audio from startSec to the end of the video" -- the operator's
+  // browser-side trim editor is doing the cutting now. Operator can
+  // still set an explicit cap if they want a smaller scratch capture.
+  // Upper bound 1 hour so a typo doesn't accidentally archive a
+  // 5-hour livestream.
   let durationSec = Number(req.body && req.body.duration_sec);
-  if (!isFinite(durationSec) || durationSec <= 0) durationSec = 60;
-  if (durationSec > 600) durationSec = 600;
+  let durationAll = false;
+  if (!isFinite(durationSec) || durationSec <= 0) { durationSec = 0; durationAll = true; }
+  if (durationSec > 3600) durationSec = 3600;
   const nameHint = (req.body && req.body.name || '').toString().trim();
 
   if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
@@ -1500,13 +1503,14 @@ app.post('/api/loops/from-url', (req, res) => {
   const parsed = parseYoutubeUrl(url);
   if (!isFinite(startSec) || startSec < 0) startSec = parsed.startSec || 0;
   const videoId = parsed.videoId || 'video';
-  const endSec  = startSec + durationSec;
+  const endSec  = durationAll ? null : (startSec + durationSec);
 
   // Filename for the RAW capture. Prefixed `raw_` so the trim endpoint
-  // can find and clean up these scratch files; the final trimmed loop
+  // can find and clean up these scratch files; the final trimmed clip
   // gets the operator-chosen name without that prefix.
   const prefix = nameHint ? sanitizeName(nameHint) + '_' : '';
-  const fname = `raw_${prefix}${videoId}_t${Math.round(startSec)}_d${Math.round(durationSec)}.m4a`;
+  const dTag = durationAll ? 'dall' : `d${Math.round(durationSec)}`;
+  const fname = `raw_${prefix}${videoId}_t${Math.round(startSec)}_${dTag}.m4a`;
   const outPath = path.join(CUSTOM_LOOPS_DIR, fname);
 
   if (fs.existsSync(outPath)) {
@@ -1575,16 +1579,12 @@ app.post('/api/loops/from-url', (req, res) => {
       return;
     }
     customLoopJobs[jobId].message = 'Trimming with ffmpeg…';
-    // Stage 2: ffmpeg crops the temp file to the requested range.
-    const ffArgs = [
-      '-y',
-      '-ss', String(startSec),
-      '-to', String(endSec),
-      '-i', tempBase,
-      '-c', 'copy',
-      '-movflags', '+faststart',
-      outPath,
-    ];
+    // Stage 2: ffmpeg trims the temp file. When durationAll is set we
+    // skip -to so the output runs from startSec to the END of the
+    // source. Operator does the fine cropping in the trim editor.
+    const ffArgs = ['-y', '-ss', String(startSec)];
+    if (!durationAll) ffArgs.push('-to', String(endSec));
+    ffArgs.push('-i', tempBase, '-c', 'copy', '-movflags', '+faststart', outPath);
     let ff;
     try {
       ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
