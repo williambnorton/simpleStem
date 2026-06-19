@@ -4053,6 +4053,31 @@ input:checked + .slider-round:before {
 .gig-side-controls .btn-icon:hover:not(:disabled) { color: var(--text-main); border-color: var(--border-active); }
 .gig-side-controls .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Sidebar search + paste-URL inputs sit at the very top of the left rail.
+   Each input takes the full sidebar width so titles aren't clipped. */
+.sidebar-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.sidebar-inputs .search-box {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sidebar-inputs .search-box input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: var(--text-main);
+  outline: none;
+  padding: 4px 0;
+}
+.sidebar-inputs .search-icon { width: 14px; height: 14px; color: var(--text-dim); }
+
 .gig-setlists { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 
 .gig-setlist {
