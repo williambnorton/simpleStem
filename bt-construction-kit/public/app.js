@@ -5427,6 +5427,9 @@ function setupUrlLoopPanel() {
   const trimNameEl = document.getElementById('loop-trim-name');
   const btnSave    = document.getElementById('btn-trim-save');
   const trimStatus = document.getElementById('loop-trim-status');
+  const waveform   = document.getElementById('loop-trim-waveform');
+  const savedWrap  = document.getElementById('loop-trim-saved');
+  const savedRow   = document.getElementById('loop-trim-saved-row');
 
   if (!urlEl || !btnFetch || !list || !editor) return;
 
@@ -5506,11 +5509,19 @@ function setupUrlLoopPanel() {
   let trimMode = null;         // 'preview' | 'loop' | null
   let trimRAF  = 0;
 
+  // List of sample filenames the operator has just saved FROM the current
+  // raw capture. Used to render quick-replay buttons under the timeline
+  // so they can A/B against the slice they're currently marking. Reset
+  // each time a new raw is opened.
+  let savedFromThisRaw = [];
+
   function openTrimEditor(file) {
     trimSrcFile = file;
     fnameEl.textContent = file;
     editor.style.display = '';
     setTrimStatus('Loading audio…');
+    savedFromThisRaw = [];
+    renderSavedFromThisRaw();
     // Tear down any previous preview audio first.
     if (trimAudio) { try { trimAudio.pause(); } catch (e) {} }
     trimAudio = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
@@ -5520,7 +5531,23 @@ function setupUrlLoopPanel() {
       trimIn = 0; trimOut = trimDuration;
       updateHandles();
       updateNumeric();
-      setTrimStatus(`Loaded (${trimDuration.toFixed(1)}s). Drag IN/OUT or use the readouts to trim.`);
+      setTrimStatus(`Loaded (${trimDuration.toFixed(1)}s). Drag to scrub, I/O to mark, Space to play/pause.`);
+    });
+    // 'durationchange' fires after loadedmetadata on some browsers
+    // (and is the source of truth if duration is updated later via
+    // the byte-range fetch). Mirror the same setup here.
+    trimAudio.addEventListener('durationchange', () => {
+      if (!isFinite(trimAudio.duration) || trimAudio.duration <= 0) return;
+      const dur = trimAudio.duration;
+      if (Math.abs(dur - trimDuration) < 0.05) return;
+      trimDuration = dur;
+      if (trimOut === 0 || trimOut > dur) trimOut = dur;
+      if (trimIn  > dur) trimIn = 0;
+      updateHandles(); updateNumeric();
+    });
+    trimAudio.addEventListener('error', () => {
+      console.warn('[trim] audio.error', trimAudio.error);
+      setTrimStatus('✗ failed to load audio (check the file is valid)', 'err');
     });
     trimAudio.addEventListener('timeupdate', () => {
       if (!trimDuration) return;
@@ -5538,6 +5565,92 @@ function setupUrlLoopPanel() {
     });
     trimNameEl.value = '';
     trimNameEl.focus();
+    decodeAndDrawWaveform(file).catch(e => console.warn('[trim wave] decode failed:', e));
+  }
+
+  // Decode the raw audio once, compute amplitude peaks, paint them onto
+  // the waveform canvas as a centered mirror bar graph. Lets the operator
+  // SEE where transients are without having to listen for them. Cancels
+  // any older decode in flight when the editor is reopened with a
+  // different file.
+  let waveformRequestId = 0;
+  async function decodeAndDrawWaveform(file) {
+    if (!waveform) return;
+    const myId = ++waveformRequestId;
+    const ctx2d = waveform.getContext('2d');
+    const rect = waveform.getBoundingClientRect();
+    waveform.width  = Math.max(200, Math.round(rect.width  * (window.devicePixelRatio || 1)));
+    waveform.height = Math.max(36,  Math.round(rect.height * (window.devicePixelRatio || 1)));
+    ctx2d.clearRect(0, 0, waveform.width, waveform.height);
+
+    let ac;
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const resp = await fetch('/api/audio/custom-loop/' + encodeURIComponent(file));
+      if (!resp.ok) throw new Error('fetch ' + resp.status);
+      const buf = await resp.arrayBuffer();
+      if (myId !== waveformRequestId) { try { ac.close(); } catch (e) {} return; }
+      const audioBuf = await ac.decodeAudioData(buf);
+      if (myId !== waveformRequestId) { try { ac.close(); } catch (e) {} return; }
+      const channel = audioBuf.getChannelData(0);
+      const bucketCount = Math.min(1500, Math.max(300, waveform.width));
+      const samplesPerBucket = Math.max(1, Math.floor(channel.length / bucketCount));
+      const peaks = new Float32Array(bucketCount);
+      let max = 0;
+      for (let i = 0; i < bucketCount; i++) {
+        let bucketMax = 0;
+        const start = i * samplesPerBucket;
+        const end = Math.min(channel.length, start + samplesPerBucket);
+        for (let j = start; j < end; j++) {
+          const v = Math.abs(channel[j]);
+          if (v > bucketMax) bucketMax = v;
+        }
+        peaks[i] = bucketMax;
+        if (bucketMax > max) max = bucketMax;
+      }
+      const dpr = window.devicePixelRatio || 1;
+      const w = waveform.width, h = waveform.height;
+      ctx2d.clearRect(0, 0, w, h);
+      const bucketW = w / peaks.length;
+      const half = h / 2;
+      ctx2d.fillStyle = 'rgba(160, 200, 255, 0.62)';
+      for (let i = 0; i < peaks.length; i++) {
+        const n = max > 0 ? peaks[i] / max : 0;
+        const barH = Math.max(1 * dpr, n * h * 0.92);
+        const x = i * bucketW;
+        ctx2d.fillRect(x, half - barH / 2, Math.max(0.8, bucketW - 0.3), barH);
+      }
+    } catch (e) {
+      console.warn('[trim wave] decode failed:', e);
+    } finally {
+      try { ac && ac.close(); } catch (e) {}
+    }
+  }
+
+  function renderSavedFromThisRaw() {
+    if (!savedWrap || !savedRow) return;
+    if (!savedFromThisRaw.length) {
+      savedWrap.style.display = 'none';
+      savedRow.innerHTML = '';
+      return;
+    }
+    savedWrap.style.display = '';
+    savedRow.innerHTML = savedFromThisRaw.map(f => `
+      <button class="loop-trim-saved-chip" data-file="${escapeHtml(f)}" title="Replay ${escapeHtml(f)}">
+        <i data-lucide="play"></i> ${escapeHtml(f.replace(/\.m4a$/i, ''))}
+      </button>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+    savedRow.querySelectorAll('.loop-trim-saved-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const f = btn.dataset.file;
+        if (window._customLoopAudio) { try { window._customLoopAudio.pause(); } catch (e) {} }
+        const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(f));
+        a.volume = 0.85;
+        a.play().catch(() => {});
+        window._customLoopAudio = a;
+      });
+    });
   }
 
   function closeTrimEditor() {
@@ -5602,14 +5715,49 @@ function setupUrlLoopPanel() {
     if (Number.isFinite(v)) { trimOut = Math.max(trimIn + 0.05, Math.min(v, trimDuration)); updateHandles(); updateNumeric(); }
   });
 
-  // Click the timeline to seek (for picking IN/OUT visually).
-  timeline.addEventListener('click', (e) => {
-    if (!trimAudio || !trimDuration) return;
-    if (e.target === inHandle || e.target === outHandle) return;
+  // Drag-scrub the playhead along the timeline. pointerdown anywhere
+  // that isn't an IN/OUT handle starts a drag; pointermove updates the
+  // audio.currentTime continuously so the operator hears the audio
+  // follow the cursor; pointerup ends. Works for both a single click
+  // (seek) and a held drag (scrub).
+  function scrubFrom(clientX) {
+    if (!trimAudio) { console.warn('[trim scrub] no audio'); return; }
+    if (!trimDuration) {
+      // duration was never set. Try to derive from the audio element so a
+      // late-loading file still scrubs.
+      if (trimAudio.duration && isFinite(trimAudio.duration)) {
+        trimDuration = trimAudio.duration;
+      } else {
+        console.warn('[trim scrub] duration unknown; can\'t scrub yet');
+        return;
+      }
+    }
     const rect = timeline.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    if (!rect.width) { console.warn('[trim scrub] timeline rect has zero width'); return; }
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     trimAudio.currentTime = pct * trimDuration;
+  }
+  let scrubbing = false;
+  timeline.addEventListener('pointerdown', (e) => {
+    if (e.target === inHandle || e.target === outHandle) return;
+    if (e.target.closest && e.target.closest('.loop-trim-handle')) return;
+    e.preventDefault();
+    scrubbing = true;
+    try { timeline.setPointerCapture && timeline.setPointerCapture(e.pointerId); }
+    catch (er) { console.warn('[trim scrub] setPointerCapture failed:', er); }
+    scrubFrom(e.clientX);
   });
+  timeline.addEventListener('pointermove', (e) => {
+    if (!scrubbing) return;
+    scrubFrom(e.clientX);
+  });
+  const endScrub = (e) => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    try { timeline.releasePointerCapture && timeline.releasePointerCapture(e.pointerId); } catch (er) {}
+  };
+  timeline.addEventListener('pointerup',     endScrub);
+  timeline.addEventListener('pointercancel', endScrub);
 
   // Free-play: no IN/OUT constraint. Operator uses this to scan through
   // the capture looking for samples. Plays from wherever the playhead
@@ -5634,9 +5782,10 @@ function setupUrlLoopPanel() {
     trimAudio.play().catch(() => {});
   });
   btnStop.addEventListener('click', () => {
-    if (!trimAudio) return;
-    trimAudio.pause();
     trimMode = null;
+    if (!trimAudio) { console.warn('[trim stop] no audio element'); return; }
+    try { trimAudio.pause(); }
+    catch (e) { console.warn('[trim stop] pause failed:', e); }
   });
 
   // Set IN / Set OUT at the current playhead. Useful for free-play
@@ -5656,15 +5805,39 @@ function setupUrlLoopPanel() {
       updateHandles(); updateNumeric();
     });
   }
-  // Keyboard shortcuts I / O while the trim editor is visible. Skip
-  // when focus is in an input so the name field can still receive 'i'.
+  // Keyboard shortcuts while the trim editor is actually on-screen.
+  // Earlier this only checked editor.style.display, which stayed at ''
+  // after the first openTrimEditor even if the Drum Loops tab was no
+  // longer the active tab. That hijacked Space + main-player keys.
+  // offsetParent is null when ANY ancestor is display:none (tab pane
+  // hidden, panel closed, etc.) so it's the correct visibility test.
+  //   Space — toggle play / pause from the current playhead position
+  //   I     — Set IN at current playhead
+  //   O     — Set OUT at current playhead
+  //   P     — Preview IN→OUT
+  //   L     — Loop IN→OUT
+  //   S     — Stop
   window.addEventListener('keydown', (ev) => {
-    if (editor.style.display === 'none') return;
+    if (!editor || !editor.offsetParent) return;     // editor not laid out
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
     const k = ev.key.toLowerCase();
-    if (k === 'i' && btnSetIn)  { ev.preventDefault(); btnSetIn.click(); }
-    if (k === 'o' && btnSetOut) { ev.preventDefault(); btnSetOut.click(); }
+    if (ev.key === ' ' || ev.code === 'Space') {
+      ev.preventDefault();
+      if (!trimAudio) return;
+      if (trimAudio.paused) {
+        trimMode = null;
+        trimAudio.play().catch(() => {});
+      } else {
+        trimAudio.pause();
+      }
+      return;
+    }
+    if (k === 'i' && btnSetIn)   { ev.preventDefault(); btnSetIn.click();   return; }
+    if (k === 'o' && btnSetOut)  { ev.preventDefault(); btnSetOut.click();  return; }
+    if (k === 'p' && btnPreview) { ev.preventDefault(); btnPreview.click(); return; }
+    if (k === 'l' && btnLoop)    { ev.preventDefault(); btnLoop.click();    return; }
+    if (k === 's' && btnStop)    { ev.preventDefault(); btnStop.click();    return; }
   });
 
   btnSave.addEventListener('click', async () => {
@@ -5692,6 +5865,8 @@ function setupUrlLoopPanel() {
       if (!r.ok) { setTrimStatus('✗ ' + (d.error || 'trim failed'), 'err'); btnSave.disabled = false; return; }
       const savedOut = trimOut;
       refreshCustomLoopsList();
+      savedFromThisRaw.push(d.file);
+      renderSavedFromThisRaw();
       // Advance for the next sample: IN jumps to where the just-saved
       // OUT was; OUT stays at the end of the capture so the user has
       // a wide window to scan. Name field clears and refocuses for the
@@ -5723,6 +5898,12 @@ function setupUrlLoopPanel() {
       list.innerHTML = '<li class="url-loop-empty">No snippets yet.</li>';
       return;
     }
+    // Every saved sample gets an Edit (scissors) button -- click it to
+    // reopen the file in the trim editor with the waveform + IN/OUT
+    // markers, so any sample can be re-trimmed or used as the source
+    // for a new derivative sample. Raw scratch files (raw_*) get a
+    // faint orange tint to remind the operator they're still a working
+    // capture and can be discarded.
     list.innerHTML = loops.map(l => {
       const isRaw = l.file.startsWith('raw_');
       return `
@@ -5730,8 +5911,8 @@ function setupUrlLoopPanel() {
           <button class="url-loop-play" title="Play"><i data-lucide="play"></i></button>
           <span class="url-loop-fname">${escapeHtml(l.file)}</span>
           <span class="url-loop-size">${(l.size / 1024).toFixed(0)} KB</span>
-          ${isRaw ? `<button class="url-loop-edit" title="Trim this raw capture"><i data-lucide="scissors"></i></button>` : ''}
-          <button class="url-loop-del" title="Delete"><i data-lucide="trash-2"></i></button>
+          <button class="url-loop-edit" title="Open in trim editor"><i data-lucide="scissors"></i></button>
+          <button class="url-loop-del"  title="Delete"><i data-lucide="trash-2"></i></button>
         </li>`;
     }).join('');
     if (window.lucide) lucide.createIcons();
