@@ -5452,6 +5452,16 @@ function setupUrlLoopPanel() {
     if (!startEl.value && Number.isFinite(secs)) startEl.value = String(secs);
   });
 
+  // Enter in the URL field triggers Fetch -- the primary entry point.
+  // Same for the start/duration boxes so the operator can tab through
+  // them and hit return.
+  [urlEl, startEl, captureDurEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); btnFetch.click(); }
+    });
+  });
+
   btnFetch.addEventListener('click', async () => {
     const url = (urlEl.value || '').trim();
     if (!url) { setStatus('Need a URL.', 'err'); return; }
@@ -5839,6 +5849,13 @@ function setupUrlLoopPanel() {
     if (k === 'l' && btnLoop)    { ev.preventDefault(); btnLoop.click();    return; }
     if (k === 's' && btnStop)    { ev.preventDefault(); btnStop.click();    return; }
   });
+
+  // Enter in the name field saves -- same gesture as clicking Save.
+  if (trimNameEl) {
+    trimNameEl.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); btnSave.click(); }
+    });
+  }
 
   btnSave.addEventListener('click', async () => {
     if (!trimSrcFile) { setTrimStatus('Nothing to save.', 'err'); return; }
@@ -8220,6 +8237,15 @@ function openMidiModal(idx) {
   document.getElementById('midi-f-label').value    = e.label || '';
   const stemSel = document.getElementById('midi-f-stem');
   if (stemSel) stemSel.value = e.stem || 'vocals';
+  const clipSel = document.getElementById('midi-f-clip');
+  if (clipSel) {
+    // populatePlayClipPicker is async; pre-stash the saved value so it
+    // is restored when the list arrives.
+    if (e.clip) clipSel.value = e.clip;
+    populatePlayClipPicker().then(() => {
+      if (e.clip) clipSel.value = e.clip;
+    });
+  }
   midiModalTypeChanged();
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
@@ -8240,20 +8266,20 @@ function midiModalTypeChanged() {
   const t = document.getElementById('midi-f-type').value;
   const isStem = (t === 'mute' || t === 'unmute');
   const isNote = (t === 'note_on' || t === 'note_off');
+  const isClip = (t === 'play-clip');
   document.querySelectorAll('.midi-row-pc').forEach(n => n.style.display = t === 'pc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc-preset').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-note').forEach(n => n.style.display = isNote ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-stem').forEach(n => n.style.display = isStem ? 'grid' : 'none');
-  // MIDI-only fields hide for stem actions (no wire involved).
+  document.querySelectorAll('.midi-row-clip').forEach(n => n.style.display = isClip ? 'grid' : 'none');
+  // MIDI-only fields (Device + Channel) only apply to MIDI types.
   document.querySelectorAll('.midi-row').forEach(row => {
     const lbl = row.querySelector('label')?.textContent;
     if (!lbl) return;
-    if (isStem && (lbl === 'Device' || lbl === 'Channel')) row.style.display = 'none';
-    else if (!isStem && lbl === 'Device') row.style.display = 'grid';
-    else if (!isStem && lbl === 'Channel') row.style.display = 'grid';
+    const midiOnly = (lbl === 'Device' || lbl === 'Channel');
+    if (midiOnly) row.style.display = (isStem || isClip) ? 'none' : 'grid';
   });
-  // Label suggestion: prefill for stem actions so the user doesn't have to.
   if (isStem) {
     const labelEl = document.getElementById('midi-f-label');
     const stem = document.getElementById('midi-f-stem')?.value || 'vocals';
@@ -8261,6 +8287,33 @@ function midiModalTypeChanged() {
       labelEl.value = `${t} ${stem}`;
     }
   }
+  if (isClip) {
+    // Refresh the clip dropdown every time the user picks Play Clip.
+    populatePlayClipPicker();
+    const labelEl = document.getElementById('midi-f-label');
+    const fname = document.getElementById('midi-f-clip')?.value || '';
+    if (fname && (!labelEl.value || /\bclip\b/i.test(labelEl.value))) {
+      labelEl.value = `clip ${fname.replace(/\.m4a$/i, '')}`;
+    }
+  }
+}
+
+// Populate the Play Clip dropdown with every CUSTOM_LOOPS sample on disk
+// (skipping raw_*.m4a scratch files). Idempotent -- safe to call on
+// every modal open or type-change.
+async function populatePlayClipPicker() {
+  const sel = document.getElementById('midi-f-clip');
+  if (!sel) return;
+  const currentVal = sel.value;
+  try {
+    const d = await fetch('/api/custom-loops/list').then(r => r.json());
+    const clips = (d.loops || []).filter(l => !l.file.startsWith('raw_'));
+    sel.innerHTML = '<option value="">(no clip selected)</option>' + clips.map(c => {
+      const nice = c.file.replace(/\.m4a$/i, '');
+      return `<option value="${escapeHtml(c.file)}">${escapeHtml(nice)}</option>`;
+    }).join('');
+    if (currentVal) sel.value = currentVal;
+  } catch (e) { console.warn('[play-clip picker] list failed:', e); }
 }
 
 function readMidiModalForm() {
@@ -8284,6 +8337,8 @@ function readMidiModalForm() {
     }
   } else if (type === 'mute' || type === 'unmute') {
     out.stem = document.getElementById('midi-f-stem').value;
+  } else if (type === 'play-clip') {
+    out.clip = document.getElementById('midi-f-clip').value || '';
   }
   return out;
 }
@@ -8584,6 +8639,40 @@ async function fireAutomationEvent(e) {
   if (e.type === 'pc' || e.type === 'cc' || e.type === 'note_on' || e.type === 'note_off') {
     return sendMidiNow(e);
   }
+  if (e.type === 'play-clip') {
+    return firePlayClip(e);
+  }
+}
+
+// Play a CUSTOM_LOOPS sample in parallel with the backing track. Each
+// firing gets its own Audio element wired into the master gain bus so
+// it inherits the master volume + obeys master mute. We don't loop
+// (one-shot for now); the element self-destructs when it ends so an
+// armful of fires doesn't accumulate stale nodes.
+function firePlayClip(e) {
+  const file = e && e.clip;
+  if (!file) { console.warn('[play-clip] no clip selected'); return; }
+  try {
+    if (!audioCtx) initAudioCtx();
+    const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
+    a.preload = 'auto';
+    a.crossOrigin = 'anonymous';
+    a.volume = 1.0;
+    if (audioCtx && masterGainNode) {
+      try {
+        const src = audioCtx.createMediaElementSource(a);
+        src.connect(masterGainNode);
+      } catch (er) {
+        // createMediaElementSource throws if the element is already
+        // wired; fall back to direct element output.
+        console.warn('[play-clip] createMediaElementSource failed:', er);
+      }
+    }
+    a.addEventListener('ended', () => {
+      try { a.removeAttribute('src'); a.load(); } catch (er) {}
+    });
+    a.play().catch(er => console.warn('[play-clip] play failed:', er));
+  } catch (er) { console.warn('[play-clip] fire failed:', er); }
 }
 
 // Apply a fade level to a stem: level 0 = mute on + fader 0, level n in

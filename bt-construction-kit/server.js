@@ -2700,6 +2700,13 @@ app.put('/api/song/:base/automation', (req, res) => {
           }
         } else if (e.type === 'mute' || e.type === 'unmute') {
           base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
+        } else if (e.type === 'play-clip') {
+          // Plays a CUSTOM_LOOPS sample in parallel with the backing
+          // track at this point in the timeline. Stored as `clip`, the
+          // m4a filename. The portal validates the file exists at fire
+          // time; here we just keep it as a string + reject traversal.
+          const clip = String(e.clip || '');
+          base.clip = clip.includes('..') ? '' : clip.slice(0, 200);
         } else if (e.type === 'fade') {
           base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
           base.level = Math.max(0, Math.min(10, parseInt(e.level, 10) || 0));

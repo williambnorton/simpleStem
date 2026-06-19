@@ -781,11 +781,20 @@
                     <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
                   </div>
                   <div class="loop-trim-timeline" id="loop-trim-timeline">
+                    <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
                     <div class="loop-trim-track"></div>
                     <div class="loop-trim-range" id="loop-trim-range"></div>
                     <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
                     <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
                     <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
+                  </div>
+                  <!-- Saved samples derived from THIS raw capture. Each row
+                       lets the operator quickly replay what they already
+                       saved so they can A/B against the next slice they're
+                       marking. -->
+                  <div class="loop-trim-saved" id="loop-trim-saved" style="display:none;">
+                    <span class="loop-trim-saved-label">Saved from this capture:</span>
+                    <div class="loop-trim-saved-row" id="loop-trim-saved-row"></div>
                   </div>
                   <div class="loop-trim-readouts">
                     <span>IN
@@ -932,6 +941,19 @@
           <option value="mute">Mute stem</option>
           <option value="unmute">Unmute stem</option>
         </optgroup>
+        <optgroup label="Sampler">
+          <option value="play-clip">Play clip (in parallel with track)</option>
+        </optgroup>
+      </select>
+    </div>
+    <!-- Clip picker row. Visible only when type=play-clip. Populated
+         from /api/custom-loops/list whenever the modal opens. The
+         clip plays through its own Audio element on top of the
+         backing track (mode=overlay) when the playhead crosses t. -->
+    <div class="midi-row midi-row-clip" style="display:none;">
+      <label>Clip</label>
+      <select id="midi-f-clip">
+        <option value="">(no clip selected)</option>
       </select>
     </div>
     <div class="midi-row midi-row-cc-preset" style="display:none;">
