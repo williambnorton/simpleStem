@@ -229,6 +229,7 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchLibrary();
   setupEventListeners();
   setupDrumMachineButton();
+  setupUrlLoopPanel();
   loadSetlistFromLocalStorage();
   loadMixerState();
   startWallClock();
@@ -5385,6 +5386,331 @@ function setupDrumMachineButton() {
     e.preventDefault();
     showDrumContextMenu(e.clientX, e.clientY);
   });
+}
+
+// ─── Snip a loop from a URL ───────────────────────────────────────
+//
+// Two-step flow:
+//   1. Fetch -- yt-dlp grabs a 60s scratch capture starting at the t=
+//      anchor in the URL (or at start_sec). File is saved as raw_*.m4a
+//      under CUSTOM_LOOPS/ and surfaced in an inline trim editor.
+//   2. Trim -- the editor shows an audio scrubber with draggable IN/OUT
+//      handles, a numeric readout, and Preview / Loop / Stop / Save.
+//      Save calls /api/custom-loops/trim which copy-codec-cuts via ffmpeg
+//      into CUSTOM_LOOPS/<name>.m4a and (by default) deletes the raw.
+function setupUrlLoopPanel() {
+  const urlEl       = document.getElementById('loop-url');
+  const startEl     = document.getElementById('loop-start');
+  const captureDurEl= document.getElementById('loop-capture-dur');
+  const btnFetch    = document.getElementById('btn-loop-from-url');
+  const status      = document.getElementById('loop-url-status');
+  const list        = document.getElementById('custom-loops-list');
+
+  const editor     = document.getElementById('loop-trim-editor');
+  const fnameEl    = document.getElementById('loop-trim-fname');
+  const discardBtn = document.getElementById('btn-loop-discard');
+  const timeline   = document.getElementById('loop-trim-timeline');
+  const rangeEl    = document.getElementById('loop-trim-range');
+  const playheadEl = document.getElementById('loop-trim-playhead');
+  const inHandle   = document.getElementById('loop-trim-in');
+  const outHandle  = document.getElementById('loop-trim-out');
+  const inSecBox   = document.getElementById('loop-trim-in-sec');
+  const outSecBox  = document.getElementById('loop-trim-out-sec');
+  const durEl      = document.getElementById('loop-trim-dur');
+  const btnPreview = document.getElementById('btn-trim-preview');
+  const btnLoop    = document.getElementById('btn-trim-loop');
+  const btnStop    = document.getElementById('btn-trim-stop');
+  const trimNameEl = document.getElementById('loop-trim-name');
+  const btnSave    = document.getElementById('btn-trim-save');
+  const trimStatus = document.getElementById('loop-trim-status');
+
+  if (!urlEl || !btnFetch || !list || !editor) return;
+
+  function setStatus(text, cls)   { if (status)     { status.textContent = text; status.className = 'url-loop-status ' + (cls || ''); } }
+  function setTrimStatus(text, cls) { if (trimStatus) { trimStatus.textContent = text; trimStatus.className = 'url-loop-status ' + (cls || ''); } }
+
+  // ── Step 1: URL auto-parse + Fetch ────────────────────────────────
+  urlEl.addEventListener('input', () => {
+    const m = urlEl.value.match(/[?&]t=([0-9hms]+)/i);
+    if (!m) return;
+    const t = m[1];
+    let secs;
+    if (/^\d+$/.test(t)) secs = Number(t);
+    else {
+      const hm = t.match(/(\d+)h/i);
+      const mm = t.match(/(\d+)m/i);
+      const sm = t.match(/(\d+)s/i);
+      secs = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+    }
+    if (!startEl.value && Number.isFinite(secs)) startEl.value = String(secs);
+  });
+
+  btnFetch.addEventListener('click', async () => {
+    const url = (urlEl.value || '').trim();
+    if (!url) { setStatus('Need a URL.', 'err'); return; }
+    const captureDur = Number(captureDurEl.value) || 60;
+    const body = { url, duration_sec: captureDur };
+    if (startEl.value) body.start_sec = Number(startEl.value);
+
+    btnFetch.disabled = true;
+    setStatus('Submitting…', 'loading');
+    try {
+      const r = await fetch('/api/loops/from-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) { setStatus('✗ ' + (d.error || 'submit failed'), 'err'); btnFetch.disabled = false; return; }
+      if (d.alreadyExists) { setStatus(`Loaded existing ${d.file}.`, 'ok'); openTrimEditor(d.file); btnFetch.disabled = false; return; }
+      setStatus(`Downloading ${d.file}…`, 'loading');
+      pollUrlLoopJob(d.job_id, (resp) => {
+        btnFetch.disabled = false;
+        if (resp.status === 'done') {
+          setStatus(`✓ Captured ${resp.file}. Trim + name below.`, 'ok');
+          openTrimEditor(resp.file);
+        }
+      });
+    } catch (e) {
+      setStatus('✗ ' + e.message, 'err');
+      btnFetch.disabled = false;
+    }
+  });
+
+  function pollUrlLoopJob(jobId, onDone) {
+    const timer = setInterval(async () => {
+      let d;
+      try { d = await fetch('/api/loops/from-url/poll/' + encodeURIComponent(jobId)).then(r => r.json()); }
+      catch (e) { return; }
+      if (d.status === 'done' || d.status === 'error') {
+        clearInterval(timer);
+        if (d.status === 'error') setStatus('✗ ' + (d.error || 'download failed'), 'err');
+        onDone && onDone(d);
+      } else {
+        setStatus(d.message || `Downloading… (${jobId.slice(-4)})`, 'loading');
+      }
+    }, 1500);
+  }
+
+  // ── Step 2: trim editor ───────────────────────────────────────────
+  // State per open editor.
+  let trimSrcFile = null;     // raw_*.m4a in CUSTOM_LOOPS/
+  let trimAudio   = null;     // Audio element for preview
+  let trimDuration = 0;        // captured length (sec)
+  let trimIn  = 0;
+  let trimOut = 0;
+  let trimMode = null;         // 'preview' | 'loop' | null
+  let trimRAF  = 0;
+
+  function openTrimEditor(file) {
+    trimSrcFile = file;
+    fnameEl.textContent = file;
+    editor.style.display = '';
+    setTrimStatus('Loading audio…');
+    // Tear down any previous preview audio first.
+    if (trimAudio) { try { trimAudio.pause(); } catch (e) {} }
+    trimAudio = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
+    trimAudio.preload = 'auto';
+    trimAudio.addEventListener('loadedmetadata', () => {
+      trimDuration = trimAudio.duration || 0;
+      trimIn = 0; trimOut = trimDuration;
+      updateHandles();
+      updateNumeric();
+      setTrimStatus(`Loaded (${trimDuration.toFixed(1)}s). Drag IN/OUT or use the readouts to trim.`);
+    });
+    trimAudio.addEventListener('timeupdate', () => {
+      if (!trimDuration) return;
+      const pct = (trimAudio.currentTime / trimDuration) * 100;
+      playheadEl.style.left = pct + '%';
+      // Loop mode: bounce back to IN when we cross OUT
+      if (trimMode === 'loop' && trimAudio.currentTime >= trimOut - 0.02) {
+        trimAudio.currentTime = trimIn;
+      }
+      // Preview mode: stop when we cross OUT
+      if (trimMode === 'preview' && trimAudio.currentTime >= trimOut - 0.02) {
+        trimAudio.pause();
+        trimMode = null;
+      }
+    });
+    trimNameEl.value = '';
+    trimNameEl.focus();
+  }
+
+  function closeTrimEditor() {
+    if (trimAudio) { try { trimAudio.pause(); } catch (e) {} trimAudio = null; }
+    editor.style.display = 'none';
+    trimSrcFile = null; trimMode = null;
+    cancelAnimationFrame(trimRAF);
+  }
+
+  discardBtn.addEventListener('click', async () => {
+    if (!trimSrcFile) { closeTrimEditor(); return; }
+    if (!confirm(`Discard the raw capture ${trimSrcFile}?`)) return;
+    await fetch('/api/custom-loops/' + encodeURIComponent(trimSrcFile), { method: 'DELETE' });
+    closeTrimEditor();
+    setStatus(`Discarded.`, '');
+    refreshCustomLoopsList();
+  });
+
+  function updateHandles() {
+    if (!trimDuration) return;
+    const inPct  = (trimIn  / trimDuration) * 100;
+    const outPct = (trimOut / trimDuration) * 100;
+    inHandle.style.left  = inPct  + '%';
+    outHandle.style.left = outPct + '%';
+    rangeEl.style.left   = inPct + '%';
+    rangeEl.style.width  = (outPct - inPct) + '%';
+  }
+  function updateNumeric() {
+    inSecBox.value  = trimIn.toFixed(2);
+    outSecBox.value = trimOut.toFixed(2);
+    durEl.textContent = (trimOut - trimIn).toFixed(2) + 's';
+  }
+
+  // Drag handles by x-position over the timeline.
+  function attachDrag(handle, setter) {
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const rect = timeline.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        setter(pct * trimDuration);
+        updateHandles(); updateNumeric();
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+    });
+  }
+  attachDrag(inHandle,  (v) => { trimIn  = Math.min(v, trimOut - 0.05); });
+  attachDrag(outHandle, (v) => { trimOut = Math.max(v, trimIn  + 0.05); });
+
+  inSecBox.addEventListener('input', () => {
+    const v = Number(inSecBox.value);
+    if (Number.isFinite(v)) { trimIn = Math.max(0, Math.min(v, trimOut - 0.05)); updateHandles(); updateNumeric(); }
+  });
+  outSecBox.addEventListener('input', () => {
+    const v = Number(outSecBox.value);
+    if (Number.isFinite(v)) { trimOut = Math.max(trimIn + 0.05, Math.min(v, trimDuration)); updateHandles(); updateNumeric(); }
+  });
+
+  // Click the timeline to seek (for picking IN/OUT visually).
+  timeline.addEventListener('click', (e) => {
+    if (!trimAudio || !trimDuration) return;
+    if (e.target === inHandle || e.target === outHandle) return;
+    const rect = timeline.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    trimAudio.currentTime = pct * trimDuration;
+  });
+
+  btnPreview.addEventListener('click', () => {
+    if (!trimAudio) return;
+    trimMode = 'preview';
+    trimAudio.currentTime = trimIn;
+    trimAudio.play().catch(() => {});
+  });
+  btnLoop.addEventListener('click', () => {
+    if (!trimAudio) return;
+    trimMode = 'loop';
+    trimAudio.currentTime = trimIn;
+    trimAudio.play().catch(() => {});
+  });
+  btnStop.addEventListener('click', () => {
+    if (!trimAudio) return;
+    trimAudio.pause();
+    trimMode = null;
+  });
+
+  btnSave.addEventListener('click', async () => {
+    if (!trimSrcFile) { setTrimStatus('Nothing to save.', 'err'); return; }
+    const name = (trimNameEl.value || '').trim();
+    if (!name) { setTrimStatus('Name required.', 'err'); trimNameEl.focus(); return; }
+    btnSave.disabled = true;
+    setTrimStatus('Trimming with ffmpeg…', 'loading');
+    try {
+      const r = await fetch('/api/custom-loops/trim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: trimSrcFile,
+          start_sec: trimIn,
+          end_sec:   trimOut,
+          name,
+          deleteSource: true,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setTrimStatus('✗ ' + (d.error || 'trim failed'), 'err'); btnSave.disabled = false; return; }
+      setTrimStatus(`✓ Saved ${d.file} (${d.duration_sec.toFixed(1)}s).`, 'ok');
+      btnSave.disabled = false;
+      refreshCustomLoopsList();
+      setTimeout(() => closeTrimEditor(), 1200);
+    } catch (e) {
+      setTrimStatus('✗ ' + e.message, 'err');
+      btnSave.disabled = false;
+    }
+  });
+
+  // ── Saved loops list ──────────────────────────────────────────────
+  async function refreshCustomLoopsList() {
+    let d;
+    try { d = await fetch('/api/custom-loops/list').then(r => r.json()); }
+    catch (e) { return; }
+    const loops = d.loops || [];
+    if (!loops.length) {
+      list.innerHTML = '<li class="url-loop-empty">No snippets yet.</li>';
+      return;
+    }
+    list.innerHTML = loops.map(l => {
+      const isRaw = l.file.startsWith('raw_');
+      return `
+        <li class="url-loop-row-item${isRaw ? ' raw' : ''}" data-file="${escapeHtml(l.file)}">
+          <button class="url-loop-play" title="Play"><i data-lucide="play"></i></button>
+          <span class="url-loop-fname">${escapeHtml(l.file)}</span>
+          <span class="url-loop-size">${(l.size / 1024).toFixed(0)} KB</span>
+          ${isRaw ? `<button class="url-loop-edit" title="Trim this raw capture"><i data-lucide="scissors"></i></button>` : ''}
+          <button class="url-loop-del" title="Delete"><i data-lucide="trash-2"></i></button>
+        </li>`;
+    }).join('');
+    if (window.lucide) lucide.createIcons();
+    list.querySelectorAll('.url-loop-row-item').forEach(row => {
+      const file = row.dataset.file;
+      row.querySelector('.url-loop-play').addEventListener('click', () => playCustomLoop(file));
+      const editBtn = row.querySelector('.url-loop-edit');
+      if (editBtn) editBtn.addEventListener('click', () => openTrimEditor(file));
+      row.querySelector('.url-loop-del').addEventListener('click', async () => {
+        if (!confirm(`Delete ${file}?`)) return;
+        await fetch('/api/custom-loops/' + encodeURIComponent(file), { method: 'DELETE' });
+        refreshCustomLoopsList();
+      });
+    });
+  }
+
+  function playCustomLoop(file) {
+    if (window._customLoopAudio) {
+      try { window._customLoopAudio.pause(); } catch (e) {}
+    }
+    const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
+    a.loop = true;
+    a.volume = 0.8;
+    a.play().catch(e => console.warn('[custom-loop] play failed:', e));
+    window._customLoopAudio = a;
+    setStatus(`▶ ${file} (looping). Click again to stop.`, 'ok');
+    const row = list.querySelector(`[data-file="${CSS.escape(file)}"] .url-loop-play`);
+    if (row) {
+      row.addEventListener('click', function once() {
+        a.pause();
+        setStatus(`Stopped ${file}.`, '');
+        row.removeEventListener('click', once);
+      }, { once: true });
+    }
+  }
+
+  refreshCustomLoopsList();
 }
 
 // Stop Audio

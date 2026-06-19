@@ -1428,6 +1428,256 @@ app.get('/api/audio/drum-machine/:file', (req, res) => {
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
+// ---------- CUSTOM LOOPS FROM URL ------------------------------------------
+// User pastes a YouTube URL with a t=<seconds> anchor and says "grab the
+// next N seconds". We shell out to yt-dlp with --download-sections to
+// pull just that slice of audio, transcode to m4a, and drop it into
+// CUSTOM_LOOPS/ where the portal can list + play it.
+//
+// File naming: <videoid>_t<start>_d<dur>.m4a (or with optional --name
+// the user supplied as a prefix).
+const CUSTOM_LOOPS_DIR = `${SIMPLE_STEM_ROOT}/CUSTOM_LOOPS`;
+try { fs.mkdirSync(CUSTOM_LOOPS_DIR, { recursive: true }); } catch (e) {}
+const AUDIO_CACHE_CUSTOM_LOOPS = path.join(AUDIO_CACHE_DIR, 'CUSTOM_LOOPS');
+try { fs.mkdirSync(AUDIO_CACHE_CUSTOM_LOOPS, { recursive: true }); } catch (e) {}
+
+// In-memory job table: jobs[jobId] = { status, message, file, error }
+const customLoopJobs = {};
+function newJobId() {
+  return 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+// Extract YouTube video id and t= start from a URL. Returns { videoId,
+// startSec } where startSec is 0 if no t= param. Handles t=20s and t=20.
+function parseYoutubeUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return { videoId: null, startSec: 0 };
+  // video id
+  let videoId = null;
+  let m;
+  if ((m = u.match(/[?&]v=([\w-]{6,})/)))    videoId = m[1];
+  else if ((m = u.match(/youtu\.be\/([\w-]{6,})/))) videoId = m[1];
+  else if ((m = u.match(/\/shorts\/([\w-]{6,})/))) videoId = m[1];
+  // t= param. Forms: t=20, t=20s, t=1m20s, t=1h2m3s.
+  let startSec = 0;
+  const tm = u.match(/[?&]t=([0-9hms]+)/i);
+  if (tm) {
+    const t = tm[1];
+    if (/^\d+$/.test(t)) startSec = Number(t);
+    else {
+      const hm = t.match(/(\d+)h/i);
+      const mm = t.match(/(\d+)m/i);
+      const sm = t.match(/(\d+)s/i);
+      startSec = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+    }
+  }
+  return { videoId, startSec };
+}
+
+function sanitizeName(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
+app.post('/api/loops/from-url', (req, res) => {
+  const url = (req.body && req.body.url || '').toString().trim();
+  let startSec = Number(req.body && req.body.start_sec);
+  // Duration is OPTIONAL now. The capture grabs a generous chunk (60s
+  // default) and the operator trims interactively in the browser before
+  // saving the final cropped m4a. Cap at 10 min so a stray "0" doesn't
+  // download a whole 3-hour DJ set.
+  let durationSec = Number(req.body && req.body.duration_sec);
+  if (!isFinite(durationSec) || durationSec <= 0) durationSec = 60;
+  if (durationSec > 600) durationSec = 600;
+  const nameHint = (req.body && req.body.name || '').toString().trim();
+
+  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
+    return res.status(400).json({ error: 'Need a YouTube video URL.' });
+  }
+  // If start_sec wasn't passed, pull it from the URL's t= param.
+  const parsed = parseYoutubeUrl(url);
+  if (!isFinite(startSec) || startSec < 0) startSec = parsed.startSec || 0;
+  const videoId = parsed.videoId || 'video';
+  const endSec  = startSec + durationSec;
+
+  // Filename for the RAW capture. Prefixed `raw_` so the trim endpoint
+  // can find and clean up these scratch files; the final trimmed loop
+  // gets the operator-chosen name without that prefix.
+  const prefix = nameHint ? sanitizeName(nameHint) + '_' : '';
+  const fname = `raw_${prefix}${videoId}_t${Math.round(startSec)}_d${Math.round(durationSec)}.m4a`;
+  const outPath = path.join(CUSTOM_LOOPS_DIR, fname);
+
+  if (fs.existsSync(outPath)) {
+    return res.json({ ok: true, file: fname, alreadyExists: true,
+                      url: `/api/audio/custom-loop/${encodeURIComponent(fname)}` });
+  }
+
+  const jobId = newJobId();
+  customLoopJobs[jobId] = { status: 'running', message: 'Starting yt-dlp...', file: fname };
+
+  // yt-dlp arguments. -x extracts audio; --audio-format m4a transcodes
+  // via ffmpeg; --download-sections "*start-end" pulls just the slice
+  // (yt-dlp downloads the whole stream and crops via ffmpeg under the
+  // hood -- accurate to <100ms). -o sets the exact output filename;
+  // --force-overwrites lets a retry replace a partial file.
+  const args = [
+    '-x',
+    '--audio-format', 'm4a',
+    '--audio-quality', '0',
+    '--download-sections', `*${startSec}-${endSec}`,
+    '--force-keyframes-at-cuts',
+    '-o', outPath,
+    '--no-warnings',
+    '--no-playlist',
+    url,
+  ];
+
+  // Find yt-dlp on PATH. ENOENT means it's not installed; surface a
+  // clear error rather than a generic spawn failure.
+  let ytdlp;
+  try {
+    ytdlp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    customLoopJobs[jobId] = { status: 'error', error: 'yt-dlp not installed or not on PATH.' };
+    return res.status(500).json({ error: 'yt-dlp not installed', job_id: jobId });
+  }
+  let stderr = '';
+  ytdlp.stderr.on('data', d => { stderr += d.toString(); });
+  ytdlp.on('error', e => {
+    customLoopJobs[jobId] = { status: 'error', error: e.message };
+  });
+  ytdlp.on('close', code => {
+    if (code === 0 && fs.existsSync(outPath)) {
+      customLoopJobs[jobId] = {
+        status: 'done', file: fname,
+        url: `/api/audio/custom-loop/${encodeURIComponent(fname)}`,
+      };
+    } else {
+      customLoopJobs[jobId] = {
+        status: 'error',
+        error: `yt-dlp exit ${code}: ${stderr.slice(-400)}`,
+      };
+    }
+  });
+
+  res.json({ ok: true, job_id: jobId, file: fname });
+});
+
+app.get('/api/loops/from-url/poll/:job_id', (req, res) => {
+  const jobId = String(req.params.job_id).replace(/[^A-Za-z0-9_-]/g, '');
+  const j = customLoopJobs[jobId];
+  if (!j) return res.status(404).json({ error: 'unknown job' });
+  res.json(j);
+});
+
+app.get('/api/custom-loops/list', (req, res) => {
+  let files = [];
+  try {
+    files = fs.readdirSync(CUSTOM_LOOPS_DIR)
+      .filter(f => f.toLowerCase().endsWith('.m4a'))
+      .map(f => {
+        let size = 0; let mtime = 0;
+        try { const st = fs.statSync(path.join(CUSTOM_LOOPS_DIR, f));
+              size = st.size; mtime = st.mtimeMs; } catch (e) {}
+        return {
+          file: f,
+          url:  `/api/audio/custom-loop/${encodeURIComponent(f)}`,
+          size, mtime,
+        };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch (e) {}
+  res.json({ loops: files, count: files.length });
+});
+
+app.delete('/api/custom-loops/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).json({ error: 'bad name' });
+  const p = path.join(CUSTOM_LOOPS_DIR, file);
+  const cp = path.join(AUDIO_CACHE_CUSTOM_LOOPS, file);
+  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {}
+  try { if (fs.existsSync(cp)) fs.unlinkSync(cp); } catch (e) {}
+  res.json({ ok: true });
+});
+
+app.get('/api/audio/custom-loop/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(CUSTOM_LOOPS_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_CUSTOM_LOOPS, file);
+  if (!fs.existsSync(sourcePath)) return res.status(404).send('Custom loop not found');
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+// Trim a previously-captured raw_*.m4a down to a named final loop.
+// POST body: { source: 'raw_...m4a', start_sec, end_sec, name, deleteSource? }
+// ffmpeg with -c copy is a stream-copy at keyframe boundaries — very fast,
+// no re-encode. Good enough for snipping practice loops; if the start point
+// lands between keyframes you may hear a ~0.1s pad at the front.
+app.post('/api/custom-loops/trim', (req, res) => {
+  const source     = (req.body && req.body.source || '').toString();
+  const startSec   = Number(req.body && req.body.start_sec);
+  const endSec     = Number(req.body && req.body.end_sec);
+  const nameHint   = (req.body && req.body.name || '').toString().trim();
+  const deleteSource = !!(req.body && req.body.deleteSource);
+
+  if (source.includes('..') || !source.toLowerCase().endsWith('.m4a')) {
+    return res.status(400).json({ error: 'bad source filename' });
+  }
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
+    return res.status(400).json({ error: 'start_sec/end_sec required' });
+  }
+  if (endSec <= startSec) return res.status(400).json({ error: 'end_sec must be > start_sec' });
+  if (!nameHint) return res.status(400).json({ error: 'name required' });
+
+  const sourcePath = path.join(CUSTOM_LOOPS_DIR, source);
+  if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'source not found' });
+
+  const outName = `${sanitizeName(nameHint) || 'loop'}.m4a`;
+  const outPath = path.join(CUSTOM_LOOPS_DIR, outName);
+
+  // If the target name already exists, refuse rather than silently overwriting.
+  // Operator can pick a unique name in the UI.
+  if (fs.existsSync(outPath)) {
+    return res.status(409).json({ error: `'${outName}' already exists; pick a different name` });
+  }
+
+  const args = [
+    '-y',
+    '-ss', String(startSec),
+    '-to', String(endSec),
+    '-i', sourcePath,
+    '-c', 'copy',
+    '-movflags', '+faststart',
+    outPath,
+  ];
+
+  let ff;
+  try {
+    ff = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (e) {
+    return res.status(500).json({ error: 'ffmpeg not on PATH' });
+  }
+  let stderr = '';
+  ff.stderr.on('data', d => { stderr += d.toString(); });
+  ff.on('close', code => {
+    if (code !== 0 || !fs.existsSync(outPath)) {
+      return res.status(500).json({ error: `ffmpeg exit ${code}: ${stderr.slice(-300)}` });
+    }
+    if (deleteSource) {
+      try { fs.unlinkSync(sourcePath); } catch (e) {}
+    }
+    res.json({
+      ok: true,
+      file: outName,
+      url: `/api/audio/custom-loop/${encodeURIComponent(outName)}`,
+      duration_sec: endSec - startSec,
+    });
+  });
+});
+
 // Serve loop files from the flat LOOPS/ folder. Mirrors the m4a endpoint.
 // Cache key: file basename. Files like
 //   drums_120_mary_janes_last_dance_18bars.m4a

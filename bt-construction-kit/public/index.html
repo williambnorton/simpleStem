@@ -603,6 +603,59 @@
               </div>
               <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
             </div>
+
+            <!-- Loop-from-URL: paste a YouTube link with a t=<sec> anchor,
+                 fetch a 60s scratch capture, then trim + name in-place
+                 before committing the final CUSTOM_LOOPS/<name>.m4a. -->
+            <details class="url-loop-panel">
+              <summary><i data-lucide="scissors"></i> Snip a loop from a URL</summary>
+              <div class="url-loop-body">
+                <!-- Step 1: paste URL, set start (auto-filled from ?t=N),
+                     optionally widen the capture window (default 60s). -->
+                <div class="url-loop-row">
+                  <input type="text" id="loop-url" class="url-loop-url"
+                         placeholder="https://www.youtube.com/watch?v=...&t=20s">
+                  <input type="number" id="loop-start" class="url-loop-num" min="0" step="0.1" placeholder="start (s)" title="Start seconds — auto from &t= in the URL">
+                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="5" step="5" value="60" title="Scratch capture length (seconds). You'll trim from here.">
+                  <button id="btn-loop-from-url" class="btn-secondary"><i data-lucide="download"></i> Fetch</button>
+                </div>
+                <span id="loop-url-status" class="url-loop-status"></span>
+
+                <!-- Step 2: trim editor. Appears after a successful fetch.
+                     Shows the captured audio with an IN/OUT scrubber and a
+                     preview button. Save commits a copy-codec ffmpeg trim
+                     to CUSTOM_LOOPS/<name>.m4a. -->
+                <div id="loop-trim-editor" class="loop-trim-editor" style="display:none;">
+                  <div class="loop-trim-head">
+                    <span class="loop-trim-fname" id="loop-trim-fname">—</span>
+                    <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
+                  </div>
+                  <div class="loop-trim-timeline" id="loop-trim-timeline">
+                    <div class="loop-trim-track"></div>
+                    <div class="loop-trim-range" id="loop-trim-range"></div>
+                    <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
+                    <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
+                    <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
+                  </div>
+                  <div class="loop-trim-readouts">
+                    <span>IN <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0"></span>
+                    <span>OUT <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0"></span>
+                    <span class="loop-trim-dur" id="loop-trim-dur">0.0s</span>
+                  </div>
+                  <div class="loop-trim-controls">
+                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play"></i> Preview</button>
+                    <button id="btn-trim-loop"    class="btn-secondary" title="Loop the IN→OUT segment"><i data-lucide="repeat"></i> Loop</button>
+                    <button id="btn-trim-stop"    class="btn-secondary" title="Stop"><i data-lucide="square"></i></button>
+                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this loop (required to save)">
+                    <button id="btn-trim-save" class="btn-primary"><i data-lucide="save"></i> Save</button>
+                  </div>
+                  <span id="loop-trim-status" class="url-loop-status"></span>
+                </div>
+
+                <ul id="custom-loops-list" class="url-loop-list"></ul>
+              </div>
+            </details>
+
             <div id="queue-status" class="queue-status"></div>
 
             <div class="library-view-toggles">
