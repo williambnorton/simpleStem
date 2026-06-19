@@ -5092,6 +5092,17 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   background: rgba(33, 150, 243, 0.28);
   border-color: rgba(33, 150, 243, 0.85);
 }
+/* + Clip variant — orange-tinted to distinguish from the + Action
+   button next to it. Same shape so the row stays balanced. */
+.midi-action-clip {
+  background: rgba(255, 152, 0, 0.18);
+  border: 1px solid rgba(255, 152, 0, 0.55);
+  color: #ffcc80;
+}
+.midi-action-clip:hover {
+  background: rgba(255, 152, 0, 0.30);
+  border-color: rgba(255, 152, 0, 0.90);
+}
 .midi-preset-slots {
   display: flex;
   gap: 4px;

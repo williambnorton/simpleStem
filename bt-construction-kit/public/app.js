@@ -231,6 +231,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupDrumMachineButton();
   setupUrlLoopPanel();
   setupSamplerPanel();
+  setupClipQuickModalOnce();
   loadSetlistFromLocalStorage();
   loadMixerState();
   startWallClock();
@@ -5713,16 +5714,32 @@ function setupUrlLoopPanel() {
       handle.addEventListener('pointerup', up);
     });
   }
-  attachDrag(inHandle,  (v) => { trimIn  = Math.min(v, trimOut - 0.05); });
-  attachDrag(outHandle, (v) => { trimOut = Math.max(v, trimIn  + 0.05); });
+  // While Loop mode is engaged, any IN/OUT change must immediately
+  // affect playback. If the playhead is outside the new window, snap
+  // it back to IN so the operator hears the new region right away.
+  function enforceLoopBounds() {
+    if (trimMode !== 'loop' || !trimAudio) return;
+    const t = trimAudio.currentTime;
+    if (t < trimIn - 0.01 || t > trimOut - 0.01) {
+      trimAudio.currentTime = trimIn;
+    }
+  }
+  attachDrag(inHandle,  (v) => { trimIn  = Math.min(v, trimOut - 0.05); enforceLoopBounds(); });
+  attachDrag(outHandle, (v) => { trimOut = Math.max(v, trimIn  + 0.05); enforceLoopBounds(); });
 
   inSecBox.addEventListener('input', () => {
     const v = Number(inSecBox.value);
-    if (Number.isFinite(v)) { trimIn = Math.max(0, Math.min(v, trimOut - 0.05)); updateHandles(); updateNumeric(); }
+    if (Number.isFinite(v)) {
+      trimIn = Math.max(0, Math.min(v, trimOut - 0.05));
+      updateHandles(); updateNumeric(); enforceLoopBounds();
+    }
   });
   outSecBox.addEventListener('input', () => {
     const v = Number(outSecBox.value);
-    if (Number.isFinite(v)) { trimOut = Math.max(trimIn + 0.05, Math.min(v, trimDuration)); updateHandles(); updateNumeric(); }
+    if (Number.isFinite(v)) {
+      trimOut = Math.max(trimIn + 0.05, Math.min(v, trimDuration));
+      updateHandles(); updateNumeric(); enforceLoopBounds();
+    }
   });
 
   // Drag-scrub the playhead along the timeline. pointerdown anywhere
@@ -5805,14 +5822,14 @@ function setupUrlLoopPanel() {
     btnSetIn.addEventListener('click', () => {
       if (!trimAudio || !trimDuration) return;
       trimIn = Math.max(0, Math.min(trimAudio.currentTime, trimOut - 0.05));
-      updateHandles(); updateNumeric();
+      updateHandles(); updateNumeric(); enforceLoopBounds();
     });
   }
   if (btnSetOut) {
     btnSetOut.addEventListener('click', () => {
       if (!trimAudio || !trimDuration) return;
       trimOut = Math.max(trimIn + 0.05, Math.min(trimAudio.currentTime, trimDuration));
-      updateHandles(); updateNumeric();
+      updateHandles(); updateNumeric(); enforceLoopBounds();
     });
   }
   // Keyboard shortcuts while the trim editor is actually on-screen.
@@ -5940,7 +5957,11 @@ function setupUrlLoopPanel() {
       if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); openTrimEditor(file); });
       row.querySelector('.url-loop-del').addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!confirm(`Delete ${file}?`)) return;
+        // Raw scratch captures (raw_*.m4a) delete without confirmation --
+        // they're throwaway by definition. Anything else (a named clip
+        // the operator chose to save) prompts.
+        const isRaw = file.startsWith('raw_');
+        if (!isRaw && !confirm(`Delete ${file}?`)) return;
         await fetch('/api/custom-loops/' + encodeURIComponent(file), { method: 'DELETE' });
         refreshCustomLoopsList();
       });
@@ -8273,6 +8294,89 @@ function closeMidiModal() {
   automationEditingIdx = null;
 }
 
+// ─── + CLIP quick-drop modal ───────────────────────────────────────
+// Lightweight alternative to openMidiModal for the common case of
+// "drop a Play Clip action at the playhead." Picks the clip + an
+// anchor mode (start-at-playhead vs end-at-playhead) and writes a
+// {type:'play-clip', t, clip, label} event into automationEvents.
+async function openClipQuickModal() {
+  const modal = document.getElementById('clip-quick-modal');
+  if (!modal) return;
+  const sel    = document.getElementById('clip-quick-file');
+  const labelEl= document.getElementById('clip-quick-label');
+  const statusEl = document.getElementById('clip-quick-status');
+  document.getElementById('clip-anchor-start').checked = true;
+  labelEl.value = '';
+  statusEl.textContent = '';
+  statusEl.className = 'midi-modal-status';
+  // Pull the clip list. Skip raw_*.m4a scratch captures.
+  try {
+    const d = await fetch('/api/custom-loops/list').then(r => r.json());
+    const clips = (d.loops || []).filter(l => !l.file.startsWith('raw_'));
+    sel.innerHTML = clips.length
+      ? clips.map(c => `<option value="${escapeHtml(c.file)}">${escapeHtml(c.file.replace(/\.m4a$/i, ''))}</option>`).join('')
+      : '<option value="">(no clips yet — snip one first)</option>';
+  } catch (e) {
+    console.warn('[clip-quick] list failed:', e);
+    sel.innerHTML = '<option value="">(failed to load clip list)</option>';
+  }
+  modal.style.display = 'flex';
+  sel.focus();
+}
+function closeClipQuickModal() {
+  const m = document.getElementById('clip-quick-modal');
+  if (m) m.style.display = 'none';
+}
+// Resolve the duration of a CUSTOM_LOOPS file by loading its metadata
+// in a transient Audio element. Used by "Clip ends at playhead" so we
+// can place the event at (playhead - clip duration).
+function getClipDuration(file) {
+  return new Promise((resolve, reject) => {
+    const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
+    a.addEventListener('loadedmetadata', () => {
+      if (isFinite(a.duration) && a.duration > 0) resolve(a.duration);
+      else reject(new Error('duration not finite'));
+    });
+    a.addEventListener('error', () => reject(new Error('audio load error')));
+  });
+}
+async function dropPlayClipAtPlayhead() {
+  const sel    = document.getElementById('clip-quick-file');
+  const file   = sel.value;
+  const status = document.getElementById('clip-quick-status');
+  if (!file) { status.textContent = 'Pick a clip first.'; status.className = 'midi-modal-status error'; return; }
+  const anchor = document.querySelector('input[name="clip-quick-anchor"]:checked')?.value || 'start';
+  let t = currentPlayheadSec();
+  if (anchor === 'end') {
+    try {
+      const dur = await getClipDuration(file);
+      t = Math.max(0, t - dur);
+    } catch (e) {
+      console.warn('[clip-quick] duration lookup failed; falling back to playhead:', e);
+    }
+  }
+  const labelRaw = (document.getElementById('clip-quick-label').value || '').trim();
+  const label = labelRaw || `clip ${file.replace(/\.m4a$/i, '')}${anchor === 'end' ? ' (ends here)' : ''}`;
+  // Push the event into the in-memory timeline + persist on next save.
+  if (typeof automationEvents === 'undefined') return;
+  const ev = { t: Math.round(t * 1000) / 1000, type: 'play-clip', clip: file, label };
+  automationEvents.push(ev);
+  automationEvents.sort((a, b) => a.t - b.t);
+  if (typeof renderAutomationLane === 'function') renderAutomationLane();
+  if (typeof markAutomationDirty === 'function') markAutomationDirty();
+  closeClipQuickModal();
+}
+// Wire close handlers + Save once the DOM is ready. Idempotent.
+function setupClipQuickModalOnce() {
+  const modal = document.getElementById('clip-quick-modal');
+  if (!modal || modal.dataset.wired === '1') return;
+  modal.dataset.wired = '1';
+  modal.querySelectorAll('[data-close-clip-modal]').forEach(el =>
+    el.addEventListener('click', closeClipQuickModal));
+  const saveBtn = document.getElementById('clip-quick-save');
+  if (saveBtn) saveBtn.addEventListener('click', dropPlayClipAtPlayhead);
+}
+
 function midiModalTypeChanged() {
   const t = document.getElementById('midi-f-type').value;
   const isStem = (t === 'mute' || t === 'unmute');
@@ -9090,6 +9194,16 @@ function setupMidiUI() {
         if (timeEl) timeEl.value = currentPlayheadSec().toFixed(2);
         // Re-render shorthand preview from current field values.
         updateShorthandPreview();
+      });
+    }
+    // + CLIP button: quick-drop a Play Clip action without going through
+    // the full Action editor. Opens a focused modal that asks only for
+    // the clip and anchor mode (start-at-playhead or end-at-playhead).
+    const clipBtn = document.getElementById('midi-btn-add-clip');
+    if (clipBtn) {
+      clipBtn.addEventListener('click', () => {
+        if (!automationCurrentBase) { alert('Load a song first.'); return; }
+        openClipQuickModal();
       });
     }
     renderRecentSlots();

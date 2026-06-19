@@ -308,8 +308,16 @@
                  crosshair-cursor approach was removed because it grabbed
                  pointer events from the section dividers below. -->
             <div class="midi-action-row" id="midi-action-row">
+              <!-- + CLIP: quick-drop a Play Clip action. Opens a small
+                   picker (clip dropdown + anchor mode) and saves the
+                   action at the playhead. The action's anchor is either
+                   the START of the clip or the END (clip's audio finishes
+                   at the playhead). -->
+              <button id="midi-btn-add-clip" class="midi-toolbar-btn midi-action-add midi-action-clip" title="Drop a Play Clip action at the playhead. Pick a clip and choose whether the clip STARTS at the playhead or ENDS at the playhead.">+ Clip</button>
               <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the Action editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ Action</button>
-              <div class="midi-preset-slots" id="midi-preset-slots"></div>
+              <!-- Action favorites (#midi-preset-slots) removed per user
+                   request 06/2026 -- they weren't getting used and the
+                   real estate is better spent on the + Clip button. -->
             </div>
             <div class="automation-toolbar" id="midi-lane-toolbar">
               <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
@@ -921,6 +929,43 @@
   </script>
 <!-- MIDI event editor modal. Hidden by default; shown when the user clicks
      the MIDI lane or an existing event marker. Backed by JS in app.js. -->
+<!-- + CLIP quick-drop modal. Smaller than the full Action editor since
+     it only collects: which clip + anchor mode. Anchor mode toggles
+     between "clip START at playhead" (action.t = playhead) and "clip
+     END at playhead" (action.t = playhead - clip.duration). -->
+<div id="clip-quick-modal" class="midi-modal" style="display:none;">
+  <div class="midi-modal-backdrop" data-close-clip-modal></div>
+  <div class="midi-modal-card" style="max-width:480px;">
+    <h3>Drop a Play Clip action</h3>
+    <div class="midi-row">
+      <label>Clip</label>
+      <select id="clip-quick-file"><option value="">(loading…)</option></select>
+    </div>
+    <div class="midi-row">
+      <label>Anchor</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <label style="display:inline-flex; align-items:center; gap:4px;">
+          <input type="radio" name="clip-quick-anchor" id="clip-anchor-start" value="start" checked>
+          <span>Clip <b>starts</b> at playhead</span>
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:4px;">
+          <input type="radio" name="clip-quick-anchor" id="clip-anchor-end" value="end">
+          <span>Clip <b>ends</b> at playhead</span>
+        </label>
+      </div>
+    </div>
+    <div class="midi-row">
+      <label>Label (optional)</label>
+      <input id="clip-quick-label" type="text" maxlength="60" placeholder="leave blank to auto-name from the clip filename">
+    </div>
+    <div class="midi-modal-buttons">
+      <button id="clip-quick-cancel" class="btn-secondary" data-close-clip-modal>Cancel</button>
+      <button id="clip-quick-save"   class="btn-primary">Drop action</button>
+    </div>
+    <div id="clip-quick-status" class="midi-modal-status"></div>
+  </div>
+</div>
+
 <div id="midi-modal" class="midi-modal" style="display:none;">
   <div class="midi-modal-backdrop"></div>
   <div class="midi-modal-card">
