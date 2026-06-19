@@ -5197,6 +5197,52 @@ async function togglePlayPause() {
     }
   }
 
+  // Play-clip pre-roll. Bill: "If the clip is dropped at the beginning
+  // of the visualizer, play the clip before starting the playback of
+  // the backing track." Any play-clip event anchored at t <= 0.05
+  // counts as a pre-roll: it fires in parallel with any other pre-roll
+  // clips, the backing track waits for the longest to end, then plays
+  // normally. Fired flag is set so the regular dispatcher doesn't
+  // double-fire them once the playhead crosses t=0.
+  if (isFreshStart && Array.isArray(automationEvents)) {
+    const prerollClips = automationEvents.filter(e =>
+      e && e.type === 'play-clip' && typeof e.t === 'number' && e.t <= 0.05);
+    if (prerollClips.length) {
+      countInInProgress = true;
+      els.btnPlay.disabled = true;
+      els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
+      try { initAudioCtx(); } catch (e) {}
+      try {
+        const promises = prerollClips.map(ev => new Promise(resolve => {
+          ev.fired = true;
+          const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(ev.clip || ''));
+          a.preload = 'auto';
+          a.crossOrigin = 'anonymous';
+          a.volume = 1.0;
+          if (audioCtx && masterGainNode) {
+            try {
+              const src = audioCtx.createMediaElementSource(a);
+              src.connect(masterGainNode);
+            } catch (er) { console.warn('[preroll-clip] wire failed:', er); }
+          }
+          const done = () => { try { a.removeAttribute('src'); } catch(e) {} resolve(); };
+          a.addEventListener('ended', done);
+          a.addEventListener('error', done);
+          a.play().catch(done);
+          // Hard cap so a corrupt file doesn't hang the song forever.
+          setTimeout(done, 60000);
+        }));
+        await Promise.all(promises);
+      } catch (e) {
+        console.warn('[preroll-clip] pre-roll failed:', e);
+      } finally {
+        countInInProgress = false;
+        els.btnPlay.disabled = false;
+        lucide.createIcons();
+      }
+    }
+  }
+
   const masterTime = masterAe0.currentTime;
   activeElements.forEach(ae => {
     ae.currentTime = masterTime;
@@ -5466,7 +5512,10 @@ function setupUrlLoopPanel() {
   btnFetch.addEventListener('click', async () => {
     const url = (urlEl.value || '').trim();
     if (!url) { setStatus('Need a URL.', 'err'); return; }
-    const captureDur = Number(captureDurEl.value) || 60;
+    // Blank duration -> 0 -> server treats as "fetch the WHOLE audio
+    // from start_sec to end of video". Was defaulting to 60s which
+    // capped the capture at 60 seconds even on a 3+ minute source.
+    const captureDur = Number(captureDurEl.value) || 0;
     const body = { url, duration_sec: captureDur };
     if (startEl.value) body.start_sec = Number(startEl.value);
 
