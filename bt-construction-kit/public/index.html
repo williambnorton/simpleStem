@@ -834,14 +834,30 @@
                     <span class="loop-trim-fname" id="loop-trim-fname">—</span>
                     <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
                   </div>
-                  <div class="loop-trim-timeline" id="loop-trim-timeline">
-                    <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
-                    <div class="loop-trim-track"></div>
-                    <div class="loop-trim-range" id="loop-trim-range"></div>
-                    <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
-                    <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
-                    <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
+                  <!-- Scroll container holds the (possibly wider-than-
+                       visible) timeline. The timeline's width scales
+                       with the zoom slider: at 1x it fits the container;
+                       at higher zooms the parent scrolls. -->
+                  <div class="loop-trim-scroll" id="loop-trim-scroll">
+                    <div class="loop-trim-timeline" id="loop-trim-timeline">
+                      <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
+                      <div class="loop-trim-track"></div>
+                      <div class="loop-trim-range" id="loop-trim-range"></div>
+                      <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
+                      <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
+                      <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
+                    </div>
                   </div>
+                  <!-- Zoom: 1x = fit full audio in view; higher = scroll
+                       through a smaller window for fine selection. The
+                       container auto-scrolls on zoom change to keep the
+                       IN handle visible. -->
+                  <div class="loop-trim-zoom-row">
+                    <span class="loop-trim-zoom-label">Zoom</span>
+                    <input type="range" id="loop-trim-zoom" class="loop-trim-zoom" min="1" max="20" step="0.5" value="1">
+                    <span class="loop-trim-zoom-val" id="loop-trim-zoom-val">1×</span>
+                  </div>
+
                   <div class="loop-trim-saved" id="loop-trim-saved" style="display:none;">
                     <span class="loop-trim-saved-label">Saved from this capture:</span>
                     <div class="loop-trim-saved-row" id="loop-trim-saved-row"></div>
@@ -955,6 +971,16 @@
       </div>
     </div>
     <div class="midi-row">
+      <label>Boost</label>
+      <select id="clip-quick-boost" title="Extra gain applied to the clip on top of master volume. Use when the captured clip is quieter than the backing track.">
+        <option value="0" selected>0 dB (no boost)</option>
+        <option value="5">+5 dB</option>
+        <option value="10">+10 dB</option>
+        <option value="15">+15 dB</option>
+        <option value="20">+20 dB</option>
+      </select>
+    </div>
+    <div class="midi-row">
       <label>Label (optional)</label>
       <input id="clip-quick-label" type="text" maxlength="60" placeholder="leave blank to auto-name from the clip filename">
     </div>
@@ -1008,6 +1034,16 @@
       <label>Clip</label>
       <select id="midi-f-clip">
         <option value="">(no clip selected)</option>
+      </select>
+    </div>
+    <div class="midi-row midi-row-clip" style="display:none;">
+      <label>Boost</label>
+      <select id="midi-f-clip-boost" title="Extra gain on top of master volume — use when the clip is quieter than the backing track.">
+        <option value="0" selected>0 dB</option>
+        <option value="5">+5 dB</option>
+        <option value="10">+10 dB</option>
+        <option value="15">+15 dB</option>
+        <option value="20">+20 dB</option>
       </select>
     </div>
     <div class="midi-row midi-row-cc-preset" style="display:none;">

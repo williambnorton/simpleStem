@@ -5215,6 +5215,8 @@ async function togglePlayPause() {
       try {
         const promises = prerollClips.map(ev => new Promise(resolve => {
           ev.fired = true;
+          const boostDb = Number(ev.boost) || 0;
+          const boostGain = Math.pow(10, boostDb / 20);
           const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(ev.clip || ''));
           a.preload = 'auto';
           a.crossOrigin = 'anonymous';
@@ -5222,7 +5224,13 @@ async function togglePlayPause() {
           if (audioCtx && masterGainNode) {
             try {
               const src = audioCtx.createMediaElementSource(a);
-              src.connect(masterGainNode);
+              if (boostGain !== 1.0) {
+                const g = audioCtx.createGain();
+                g.gain.value = boostGain;
+                src.connect(g).connect(masterGainNode);
+              } else {
+                src.connect(masterGainNode);
+              }
             } catch (er) { console.warn('[preroll-clip] wire failed:', er); }
           }
           const done = () => { try { a.removeAttribute('src'); } catch(e) {} resolve(); };
@@ -5477,6 +5485,9 @@ function setupUrlLoopPanel() {
   const waveform   = document.getElementById('loop-trim-waveform');
   const savedWrap  = document.getElementById('loop-trim-saved');
   const savedRow   = document.getElementById('loop-trim-saved-row');
+  const scrollEl   = document.getElementById('loop-trim-scroll');
+  const zoomEl     = document.getElementById('loop-trim-zoom');
+  const zoomValEl  = document.getElementById('loop-trim-zoom-val');
 
   if (!urlEl || !btnFetch || !list || !editor) return;
 
@@ -5582,6 +5593,12 @@ function setupUrlLoopPanel() {
     setTrimStatus('Loading audio…');
     savedFromThisRaw = [];
     renderSavedFromThisRaw();
+    // Reset zoom + cached audio so the new file starts fit-to-screen
+    // with no leftover channel data from the previous capture.
+    cachedChannel = null;
+    trimZoom = 1;
+    if (zoomEl) zoomEl.value = '1';
+    applyTrimZoom();
     // Tear down any previous preview audio first.
     if (trimAudio) { try { trimAudio.pause(); } catch (e) {} }
     trimAudio = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
@@ -5613,6 +5630,9 @@ function setupUrlLoopPanel() {
       if (!trimDuration) return;
       const pct = (trimAudio.currentTime / trimDuration) * 100;
       playheadEl.style.left = pct + '%';
+      // While zoomed in, keep the playhead within the visible window of
+      // the scroll container by panning when it nears either edge.
+      if (trimZoom > 1) scrollToKeepPlayheadVisible();
       // Loop mode: bounce back to IN when we cross OUT
       if (trimMode === 'loop' && trimAudio.currentTime >= trimOut - 0.02) {
         trimAudio.currentTime = trimIn;
@@ -5628,12 +5648,90 @@ function setupUrlLoopPanel() {
     decodeAndDrawWaveform(file).catch(e => console.warn('[trim wave] decode failed:', e));
   }
 
+  // Cached channel data for the currently-open raw capture so we can
+  // recompute peaks at higher resolution when the operator zooms in.
+  // Cleared each time a new file opens. Null when nothing decoded yet.
+  let cachedChannel = null;
+
+  // Trim editor zoom (1x .. 20x). At 1x the timeline fills the scroll
+  // container; at higher values the timeline expands horizontally and
+  // the container scrolls. IN/OUT/playhead are positioned by percentage
+  // so they stay correct under any zoom.
+  let trimZoom = 1;
+  function applyTrimZoom() {
+    if (!timeline || !scrollEl) return;
+    timeline.style.width = `${100 * trimZoom}%`;
+    if (zoomValEl) zoomValEl.textContent = `${trimZoom.toFixed(trimZoom >= 10 ? 0 : 1)}×`;
+    // Re-render the waveform at the new (wider) canvas size so it stays
+    // sharp -- but only if we have the channel data cached.
+    if (cachedChannel) renderWaveformPeaks(cachedChannel);
+    // Scroll so the IN handle is visible (a touch left of center).
+    scrollToKeepInVisible();
+  }
+  function scrollToKeepInVisible() {
+    if (!scrollEl || !trimDuration) return;
+    const inPx = (trimIn / trimDuration) * timeline.getBoundingClientRect().width;
+    const visW = scrollEl.clientWidth;
+    // Target: IN sits 25% from the left edge of the visible area.
+    const target = Math.max(0, inPx - visW * 0.25);
+    scrollEl.scrollLeft = target;
+  }
+  function scrollToKeepPlayheadVisible() {
+    if (!scrollEl || !trimAudio || !trimDuration) return;
+    const phPx = (trimAudio.currentTime / trimDuration) * timeline.getBoundingClientRect().width;
+    const visW = scrollEl.clientWidth;
+    const left = scrollEl.scrollLeft;
+    if (phPx < left + 20 || phPx > left + visW - 20) {
+      scrollEl.scrollLeft = Math.max(0, phPx - visW * 0.5);
+    }
+  }
+  if (zoomEl) {
+    zoomEl.addEventListener('input', () => {
+      trimZoom = Number(zoomEl.value) || 1;
+      applyTrimZoom();
+    });
+  }
+
   // Decode the raw audio once, compute amplitude peaks, paint them onto
   // the waveform canvas as a centered mirror bar graph. Lets the operator
   // SEE where transients are without having to listen for them. Cancels
   // any older decode in flight when the editor is reopened with a
   // different file.
   let waveformRequestId = 0;
+  function renderWaveformPeaks(channel) {
+    if (!waveform || !channel) return;
+    const ctx2d = waveform.getContext('2d');
+    const rect = waveform.getBoundingClientRect();
+    waveform.width  = Math.max(200, Math.round(rect.width  * (window.devicePixelRatio || 1)));
+    waveform.height = Math.max(36,  Math.round(rect.height * (window.devicePixelRatio || 1)));
+    const bucketCount = Math.min(4000, Math.max(300, waveform.width));
+    const samplesPerBucket = Math.max(1, Math.floor(channel.length / bucketCount));
+    const peaks = new Float32Array(bucketCount);
+    let max = 0;
+    for (let i = 0; i < bucketCount; i++) {
+      let bucketMax = 0;
+      const start = i * samplesPerBucket;
+      const end = Math.min(channel.length, start + samplesPerBucket);
+      for (let j = start; j < end; j++) {
+        const v = Math.abs(channel[j]);
+        if (v > bucketMax) bucketMax = v;
+      }
+      peaks[i] = bucketMax;
+      if (bucketMax > max) max = bucketMax;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const w = waveform.width, h = waveform.height;
+    ctx2d.clearRect(0, 0, w, h);
+    const bucketW = w / peaks.length;
+    const half = h / 2;
+    ctx2d.fillStyle = 'rgba(160, 200, 255, 0.62)';
+    for (let i = 0; i < peaks.length; i++) {
+      const n = max > 0 ? peaks[i] / max : 0;
+      const barH = Math.max(1 * dpr, n * h * 0.92);
+      const x = i * bucketW;
+      ctx2d.fillRect(x, half - barH / 2, Math.max(0.8, bucketW - 0.3), barH);
+    }
+  }
   async function decodeAndDrawWaveform(file) {
     if (!waveform) return;
     const myId = ++waveformRequestId;
@@ -5653,33 +5751,10 @@ function setupUrlLoopPanel() {
       const audioBuf = await ac.decodeAudioData(buf);
       if (myId !== waveformRequestId) { try { ac.close(); } catch (e) {} return; }
       const channel = audioBuf.getChannelData(0);
-      const bucketCount = Math.min(1500, Math.max(300, waveform.width));
-      const samplesPerBucket = Math.max(1, Math.floor(channel.length / bucketCount));
-      const peaks = new Float32Array(bucketCount);
-      let max = 0;
-      for (let i = 0; i < bucketCount; i++) {
-        let bucketMax = 0;
-        const start = i * samplesPerBucket;
-        const end = Math.min(channel.length, start + samplesPerBucket);
-        for (let j = start; j < end; j++) {
-          const v = Math.abs(channel[j]);
-          if (v > bucketMax) bucketMax = v;
-        }
-        peaks[i] = bucketMax;
-        if (bucketMax > max) max = bucketMax;
-      }
-      const dpr = window.devicePixelRatio || 1;
-      const w = waveform.width, h = waveform.height;
-      ctx2d.clearRect(0, 0, w, h);
-      const bucketW = w / peaks.length;
-      const half = h / 2;
-      ctx2d.fillStyle = 'rgba(160, 200, 255, 0.62)';
-      for (let i = 0; i < peaks.length; i++) {
-        const n = max > 0 ? peaks[i] / max : 0;
-        const barH = Math.max(1 * dpr, n * h * 0.92);
-        const x = i * bucketW;
-        ctx2d.fillRect(x, half - barH / 2, Math.max(0.8, bucketW - 0.3), barH);
-      }
+      // Copy so we can drop the AudioContext + ArrayBuffer; cachedChannel
+      // is used later by the zoom slider to re-render peaks.
+      cachedChannel = channel.slice();
+      renderWaveformPeaks(cachedChannel);
     } catch (e) {
       console.warn('[trim wave] decode failed:', e);
     } finally {
@@ -8327,6 +8402,8 @@ function openMidiModal(idx) {
       if (e.clip) clipSel.value = e.clip;
     });
   }
+  const clipBoostSel = document.getElementById('midi-f-clip-boost');
+  if (clipBoostSel) clipBoostSel.value = String(e.boost != null ? e.boost : 0);
   midiModalTypeChanged();
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
@@ -8353,9 +8430,11 @@ async function openClipQuickModal() {
   if (!modal) return;
   const sel    = document.getElementById('clip-quick-file');
   const labelEl= document.getElementById('clip-quick-label');
+  const boostEl= document.getElementById('clip-quick-boost');
   const statusEl = document.getElementById('clip-quick-status');
   document.getElementById('clip-anchor-start').checked = true;
   labelEl.value = '';
+  if (boostEl) boostEl.value = '0';
   statusEl.textContent = '';
   statusEl.className = 'midi-modal-status';
   // Pull the clip list. Skip raw_*.m4a scratch captures.
@@ -8405,10 +8484,14 @@ async function dropPlayClipAtPlayhead() {
     }
   }
   const labelRaw = (document.getElementById('clip-quick-label').value || '').trim();
-  const label = labelRaw || `clip ${file.replace(/\.m4a$/i, '')}${anchor === 'end' ? ' (ends here)' : ''}`;
+  const boostEl  = document.getElementById('clip-quick-boost');
+  const boost    = boostEl ? (Number(boostEl.value) || 0) : 0;
+  const boostTag = boost ? ` (+${boost}dB)` : '';
+  const label = labelRaw
+    || `clip ${file.replace(/\.m4a$/i, '')}${anchor === 'end' ? ' (ends here)' : ''}${boostTag}`;
   // Push the event into the in-memory timeline + persist on next save.
   if (typeof automationEvents === 'undefined') return;
-  const ev = { t: Math.round(t * 1000) / 1000, type: 'play-clip', clip: file, label };
+  const ev = { t: Math.round(t * 1000) / 1000, type: 'play-clip', clip: file, label, boost };
   automationEvents.push(ev);
   automationEvents.sort((a, b) => a.t - b.t);
   if (typeof renderAutomationLane === 'function') renderAutomationLane();
@@ -8503,6 +8586,8 @@ function readMidiModalForm() {
     out.stem = document.getElementById('midi-f-stem').value;
   } else if (type === 'play-clip') {
     out.clip = document.getElementById('midi-f-clip').value || '';
+    const boostEl = document.getElementById('midi-f-clip-boost');
+    out.boost = boostEl ? Number(boostEl.value) || 0 : 0;
   }
   return out;
 }
@@ -8816,6 +8901,11 @@ async function fireAutomationEvent(e) {
 function firePlayClip(e) {
   const file = e && e.clip;
   if (!file) { console.warn('[play-clip] no clip selected'); return; }
+  // Boost in dB → linear gain. 0 dB = 1.0, +5 dB ≈ 1.78, +10 dB ≈ 3.16,
+  // +20 dB = 10.0. Web Audio gain has no hard ceiling but the audio
+  // device's headroom does, so a soft hot clip will clip at the top.
+  const boostDb = (e && Number(e.boost)) || 0;
+  const boostGain = Math.pow(10, boostDb / 20);
   try {
     if (!audioCtx) initAudioCtx();
     const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
@@ -8825,7 +8915,13 @@ function firePlayClip(e) {
     if (audioCtx && masterGainNode) {
       try {
         const src = audioCtx.createMediaElementSource(a);
-        src.connect(masterGainNode);
+        if (boostGain !== 1.0) {
+          const g = audioCtx.createGain();
+          g.gain.value = boostGain;
+          src.connect(g).connect(masterGainNode);
+        } else {
+          src.connect(masterGainNode);
+        }
       } catch (er) {
         // createMediaElementSource throws if the element is already
         // wired; fall back to direct element output.

@@ -2703,10 +2703,14 @@ app.put('/api/song/:base/automation', (req, res) => {
         } else if (e.type === 'play-clip') {
           // Plays a CUSTOM_LOOPS sample in parallel with the backing
           // track at this point in the timeline. Stored as `clip`, the
-          // m4a filename. The portal validates the file exists at fire
-          // time; here we just keep it as a string + reject traversal.
+          // m4a filename. `boost` is the additional gain in dB (0-20)
+          // applied via a GainNode in the clip's audio chain so soft
+          // captures can sit on top of a loud backing track.
           const clip = String(e.clip || '');
           base.clip = clip.includes('..') ? '' : clip.slice(0, 200);
+          const boost = Number(e.boost);
+          base.boost = (Number.isFinite(boost) && boost >= -20 && boost <= 20)
+            ? Math.round(boost * 10) / 10 : 0;
         } else if (e.type === 'fade') {
           base.stem = VALID_STEMS.has(e.stem) ? e.stem : 'vocals';
           base.level = Math.max(0, Math.min(10, parseInt(e.level, 10) || 0));
