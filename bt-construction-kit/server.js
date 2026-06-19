@@ -1517,49 +1517,94 @@ app.post('/api/loops/from-url', (req, res) => {
   const jobId = newJobId();
   customLoopJobs[jobId] = { status: 'running', message: 'Starting yt-dlp...', file: fname };
 
-  // yt-dlp arguments. -x extracts audio; --audio-format m4a transcodes
-  // via ffmpeg; --download-sections "*start-end" pulls just the slice
-  // (yt-dlp downloads the whole stream and crops via ffmpeg under the
-  // hood -- accurate to <100ms). -o sets the exact output filename;
-  // --force-overwrites lets a retry replace a partial file.
-  const args = [
+  // Two-stage capture path that avoids the YouTube 403 on signed-URL
+  // segment fetches.
+  //
+  // Stage 1: yt-dlp -x downloads the WHOLE audio stream to a temp m4a.
+  //   Earlier code used --download-sections + --force-keyframes-at-cuts.
+  //   That forces ffmpeg to re-fetch the signed segment URL, which
+  //   YouTube routinely 403s. The "whole-stream + local trim" path
+  //   downloads more bytes but is reliable -- the audio is fetched
+  //   once, in one shot, with no signed-URL surgery.
+  //
+  // Stage 2: ffmpeg crops the temp file to [startSec, endSec] with
+  //   stream-copy (no re-encode) into the final outPath. Fast.
+  //
+  // For longer captures (~4 min video, ~4 MB audio) this is well under
+  // a second of extra IO. Trade-off worth it for not having to babysit
+  // 403 retries.
+  const tempBase = path.join(CUSTOM_LOOPS_DIR, `${jobId}_full.m4a`);
+
+  const ytArgs = [
     '-x',
     '--audio-format', 'm4a',
     '--audio-quality', '0',
-    '--download-sections', `*${startSec}-${endSec}`,
-    '--force-keyframes-at-cuts',
-    '-o', outPath,
+    // Workaround for 403s on web-client signed URLs: ask yt-dlp to use
+    // the iOS player client extractor, which produces different signed
+    // URLs that YouTube currently honors more reliably for raw audio.
+    '--extractor-args', 'youtube:player_client=ios',
+    '--no-cache-dir',
     '--no-warnings',
     '--no-playlist',
+    '-o', tempBase,
     url,
   ];
 
-  // Find yt-dlp on PATH. ENOENT means it's not installed; surface a
-  // clear error rather than a generic spawn failure.
   let ytdlp;
   try {
-    ytdlp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    ytdlp = spawn('yt-dlp', ytArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     customLoopJobs[jobId] = { status: 'error', error: 'yt-dlp not installed or not on PATH.' };
     return res.status(500).json({ error: 'yt-dlp not installed', job_id: jobId });
   }
-  let stderr = '';
-  ytdlp.stderr.on('data', d => { stderr += d.toString(); });
+  let ytStderr = '';
+  ytdlp.stderr.on('data', d => { ytStderr += d.toString(); });
   ytdlp.on('error', e => {
     customLoopJobs[jobId] = { status: 'error', error: e.message };
   });
   ytdlp.on('close', code => {
-    if (code === 0 && fs.existsSync(outPath)) {
+    if (code !== 0 || !fs.existsSync(tempBase)) {
+      customLoopJobs[jobId] = {
+        status: 'error',
+        error: `yt-dlp exit ${code}: ${ytStderr.slice(-400)}`,
+      };
+      return;
+    }
+    customLoopJobs[jobId].message = 'Trimming with ffmpeg…';
+    // Stage 2: ffmpeg crops the temp file to the requested range.
+    const ffArgs = [
+      '-y',
+      '-ss', String(startSec),
+      '-to', String(endSec),
+      '-i', tempBase,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outPath,
+    ];
+    let ff;
+    try {
+      ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (e) {
+      customLoopJobs[jobId] = { status: 'error', error: 'ffmpeg not on PATH' };
+      try { fs.unlinkSync(tempBase); } catch (er) {}
+      return;
+    }
+    let ffStderr = '';
+    ff.stderr.on('data', d => { ffStderr += d.toString(); });
+    ff.on('close', ffCode => {
+      try { fs.unlinkSync(tempBase); } catch (er) {}
+      if (ffCode !== 0 || !fs.existsSync(outPath)) {
+        customLoopJobs[jobId] = {
+          status: 'error',
+          error: `ffmpeg exit ${ffCode}: ${ffStderr.slice(-300)}`,
+        };
+        return;
+      }
       customLoopJobs[jobId] = {
         status: 'done', file: fname,
         url: `/api/audio/custom-loop/${encodeURIComponent(fname)}`,
       };
-    } else {
-      customLoopJobs[jobId] = {
-        status: 'error',
-        error: `yt-dlp exit ${code}: ${stderr.slice(-400)}`,
-      };
-    }
+    });
   });
 
   res.json({ ok: true, job_id: jobId, file: fname });
