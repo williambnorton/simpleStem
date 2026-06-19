@@ -705,6 +705,22 @@ select {
   font-family: inherit;
   margin-left: 4px;
 }
+
+/* "Set here" mini buttons next to the IN / OUT readouts. Pulls
+   the corresponding marker to the audio's current playhead. The
+   hotkeys I / O do the same thing without the click. */
+.loop-trim-sethere {
+  margin-left: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.loop-trim-sethere:hover { color: var(--color-yellow); border-color: var(--color-yellow); }
 .loop-trim-dur {
   margin-left: auto;
   color: var(--color-yellow);

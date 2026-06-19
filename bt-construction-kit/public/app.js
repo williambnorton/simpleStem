@@ -5418,9 +5418,12 @@ function setupUrlLoopPanel() {
   const inSecBox   = document.getElementById('loop-trim-in-sec');
   const outSecBox  = document.getElementById('loop-trim-out-sec');
   const durEl      = document.getElementById('loop-trim-dur');
+  const btnPlay    = document.getElementById('btn-trim-play');
   const btnPreview = document.getElementById('btn-trim-preview');
   const btnLoop    = document.getElementById('btn-trim-loop');
   const btnStop    = document.getElementById('btn-trim-stop');
+  const btnSetIn   = document.getElementById('btn-set-in');
+  const btnSetOut  = document.getElementById('btn-set-out');
   const trimNameEl = document.getElementById('loop-trim-name');
   const btnSave    = document.getElementById('btn-trim-save');
   const trimStatus = document.getElementById('loop-trim-status');
@@ -5608,6 +5611,16 @@ function setupUrlLoopPanel() {
     trimAudio.currentTime = pct * trimDuration;
   });
 
+  // Free-play: no IN/OUT constraint. Operator uses this to scan through
+  // the capture looking for samples. Plays from wherever the playhead
+  // currently is, all the way to the end of the capture.
+  if (btnPlay) {
+    btnPlay.addEventListener('click', () => {
+      if (!trimAudio) return;
+      trimMode = null;            // no auto-stop on OUT
+      trimAudio.play().catch(() => {});
+    });
+  }
   btnPreview.addEventListener('click', () => {
     if (!trimAudio) return;
     trimMode = 'preview';
@@ -5626,6 +5639,34 @@ function setupUrlLoopPanel() {
     trimMode = null;
   });
 
+  // Set IN / Set OUT at the current playhead. Useful for free-play
+  // scanning -- play, hear the sample start, hit "IN here", let it
+  // play through the sample, hit "OUT here" to grab the end.
+  if (btnSetIn) {
+    btnSetIn.addEventListener('click', () => {
+      if (!trimAudio || !trimDuration) return;
+      trimIn = Math.max(0, Math.min(trimAudio.currentTime, trimOut - 0.05));
+      updateHandles(); updateNumeric();
+    });
+  }
+  if (btnSetOut) {
+    btnSetOut.addEventListener('click', () => {
+      if (!trimAudio || !trimDuration) return;
+      trimOut = Math.max(trimIn + 0.05, Math.min(trimAudio.currentTime, trimDuration));
+      updateHandles(); updateNumeric();
+    });
+  }
+  // Keyboard shortcuts I / O while the trim editor is visible. Skip
+  // when focus is in an input so the name field can still receive 'i'.
+  window.addEventListener('keydown', (ev) => {
+    if (editor.style.display === 'none') return;
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    const k = ev.key.toLowerCase();
+    if (k === 'i' && btnSetIn)  { ev.preventDefault(); btnSetIn.click(); }
+    if (k === 'o' && btnSetOut) { ev.preventDefault(); btnSetOut.click(); }
+  });
+
   btnSave.addEventListener('click', async () => {
     if (!trimSrcFile) { setTrimStatus('Nothing to save.', 'err'); return; }
     const name = (trimNameEl.value || '').trim();
@@ -5641,15 +5682,29 @@ function setupUrlLoopPanel() {
           start_sec: trimIn,
           end_sec:   trimOut,
           name,
-          deleteSource: true,
+          // KEEP the raw capture. The operator stays in the editor and
+          // scans forward for the next sample in the same audio. The
+          // raw is removed only by the × Discard button at top-right.
+          deleteSource: false,
         }),
       });
       const d = await r.json();
       if (!r.ok) { setTrimStatus('✗ ' + (d.error || 'trim failed'), 'err'); btnSave.disabled = false; return; }
-      setTrimStatus(`✓ Saved ${d.file} (${d.duration_sec.toFixed(1)}s).`, 'ok');
-      btnSave.disabled = false;
+      const savedOut = trimOut;
       refreshCustomLoopsList();
-      setTimeout(() => closeTrimEditor(), 1200);
+      // Advance for the next sample: IN jumps to where the just-saved
+      // OUT was; OUT stays at the end of the capture so the user has
+      // a wide window to scan. Name field clears and refocuses for the
+      // next entry. Playhead jumps to the new IN so the operator can
+      // hit Play and listen forward from there.
+      trimIn  = Math.min(savedOut, trimDuration - 0.05);
+      trimOut = trimDuration;
+      updateHandles(); updateNumeric();
+      if (trimAudio) trimAudio.currentTime = trimIn;
+      trimNameEl.value = '';
+      trimNameEl.focus();
+      setTrimStatus(`✓ Saved ${d.file} (${d.duration_sec.toFixed(1)}s). Find the next sample, or × to discard the raw.`, 'ok');
+      btnSave.disabled = false;
     } catch (e) {
       setTrimStatus('✗ ' + e.message, 'err');
       btnSave.disabled = false;

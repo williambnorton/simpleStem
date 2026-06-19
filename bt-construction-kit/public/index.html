@@ -788,16 +788,23 @@
                     <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
                   </div>
                   <div class="loop-trim-readouts">
-                    <span>IN <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0"></span>
-                    <span>OUT <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0"></span>
+                    <span>IN
+                      <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0">
+                      <button id="btn-set-in"  class="loop-trim-sethere" title="Set IN to current playhead (shortcut: I)">⤓ here</button>
+                    </span>
+                    <span>OUT
+                      <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0">
+                      <button id="btn-set-out" class="loop-trim-sethere" title="Set OUT to current playhead (shortcut: O)">here ⤒</button>
+                    </span>
                     <span class="loop-trim-dur" id="loop-trim-dur">0.0s</span>
                   </div>
                   <div class="loop-trim-controls">
-                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play"></i> Preview</button>
+                    <button id="btn-trim-play"    class="btn-secondary" title="Play through the whole capture from the current position"><i data-lucide="play"></i> Play</button>
+                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play-circle"></i> Preview</button>
                     <button id="btn-trim-loop"    class="btn-secondary" title="Loop the IN→OUT segment"><i data-lucide="repeat"></i> Loop</button>
                     <button id="btn-trim-stop"    class="btn-secondary" title="Stop"><i data-lucide="square"></i></button>
-                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this loop (required to save)">
-                    <button id="btn-trim-save" class="btn-primary"><i data-lucide="save"></i> Save</button>
+                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this sample (required to save)">
+                    <button id="btn-trim-save" class="btn-primary" title="Save IN→OUT as a sample. Capture stays open so you can scan forward for more samples."><i data-lucide="save"></i> Save sample</button>
                   </div>
                   <span id="loop-trim-status" class="url-loop-status"></span>
                 </div>
