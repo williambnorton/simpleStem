@@ -590,6 +590,9 @@
         <button class="tab-btn" data-tab="drumloops" role="tab" aria-selected="false">
           <i data-lucide="drum"></i> Loop Library
         </button>
+        <button class="tab-btn" data-tab="cliplibrary" role="tab" aria-selected="false">
+          <i data-lucide="scissors"></i> Clip Library
+        </button>
       </nav>
 
       <!-- Tabbed content area: one tab visible at a time, player stays above -->
@@ -758,71 +761,8 @@
             <!-- Instrument-filter toggle bar. Populated by renderInstrumentFilters(). -->
             <div id="loop-inst-filters" class="loop-inst-filters"></div>
 
-            <!-- Loop-from-URL: paste a YouTube link with a t=<sec> anchor,
-                 fetch a 60s scratch capture, then trim + name in-place
-                 before committing the final CUSTOM_LOOPS/<name>.m4a. This
-                 panel was originally in the Library tab; moved here so all
-                 the loop tooling sits in one place. -->
-            <details class="url-loop-panel" open>
-              <summary><i data-lucide="scissors"></i> Snip a loop from a YouTube URL</summary>
-              <div class="url-loop-body">
-                <div class="url-loop-row">
-                  <input type="text" id="loop-url" class="url-loop-url"
-                         placeholder="https://www.youtube.com/watch?v=...&t=20s">
-                  <input type="number" id="loop-start" class="url-loop-num" min="0" step="0.1" placeholder="start (s)" title="Start seconds — auto from &t= in the URL">
-                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="5" step="5" value="60" title="Scratch capture length (seconds). You'll trim from here.">
-                  <button id="btn-loop-from-url" class="btn-secondary"><i data-lucide="download"></i> Fetch</button>
-                </div>
-                <span id="loop-url-status" class="url-loop-status"></span>
-
-                <div id="loop-trim-editor" class="loop-trim-editor" style="display:none;">
-                  <div class="loop-trim-head">
-                    <span class="loop-trim-fname" id="loop-trim-fname">—</span>
-                    <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
-                  </div>
-                  <div class="loop-trim-timeline" id="loop-trim-timeline">
-                    <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
-                    <div class="loop-trim-track"></div>
-                    <div class="loop-trim-range" id="loop-trim-range"></div>
-                    <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
-                    <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
-                    <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
-                  </div>
-                  <!-- Saved samples derived from THIS raw capture. Each row
-                       lets the operator quickly replay what they already
-                       saved so they can A/B against the next slice they're
-                       marking. -->
-                  <div class="loop-trim-saved" id="loop-trim-saved" style="display:none;">
-                    <span class="loop-trim-saved-label">Saved from this capture:</span>
-                    <div class="loop-trim-saved-row" id="loop-trim-saved-row"></div>
-                  </div>
-                  <div class="loop-trim-readouts">
-                    <span>IN
-                      <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0">
-                      <button id="btn-set-in"  class="loop-trim-sethere" title="Set IN to current playhead (shortcut: I)">⤓ here</button>
-                    </span>
-                    <span>OUT
-                      <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0">
-                      <button id="btn-set-out" class="loop-trim-sethere" title="Set OUT to current playhead (shortcut: O)">here ⤒</button>
-                    </span>
-                    <span class="loop-trim-dur" id="loop-trim-dur">0.0s</span>
-                  </div>
-                  <div class="loop-trim-controls">
-                    <button id="btn-trim-play"    class="btn-secondary" title="Play through the whole capture from the current position"><i data-lucide="play"></i> Play</button>
-                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play-circle"></i> Preview</button>
-                    <button id="btn-trim-loop"    class="btn-secondary" title="Loop the IN→OUT segment"><i data-lucide="repeat"></i> Loop</button>
-                    <button id="btn-trim-stop"    class="btn-secondary" title="Stop"><i data-lucide="square"></i></button>
-                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this sample (required to save)">
-                    <button id="btn-trim-save" class="btn-primary" title="Save IN→OUT as a sample. Capture stays open so you can scan forward for more samples."><i data-lucide="save"></i> Save sample</button>
-                  </div>
-                  <span id="loop-trim-status" class="url-loop-status"></span>
-                </div>
-
-                <ul id="custom-loops-list" class="url-loop-list"></ul>
-              </div>
-            </details>
-
-            <!-- Two-pane layout: left = loop sequence builder, right = flat loop list. -->
+            <!-- Two-pane layout: left = loop sequence builder, right = flat loop list.
+                 The URL-snip and Sampler panels moved into the new Clip Library tab. -->
             <div class="loops-layout">
               <aside class="loop-sequence-panel" id="loop-sequence-panel">
                 <div class="loop-sequence-header">
@@ -850,37 +790,106 @@
               <div id="drumloops-grid" class="drumloops-grid">
                 <div class="loading-state"><div class="spinner"></div><span>Scanning LOOPS/ folder…</span></div>
               </div>
-
-              <!-- Sampler panel — sits next to the Loop Library. Lists
-                   every CUSTOM_LOOPS sample with Play / + Add / Delete.
-                   "+ Add" opens a dialog to attach the sample to the
-                   currently-loaded song as an item in one of its
-                   ActionSequences, anchored at the current playhead. -->
-              <aside class="sampler-panel" id="sampler-panel">
-                <div class="sampler-header">
-                  <h3><i data-lucide="sliders"></i> Sampler</h3>
-                  <span class="sampler-target" id="sampler-target">no song loaded</span>
-                </div>
-                <div class="sampler-actionseq-bar">
-                  <label class="sampler-as-label">Sequence:</label>
-                  <select id="sampler-as-picker" class="glass-select"></select>
-                  <button id="sampler-as-new"    class="btn-icon" title="New ActionSequence"><i data-lucide="plus"></i></button>
-                  <button id="sampler-as-rename" class="btn-icon" title="Rename ActionSequence"><i data-lucide="pencil"></i></button>
-                  <label class="sampler-armed-toggle" title="Armed = this sequence's buttons/auto-fires are active during playback">
-                    <input type="checkbox" id="sampler-as-armed"> armed
-                  </label>
-                </div>
-                <div class="sampler-list" id="sampler-list">
-                  <div class="empty-state">No samples yet. Snip one above.</div>
-                </div>
-                <div class="sampler-current-items" id="sampler-current-items">
-                  <h4>Items in this sequence</h4>
-                  <ul id="sampler-items-list"><li class="empty-state">No items yet.</li></ul>
-                </div>
-              </aside>
             </div>
           </section>
         </section><!-- /tab-pane:drumloops -->
+
+        <!-- ─── Clip Library tab ────────────────────────────────────
+             Owns the URL-snip workflow + waveform trim editor + the
+             sampler. Everything sample-related lives here. The Loop
+             Library tab is for the per-song instrument loops; this
+             tab is for ad-hoc clips snipped from any YouTube URL. -->
+        <section class="tab-pane" data-tab-pane="cliplibrary">
+          <section class="library-section glass">
+            <div class="library-header">
+              <div class="title-area">
+                <h2>Clip Library</h2>
+                <span class="sub">Snip clips from any URL · trim · save · attach to songs as Play-Clip actions</span>
+              </div>
+            </div>
+
+            <!-- Snip panel: fetch + trim editor + saved list -->
+            <details class="url-loop-panel" open>
+              <summary><i data-lucide="scissors"></i> Snip a clip from a YouTube URL</summary>
+              <div class="url-loop-body">
+                <div class="url-loop-row">
+                  <input type="text" id="loop-url" class="url-loop-url"
+                         placeholder="https://www.youtube.com/watch?v=...&t=20s">
+                  <input type="number" id="loop-start" class="url-loop-num" min="0" step="0.1" placeholder="start (s)" title="Start seconds — auto from &t= in the URL">
+                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="5" step="5" value="60" title="Scratch capture length (seconds). You'll trim from here.">
+                  <button id="btn-loop-from-url" class="btn-secondary"><i data-lucide="download"></i> Fetch</button>
+                </div>
+                <span id="loop-url-status" class="url-loop-status"></span>
+
+                <div id="loop-trim-editor" class="loop-trim-editor" style="display:none;">
+                  <div class="loop-trim-head">
+                    <span class="loop-trim-fname" id="loop-trim-fname">—</span>
+                    <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
+                  </div>
+                  <div class="loop-trim-timeline" id="loop-trim-timeline">
+                    <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
+                    <div class="loop-trim-track"></div>
+                    <div class="loop-trim-range" id="loop-trim-range"></div>
+                    <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
+                    <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
+                    <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
+                  </div>
+                  <div class="loop-trim-saved" id="loop-trim-saved" style="display:none;">
+                    <span class="loop-trim-saved-label">Saved from this capture:</span>
+                    <div class="loop-trim-saved-row" id="loop-trim-saved-row"></div>
+                  </div>
+                  <div class="loop-trim-readouts">
+                    <span>IN
+                      <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0">
+                      <button id="btn-set-in"  class="loop-trim-sethere" title="Set IN to current playhead (shortcut: I)">⤓ here</button>
+                    </span>
+                    <span>OUT
+                      <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0">
+                      <button id="btn-set-out" class="loop-trim-sethere" title="Set OUT to current playhead (shortcut: O)">here ⤒</button>
+                    </span>
+                    <span class="loop-trim-dur" id="loop-trim-dur">0.0s</span>
+                  </div>
+                  <div class="loop-trim-controls">
+                    <button id="btn-trim-play"    class="btn-secondary" title="Play through the whole capture from the current position"><i data-lucide="play"></i> Play</button>
+                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play-circle"></i> Preview</button>
+                    <button id="btn-trim-loop"    class="btn-secondary" title="Loop the IN→OUT segment"><i data-lucide="repeat"></i> Loop</button>
+                    <button id="btn-trim-stop"    class="btn-secondary" title="Stop"><i data-lucide="square"></i></button>
+                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this clip (required to save)">
+                    <button id="btn-trim-save" class="btn-primary" title="Save IN→OUT as a clip. Capture stays open so you can scan forward for more clips."><i data-lucide="save"></i> Save clip</button>
+                  </div>
+                  <span id="loop-trim-status" class="url-loop-status"></span>
+                </div>
+
+                <ul id="custom-loops-list" class="url-loop-list"></ul>
+              </div>
+            </details>
+
+            <!-- Sampler panel: per-song action-sequence builder. Wires
+                 saved clips into the currently-loaded song's timeline. -->
+            <aside class="sampler-panel" id="sampler-panel" style="margin-top:14px;">
+              <div class="sampler-header">
+                <h3><i data-lucide="sliders"></i> Sampler — attach a clip to the active song</h3>
+                <span class="sampler-target" id="sampler-target">no song loaded</span>
+              </div>
+              <div class="sampler-actionseq-bar">
+                <label class="sampler-as-label">Sequence:</label>
+                <select id="sampler-as-picker" class="glass-select"></select>
+                <button id="sampler-as-new"    class="btn-icon" title="New ActionSequence"><i data-lucide="plus"></i></button>
+                <button id="sampler-as-rename" class="btn-icon" title="Rename ActionSequence"><i data-lucide="pencil"></i></button>
+                <label class="sampler-armed-toggle" title="Armed = this sequence's buttons/auto-fires are active during playback">
+                  <input type="checkbox" id="sampler-as-armed"> armed
+                </label>
+              </div>
+              <div class="sampler-list" id="sampler-list">
+                <div class="empty-state">No clips yet. Snip one above.</div>
+              </div>
+              <div class="sampler-current-items" id="sampler-current-items">
+                <h4>Items in this sequence</h4>
+                <ul id="sampler-items-list"><li class="empty-state">No items yet.</li></ul>
+              </div>
+            </aside>
+          </section>
+        </section><!-- /tab-pane:cliplibrary -->
 
       </div><!-- /tab-container -->
 

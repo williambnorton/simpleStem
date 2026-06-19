@@ -5935,14 +5935,20 @@ function setupUrlLoopPanel() {
     if (window.lucide) lucide.createIcons();
     list.querySelectorAll('.url-loop-row-item').forEach(row => {
       const file = row.dataset.file;
-      row.querySelector('.url-loop-play').addEventListener('click', () => playCustomLoop(file));
+      row.querySelector('.url-loop-play').addEventListener('click', (e) => { e.stopPropagation(); playCustomLoop(file); });
       const editBtn = row.querySelector('.url-loop-edit');
-      if (editBtn) editBtn.addEventListener('click', () => openTrimEditor(file));
-      row.querySelector('.url-loop-del').addEventListener('click', async () => {
+      if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); openTrimEditor(file); });
+      row.querySelector('.url-loop-del').addEventListener('click', async (e) => {
+        e.stopPropagation();
         if (!confirm(`Delete ${file}?`)) return;
         await fetch('/api/custom-loops/' + encodeURIComponent(file), { method: 'DELETE' });
         refreshCustomLoopsList();
       });
+      // Clicking anywhere ELSE on the row brings the file into the
+      // wave-capture trim editor. Lets the operator one-click a raw
+      // capture back open without aiming at the scissors button.
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', () => openTrimEditor(file));
     });
   }
 

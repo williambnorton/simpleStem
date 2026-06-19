@@ -638,25 +638,37 @@ select {
    are draggable thumbs. */
 .loop-trim-timeline {
   position: relative;
-  height: 36px;
+  height: 64px;          /* taller so the waveform is legible */
   border-radius: 4px;
   margin: 4px 8px;
+  cursor: ew-resize;     /* signal "this is a scrubber" */
+  user-select: none;
+  touch-action: none;
+}
+.loop-trim-waveform {
+  position: absolute;
+  left: 0; right: 0; top: 4px; bottom: 4px;
+  width: 100%; height: calc(100% - 8px);
+  display: block;
+  background: rgba(255,255,255,0.02);
+  border-radius: 3px;
+  pointer-events: none;   /* clicks pass through to the scrubber */
 }
 .loop-trim-track {
   position: absolute;
-  left: 0; right: 0; top: 50%;
-  height: 6px;
-  margin-top: -3px;
+  left: 0; right: 0; bottom: 0;
+  height: 4px;
   background: rgba(255,255,255,0.07);
-  border-radius: 3px;
+  border-radius: 0 0 3px 3px;
 }
 .loop-trim-range {
   position: absolute;
-  top: 50%;
-  height: 8px;
-  margin-top: -4px;
-  background: rgba(241, 196, 15, 0.50);
-  border-radius: 3px;
+  top: 0; bottom: 0;
+  /* Wide vertical band so the IN/OUT region stands out visually over
+     the waveform. Yellow at low alpha so peaks stay readable. */
+  background: rgba(241, 196, 15, 0.18);
+  border-left: 2px solid rgba(46, 204, 113, 0.95);
+  border-right: 2px solid rgba(220, 70, 70, 0.95);
   pointer-events: none;
 }
 .loop-trim-playhead {
@@ -669,17 +681,16 @@ select {
 }
 .loop-trim-handle {
   position: absolute;
-  top: 50%;
+  top: 0; bottom: 0;
   width: 14px;
-  height: 24px;
   margin-left: -7px;
-  margin-top: -12px;
   background: var(--color-yellow);
   border: 1px solid #b8910a;
   border-radius: 3px;
   cursor: ew-resize;
   padding: 0;
   touch-action: none;
+  z-index: 3;
 }
 .loop-trim-handle.in  { background: rgba(46, 204, 113, 0.95); border-color: #2e8b57; }
 .loop-trim-handle.out { background: rgba(220, 70, 70, 0.95);  border-color: #aa3535; }
@@ -721,6 +732,49 @@ select {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 .loop-trim-sethere:hover { color: var(--color-yellow); border-color: var(--color-yellow); }
+
+/* Quick-replay chips for samples already saved out of this raw capture.
+   Lets the operator A/B against the next slice they're marking. */
+.loop-trim-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 8px;
+  padding: 6px 8px;
+  background: rgba(46, 204, 113, 0.08);
+  border: 1px solid rgba(46, 204, 113, 0.30);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.loop-trim-saved-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--color-green);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+}
+.loop-trim-saved-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.loop-trim-saved-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(46, 204, 113, 0.15);
+  border: 1px solid rgba(46, 204, 113, 0.40);
+  border-radius: 999px;
+  color: var(--color-green);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.loop-trim-saved-chip:hover { background: rgba(46, 204, 113, 0.28); }
+.loop-trim-saved-chip i { width: 11px; height: 11px; }
 .loop-trim-dur {
   margin-left: auto;
   color: var(--color-yellow);
@@ -4617,26 +4671,12 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 /* Two-pane layout: sequence panel left, flat loop list right. */
 .loops-layout {
   display: grid;
-  /* 3 columns: Sequence builder | Loop Library | Sampler panel. The
-     sampler is wider than the sequence builder because it holds both
-     the sample list and the active ActionSequence's items underneath. */
-  grid-template-columns: 280px 1fr 360px;
+  /* Sampler is its own tab now -- back to 2 columns: sequence builder
+     on the left, flat loop list on the right. */
+  grid-template-columns: 280px 1fr;
   gap: 14px;
   padding: 12px 16px;
   min-height: 360px;
-}
-@media (max-width: 1500px) {
-  /* On narrow screens stack the sampler under the loop library so the
-     library doesn't get squeezed. */
-  .loops-layout {
-    grid-template-columns: 280px 1fr;
-    grid-template-areas:
-      "seq  grid"
-      "samp samp";
-  }
-  .loop-sequence-panel { grid-area: seq; }
-  .drumloops-grid      { grid-area: grid; }
-  .sampler-panel       { grid-area: samp; }
 }
 .loop-sequence-panel {
   border: 1px solid var(--border-color);
