@@ -1447,32 +1447,74 @@ function newJobId() {
   return 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 }
 
-// Extract YouTube video id and t= start from a URL. Returns { videoId,
-// startSec } where startSec is 0 if no t= param. Handles t=20s and t=20.
-function parseYoutubeUrl(url) {
+// Parse a video URL from ANY yt-dlp-supported source. Returns
+// { videoId, startSec } where videoId is a short tag we use to name
+// the raw capture file, and startSec is 0 unless the URL has a t= /
+// #t= / ?start= anchor.
+//
+// Supported video-id extraction (used only for naming the local m4a):
+//   YouTube         ?v=, youtu.be/, /shorts/
+//   Twitter / X     /status/<id>            -> "tw<id>"
+//   Vimeo           vimeo.com/<id>          -> "vm<id>"
+//   SoundCloud      soundcloud.com/<user>/<track> -> "sc<user>-<track>"
+//   Reddit          /comments/<id>/...      -> "rd<id>"
+//   TikTok          /video/<id>             -> "tt<id>"
+//   Instagram       /reel/<id>, /p/<id>     -> "ig<id>"
+//   Fallback        last path segment, sanitized
+//
+// yt-dlp itself does the actual fetching; this is just for filename.
+function parseSourceUrl(url) {
   const u = String(url || '').trim();
   if (!u) return { videoId: null, startSec: 0 };
-  // video id
   let videoId = null;
   let m;
-  if ((m = u.match(/[?&]v=([\w-]{6,})/)))    videoId = m[1];
-  else if ((m = u.match(/youtu\.be\/([\w-]{6,})/))) videoId = m[1];
-  else if ((m = u.match(/\/shorts\/([\w-]{6,})/))) videoId = m[1];
-  // t= param. Forms: t=20, t=20s, t=1m20s, t=1h2m3s.
+  // YouTube
+  if      ((m = u.match(/[?&]v=([\w-]{6,})/)))           videoId = m[1];
+  else if ((m = u.match(/youtu\.be\/([\w-]{6,})/)))      videoId = m[1];
+  else if ((m = u.match(/youtube\.com\/shorts\/([\w-]{6,})/i))) videoId = m[1];
+  // Twitter / X
+  else if ((m = u.match(/(?:twitter|x)\.com\/[^/]+\/status\/(\d{6,})/i))) videoId = 'tw' + m[1];
+  // Vimeo
+  else if ((m = u.match(/vimeo\.com\/(\d{4,})/i)))       videoId = 'vm' + m[1];
+  // SoundCloud
+  else if ((m = u.match(/soundcloud\.com\/([\w-]+)\/([\w-]+)/i))) videoId = ('sc' + m[1] + '-' + m[2]).slice(0, 30);
+  // Reddit
+  else if ((m = u.match(/reddit\.com\/r\/[^/]+\/comments\/(\w+)/i))) videoId = 'rd' + m[1];
+  // TikTok
+  else if ((m = u.match(/tiktok\.com\/[^/]+\/video\/(\d+)/i))) videoId = 'tt' + m[1];
+  // Instagram
+  else if ((m = u.match(/instagram\.com\/(?:reel|p|tv)\/([\w-]+)/i))) videoId = 'ig' + m[1];
+  // Fallback: last meaningful path segment.
+  else {
+    try {
+      const parts = new URL(u).pathname.split('/').filter(Boolean);
+      const last = parts[parts.length - 1] || 'src';
+      videoId = last.replace(/[^A-Za-z0-9_-]+/g, '').slice(0, 24) || 'src';
+    } catch (e) { videoId = 'src'; }
+  }
+
+  // t= / start= / #t= start-time anchor. Forms: t=20, t=20s, t=1m20s,
+  // t=1h2m3s. Twitter doesn't use t=; that's fine, start stays 0.
   let startSec = 0;
-  const tm = u.match(/[?&]t=([0-9hms]+)/i);
+  const tm = u.match(/[?&#]t=([0-9hms]+)|[?&]start=(\d+)/i);
   if (tm) {
-    const t = tm[1];
-    if (/^\d+$/.test(t)) startSec = Number(t);
-    else {
-      const hm = t.match(/(\d+)h/i);
-      const mm = t.match(/(\d+)m/i);
-      const sm = t.match(/(\d+)s/i);
-      startSec = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+    if (tm[2]) {
+      startSec = Number(tm[2]);
+    } else {
+      const t = tm[1];
+      if (/^\d+$/.test(t)) startSec = Number(t);
+      else {
+        const hm = t.match(/(\d+)h/i);
+        const mm = t.match(/(\d+)m/i);
+        const sm = t.match(/(\d+)s/i);
+        startSec = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+      }
     }
   }
   return { videoId, startSec };
 }
+// Back-compat alias — other places still call parseYoutubeUrl.
+const parseYoutubeUrl = parseSourceUrl;
 
 function sanitizeName(s) {
   return String(s || '').toLowerCase()
@@ -1496,11 +1538,18 @@ app.post('/api/loops/from-url', (req, res) => {
   if (durationSec > 3600) durationSec = 3600;
   const nameHint = (req.body && req.body.name || '').toString().trim();
 
-  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
-    return res.status(400).json({ error: 'Need a YouTube video URL.' });
+  // yt-dlp supports literally hundreds of extractors (YouTube, Twitter/X,
+  // Vimeo, SoundCloud, Reddit, TikTok, Instagram, etc.). Accept any
+  // plausible URL and let yt-dlp tell us at fetch time if the source
+  // isn't supported, instead of pre-screening to a tiny allow-list.
+  let parsedUrl;
+  try { parsedUrl = new URL(url); }
+  catch (e) { return res.status(400).json({ error: 'Need a valid URL.' }); }
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return res.status(400).json({ error: 'URL must be http or https.' });
   }
-  // If start_sec wasn't passed, pull it from the URL's t= param.
-  const parsed = parseYoutubeUrl(url);
+  // If start_sec wasn't passed, pull it from the URL's t= / start= anchor.
+  const parsed = parseSourceUrl(url);
   if (!isFinite(startSec) || startSec < 0) startSec = parsed.startSec || 0;
   const videoId = parsed.videoId || 'video';
   const endSec  = durationAll ? null : (startSec + durationSec);

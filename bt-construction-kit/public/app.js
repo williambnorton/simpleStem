@@ -5496,16 +5496,22 @@ function setupUrlLoopPanel() {
 
   // ── Step 1: URL auto-parse + Fetch ────────────────────────────────
   urlEl.addEventListener('input', () => {
-    const m = urlEl.value.match(/[?&]t=([0-9hms]+)/i);
-    if (!m) return;
-    const t = m[1];
+    // Accept t=<spec> (YouTube + most others) AND start=<seconds>
+    // (some podcast / Vimeo links). #t=<spec> too. First match wins.
+    const tm = urlEl.value.match(/[?&#]t=([0-9hms]+)|[?&]start=(\d+)/i);
+    if (!tm) return;
     let secs;
-    if (/^\d+$/.test(t)) secs = Number(t);
-    else {
-      const hm = t.match(/(\d+)h/i);
-      const mm = t.match(/(\d+)m/i);
-      const sm = t.match(/(\d+)s/i);
-      secs = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+    if (tm[2]) {
+      secs = Number(tm[2]);
+    } else {
+      const t = tm[1];
+      if (/^\d+$/.test(t)) secs = Number(t);
+      else {
+        const hm = t.match(/(\d+)h/i);
+        const mm = t.match(/(\d+)m/i);
+        const sm = t.match(/(\d+)s/i);
+        secs = (hm ? +hm[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (sm ? +sm[1] : 0);
+      }
     }
     if (!startEl.value && Number.isFinite(secs)) startEl.value = String(secs);
   });
