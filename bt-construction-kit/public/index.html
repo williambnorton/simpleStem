@@ -812,85 +812,30 @@
             <div class="library-header">
               <div class="title-area">
                 <h2>Clip Library</h2>
-                <span class="sub">Snip clips from any URL · trim · save · attach to songs as Play-Clip actions</span>
+                <span class="sub">Audition saved clips · attach them as Play-Clip actions on the active song</span>
               </div>
             </div>
 
-            <!-- Snip panel: fetch + trim editor + saved list -->
-            <details class="url-loop-panel" open>
-              <summary><i data-lucide="scissors"></i> Snip a clip from a YouTube URL</summary>
-              <div class="url-loop-body">
-                <div class="url-loop-row">
-                  <input type="text" id="loop-url" class="url-loop-url"
-                         placeholder="Any video URL — YouTube, Twitter/X, Vimeo, SoundCloud, Reddit, TikTok…"
-                         title="yt-dlp accepts hundreds of sites. Paste the URL and Fetch; we'll grab the audio.">
-                  <input type="number" id="loop-start" class="url-loop-num" min="0" step="0.1" placeholder="start (s)" title="Start seconds — auto from &t= / start= anchor in the URL">
-                  <input type="number" id="loop-capture-dur" class="url-loop-num" min="0" step="5" placeholder="(all)" title="Capture length in seconds. Leave blank to grab the WHOLE audio from the start point to the end of the video.">
-                  <button id="btn-loop-from-url" class="btn-secondary"><i data-lucide="download"></i> Fetch</button>
-                </div>
-                <span id="loop-url-status" class="url-loop-status"></span>
-
-                <div id="loop-trim-editor" class="loop-trim-editor" style="display:none;">
-                  <div class="loop-trim-head">
-                    <span class="loop-trim-fname" id="loop-trim-fname">—</span>
-                    <button class="loop-trim-discard" id="btn-loop-discard" title="Discard this capture and start over">×</button>
-                  </div>
-                  <!-- Scroll container holds the (possibly wider-than-
-                       visible) timeline. The timeline's width scales
-                       with the zoom slider: at 1x it fits the container;
-                       at higher zooms the parent scrolls. -->
-                  <div class="loop-trim-scroll" id="loop-trim-scroll">
-                    <div class="loop-trim-timeline" id="loop-trim-timeline">
-                      <canvas class="loop-trim-waveform" id="loop-trim-waveform"></canvas>
-                      <div class="loop-trim-track"></div>
-                      <div class="loop-trim-range" id="loop-trim-range"></div>
-                      <div class="loop-trim-playhead" id="loop-trim-playhead"></div>
-                      <button class="loop-trim-handle in"  id="loop-trim-in"  title="IN marker — drag to set start"></button>
-                      <button class="loop-trim-handle out" id="loop-trim-out" title="OUT marker — drag to set end"></button>
-                    </div>
-                  </div>
-                  <!-- Zoom: 1x = fit full audio in view; higher = scroll
-                       through a smaller window for fine selection. The
-                       container auto-scrolls on zoom change to keep the
-                       IN handle visible. -->
-                  <div class="loop-trim-zoom-row">
-                    <span class="loop-trim-zoom-label">Zoom</span>
-                    <input type="range" id="loop-trim-zoom" class="loop-trim-zoom" min="1" max="20" step="0.5" value="1">
-                    <span class="loop-trim-zoom-val" id="loop-trim-zoom-val">1×</span>
-                  </div>
-
-                  <div class="loop-trim-saved" id="loop-trim-saved" style="display:none;">
-                    <span class="loop-trim-saved-label">Saved from this capture:</span>
-                    <div class="loop-trim-saved-row" id="loop-trim-saved-row"></div>
-                  </div>
-                  <div class="loop-trim-readouts">
-                    <span>IN
-                      <input type="number" id="loop-trim-in-sec" class="loop-trim-numbox" step="0.05" min="0">
-                      <button id="btn-set-in"  class="loop-trim-sethere" title="Set IN to current playhead (shortcut: I)">⤓ here</button>
-                    </span>
-                    <span>OUT
-                      <input type="number" id="loop-trim-out-sec" class="loop-trim-numbox" step="0.05" min="0">
-                      <button id="btn-set-out" class="loop-trim-sethere" title="Set OUT to current playhead (shortcut: O)">here ⤒</button>
-                    </span>
-                    <span class="loop-trim-dur" id="loop-trim-dur">0.0s</span>
-                  </div>
-                  <div class="loop-trim-controls">
-                    <button id="btn-trim-play"    class="btn-secondary" title="Play through the whole capture from the current position"><i data-lucide="play"></i> Play</button>
-                    <button id="btn-trim-preview" class="btn-secondary" title="Play IN→OUT once"><i data-lucide="play-circle"></i> Preview</button>
-                    <button id="btn-trim-loop"    class="btn-secondary" title="Loop the IN→OUT segment"><i data-lucide="repeat"></i> Loop</button>
-                    <button id="btn-trim-stop"    class="btn-secondary" title="Stop"><i data-lucide="square"></i></button>
-                    <input type="text" id="loop-trim-name" class="url-loop-name" maxlength="40" placeholder="name this clip (required to save)">
-                    <button id="btn-trim-save" class="btn-primary" title="Save IN→OUT as a clip. Capture stays open so you can scan forward for more clips."><i data-lucide="save"></i> Save clip</button>
-                  </div>
-                  <span id="loop-trim-status" class="url-loop-status"></span>
-                </div>
-
-                <ul id="custom-loops-list" class="url-loop-list"></ul>
-              </div>
-            </details>
+            <!-- Read-only browser of CUSTOM_LOOPS/. Curation (fetching from
+                 URLs, trimming, naming) is done OUTSIDE the App by the Clip
+                 Librarian -- see clip_librarian/README.md at the simpleStem
+                 root. This panel just lists the .m4a files on disk with
+                 play / delete buttons; deleting also clears the cached copy
+                 in ~/.bt-cache/CUSTOM_LOOPS/. -->
+            <div class="clip-browser-banner">
+              <i data-lucide="info"></i>
+              <span>
+                New clips are curated <strong>outside the live App</strong> —
+                use <code>clip_librarian/fetch_clip.sh</code> + <code>trim_clip.sh</code>,
+                or BlackHole + Logic Pro for hard sources. Drop finished
+                <code>.m4a</code> files into <code>CUSTOM_LOOPS/</code> and they
+                appear here automatically.
+              </span>
+            </div>
+            <ul id="custom-loops-list" class="url-loop-list clip-browser-list"></ul>
 
             <!-- Sampler panel: per-song action-sequence builder. Wires
-                 saved clips into the currently-loaded song's timeline. -->
+                 existing clips into the currently-loaded song's timeline. -->
             <aside class="sampler-panel" id="sampler-panel" style="margin-top:14px;">
               <div class="sampler-header">
                 <h3><i data-lucide="sliders"></i> Sampler — attach a clip to the active song</h3>
@@ -906,7 +851,7 @@
                 </label>
               </div>
               <div class="sampler-list" id="sampler-list">
-                <div class="empty-state">No clips yet. Snip one above.</div>
+                <div class="empty-state">No clips in CUSTOM_LOOPS/ yet. Curate some via the Clip Librarian (see clip_librarian/README.md).</div>
               </div>
               <div class="sampler-current-items" id="sampler-current-items">
                 <h4>Items in this sequence</h4>

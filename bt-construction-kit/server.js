@@ -1441,11 +1441,9 @@ try { fs.mkdirSync(CUSTOM_LOOPS_DIR, { recursive: true }); } catch (e) {}
 const AUDIO_CACHE_CUSTOM_LOOPS = path.join(AUDIO_CACHE_DIR, 'CUSTOM_LOOPS');
 try { fs.mkdirSync(AUDIO_CACHE_CUSTOM_LOOPS, { recursive: true }); } catch (e) {}
 
-// In-memory job table: jobs[jobId] = { status, message, file, error }
-const customLoopJobs = {};
-function newJobId() {
-  return 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-}
+// (Previously here: in-memory job table + newJobId for the /api/loops/
+// from-url async fetcher. Both removed when clip curation moved to the
+// standalone Clip Librarian on 2026-06-21.)
 
 // Parse a video URL from ANY yt-dlp-supported source. Returns
 // { videoId, startSec } where videoId is a short tag we use to name
@@ -1523,152 +1521,10 @@ function sanitizeName(s) {
     .slice(0, 40);
 }
 
-app.post('/api/loops/from-url', (req, res) => {
-  const url = (req.body && req.body.url || '').toString().trim();
-  let startSec = Number(req.body && req.body.start_sec);
-  // Duration is OPTIONAL. Empty / 0 / missing means "grab the WHOLE
-  // audio from startSec to the end of the video" -- the operator's
-  // browser-side trim editor is doing the cutting now. Operator can
-  // still set an explicit cap if they want a smaller scratch capture.
-  // Upper bound 1 hour so a typo doesn't accidentally archive a
-  // 5-hour livestream.
-  let durationSec = Number(req.body && req.body.duration_sec);
-  let durationAll = false;
-  if (!isFinite(durationSec) || durationSec <= 0) { durationSec = 0; durationAll = true; }
-  if (durationSec > 3600) durationSec = 3600;
-  const nameHint = (req.body && req.body.name || '').toString().trim();
-
-  // yt-dlp supports literally hundreds of extractors (YouTube, Twitter/X,
-  // Vimeo, SoundCloud, Reddit, TikTok, Instagram, etc.). Accept any
-  // plausible URL and let yt-dlp tell us at fetch time if the source
-  // isn't supported, instead of pre-screening to a tiny allow-list.
-  let parsedUrl;
-  try { parsedUrl = new URL(url); }
-  catch (e) { return res.status(400).json({ error: 'Need a valid URL.' }); }
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return res.status(400).json({ error: 'URL must be http or https.' });
-  }
-  // If start_sec wasn't passed, pull it from the URL's t= / start= anchor.
-  const parsed = parseSourceUrl(url);
-  if (!isFinite(startSec) || startSec < 0) startSec = parsed.startSec || 0;
-  const videoId = parsed.videoId || 'video';
-  const endSec  = durationAll ? null : (startSec + durationSec);
-
-  // Filename for the RAW capture. Prefixed `raw_` so the trim endpoint
-  // can find and clean up these scratch files; the final trimmed clip
-  // gets the operator-chosen name without that prefix.
-  const prefix = nameHint ? sanitizeName(nameHint) + '_' : '';
-  const dTag = durationAll ? 'dall' : `d${Math.round(durationSec)}`;
-  const fname = `raw_${prefix}${videoId}_t${Math.round(startSec)}_${dTag}.m4a`;
-  const outPath = path.join(CUSTOM_LOOPS_DIR, fname);
-
-  if (fs.existsSync(outPath)) {
-    return res.json({ ok: true, file: fname, alreadyExists: true,
-                      url: `/api/audio/custom-loop/${encodeURIComponent(fname)}` });
-  }
-
-  const jobId = newJobId();
-  customLoopJobs[jobId] = { status: 'running', message: 'Starting yt-dlp...', file: fname };
-
-  // Two-stage capture path that avoids the YouTube 403 on signed-URL
-  // segment fetches.
-  //
-  // Stage 1: yt-dlp -x downloads the WHOLE audio stream to a temp m4a.
-  //   Earlier code used --download-sections + --force-keyframes-at-cuts.
-  //   That forces ffmpeg to re-fetch the signed segment URL, which
-  //   YouTube routinely 403s. The "whole-stream + local trim" path
-  //   downloads more bytes but is reliable -- the audio is fetched
-  //   once, in one shot, with no signed-URL surgery.
-  //
-  // Stage 2: ffmpeg crops the temp file to [startSec, endSec] with
-  //   stream-copy (no re-encode) into the final outPath. Fast.
-  //
-  // For longer captures (~4 min video, ~4 MB audio) this is well under
-  // a second of extra IO. Trade-off worth it for not having to babysit
-  // 403 retries.
-  const tempBase = path.join(CUSTOM_LOOPS_DIR, `${jobId}_full.m4a`);
-
-  // yt-dlp's default extractor (web client) with NO --download-sections
-  // and NO --force-keyframes-at-cuts. The 403 path was specifically from
-  // ffmpeg re-fetching a signed segment URL (the keyframes flag); just
-  // downloading the whole audio is reliable. Earlier code added
-  // --extractor-args youtube:player_client=ios as an extra 403 workaround;
-  // turns out the ios extractor doesn't expose an m4a-compatible format
-  // for every video ("Requested format is not available"), so we leave
-  // the extractor at its default.
-  const ytArgs = [
-    '-x',
-    '--audio-format', 'm4a',
-    '--audio-quality', '0',
-    '--no-cache-dir',
-    '--no-warnings',
-    '--no-playlist',
-    '-o', tempBase,
-    url,
-  ];
-
-  let ytdlp;
-  try {
-    ytdlp = spawn('yt-dlp', ytArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    customLoopJobs[jobId] = { status: 'error', error: 'yt-dlp not installed or not on PATH.' };
-    return res.status(500).json({ error: 'yt-dlp not installed', job_id: jobId });
-  }
-  let ytStderr = '';
-  ytdlp.stderr.on('data', d => { ytStderr += d.toString(); });
-  ytdlp.on('error', e => {
-    customLoopJobs[jobId] = { status: 'error', error: e.message };
-  });
-  ytdlp.on('close', code => {
-    if (code !== 0 || !fs.existsSync(tempBase)) {
-      customLoopJobs[jobId] = {
-        status: 'error',
-        error: `yt-dlp exit ${code}: ${ytStderr.slice(-400)}`,
-      };
-      return;
-    }
-    customLoopJobs[jobId].message = 'Trimming with ffmpeg…';
-    // Stage 2: ffmpeg trims the temp file. When durationAll is set we
-    // skip -to so the output runs from startSec to the END of the
-    // source. Operator does the fine cropping in the trim editor.
-    const ffArgs = ['-y', '-ss', String(startSec)];
-    if (!durationAll) ffArgs.push('-to', String(endSec));
-    ffArgs.push('-i', tempBase, '-c', 'copy', '-movflags', '+faststart', outPath);
-    let ff;
-    try {
-      ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
-    } catch (e) {
-      customLoopJobs[jobId] = { status: 'error', error: 'ffmpeg not on PATH' };
-      try { fs.unlinkSync(tempBase); } catch (er) {}
-      return;
-    }
-    let ffStderr = '';
-    ff.stderr.on('data', d => { ffStderr += d.toString(); });
-    ff.on('close', ffCode => {
-      try { fs.unlinkSync(tempBase); } catch (er) {}
-      if (ffCode !== 0 || !fs.existsSync(outPath)) {
-        customLoopJobs[jobId] = {
-          status: 'error',
-          error: `ffmpeg exit ${ffCode}: ${ffStderr.slice(-300)}`,
-        };
-        return;
-      }
-      customLoopJobs[jobId] = {
-        status: 'done', file: fname,
-        url: `/api/audio/custom-loop/${encodeURIComponent(fname)}`,
-      };
-    });
-  });
-
-  res.json({ ok: true, job_id: jobId, file: fname });
-});
-
-app.get('/api/loops/from-url/poll/:job_id', (req, res) => {
-  const jobId = String(req.params.job_id).replace(/[^A-Za-z0-9_-]/g, '');
-  const j = customLoopJobs[jobId];
-  if (!j) return res.status(404).json({ error: 'unknown job' });
-  res.json(j);
-});
+// /api/loops/from-url, /api/loops/from-url/poll/:job_id and
+// /api/custom-loops/trim were removed 2026-06-21. Clip fetching + trimming
+// moved out to the standalone Clip Librarian (clip_librarian/README.md at
+// the simpleStem root). The App keeps only the read endpoints below.
 
 app.get('/api/custom-loops/list', (req, res) => {
   let files = [];
@@ -1714,67 +1570,6 @@ app.get('/api/audio/custom-loop/:file', (req, res) => {
 // ffmpeg with -c copy is a stream-copy at keyframe boundaries — very fast,
 // no re-encode. Good enough for snipping practice loops; if the start point
 // lands between keyframes you may hear a ~0.1s pad at the front.
-app.post('/api/custom-loops/trim', (req, res) => {
-  const source     = (req.body && req.body.source || '').toString();
-  const startSec   = Number(req.body && req.body.start_sec);
-  const endSec     = Number(req.body && req.body.end_sec);
-  const nameHint   = (req.body && req.body.name || '').toString().trim();
-  const deleteSource = !!(req.body && req.body.deleteSource);
-
-  if (source.includes('..') || !source.toLowerCase().endsWith('.m4a')) {
-    return res.status(400).json({ error: 'bad source filename' });
-  }
-  if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
-    return res.status(400).json({ error: 'start_sec/end_sec required' });
-  }
-  if (endSec <= startSec) return res.status(400).json({ error: 'end_sec must be > start_sec' });
-  if (!nameHint) return res.status(400).json({ error: 'name required' });
-
-  const sourcePath = path.join(CUSTOM_LOOPS_DIR, source);
-  if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'source not found' });
-
-  const outName = `${sanitizeName(nameHint) || 'loop'}.m4a`;
-  const outPath = path.join(CUSTOM_LOOPS_DIR, outName);
-
-  // If the target name already exists, refuse rather than silently overwriting.
-  // Operator can pick a unique name in the UI.
-  if (fs.existsSync(outPath)) {
-    return res.status(409).json({ error: `'${outName}' already exists; pick a different name` });
-  }
-
-  const args = [
-    '-y',
-    '-ss', String(startSec),
-    '-to', String(endSec),
-    '-i', sourcePath,
-    '-c', 'copy',
-    '-movflags', '+faststart',
-    outPath,
-  ];
-
-  let ff;
-  try {
-    ff = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  } catch (e) {
-    return res.status(500).json({ error: 'ffmpeg not on PATH' });
-  }
-  let stderr = '';
-  ff.stderr.on('data', d => { stderr += d.toString(); });
-  ff.on('close', code => {
-    if (code !== 0 || !fs.existsSync(outPath)) {
-      return res.status(500).json({ error: `ffmpeg exit ${code}: ${stderr.slice(-300)}` });
-    }
-    if (deleteSource) {
-      try { fs.unlinkSync(sourcePath); } catch (e) {}
-    }
-    res.json({
-      ok: true,
-      file: outName,
-      url: `/api/audio/custom-loop/${encodeURIComponent(outName)}`,
-      duration_sec: endSec - startSec,
-    });
-  });
-});
 
 // Serve loop files from the flat LOOPS/ folder. Mirrors the m4a endpoint.
 // Cache key: file basename. Files like
@@ -2024,13 +1819,50 @@ async function precacheAllStemsM4a() {
 setImmediate(precacheAllStemsM4a);
 setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
 
-// Manual trigger — POST /api/precache/library forces both passes immediately
+// Walk every CUSTOM_LOOPS/*.m4a into ~/.bt-cache/CUSTOM_LOOPS/ so play-clip
+// actions fire instantly during a gig with no Drive latency. Clips are
+// curated by the Clip Librarian (see clip_librarian/README.md); the App
+// just needs them pre-warmed locally.
+async function precacheAllCustomLoops() {
+  if (!fs.existsSync(CUSTOM_LOOPS_DIR)) return;
+  const t0 = Date.now();
+  let copied = 0, skipped = 0, failed = 0;
+  try {
+    const files = (await fsp.readdir(CUSTOM_LOOPS_DIR))
+      .filter(f => /\.m4a$/i.test(f) && !f.startsWith('raw_'));
+    if (files.length === 0) {
+      console.log('[clip precache] nothing in CUSTOM_LOOPS/');
+      return;
+    }
+    console.log(`[clip precache] starting — ${files.length} clip(s)`);
+    await runWithConcurrency(files, 4, async (f) => {
+      const src = path.join(CUSTOM_LOOPS_DIR, f);
+      const dst = path.join(AUDIO_CACHE_CUSTOM_LOOPS, f);
+      if (fs.existsSync(dst) && fs.statSync(dst).size > 0) { skipped++; return; }
+      try { await ensureCachedAsync(src, dst); copied++; }
+      catch (e) { failed++; }
+    });
+    console.log(`[clip precache] done — copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+  } catch (e) {
+    console.warn('[clip precache] failed:', e.message);
+  }
+}
+setImmediate(precacheAllCustomLoops);
+setInterval(precacheAllCustomLoops, 60 * 60 * 1000);
+
+// Manual trigger — POST /api/precache/library forces all three passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;
 // the work runs in the background and progress is in the server log.
 app.post('/api/precache/library', (req, res) => {
-  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background' });
+  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background' });
   setImmediate(precacheAllM4as);
   setImmediate(precacheAllStemsM4a);
+  setImmediate(precacheAllCustomLoops);
+});
+// Clip-only trigger documented in clip_librarian/README.md.
+app.post('/api/precache/custom-loops', (req, res) => {
+  res.status(202).json({ status: 'started' });
+  setImmediate(precacheAllCustomLoops);
 });
 
 // Background pre-fetch — kicks off cache fill for every file in a stems

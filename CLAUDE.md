@@ -20,19 +20,32 @@ STEM_QUEUE → queue_runner.sh → stem.sh (yt-dlp 48k → Demucs htdemucs_6s �
 m4a mixdowns) → STEMS/ + M4A/ → bt-construction-kit (Express :3000) plays them
 ```
 
-## Two-machine setup (important)
+## Architecture roles (important)
 
-> **This split was REVERSED in May 2026. See `ARCHITECTURE.md` for the full
-> rationale and the cache model.** Demucs now runs on the larger machine because
-> the 8 GB machine ran out of memory. The roles below reflect the new layout.
+The system is split by **what it does live vs what it curates offline**, not
+just by hardware. Three roles share the same Drive folder
+(`~/ClaudeDrive/simpleStem`):
 
-This project runs across two Macs that both mount the same Google Drive folder
-(`~/ClaudeDrive/simpleStem`). Their roles are **not** interchangeable:
-
-| Machine | Drive mode | Role | Runs |
+| Role | Hardware (typical) | Drive mode | Responsibility |
 |---|---|---|---|
-| **Mac mini** (8 GB, 24/7, external disk) — the **Librarian** | **mirrors** Drive to external disk | Ingest + cache + metadata + catalog | `librarian.sh` → `webloc_watch.sh` (download once → cache) + daily `catalog.py` |
-| **MacBook Pro** (36 GB, travels) — the **Performer** | **streams** Drive, pins active jobs | Demucs render + serve live | `performer.sh` → `queue_runner.sh` + `stem.sh` (Demucs) + the portal |
+| **Performer** — the **live App** | MacBook Pro (36 GB, travels) | streams Drive, pins active jobs | The portal at gig time. Plays back stems + mixdowns + drum patterns + clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
+| **Song Librarian** | Mac mini (8 GB, 24/7) | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/`, `M4A/`, `CATALOG.json`. |
+| **Clip Librarian** | Any Mac with Logic Pro + BlackHole | mirrors Drive (or copy out) | Curates the clip library. Uses video downloaders, BlackHole + Logic Pro for hard-to-grab sources, ffmpeg trim. Writes to `CUSTOM_LOOPS/`. **Lives outside the App** — see `clip_librarian/README.md`. |
+
+**Why this split:**
+
+- **The App must be reliable at the gig.** No internet at most venues, no time
+  to wait on yt-dlp 403s mid-song. So the App reads from local caches only;
+  every external thing — YouTube URLs, audio capture, ffmpeg trim — moves out
+  to the Librarian roles.
+- **Curation is iterative and slow.** Trimming a sample, EQing it, re-rendering
+  through Logic Pro happens at desk over coffee, not at the wedge. Same logic
+  the song pipeline already uses (Demucs takes 25 min per song).
+- **Mac apps are powerful.** Logic Pro, BlackHole, dedicated video downloaders
+  do the audio capture/cleanup work better than anything we'd ever build into
+  the portal. Lean on them; the App just consumes the resulting .m4a files.
+
+### If you are the Claude on the Performer (laptop)
 
 Why this split (reversed from the original):
 
@@ -53,13 +66,28 @@ Why this split (reversed from the original):
   `node --check`.
 - **Don't** run the watcher/cataloger here — that's the Librarian's job.
 
-### If you are the Claude on the Librarian (mini)
+### If you are the Claude on the Song Librarian (mini)
 
 - Own ingest + the catalog: `librarian.sh start` runs `webloc_watch.sh` and the
   daily `catalog.py` pass; `librarian.sh catalog` runs the consistency pass now.
 - **Never run Demucs here** (the memory crash). No `queue_runner.sh`/`stem.sh`.
 - **Don't** change the `metadata.json` schema without also updating
   `metadata.py` and `catalog.py` — see Conventions.
+
+### If you are doing Clip Librarian work
+
+- The App **never fetches** clips. Your job is to land `.m4a` files in
+  `CUSTOM_LOOPS/`; the App auto-precaches them and surfaces them in the
+  Sampler panel + the + CLIP action picker.
+- For straightforward sources (YouTube et al.), use `clip_librarian/fetch_clip.sh`
+  and `trim_clip.sh` — small CLI wrappers around yt-dlp + ffmpeg with the same
+  naming and trim semantics the old in-app workflow used.
+- For hard sources (Twitter, Instagram, sites that rate-limit yt-dlp), the
+  fallback is **BlackHole + Logic Pro**: route system audio to BlackHole, record
+  in Logic, bounce a region as m4a, drop into `CUSTOM_LOOPS/`. The README in
+  `clip_librarian/` walks through the setup.
+- The App does NOT need restarting when you add clips. Its CUSTOM_LOOPS list is
+  scanned on demand via `/api/custom-loops/list`.
 
 ## Which machine runs what
 
@@ -335,6 +363,21 @@ times are computed by summing durations from a gig-level "start time"
 field. This is NOT YET WIRED — see the roadmap.
 
 ## Conventions
+
+- **File format policy: m4a only.** The only audio file format simpleStem
+  uses going forward is **`.m4a`** (AAC in MPEG-4 container). The single
+  exception is **`source.wav`** in each `STEMS/<slug>/` folder — the raw
+  48 kHz ingest we keep so we can re-stem without re-downloading from
+  YouTube. Everything else — the 6 separated stems, the mixdowns, the
+  loops, the drum-machine patterns — lives as m4a on disk and is served
+  as m4a by the portal. Per-stem `.wav` files (vocals.wav, drums.wav,
+  bass.wav, guitar.wav, piano.wav, other.wav) and the loop `.wav` files
+  written by older versions of `stem.sh` should be cleaned up; see
+  `cleanup_stems_wav.py` at the simpleStem root. **Producers** (anything
+  that writes audio: `stem.sh`, `loop_regenerate.py`, the m4a backfill
+  scripts, future ingest paths) must emit m4a — never new `.wav` outside
+  of `source.wav`. **Consumers** (`bt-construction-kit/server.js`,
+  `catalog.py`, the portal) read m4a only.
 
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
   block, in any form, in any position.** No same-line trailing comments
