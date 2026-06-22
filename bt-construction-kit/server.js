@@ -8,6 +8,57 @@ const { execSync, execFileSync, spawn } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── Boot-trace journal (initialized FIRST so it captures every later step,
+// including readDiskVersion() which itself touches Drive) ─────────────────
+// Append-only post-mortem log. Every potentially-blocking boot step writes a
+// line BEFORE the call, so if the process hangs (e.g. Drive Stream stalls on
+// fs.existsSync with no internet) the trace records exactly which phase we
+// died in. Located on LOCAL disk (~/.simpleStem-catalog/) so writes never
+// themselves touch Drive.
+const BOOT_TRACE_PATH = path.join(os.homedir(), '.simpleStem-catalog', 'boot-trace.log');
+const BOOT_T0 = Date.now();
+const BOOT_PID = process.pid;
+try { fs.mkdirSync(path.dirname(BOOT_TRACE_PATH), { recursive: true }); } catch (e) {}
+try {
+  if (fs.existsSync(BOOT_TRACE_PATH)) fs.renameSync(BOOT_TRACE_PATH, BOOT_TRACE_PATH + '.prev');
+} catch (e) { /* ignore */ }
+function bootTrace(phase, kind, msg) {
+  try {
+    const dt = Date.now() - BOOT_T0;
+    const line = `${new Date().toISOString()} pid=${BOOT_PID} +${dt}ms ${kind} ${phase}${msg ? ' ' + msg : ''}\n`;
+    fs.appendFileSync(BOOT_TRACE_PATH, line);
+  } catch (e) { /* never let tracing crash the boot */ }
+}
+// bootPhase wraps a function with ENTER/EXIT and a 5 s watchdog that emits
+// STILL_IN lines while async I/O is pending. Synchronous hangs that freeze
+// the event loop won't fire STILL_IN, but the ENTER line is still on disk
+// — that's enough to identify the offending phase post-mortem.
+function bootPhase(name, fn) {
+  bootTrace(name, 'ENTER');
+  const t0 = Date.now();
+  let resolved = false;
+  const watchdog = setInterval(() => {
+    if (!resolved) bootTrace(name, 'STILL_IN', `elapsed=${Date.now() - t0}ms`);
+  }, 5000);
+  try {
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.then(
+        v => { resolved = true; clearInterval(watchdog); bootTrace(name, 'EXIT', `duration=${Date.now() - t0}ms`); return v; },
+        e => { resolved = true; clearInterval(watchdog); bootTrace(name, 'ERROR', `duration=${Date.now() - t0}ms msg=${e && e.message}`); throw e; }
+      );
+    }
+    resolved = true; clearInterval(watchdog);
+    bootTrace(name, 'EXIT', `duration=${Date.now() - t0}ms`);
+    return result;
+  } catch (e) {
+    resolved = true; clearInterval(watchdog);
+    bootTrace(name, 'ERROR', `duration=${Date.now() - t0}ms msg=${e && e.message}`);
+    throw e;
+  }
+}
+bootTrace('boot', 'ENTER', `node=${process.version} pid=${BOOT_PID}`);
+
 // ── Version / self-update ───────────────────────────────────────────────────
 // VERSION (at the simpleStem root) is the single source of truth. The running
 // process captures its version at boot (BOOT_VERSION). Because the repo lives on
@@ -45,7 +96,9 @@ function readDiskVersion() {
   }
   return newest ? fmtVersion(new Date(newest)) : 'unknown';
 }
+bootTrace('readDiskVersion', 'ENTER');
 const BOOT_VERSION = readDiskVersion();
+bootTrace('readDiskVersion', 'EXIT', `version=${BOOT_VERSION}`);
 
 const CACHE_FILE = path.join(__dirname, 'durations.json');
 let durationCache = {};
@@ -114,6 +167,7 @@ const SETLISTS_LOCAL_MIRROR = path.join(os.homedir(), '.simpleStem-catalog', 'SE
 const GIGS_LOCAL_MIRROR     = path.join(os.homedir(), '.simpleStem-catalog', 'GIGS');
 try { fs.mkdirSync(SETLISTS_LOCAL_MIRROR, { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(GIGS_LOCAL_MIRROR,     { recursive: true }); } catch (e) {}
+bootTrace('config', 'EXIT', `root=${SIMPLE_STEM_ROOT} version=${BOOT_VERSION}`);
 // Drive-side authoritative catalog (Librarian writes; Performer reads).
 // When present + fresh, the portal uses this as the library source instead
 // of walking STEMS/ and M4A/ directories, which avoids Drive stalls.
@@ -945,17 +999,19 @@ runCatalogConformanceCheck();
 // reads from -- it persists across runs and is sufficient for offline
 // performance. Drive-sync to it is best-effort.
 setImmediate(() => {
-  try { mirrorCatalogOnce('startup'); } catch (e) {
+  try { bootPhase('mirror.catalog.startup', () => mirrorCatalogOnce('startup')); } catch (e) {
     console.warn('[catalog] startup mirror skipped:', e.message);
   }
-  try { mirrorJsonDirOnce(GIGS_DIR,     GIGS_LOCAL_MIRROR,     'gigs');     } catch (e) {}
-  try { mirrorJsonDirOnce(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, 'setlists'); } catch (e) {}
+  try { bootPhase('mirror.gigs.startup',     () => mirrorJsonDirOnce(GIGS_DIR,     GIGS_LOCAL_MIRROR,     'gigs'));     } catch (e) {}
+  try { bootPhase('mirror.setlists.startup', () => mirrorJsonDirOnce(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, 'setlists')); } catch (e) {}
   try {
-    if (fs.existsSync(path.dirname(CATALOG_DRIVE_PATH))) {
-      fs.watch(path.dirname(CATALOG_DRIVE_PATH), (event, fname) => {
-        if (fname === 'CATALOG.json') mirrorCatalogOnce('fs.watch');
-      });
-    }
+    bootPhase('fs.watch.catalog', () => {
+      if (fs.existsSync(path.dirname(CATALOG_DRIVE_PATH))) {
+        fs.watch(path.dirname(CATALOG_DRIVE_PATH), (event, fname) => {
+          if (fname === 'CATALOG.json') mirrorCatalogOnce('fs.watch');
+        });
+      }
+    });
   } catch (e) {
     console.warn('[catalog] fs.watch setup failed:', e.message);
   }
@@ -972,7 +1028,7 @@ setInterval(() => {
 // The first request that comes in before this completes serves from a
 // disk-resident cache (libraryCache rehydrated from LIBRARY_CACHE_FILE on
 // initial require) so it's fine if this takes a while.
-setImmediate(() => { try { refreshLibraryCache('startup'); } catch (e) {
+setImmediate(() => { try { bootPhase('library.refresh.startup', () => refreshLibraryCache('startup')); } catch (e) {
   console.warn('[library] startup refresh skipped:', e.message);
 }});
 setInterval(() => refreshLibraryCache('hourly'), LIBRARY_REFRESH_MS);
@@ -2579,6 +2635,53 @@ app.post('/api/update', (req, res) => {
   }, 300);
 });
 
+// Unconditional restart — same dispatch as /api/update but with no version
+// guard. The sidebar Restart button posts here when the operator wants to
+// recycle the server (e.g. after editing code, or when the portal feels
+// stuck). The new process is double-forked so the parent dying mid-script
+// won't take it down.
+app.post('/api/restart', (req, res) => {
+  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
+  const script = path.join(root, 'performer.sh');
+  if (!fs.existsSync(script)) {
+    return res.status(500).json({ error: 'performer.sh not found at root' });
+  }
+  res.json({ ok: true, restarting: true });
+  setTimeout(() => {
+    try {
+      const child = spawn('bash', [script, 'restart'], {
+        cwd: root, detached: true, stdio: 'ignore',
+        env: { ...process.env, PORT: String(PORT) },
+      });
+      child.unref();
+    } catch (e) { console.error('[restart] spawn failed:', e.message); }
+  }, 300);
+});
+
+// Health probe — extremely cheap, no Drive, no FS scan. The client spinner
+// uses it to distinguish "server is up but library is still loading" from
+// "server itself is not answering". Useful during boot when /api/library is
+// still warming the cache.
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    pid: BOOT_PID,
+    bootVersion: BOOT_VERSION,
+    uptimeMs: Date.now() - BOOT_T0,
+    libraryReady: !!(libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs) && libraryCache.data.songs.length > 0),
+    librarySongs: (libraryCache && libraryCache.data && libraryCache.data.songs) ? libraryCache.data.songs.length : 0,
+  });
+});
+
+// Boot trace — last two runs of the post-mortem journal. Read from the
+// LOCAL-disk trace; never touches Drive.
+app.get('/api/boot-trace', (req, res) => {
+  const out = { current: '', previous: '', path: BOOT_TRACE_PATH };
+  try { out.current  = fs.readFileSync(BOOT_TRACE_PATH, 'utf8'); } catch (e) {}
+  try { out.previous = fs.readFileSync(BOOT_TRACE_PATH + '.prev', 'utf8'); } catch (e) {}
+  res.json(out);
+});
+
 // =====================================================================
 // PER-SONG management: metadata / delete / re-fetch.
 // :base is the STEMS folder name (the canonical song_base, e.g.
@@ -3757,7 +3860,9 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+bootTrace('app.listen', 'ENTER', `port=${PORT}`);
 app.listen(PORT, () => {
+  bootTrace('app.listen', 'EXIT', `port=${PORT}`);
   console.log(`==================================================`);
   console.log(`Backing Track Construction Kit Server Running`);
   console.log(`Local Access: http://localhost:${PORT}`);

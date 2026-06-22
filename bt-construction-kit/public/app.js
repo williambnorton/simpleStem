@@ -184,6 +184,10 @@ const els = {
   // Version / update
   versionRunning: document.getElementById('version-running'),
   btnUpdate: document.getElementById('btn-update'),
+  btnRestart: document.getElementById('btn-restart'),
+  restartLabel: document.getElementById('restart-label'),
+  librarySpinnerCaption: document.getElementById('library-spinner-caption'),
+  bufferingCaption: document.getElementById('buffering-caption'),
   updateLabel: document.getElementById('update-label'),
   // Stemming progress
   stemProgress: document.getElementById('stem-progress'),
@@ -2458,11 +2462,48 @@ function renderStemProgress(q) {
   }
 }
 
+// Update the small caption under the library-load spinner. Helps the
+// operator distinguish "server is up but library still warming" from
+// "server isn't answering at all" — at the park we had nothing but a
+// silent wheel and no visibility into what stage was stuck.
+function setLibrarySpinnerCaption(text) {
+  if (els.librarySpinnerCaption) els.librarySpinnerCaption.textContent = text;
+}
+
+// Parallel /api/health probe so the caption reflects server state in
+// real time. /api/library can sit for a while on first boot (Drive copy,
+// catalog mirror, etc.); /api/health is cheap and answers immediately.
+async function probeHealthForCaption() {
+  try {
+    const r = await fetch('/api/health', { cache: 'no-store' });
+    if (!r.ok) { setLibrarySpinnerCaption(`Server returned ${r.status} — try Restart`); return; }
+    const h = await r.json();
+    if (h.libraryReady) {
+      setLibrarySpinnerCaption(`Server ready — receiving ${h.librarySongs} songs…`);
+    } else {
+      setLibrarySpinnerCaption(`Server up (pid ${h.pid}, ${Math.round(h.uptimeMs/1000)}s) — library still warming…`);
+    }
+  } catch (e) {
+    setLibrarySpinnerCaption('Server unreachable — try Restart');
+  }
+}
+
 // Fetch songs from server
 async function fetchLibrary() {
+  setLibrarySpinnerCaption('Requesting /api/library…');
+  // Stage-2 probe: if /api/library hasn't responded in 1.5s, ping /api/health
+  // so the caption shows whether the server itself is alive. Repeats every
+  // 3s while the library fetch is still pending.
+  const healthTimer = setTimeout(function tick() {
+    probeHealthForCaption();
+    healthTimer._h = setTimeout(tick, 3000);
+  }, 1500);
+  const clearHealthTimer = () => { try { clearTimeout(healthTimer); clearTimeout(healthTimer._h); } catch (e) {} };
   try {
     const res = await fetch('/api/library');
+    clearHealthTimer();
     if (!res.ok) throw new Error('Failed to load library');
+    setLibrarySpinnerCaption('Parsing library response…');
     const data = await res.json();
     
     // Raw entries (one per file/folder)
@@ -2513,7 +2554,9 @@ async function fetchLibrary() {
     // than waiting for the next poll tick (which could be up to 4–20s away).
     if (typeof cacheStatusRefresh === 'function') cacheStatusRefresh();
   } catch (err) {
+    clearHealthTimer();
     console.error('[fetchLibrary]', err);
+    setLibrarySpinnerCaption(`Failed: ${err && err.message || err}`);
     // The catch handler used to call lucide.createIcons() unconditionally.
     // If Lucide failed to load (was a CDN script pre-bundling), that call
     // threw on top of the original error and the operator saw a blank
@@ -6016,8 +6059,35 @@ function applyMixerVolumes() {
    ========================================== */
 function setupVersionWatch() {
   if (els.btnUpdate) els.btnUpdate.addEventListener('click', applyUpdate);
+  if (els.btnRestart) els.btnRestart.addEventListener('click', restartBackend);
   checkVersion();
   setInterval(checkVersion, 30000);   // poll every 30s
+}
+
+// Manual restart — same dispatch path as applyUpdate() but no version-staged
+// guard. The server spawns `performer.sh restart` detached, so this process
+// goes down, the script kills the runner + the server, then starts both back
+// up. We poll /api/version until the new process answers, then reload.
+async function restartBackend() {
+  if (!confirm('Restart the backend (performer.sh restart)? Playback will stop briefly.')) return;
+  if (els.restartLabel) els.restartLabel.textContent = 'Restarting…';
+  if (els.btnRestart) els.btnRestart.disabled = true;
+  try { await fetch('/api/restart', { method: 'POST' }); }
+  catch (e) { /* server is dying — expected */ }
+  let tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (r.ok) { clearInterval(poll); location.reload(); return; }
+    } catch (e) { /* still down */ }
+    if (els.restartLabel) els.restartLabel.textContent = `Restarting… ${tries}s`;
+    if (tries > 60) {
+      clearInterval(poll);
+      if (els.restartLabel) els.restartLabel.textContent = 'Restart timed out';
+      if (els.btnRestart) els.btnRestart.disabled = false;
+    }
+  }, 1000);
 }
 
 async function checkVersion() {
