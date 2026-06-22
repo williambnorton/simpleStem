@@ -3807,18 +3807,25 @@ input:checked + .slider-round:before {
 .update-btn:hover { filter: brightness(1.08); }
 .update-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
 
-/* Restart — always visible next to the version tag. Quieter than the green
-   Update button (which only appears when a new build is staged); this one is
-   manual recovery, used when the portal feels stuck. */
-.restart-btn {
-  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
-  font-size: 0.72rem; font-weight: 600; color: #ddd;
+/* Restart — circular icon button in the top track-badge row, immediately
+   after Gig Mode. Manual recovery for when the portal feels stuck; spins
+   while the restart is in flight (.is-restarting). */
+.restart-circle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border-radius: 50%;
+  color: #ddd;
   background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.15); border-radius: 7px;
-  padding: 4px 9px; transition: var(--transition-smooth);
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  margin-left: 6px;
 }
-.restart-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
-.restart-btn:disabled { opacity: 0.55; cursor: default; }
+.restart-circle:hover { background: rgba(255,255,255,0.14); color: #fff; border-color: rgba(255,255,255,0.3); }
+.restart-circle:disabled { opacity: 0.55; cursor: default; }
+.restart-circle i { width: 15px; height: 15px; }
+@keyframes restart-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.restart-circle.is-restarting i { animation: restart-spin 0.9s linear infinite; }
 
 /* Spinner caption — small italic text under any of the loading spinners.
    Tells the operator WHAT the wheel is waiting on so a stuck boot isn't

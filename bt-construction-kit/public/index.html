@@ -167,10 +167,6 @@
           <i data-lucide="arrow-up-circle" style="width:13px;height:13px;"></i>
           <span id="update-label">Update</span>
         </button>
-        <button id="btn-restart" class="restart-btn" title="Restart the backend (runs performer.sh restart)">
-          <i data-lucide="rotate-cw" style="width:13px;height:13px;"></i>
-          <span id="restart-label">Restart</span>
-        </button>
       </div>
     </aside>
     
@@ -199,6 +195,9 @@
                 <span id="active-track-type" class="badge">STEMS</span>
                 <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
                   <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
+                </button>
+                <button id="btn-restart-top" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
+                  <i data-lucide="rotate-cw"></i>
                 </button>
               </div>
               <h1 class="track-title">

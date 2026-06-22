@@ -184,8 +184,7 @@ const els = {
   // Version / update
   versionRunning: document.getElementById('version-running'),
   btnUpdate: document.getElementById('btn-update'),
-  btnRestart: document.getElementById('btn-restart'),
-  restartLabel: document.getElementById('restart-label'),
+  btnRestart: document.getElementById('btn-restart-top'),
   librarySpinnerCaption: document.getElementById('library-spinner-caption'),
   bufferingCaption: document.getElementById('buffering-caption'),
   updateLabel: document.getElementById('update-label'),
@@ -6067,11 +6066,12 @@ function setupVersionWatch() {
 // Manual restart — same dispatch path as applyUpdate() but no version-staged
 // guard. The server spawns `performer.sh restart` detached, so this process
 // goes down, the script kills the runner + the server, then starts both back
-// up. We poll /api/version until the new process answers, then reload.
+// up. We poll /api/version until the new process answers, then reload. The
+// button is a circle icon (top header, next to Gig Mode); we spin the icon
+// via .is-restarting and disable the button while in flight.
 async function restartBackend() {
   if (!confirm('Restart the backend (performer.sh restart)? Playback will stop briefly.')) return;
-  if (els.restartLabel) els.restartLabel.textContent = 'Restarting…';
-  if (els.btnRestart) els.btnRestart.disabled = true;
+  if (els.btnRestart) { els.btnRestart.disabled = true; els.btnRestart.classList.add('is-restarting'); els.btnRestart.title = 'Restarting…'; }
   try { await fetch('/api/restart', { method: 'POST' }); }
   catch (e) { /* server is dying — expected */ }
   let tries = 0;
@@ -6081,11 +6081,14 @@ async function restartBackend() {
       const r = await fetch('/api/version', { cache: 'no-store' });
       if (r.ok) { clearInterval(poll); location.reload(); return; }
     } catch (e) { /* still down */ }
-    if (els.restartLabel) els.restartLabel.textContent = `Restarting… ${tries}s`;
+    if (els.btnRestart) els.btnRestart.title = `Restarting… ${tries}s`;
     if (tries > 60) {
       clearInterval(poll);
-      if (els.restartLabel) els.restartLabel.textContent = 'Restart timed out';
-      if (els.btnRestart) els.btnRestart.disabled = false;
+      if (els.btnRestart) {
+        els.btnRestart.disabled = false;
+        els.btnRestart.classList.remove('is-restarting');
+        els.btnRestart.title = 'Restart timed out — click to try again';
+      }
     }
   }, 1000);
 }
