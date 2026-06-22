@@ -53,6 +53,11 @@
           <input type="text" id="yt-url" placeholder="Paste YouTube URL + Enter to ingest" title="Paste a YouTube video, playlist, or chaptered album URL and press Enter to add" autocomplete="off">
         </div>
         <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
+        <!-- Ingest tracker — shows status for URLs you just submitted.
+             pasted → librarian → queued → rendering → done.
+             Auto-polls every 4 s while a submission is active. Stays
+             visible until the song lands in the library, then fades. -->
+        <div id="ingest-tracker" class="ingest-tracker"></div>
       </div>
       <!-- Hidden filter controls preserve their IDs so legacy event listeners
            (filterLibrary etc.) don't crash. -->

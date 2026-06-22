@@ -2216,6 +2216,93 @@ function setupQueueUI() {
   setInterval(refreshQueue, 5000);
 }
 
+// Track every URL the operator submits in this session so we can show
+// per-submission status. Persists to localStorage so a page reload
+// doesn't lose what you were watching. Entries:
+//   { url, videoId, title, status, submittedAt, lastSeenAt, doneAt }
+// Status values: 'pasted' | 'librarian' | 'queued' | 'rendering' | 'done' | 'failed'
+const INGEST_KEY = 'simpleStem.ingestWatch.v1';
+function loadIngestWatch() {
+  try { return JSON.parse(localStorage.getItem(INGEST_KEY) || '[]') || []; }
+  catch (e) { return []; }
+}
+function saveIngestWatch(arr) {
+  try { localStorage.setItem(INGEST_KEY, JSON.stringify(arr.slice(-12))); }
+  catch (e) {}
+}
+function extractVideoId(url) {
+  let m;
+  if ((m = url.match(/[?&]v=([\w-]{6,})/)))           return m[1];
+  if ((m = url.match(/youtu\.be\/([\w-]{6,})/)))      return m[1];
+  if ((m = url.match(/\/shorts\/([\w-]{6,})/i)))      return m[1];
+  if ((m = url.match(/status\/(\d{6,})/)))            return 'tw' + m[1];
+  return url.slice(-12);
+}
+function renderIngestTracker() {
+  const el = document.getElementById('ingest-tracker');
+  if (!el) return;
+  const watch = loadIngestWatch();
+  const active = watch.filter(w => w.status !== 'done' || (Date.now() - (w.doneAt || 0)) < 60000);
+  if (!active.length) { el.innerHTML = ''; el.classList.remove('show'); return; }
+  el.classList.add('show');
+  el.innerHTML = active.slice().reverse().map(w => {
+    const dotCls = w.status === 'failed'    ? 'err'
+                 : w.status === 'done'      ? 'ok'
+                 : w.status === 'rendering' ? 'busy'
+                 : 'pending';
+    const label = w.title || w.videoId || w.url.slice(0, 40);
+    const stageLabel = ({
+      pasted:     'submitted',
+      librarian:  'reading metadata',
+      queued:     'queued for stems',
+      rendering:  w.phase ? `rendering · ${w.phase}` : 'rendering',
+      done:       'in library',
+      failed:     'failed',
+    })[w.status] || w.status;
+    return `<div class="ingest-row">
+      <span class="ingest-dot ${dotCls}"></span>
+      <span class="ingest-label" title="${escapeHtml(w.url)}">${escapeHtml(label)}</span>
+      <span class="ingest-stage">${escapeHtml(stageLabel)}</span>
+    </div>`;
+  }).join('');
+}
+async function pollIngestWatch() {
+  const watch = loadIngestWatch();
+  if (!watch.length) return;
+  let q, lib;
+  try { q   = await fetch('/api/queue').then(r => r.json()); } catch (e) { return; }
+  try { lib = await fetch('/api/library').then(r => r.json()); } catch (e) { lib = { songs: [] }; }
+  const incomingIds = new Set((q.incoming || []).map(f => extractVideoId(f)));
+  const queuedIds   = new Set((q.queued   || []).map(j => extractVideoId(j.name || '')));
+  const failedIds   = new Set((q.failed   || []).map(f => extractVideoId(f)));
+  const processing  = q.processing || null;
+  const procId = processing ? extractVideoId(processing.song || processing.job || '') : null;
+  const libSongs = lib.songs || [];
+
+  let changed = false;
+  for (const w of watch) {
+    const prev = w.status;
+    if (failedIds.has(w.videoId)) w.status = 'failed';
+    else if (procId && procId === w.videoId) {
+      w.status = 'rendering';
+      w.phase  = processing && processing.phase || '';
+    }
+    else if (queuedIds.has(w.videoId)) w.status = 'queued';
+    else if (incomingIds.has(w.videoId)) w.status = 'librarian';
+    else if (libSongs.some(s => (s.folderName || s.base || '').toLowerCase().includes((w.videoId || '').toLowerCase())
+                              || w.videoId && (s.source_url || '').includes(w.videoId))) {
+      if (w.status !== 'done') { w.doneAt = Date.now(); }
+      w.status = 'done';
+    }
+    if (w.status !== prev) {
+      changed = true;
+      w.lastSeenAt = Date.now();
+    }
+  }
+  if (changed) saveIngestWatch(watch);
+  renderIngestTracker();
+}
+
 async function enqueueUrl() {
   const url = (els.ytUrl.value || '').trim();
   if (!url) return;
@@ -2229,6 +2316,21 @@ async function enqueueUrl() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to queue');
     els.ytUrl.value = '';
+    // Track this submission so the ingest tracker can follow it.
+    const watch = loadIngestWatch();
+    watch.push({
+      url,
+      videoId: extractVideoId(url),
+      status: 'pasted',
+      submittedAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+    saveIngestWatch(watch);
+    renderIngestTracker();
+    // Poll fast for the first 30s, then back off.
+    setTimeout(pollIngestWatch, 1500);
+    setTimeout(pollIngestWatch, 4000);
+    setTimeout(pollIngestWatch, 10000);
     refreshQueue();
   } catch (e) {
     if (els.queueStatus) els.queueStatus.innerHTML =
@@ -2237,6 +2339,10 @@ async function enqueueUrl() {
     els.btnEnqueue.disabled = false;
   }
 }
+// Steady-state poll: every 8 s any active submission is reconciled
+// against /api/queue and /api/library so the operator sees progress.
+setInterval(pollIngestWatch, 8000);
+window.addEventListener('DOMContentLoaded', () => { renderIngestTracker(); pollIngestWatch(); });
 
 async function refreshQueue() {
   if (!els.queueStatus) return;

@@ -4385,6 +4385,60 @@ input:checked + .slider-round:before {
 }
 .sidebar-inputs .search-icon { width: 14px; height: 14px; color: var(--text-dim); }
 
+/* Ingest tracker — live status of each URL the operator just pasted.
+   Hidden when there are no active submissions. Each row shows a colored
+   dot (pending/busy/ok/err), the video name, and the current pipeline
+   stage. */
+.ingest-tracker {
+  display: none;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.ingest-tracker.show { display: block; }
+.ingest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.ingest-row:last-child { border-bottom: none; }
+.ingest-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ingest-dot.pending { background: rgba(150, 150, 150, 0.7); }
+.ingest-dot.busy {
+  background: var(--color-yellow);
+  animation: ingestPulse 1.2s ease-in-out infinite;
+}
+.ingest-dot.ok  { background: var(--color-green); }
+.ingest-dot.err { background: var(--color-red);   }
+@keyframes ingestPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(241, 196, 15, 0.55); }
+  60%  { box-shadow: 0 0 0 7px rgba(241, 196, 15, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(241, 196, 15, 0); }
+}
+.ingest-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+}
+.ingest-stage {
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
 .gig-setlists { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 
 .gig-setlist {

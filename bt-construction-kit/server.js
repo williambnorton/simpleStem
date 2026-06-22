@@ -106,6 +106,14 @@ const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
 const GIGS_DIR     = `${SIMPLE_STEM_ROOT}/GIGS`;
+// Local mirrors so reads work without Drive being reachable. The hot
+// path (request handlers) reads from these; the Drive copies are the
+// canonical store + cross-machine sync surface. Writes go to BOTH so
+// either side stays current.
+const SETLISTS_LOCAL_MIRROR = path.join(os.homedir(), '.simpleStem-catalog', 'SETLISTS');
+const GIGS_LOCAL_MIRROR     = path.join(os.homedir(), '.simpleStem-catalog', 'GIGS');
+try { fs.mkdirSync(SETLISTS_LOCAL_MIRROR, { recursive: true }); } catch (e) {}
+try { fs.mkdirSync(GIGS_LOCAL_MIRROR,     { recursive: true }); } catch (e) {}
 // Drive-side authoritative catalog (Librarian writes; Performer reads).
 // When present + fresh, the portal uses this as the library source instead
 // of walking STEMS/ and M4A/ directories, which avoids Drive stalls.
@@ -810,6 +818,46 @@ async function tryLoadFromCatalog() {
 
 // Copy CATALOG.json from Drive → local mirror. Cheap: one ~200KB file.
 // Skips when sizes match to avoid pointless copies during Drive sync churn.
+// Sync every .json under `srcDir` into `mirrorDir` (skip unchanged by
+// size+mtime). Used for GIGS/ and SETLISTS/ -- live performance files
+// that the App must serve offline. Best-effort: any Drive hiccup is
+// logged and swallowed so it never blocks the boot path.
+function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
+  let copied = 0, skipped = 0, removed = 0;
+  try {
+    if (!fs.existsSync(srcDir)) return;
+    try { fs.mkdirSync(mirrorDir, { recursive: true }); } catch (e) {}
+    const driveFiles = new Set(fs.readdirSync(srcDir).filter(f => f.toLowerCase().endsWith('.json')));
+    // Copy/refresh anything on Drive that's missing or stale in the mirror
+    for (const f of driveFiles) {
+      const src = path.join(srcDir, f);
+      const dst = path.join(mirrorDir, f);
+      try {
+        const srcStat = fs.statSync(src);
+        if (fs.existsSync(dst)) {
+          const dstStat = fs.statSync(dst);
+          if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) {
+            skipped++; continue;
+          }
+        }
+        fs.copyFileSync(src, dst);
+        copied++;
+      } catch (e) { /* per-file, keep going */ }
+    }
+    // Remove mirror entries that disappeared on Drive (deleted gigs/setlists).
+    for (const f of fs.readdirSync(mirrorDir).filter(f => f.toLowerCase().endsWith('.json'))) {
+      if (!driveFiles.has(f)) {
+        try { fs.unlinkSync(path.join(mirrorDir, f)); removed++; } catch (e) {}
+      }
+    }
+    if (copied || removed) {
+      console.log(`[${label} mirror] copied ${copied} skipped ${skipped} removed ${removed}`);
+    }
+  } catch (e) {
+    console.warn(`[${label} mirror] failed: ${e.message}`);
+  }
+}
+
 function mirrorCatalogOnce(reason) {
   try {
     if (!fs.existsSync(CATALOG_DRIVE_PATH)) return;
@@ -887,20 +935,46 @@ runCatalogConformanceCheck();
 // Initial mirror + watcher. fs.watch on Drive paths is sometimes flaky
 // (the platform may not fire events from the Drive client), so we also
 // poll every 60 seconds as a belt-and-suspenders backup. Both are cheap.
-mirrorCatalogOnce('startup');
-try {
-  if (fs.existsSync(path.dirname(CATALOG_DRIVE_PATH))) {
-    fs.watch(path.dirname(CATALOG_DRIVE_PATH), (event, fname) => {
-      if (fname === 'CATALOG.json') mirrorCatalogOnce('fs.watch');
-    });
+//
+// IMPORTANT: every Drive-touching call here is deferred via setImmediate
+// so the HTTP server comes up FIRST. With Drive Stream and no internet,
+// fs.existsSync/fs.copyFileSync against Drive can block indefinitely
+// (Drive tries to resolve the path). Previously that hang ate the whole
+// boot and the portal never came up at the gig. The local mirror at
+// ~/.simpleStem-catalog/CATALOG.json is what the request path actually
+// reads from -- it persists across runs and is sufficient for offline
+// performance. Drive-sync to it is best-effort.
+setImmediate(() => {
+  try { mirrorCatalogOnce('startup'); } catch (e) {
+    console.warn('[catalog] startup mirror skipped:', e.message);
   }
-} catch (e) {
-  console.warn('[catalog] fs.watch setup failed:', e.message);
-}
+  try { mirrorJsonDirOnce(GIGS_DIR,     GIGS_LOCAL_MIRROR,     'gigs');     } catch (e) {}
+  try { mirrorJsonDirOnce(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, 'setlists'); } catch (e) {}
+  try {
+    if (fs.existsSync(path.dirname(CATALOG_DRIVE_PATH))) {
+      fs.watch(path.dirname(CATALOG_DRIVE_PATH), (event, fname) => {
+        if (fname === 'CATALOG.json') mirrorCatalogOnce('fs.watch');
+      });
+    }
+  } catch (e) {
+    console.warn('[catalog] fs.watch setup failed:', e.message);
+  }
+});
 setInterval(() => mirrorCatalogOnce('poll'), 60 * 1000);
+// Refresh the GIGS + SETLISTS mirrors every 60s too, so a write on the
+// other side (Librarian) lands here within a minute.
+setInterval(() => {
+  mirrorJsonDirOnce(GIGS_DIR,     GIGS_LOCAL_MIRROR,     'gigs');
+  mirrorJsonDirOnce(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, 'setlists');
+}, 60 * 1000);
 
-// Kick off a refresh on startup (background) and every hour after
-refreshLibraryCache('startup');
+// Kick off a refresh on startup (background, deferred) and every hour after.
+// The first request that comes in before this completes serves from a
+// disk-resident cache (libraryCache rehydrated from LIBRARY_CACHE_FILE on
+// initial require) so it's fine if this takes a while.
+setImmediate(() => { try { refreshLibraryCache('startup'); } catch (e) {
+  console.warn('[library] startup refresh skipped:', e.message);
+}});
 setInterval(() => refreshLibraryCache('hourly'), LIBRARY_REFRESH_MS);
 
 // Overlay fresh `cached` state on every song in a library payload. The
@@ -2031,15 +2105,51 @@ app.get('/api/queue', (req, res) => {
 // (playlist URLs) and is not served as a setlist.
 // =====================================================================
 
+// Reads come from the LOCAL MIRROR so Drive being offline never breaks
+// the request path. Writes still go to Drive (the canonical store) AND
+// are also dropped into the mirror so the next read sees them without
+// waiting for the 60s poll. If the mirror is empty (first boot before
+// any sync), fall back to Drive read just for that one request.
+function bestSetlistsDir() {
+  try {
+    if (fs.existsSync(SETLISTS_LOCAL_MIRROR) &&
+        fs.readdirSync(SETLISTS_LOCAL_MIRROR).some(f => f.endsWith('.json'))) {
+      return SETLISTS_LOCAL_MIRROR;
+    }
+  } catch (e) {}
+  return SETLISTS_DIR;
+}
+function bestGigsDir() {
+  try {
+    if (fs.existsSync(GIGS_LOCAL_MIRROR) &&
+        fs.readdirSync(GIGS_LOCAL_MIRROR).some(f => f.endsWith('.json'))) {
+      return GIGS_LOCAL_MIRROR;
+    }
+  } catch (e) {}
+  return GIGS_DIR;
+}
+// Helper used by write paths to keep the mirror in lockstep with Drive.
+function writeBothJson(driveDir, mirrorDir, filename, jsonStr) {
+  try { fs.mkdirSync(driveDir,  { recursive: true }); } catch (e) {}
+  try { fs.mkdirSync(mirrorDir, { recursive: true }); } catch (e) {}
+  fs.writeFileSync(path.join(driveDir,  filename), jsonStr);
+  try { fs.writeFileSync(path.join(mirrorDir, filename), jsonStr); } catch (e) {}
+}
+function unlinkBoth(driveDir, mirrorDir, filename) {
+  try { fs.unlinkSync(path.join(driveDir,  filename)); } catch (e) {}
+  try { fs.unlinkSync(path.join(mirrorDir, filename)); } catch (e) {}
+}
+
 // List all setlists (summaries only — title, origin, count, synced_at).
 app.get('/api/setlists', (req, res) => {
   try {
-    if (!fs.existsSync(SETLISTS_DIR)) return res.json({ setlists: [] });
+    const dir = bestSetlistsDir();
+    if (!fs.existsSync(dir)) return res.json({ setlists: [] });
     const out = [];
-    for (const f of fs.readdirSync(SETLISTS_DIR)) {
+    for (const f of fs.readdirSync(dir)) {
       if (!f.endsWith('.json') || f === 'registry.json') continue;
       try {
-        const d = readJsonCached(path.join(SETLISTS_DIR, f));
+        const d = readJsonCached(path.join(dir, f));
         if (!d) continue;
         // Cache-ready count: how many of this setlist's songs have a fully
         // cached stems folder on local disk. Drives the 'ready/total' badge
@@ -2072,8 +2182,9 @@ app.get('/api/setlists', (req, res) => {
 app.get('/api/setlists/:slug', (req, res) => {
   const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
   if (slug === 'registry') return res.status(404).json({ error: 'not a setlist' });
-  const file = path.join(SETLISTS_DIR, `${slug}.json`);
-  if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
+  const dir = bestSetlistsDir();
+  const file = path.join(dir, `${slug}.json`);
+  if (!file.startsWith(dir) || !fs.existsSync(file)) {
     return res.status(404).json({ error: 'setlist not found' });
   }
   const d = readJsonCached(file);
@@ -2095,7 +2206,9 @@ app.delete('/api/setlists/:slug', (req, res) => {
     if (existing.origin === 'playlist') {
       return res.status(409).json({ error: 'that setlist is playlist-synced; delete its source playlist instead' });
     }
-    fs.rmSync(file, { force: true });
+    // Delete from BOTH Drive and the local mirror so the next GET
+    // doesn't resurrect the file via fallback.
+    unlinkBoth(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, `${slug}.json`);
     invalidateCachedFile(file);
     res.json({ ok: true, slug });
   } catch (e) {
@@ -2115,22 +2228,24 @@ app.post('/api/setlists', (req, res) => {
   const file = path.join(SETLISTS_DIR, `${slug}.json`);
   if (!file.startsWith(SETLISTS_DIR)) return res.status(400).json({ error: 'bad slug' });
   try {
-    if (fs.existsSync(file)) {
-      const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Existing-check reads from the mirror first.
+    const mirrorFile = path.join(SETLISTS_LOCAL_MIRROR, `${slug}.json`);
+    const checkFile = fs.existsSync(mirrorFile) ? mirrorFile : file;
+    if (fs.existsSync(checkFile)) {
+      const existing = JSON.parse(fs.readFileSync(checkFile, 'utf8'));
       if (existing.origin === 'playlist') {
         return res.status(409).json({ error: 'that name is a playlist-synced setlist; pick another' });
       }
     }
-    if (!fs.existsSync(SETLISTS_DIR)) fs.mkdirSync(SETLISTS_DIR, { recursive: true });
     const payload = {
       origin: 'manual',
       title,
       created_at: new Date().toISOString(),
       count: songs.length,
-      // store as ordered entries keyed by song_base; the client resolves details from /api/library
       songs: songs.map((sb, i) => ({ position: i + 1, song_base: sb })),
     };
-    fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n');
+    const jsonStr = JSON.stringify(payload, null, 2) + '\n';
+    writeBothJson(SETLISTS_DIR, SETLISTS_LOCAL_MIRROR, `${slug}.json`, jsonStr);
     invalidateCachedFile(file);
     res.json({ ok: true, slug });
   } catch (e) {
@@ -3500,15 +3615,16 @@ setImmediate(() => {
 });
 
 function readGig(slug) {
-  const file = path.join(GIGS_DIR, `${slug}.json`);
-  if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) return null;
+  // Prefer the local mirror so Drive being offline doesn't break gig load.
+  const dir = bestGigsDir();
+  const file = path.join(dir, `${slug}.json`);
+  if (!file.startsWith(dir) || !fs.existsSync(file)) return null;
   return readJsonCached(file);
 }
 function writeGig(slug, body) {
-  if (!fs.existsSync(GIGS_DIR)) fs.mkdirSync(GIGS_DIR, { recursive: true });
-  const file = path.join(GIGS_DIR, `${slug}.json`);
-  fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n');
-  invalidateCachedFile(file);
+  const jsonStr = JSON.stringify(body, null, 2) + '\n';
+  writeBothJson(GIGS_DIR, GIGS_LOCAL_MIRROR, `${slug}.json`, jsonStr);
+  invalidateCachedFile(path.join(GIGS_DIR, `${slug}.json`));
 }
 function validateGig(body) {
   if (!body || typeof body !== 'object') return 'body required';
@@ -3524,12 +3640,13 @@ function validateGig(body) {
 }
 
 app.get('/api/gigs', (req, res) => {
-  if (!fs.existsSync(GIGS_DIR)) return res.json({ gigs: [] });
+  const dir = bestGigsDir();
+  if (!fs.existsSync(dir)) return res.json({ gigs: [] });
   const out = [];
-  for (const f of fs.readdirSync(GIGS_DIR)) {
+  for (const f of fs.readdirSync(dir)) {
     if (!f.endsWith('.json')) continue;
     try {
-      const d = readJsonCached(path.join(GIGS_DIR, f));
+      const d = readJsonCached(path.join(dir, f));
       if (!d) continue;
       const setlists = Array.isArray(d.setlists) ? d.setlists : [];
       out.push({
@@ -3584,14 +3701,17 @@ app.put('/api/gigs/:slug', (req, res) => {
     setlists: body.setlists,
   };
   if (newSlug !== slug) {
-    // Title (and thus filename) changed. Refuse if the new slug collides;
-    // otherwise rename atomically.
-    const newFile = path.join(GIGS_DIR, `${newSlug}.json`);
-    if (fs.existsSync(newFile)) return res.status(409).json({ error: 'a gig with that title already exists' });
+    // Title (and thus filename) changed. Refuse if the new slug collides
+    // (check the mirror first to stay offline-safe); otherwise rename
+    // atomically across BOTH Drive and the local mirror.
+    const newMirror = path.join(GIGS_LOCAL_MIRROR, `${newSlug}.json`);
+    const newDrive  = path.join(GIGS_DIR, `${newSlug}.json`);
+    if (fs.existsSync(newMirror) || fs.existsSync(newDrive)) {
+      return res.status(409).json({ error: 'a gig with that title already exists' });
+    }
     writeGig(newSlug, updated);
-    const oldFile = path.join(GIGS_DIR, `${slug}.json`);
-    fs.rmSync(oldFile, { force: true });
-    invalidateCachedFile(oldFile);
+    unlinkBoth(GIGS_DIR, GIGS_LOCAL_MIRROR, `${slug}.json`);
+    invalidateCachedFile(path.join(GIGS_DIR, `${slug}.json`));
     return res.json({ ok: true, slug: newSlug, renamed_from: slug });
   }
   writeGig(slug, updated);
@@ -3606,10 +3726,12 @@ app.post('/api/gigs/:slug/duplicate', (req, res) => {
     `${src.title} (copy)`;
   const newSlug = gigSlug(newTitle);
   if (!newSlug) return res.status(400).json({ error: 'newTitle produced an empty slug' });
-  const newFile = path.join(GIGS_DIR, `${newSlug}.json`);
-  if (fs.existsSync(newFile)) return res.status(409).json({ error: 'a gig with that title already exists' });
+  const newMirror = path.join(GIGS_LOCAL_MIRROR, `${newSlug}.json`);
+  const newDrive  = path.join(GIGS_DIR, `${newSlug}.json`);
+  if (fs.existsSync(newMirror) || fs.existsSync(newDrive)) {
+    return res.status(409).json({ error: 'a gig with that title already exists' });
+  }
   const now = new Date().toISOString();
-  // Deep clone the setlists so the copy doesn't share references with the source.
   const setlists = (src.setlists || []).map(sl => ({
     title: sl.title,
     songs: (sl.songs || []).map(s => ({ song_base: s.song_base })),
@@ -3620,12 +3742,13 @@ app.post('/api/gigs/:slug/duplicate', (req, res) => {
 
 app.delete('/api/gigs/:slug', (req, res) => {
   const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
-  const file = path.join(GIGS_DIR, `${slug}.json`);
-  if (!file.startsWith(GIGS_DIR) || !fs.existsSync(file)) {
+  const dir = bestGigsDir();
+  const file = path.join(dir, `${slug}.json`);
+  if (!file.startsWith(dir) || !fs.existsSync(file)) {
     return res.status(404).json({ error: 'gig not found' });
   }
-  fs.rmSync(file, { force: true });
-  invalidateCachedFile(file);
+  unlinkBoth(GIGS_DIR, GIGS_LOCAL_MIRROR, `${slug}.json`);
+  invalidateCachedFile(path.join(GIGS_DIR, `${slug}.json`));
   res.json({ ok: true, slug });
 });
 
