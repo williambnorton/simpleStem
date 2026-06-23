@@ -139,6 +139,7 @@ const els = {
   btnStop: document.getElementById('btn-stop'),
   btnGoBeginning: document.getElementById('btn-go-beginning'),
   btnGoNext: document.getElementById('btn-go-next'),
+  btnNextSection: document.getElementById('btn-next-section'),
   btnLoop: document.getElementById('btn-loop-toggle'),
   speedSlider: document.getElementById('speed-slider'),
   speedDisplay: document.getElementById('speed-display'),
@@ -5978,15 +5979,63 @@ function seekAudio(e) {
   const pct = parseFloat(e.target.value);
   const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
   if (activeElements.length === 0) return;
-  
+
   const targetTime = (pct / 100) * activeElements[0].duration;
-  
+
   activeElements.forEach(ae => {
     ae.currentTime = targetTime;
   });
-  
+
   els.timeCurrent.textContent = formatTime(targetTime);
   els.timelineFill.style.width = `${pct}%`;
+}
+
+// Skip past the current section to the next boundary on the yellow lane.
+// CALLED BY the ⏩ chevron button. Two side effects, both intentional:
+//   1) DROPS a 'skip-section' automation event at the current playhead
+//      (persisted on Save, fires on subsequent playbacks of this song).
+//   2) Performs the skip RIGHT NOW so the user sees what the action will do.
+// No-op when the song has no sections, or the playhead is already past the
+// last one — without sections there's nowhere for the action to land.
+function skipToNextSection() {
+  const active = Object.values(audioElements).filter(ae => audioHasSrc(ae));
+  if (!active.length) return;
+  const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
+  if (!sections.length) return;
+  const now = active[0].currentTime || 0;
+  const next = sections.find(s => s.t > now + 0.25);
+  if (!next) return;                    // past the last boundary
+  const target = next.t;
+  // (1) Drop the persistent action at the playhead.
+  if (typeof automationEvents !== 'undefined' && automationCurrentBase) {
+    const ev = { t: Math.round(now * 1000) / 1000, type: 'skip-section', label: `skip → ${formatTime(target)}` };
+    automationEvents.push(ev);
+    automationEvents.sort((a, b) => a.t - b.t);
+    markAutomationDirty();
+  }
+  // (2) Perform the seek now.
+  performSectionSkip(target);
+}
+
+// Shared seek-to-section-boundary primitive. Called both by the chevron
+// button (immediate preview) and by fireAutomationEvent on playback when a
+// 'skip-section' event fires from the lane. Keeps every consumer's timeline
+// in lockstep and skips automation events whose t lies in the jumped-over
+// window so they don't all fire at once on landing.
+function performSectionSkip(targetSec) {
+  const active = Object.values(audioElements).filter(ae => audioHasSrc(ae));
+  if (!active.length) return;
+  active.forEach(ae => { try { ae.currentTime = targetSec; } catch (e) {} });
+  automationLastTime = targetSec;
+  automationEvents.forEach(e => { e.fired = e.t < targetSec; });
+  const dur = active[0].duration || 0;
+  if (dur > 0) {
+    const pct = (targetSec / dur) * 100;
+    els.timeline.value = pct;
+    els.timelineFill.style.width = `${pct}%`;
+  }
+  els.timeCurrent.textContent = formatTime(targetSec);
+  if (typeof renderAutomationLane === 'function') renderAutomationLane();
 }
 
 // Playback Speed control
@@ -6785,6 +6834,12 @@ function setupEventListeners() {
       }
     });
   }
+  // ⏩ Next section: skip past drum solos, bridges, jams — anything between
+  // the playhead and the next section boundary on the yellow lane. No-op
+  // if the song has no sections or we're already past the last one.
+  if (els.btnNextSection) {
+    els.btnNextSection.addEventListener('click', skipToNextSection);
+  }
   els.btnLoop.addEventListener('click', toggleLooping);
   
   els.timeline.addEventListener('input', seekAudio);
@@ -7300,6 +7355,7 @@ function eventMarkerLabel(e) {
               : '?';
     return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
   }
+  if (e.type === 'skip-section') return '⏩';
   const ch = e.channel || 1;
   if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
   if (e.type === 'cc')       return `M${ch}C${e.controller ?? '?'}`;
@@ -7321,6 +7377,7 @@ function eventClass(e) {
     if (lvl >= 10) return 'evt-unmute';
     return 'evt-fade-mid';
   }
+  if (e.type === 'skip-section') return 'evt-skip';
   return 'evt-midi';
 }
 
@@ -7331,6 +7388,7 @@ function eventSummary(e) {
   if (e.type === 'mute')    return `MUTE ${e.stem}`;
   if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
   if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
+  if (e.type === 'skip-section') return 'SKIP to next section';
   return e.type || 'event';
 }
 
@@ -8482,6 +8540,15 @@ async function fireAutomationEvent(e) {
   }
   if (e.type === 'play-clip') {
     return firePlayClip(e);
+  }
+  // SKIP-SECTION — jump the playhead to the next section boundary defined
+  // on the yellow lane. Computed dynamically at fire time so if the user
+  // edits sections later the skip still goes where intended (next one).
+  if (e.type === 'skip-section') {
+    const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
+    const next = sections.find(s => s.t > e.t + 0.25);
+    if (next) performSectionSkip(next.t);
+    return;
   }
 }
 
