@@ -2107,7 +2107,26 @@ select {
   font-size: 13px;
   font-weight: 500;
   box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  /* Parent .player-wave-overlay is pointer-events:none so the canvas
+     stays clickable. Re-enable on the box itself so the Play Anyway
+     button works without re-enabling clicks on the surrounding wave. */
+  pointer-events: auto;
 }
+/* Play Anyway — explicit escape hatch from a slow buffer. Hard timeout
+   is 15s; this lets the user bail sooner. */
+.buffering-skip {
+  background: var(--color-yellow, #f4c430);
+  color: #111;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 11px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: filter 0.15s ease;
+}
+.buffering-skip:hover { filter: brightness(1.1); }
 
 .spinner {
   width: 18px;
@@ -5554,6 +5573,42 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-fade   { background: #4f9cf0; color: #fff; box-shadow: 0 0 4px rgba(79, 156, 240, 0.6); }
 .midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
 .midi-event-marker.evt-skip   { background: #9b59b6; color: #fff; box-shadow: 0 0 4px rgba(155, 89, 182, 0.6); }
+
+/* Visualizer zoom controls — small overlay on the top-right of the
+   waveform canvas. Three pill-shaped buttons (− level + ) with
+   semi-transparent backing so they sit on top of the wave without
+   blocking visibility of it. Pointer-events isolated so the canvas's
+   click-to-seek doesn't trigger when clicking a zoom button. */
+.canvas-wrap { position: relative; }
+.viz-zoom-controls {
+  position: absolute;
+  top: 6px; right: 8px;
+  display: flex; gap: 2px; align-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 2px;
+  z-index: 5;
+  font-family: 'Space Grotesk', sans-serif;
+  user-select: none;
+}
+.viz-zoom-btn, .viz-zoom-level {
+  background: transparent;
+  color: #ddd;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 4px;
+  min-width: 22px;
+  text-align: center;
+  transition: background 0.15s ease;
+}
+.viz-zoom-btn:hover, .viz-zoom-level:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.viz-zoom-level { font-variant-numeric: tabular-nums; min-width: 28px; }
+.viz-zoom-btn:disabled { opacity: 0.4; cursor: default; }
 /* INIT marker — taller and wider than action markers so the song's initial-
    state indicator is unmistakable at the left edge of the lane.
    Font override: Space Grotesk's bold capital I has prominent top/bottom

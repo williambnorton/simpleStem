@@ -3489,6 +3489,27 @@ function setupVizModeToggle() {
     btn.classList.toggle('viz-mode-stems', next === 'stems');
     try { localStorage.setItem(VIZ_MODE_KEY, next); } catch (e) {}
   });
+
+  // Zoom controls (overlay on canvas top-right). visualizer.js exposes
+  // vizZoomIn/Out/Reset/Level on window; we just wire the buttons to
+  // them and keep the level badge in sync. Double-click on the canvas
+  // and right-click are handled inside visualizer.js directly.
+  const zin   = document.getElementById('viz-zoom-in');
+  const zout  = document.getElementById('viz-zoom-out');
+  const zlvl  = document.getElementById('viz-zoom-level');
+  const syncZoomLabel = () => {
+    if (zlvl && typeof window.vizZoomLevel === 'function') {
+      zlvl.textContent = window.vizZoomLevel() + '×';
+    }
+  };
+  if (zin)  zin.addEventListener('click',  () => { window.vizZoomIn && window.vizZoomIn();    syncZoomLabel(); });
+  if (zout) zout.addEventListener('click', () => { window.vizZoomOut && window.vizZoomOut();  syncZoomLabel(); });
+  if (zlvl) zlvl.addEventListener('click', () => { window.vizZoomReset && window.vizZoomReset(); syncZoomLabel(); });
+  syncZoomLabel();
+  // Right-click on the canvas resets zoom inside visualizer.js, but the
+  // badge needs to refresh. Polling every 500ms catches it without
+  // wiring a custom event for the one-off case.
+  setInterval(syncZoomLabel, 500);
 }
 
 function setupPitchShifter() {
@@ -4467,6 +4488,81 @@ function renderRoutingGrids() {
 function renderRoutingButtons() { renderRoutingGrids(); }
 
 // Load song into the mixer
+// ── Buffering watchdog ────────────────────────────────────────────────────
+// Replaces the bare-inline "wait for every stem's oncanplaythrough" pattern
+// that used to live in loadSong / outro / loop-restart. Bill's gig nightmare
+// was a spinner that never cleared — one stem's HTTP fetch died silently,
+// oncanplaythrough never fired, and the portal sat forever with no way to
+// proceed. This helper:
+//   1) Renders per-stem progress in the caption ("V✓ D✓ B…  G…  P…  O…")
+//      so you can SEE which stem is stuck.
+//   2) Soft warns at 8s (caption flips to "Slow load — server may be stalled").
+//   3) HARD-DISMISSES the spinner at 15s regardless of canplaythrough state
+//      and proceeds with playback. Whatever audio has buffered plays; if it
+//      under-runs, HTML5 will pause briefly to re-buffer — annoying, but
+//      not stuck. Better than a black-magic spinner.
+//   4) Exposes a "Play Anyway" button inside the spinner box that the
+//      operator can click at any time to force-dismiss.
+// One global watch is active at a time; starting a new watch cancels the
+// previous one's timers so a fast song-switch doesn't leak old captions
+// or fire stale callbacks.
+let _bufferWatchCancel = null;
+function watchBuffering({ activeElements, channels, onReady, softWarnMs = 8000, hardTimeoutMs = 15000 }) {
+  if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
+  els.buffering.style.display = 'flex';
+  const loaded = new Set();
+  let finished = false;
+  const STEM_LETTER = { vocals:'V', drums:'D', bass:'B', guitar:'G', piano:'P', other:'O' };
+  const stemLetter = (c) => STEM_LETTER[c] || ((c || '?')[0] || '?').toUpperCase();
+
+  const renderCaption = (status) => {
+    const badges = channels.map(c => loaded.has(c) ? `${stemLetter(c)}✓` : `${stemLetter(c)}…`).join('  ');
+    let prefix = '';
+    if (status === 'slow')    prefix = 'Slow load — server may be stalled · ';
+    if (status === 'timeout') prefix = 'Gave up waiting · proceeding · ';
+    if (els.bufferingCaption) els.bufferingCaption.textContent = `${prefix}${badges}`;
+  };
+  renderCaption();
+
+  const finish = (reason) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(softTimer);
+    clearTimeout(hardTimer);
+    clearInterval(refreshTimer);
+    els.buffering.style.display = 'none';
+    activeElements.forEach(ae => { try { ae.oncanplaythrough = null; } catch (e) {} });
+    if (_bufferWatchCancel === cancel) _bufferWatchCancel = null;
+    try { onReady && onReady(reason); } catch (e) { console.warn('[buffering] onReady failed:', e); }
+  };
+  const cancel = () => { if (!finished) { finished = true; clearTimeout(softTimer); clearTimeout(hardTimer); clearInterval(refreshTimer); } };
+
+  channels.forEach((chan, i) => {
+    const ae = activeElements[i];
+    try { ae.load(); } catch (e) {}
+    ae.oncanplaythrough = () => {
+      ae.oncanplaythrough = null;
+      loaded.add(chan);
+      renderCaption();
+      if (loaded.size === activeElements.length) finish('ready');
+    };
+  });
+
+  const softTimer = setTimeout(() => { if (!finished) renderCaption('slow'); }, softWarnMs);
+  const hardTimer = setTimeout(() => {
+    if (!finished) {
+      const missing = channels.filter(c => !loaded.has(c));
+      console.warn('[buffering] hard timeout — missing stems:', missing, '· proceeding anyway');
+      renderCaption('timeout');
+      finish('timeout');
+    }
+  }, hardTimeoutMs);
+  const refreshTimer = setInterval(() => { if (!finished) renderCaption(); }, 800);
+
+  _bufferWatchCancel = cancel;
+  window.__bufferingPlayAnyway = () => { console.log('[buffering] user clicked Play Anyway'); finish('manual'); };
+}
+
 function loadSong(song, opts) {
   opts = opts || {};
   // Defer AudioContext creation until the FIRST user gesture has actually
@@ -4759,35 +4855,26 @@ function loadSong(song, opts) {
     document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'none');
   }
   
-  // Buffering loader
-  els.buffering.style.display = 'flex';
-  
-  let loadedCount = 0;
-  const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
-  
-  activeElements.forEach(ae => {
-    ae.load();
-    ae.oncanplaythrough = () => {
-      ae.oncanplaythrough = null;
-      loadedCount++;
-      if (loadedCount === activeElements.length) {
-        els.buffering.style.display = 'none';
-        // If we were mid-playback on another variant, seek to that position
-        // on every active element and resume play (variant hot-swap).
-        if (resumeAt > 0) {
-          activeElements.forEach(el => {
-            try {
-              const seekTo = Math.min(resumeAt, (el.duration || resumeAt));
-              el.currentTime = seekTo;
-            } catch (e) {}
-          });
-          els.timeCurrent.textContent = formatTime(resumeAt);
-        }
-        if ((resumePlaying || opts.autoplay) && !isPlaying) {
-          togglePlayPause();
-        }
+  // Buffering loader — watchdog-protected. Per-stem progress badges replace
+  // the generic "Waiting on audio stream" caption; if any stem doesn't
+  // canplaythrough within 15s the spinner clears anyway and we attempt to
+  // play with whatever buffered. No more gig-killing hangs.
+  const activeChans   = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
+  const activeElements = activeChans.map(c => audioElements[c]);
+  watchBuffering({
+    activeElements, channels: activeChans,
+    onReady: () => {
+      if (resumeAt > 0) {
+        activeElements.forEach(el => {
+          try {
+            const seekTo = Math.min(resumeAt, (el.duration || resumeAt));
+            el.currentTime = seekTo;
+          } catch (e) {}
+        });
+        els.timeCurrent.textContent = formatTime(resumeAt);
       }
-    };
+      if ((resumePlaying || opts.autoplay) && !isPlaying) togglePlayPause();
+    },
   });
 
   els.timeline.value = 0;
@@ -4956,22 +5043,15 @@ function playLoopSegment(loopNum) {
   // suppresses the ended event entirely, so tracks won't restart short.
   Object.values(audioElements).forEach(ae => { ae.loop = audioHasSrc(ae); });
   
-  els.buffering.style.display = 'flex';
-  let loadedCount = 0;
-  const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
-  
-  let started = false;
-  activeElements.forEach(ae => {
-    ae.load();
-    ae.oncanplaythrough = () => {
-      ae.oncanplaythrough = null;
-      loadedCount++;
-      if (loadedCount === activeElements.length && !started) {
-        started = true;
-        els.buffering.style.display = 'none';
-        togglePlayPause();
-      }
-    };
+  // Watchdog-protected buffering for the loop-segment path. Same shape as
+  // the main loadSong path; auto-starts playback when ready (or when the
+  // watchdog gives up).
+  const _loopChans = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
+  const _loopActive = _loopChans.map(c => audioElements[c]);
+  let _loopStarted = false;
+  watchBuffering({
+    activeElements: _loopActive, channels: _loopChans,
+    onReady: () => { if (!_loopStarted) { _loopStarted = true; togglePlayPause(); } },
   });
 
   // Enable loop coordinator state
@@ -5173,40 +5253,24 @@ function triggerOutroStretch() {
     ae.loop = false; // Programmatic wrap coord continues
   });
   
-  els.buffering.style.display = 'flex';
-  
-  let loadedCount = 0;
-  const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
-  
-  activeElements.forEach(ae => {
-    ae.load();
-    ae.oncanplaythrough = () => {
-      loadedCount++;
-      if (loadedCount === activeElements.length) {
-        els.buffering.style.display = 'none';
-        
-        // Start Outro Jam
-        isPlaying = true;
-        const masterAe = activeElements[0];
-        masterAe.currentTime = 0;
-        
-        activeElements.forEach(item => {
-          item.currentTime = 0;
-          item.play().catch(() => {});
-        });
-        
-        // Calculate duration of outro cycle
-        const bpm = currentSong.practiceBpm || 120;
-        const totalBeats = lastLoop.bars * 4;
-        const cycleDuration = (totalBeats * (60 / bpm)) / playbackSpeed;
-        
-        els.timeDuration.textContent = formatTime(cycleDuration);
-        
-        startSyncLoop();
-        startBeatingVisualizer(bpm);
-        updateStretchInfoProgress();
-      }
-    };
+  // Watchdog-protected buffering for the Outro Jam path.
+  const _outroChans = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
+  const _outroActive = _outroChans.map(c => audioElements[c]);
+  watchBuffering({
+    activeElements: _outroActive, channels: _outroChans,
+    onReady: () => {
+      isPlaying = true;
+      const masterAe = _outroActive[0];
+      if (masterAe) masterAe.currentTime = 0;
+      _outroActive.forEach(item => { item.currentTime = 0; item.play().catch(() => {}); });
+      const bpm = currentSong.practiceBpm || 120;
+      const totalBeats = lastLoop.bars * 4;
+      const cycleDuration = (totalBeats * (60 / bpm)) / playbackSpeed;
+      els.timeDuration.textContent = formatTime(cycleDuration);
+      startSyncLoop();
+      startBeatingVisualizer(bpm);
+      updateStretchInfoProgress();
+    },
   });
   
   applyMixerVolumes();

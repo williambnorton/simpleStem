@@ -289,11 +289,20 @@
                  inside the overlay inherit that range. -->
             <div class="canvas-wrap">
               <canvas id="visualizer-canvas" class="visualizer-canvas"></canvas>
+              <!-- Zoom controls: overlay top-right. Double-click on the canvas
+                   also zooms in centered at the click point; right-click resets
+                   to 1x. The current zoom badge is clickable to reset. -->
+              <div class="viz-zoom-controls" title="Zoom the waveform · double-click to zoom in here · right-click to reset">
+                <button id="viz-zoom-out" type="button" class="viz-zoom-btn" title="Zoom out (−)">−</button>
+                <button id="viz-zoom-level" type="button" class="viz-zoom-level" title="Click to reset to 1×">1×</button>
+                <button id="viz-zoom-in" type="button" class="viz-zoom-btn" title="Zoom in (+)">+</button>
+              </div>
               <div class="player-wave-overlay">
                 <div id="player-buffering-indicator" class="buffering" style="display: none;">
                   <div class="spinner"></div>
                   <span>Buffering Audio...</span>
                   <div id="buffering-caption" class="spinner-caption">Waiting on audio stream…</div>
+                  <button type="button" class="buffering-skip" onclick="window.__bufferingPlayAnyway && window.__bufferingPlayAnyway()" title="Stop waiting; start with whatever has buffered. If stems haven't loaded enough, HTML5 will pause briefly mid-song to re-buffer — better than a stuck spinner.">Play Anyway</button>
                 </div>
               </div>
               <div id="automation-overlay" class="automation-overlay">
