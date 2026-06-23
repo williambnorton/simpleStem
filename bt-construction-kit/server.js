@@ -2658,6 +2658,42 @@ app.post('/api/restart', (req, res) => {
   }, 300);
 });
 
+// Kick coreaudiod — software equivalent of unplugging the XR18 USB cable.
+// macOS launchd respawns the daemon immediately; Core Audio re-binds to the
+// XR18's still-running USB endpoint, breaking the stale handshake that
+// silently swallows audio when app-switching between Logic and Chrome.
+// REQUIRES a one-time passwordless sudoers entry so the server (running as
+// the operator's user, not root) can issue the kill without an interactive
+// password prompt mid-gig:
+//
+//   sudo visudo -f /etc/sudoers.d/simplestem-coreaudio
+//
+// Then add ONE line, replacing wbn with your username:
+//
+//   wbn ALL=(root) NOPASSWD: /usr/bin/killall coreaudiod
+//
+// `sudo -n` ("non-interactive") then succeeds; missing entry => exit 1
+// with "a password is required" on stderr, which we surface to the UI.
+app.post('/api/audio/kick-coreaudio', (req, res) => {
+  const { spawn } = require('child_process');
+  const child = spawn('sudo', ['-n', '/usr/bin/killall', 'coreaudiod']);
+  let stderr = '';
+  child.stderr.on('data', d => { stderr += d.toString(); });
+  child.on('close', code => {
+    if (code === 0) {
+      res.json({ ok: true });
+    } else {
+      res.status(500).json({
+        error: stderr.trim() || `sudo killall coreaudiod exited ${code}`,
+        hint: 'Add a passwordless sudoers entry: see /api/audio/kick-coreaudio source for the one-line config.',
+      });
+    }
+  });
+  child.on('error', e => {
+    res.status(500).json({ error: `spawn failed: ${e.message}` });
+  });
+});
+
 // Health probe — extremely cheap, no Drive, no FS scan. The client spinner
 // uses it to distinguish "server is up but library is still loading" from
 // "server itself is not answering". Useful during boot when /api/library is

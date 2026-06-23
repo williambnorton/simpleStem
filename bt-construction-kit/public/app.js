@@ -4122,6 +4122,7 @@ function injectMixerHeaderInfo() {
         Stereo only · ${outputChannelCount} ch${stamp} · click to reload &amp; re-detect
       </button>
       <button class="btn-secondary routing-soundcheck" title="Re-run the sound check now">Sound Check</button>
+      <button class="btn-secondary routing-kick-coreaudio" title="Kick coreaudiod — runs sudo killall coreaudiod on the Mac to force a Core Audio renegotiation when the XR18 is wedged. Page reloads after.">CoreAudio 🥾</button>
     `;
   } else {
     // XR18 (or any multi-channel device) is live. Loud green badge so the
@@ -4136,16 +4137,44 @@ function injectMixerHeaderInfo() {
       <button class="btn-secondary routing-soundcheck" title="Re-run the sound check — plays a brief test tone on every XR18 output.">Sound Check</button>
       <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
       <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
+      <button class="btn-secondary routing-kick-coreaudio" title="Kick coreaudiod — runs sudo killall coreaudiod on the Mac to force a Core Audio renegotiation when the XR18 is wedged. Page reloads after.">CoreAudio 🥾</button>
     `;
   }
   const ps = info.querySelector('.routing-preset-stereo');
   const pS = info.querySelector('.routing-preset-spread');
   const reprobe = info.querySelector('.routing-reprobe');
   const sc = info.querySelector('.routing-soundcheck');
+  const kick = info.querySelector('.routing-kick-coreaudio');
   if (ps) ps.addEventListener('click', presetStereoMain);
   if (pS) pS.addEventListener('click', presetSpreadToSixAux);
   if (reprobe) reprobe.addEventListener('click', reprobeAudioDevice);
   if (sc) sc.addEventListener('click', runSoundCheck);
+  if (kick) kick.addEventListener('click', kickCoreaudiod);
+}
+
+// Software equivalent of unplugging the XR18 USB cable. Runs
+// `sudo -n killall coreaudiod` server-side; launchd respawns the daemon
+// and Core Audio re-binds to the XR18's still-running USB endpoint. Fixes
+// the silent-after-app-switch failure mode without touching the board.
+// Audio drops for ~1s. Page reloads so the routing badge re-detects.
+async function kickCoreaudiod() {
+  if (!confirm('Reboot Core Audio (sudo killall coreaudiod)? All audio drops for ~1s; the page reloads after.')) return;
+  const btn = document.querySelector('.routing-kick-coreaudio');
+  if (btn) { btn.disabled = true; btn.textContent = 'Kicking…'; }
+  try {
+    const r = await fetch('/api/audio/kick-coreaudio', { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(`Couldn't kick coreaudiod: ${data.error || r.statusText}\n\nIf this is the first time, add a passwordless sudoers entry — see CLAUDE.md / kick-coreaudio docs.`);
+      if (btn) { btn.disabled = false; btn.textContent = 'CoreAudio 🥾'; }
+      return;
+    }
+  } catch (e) {
+    alert(`Couldn't reach the server: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.textContent = 'CoreAudio 🥾'; }
+    return;
+  }
+  setTimeout(() => location.reload(), 1500);
 }
 
 // Pre-show readiness check.
