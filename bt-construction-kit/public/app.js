@@ -5995,8 +5995,11 @@ function seekAudio(e) {
 //   1) DROPS a 'skip-section' automation event at the current playhead
 //      (persisted on Save, fires on subsequent playbacks of this song).
 //   2) Performs the skip RIGHT NOW so the user sees what the action will do.
-// No-op when the song has no sections, or the playhead is already past the
-// last one — without sections there's nowhere for the action to land.
+// If the playhead is in the LAST section (no boundary after it), the skip
+// runs the song's natural end-of-song handler instead — which auto-saves
+// and (if we're inside a setlist) advances to the next song.
+// No-op when the song has zero sections at all (no boundaries means
+// nothing to skip past).
 function skipToNextSection() {
   const active = Object.values(audioElements).filter(ae => audioHasSrc(ae));
   if (!active.length) return;
@@ -6004,17 +6007,29 @@ function skipToNextSection() {
   if (!sections.length) return;
   const now = active[0].currentTime || 0;
   const next = sections.find(s => s.t > now + 0.25);
-  if (!next) return;                    // past the last boundary
-  const target = next.t;
+  const target = next ? next.t : null;     // null = no boundary after now → end-of-song
+  const label = next ? `skip → ${formatTime(target)}` : 'skip → end of song';
   // (1) Drop the persistent action at the playhead.
   if (typeof automationEvents !== 'undefined' && automationCurrentBase) {
-    const ev = { t: Math.round(now * 1000) / 1000, type: 'skip-section', label: `skip → ${formatTime(target)}` };
+    const ev = { t: Math.round(now * 1000) / 1000, type: 'skip-section', label };
     automationEvents.push(ev);
     automationEvents.sort((a, b) => a.t - b.t);
     markAutomationDirty();
   }
-  // (2) Perform the seek now.
-  performSectionSkip(target);
+  // (2) Execute the effect now.
+  if (target !== null) performSectionSkip(target);
+  else endSongNow();
+}
+
+// Triggers the same code path the audio element's natural 'ended' event
+// would — auto-saves the lane, stops audio, advances the setlist if we're
+// inside one. Used by skip-section actions that fall past the last
+// boundary so a "skip" recorded near the end of a song still moves the gig
+// forward cleanly.
+function endSongNow() {
+  if (typeof handleMasterTrackEnded === 'function') {
+    try { handleMasterTrackEnded(); } catch (e) { console.warn('[skip] endSongNow failed:', e); }
+  }
 }
 
 // Shared seek-to-section-boundary primitive. Called both by the chevron
@@ -7239,6 +7254,18 @@ async function loadAutomationForSong(songBase) {
   automationDirty = !!_autoAccepted;
   renderAutomationLane();
   refreshAutomationToolbar();
+  // Init-block semantics: fire every t === 0 action right now, before the
+  // user touches play. A skip-section at 0 jumps the playhead past the
+  // intro; a fade at 0 sets the initial mix; etc. The playback tick is
+  // also patched to fire t=0 events on the first tick after play starts,
+  // so this is belt-and-suspenders: if a song hasn't loaded its audio
+  // yet, the tick will catch it; if it has, the user sees the effect now.
+  automationEvents.forEach(e => {
+    if (e.t === 0 && !e.fired) {
+      try { fireAutomationEvent(e); } catch (er) { console.warn('[automation] t=0 init failed:', er); }
+      e.fired = true;
+    }
+  });
 }
 
 async function saveAutomationForSong(songBase, events) {
@@ -8544,10 +8571,13 @@ async function fireAutomationEvent(e) {
   // SKIP-SECTION — jump the playhead to the next section boundary defined
   // on the yellow lane. Computed dynamically at fire time so if the user
   // edits sections later the skip still goes where intended (next one).
+  // If there's no boundary after this event's time we run the song's
+  // end-of-song handler, which advances the setlist when applicable.
   if (e.type === 'skip-section') {
     const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
     const next = sections.find(s => s.t > e.t + 0.25);
     if (next) performSectionSkip(next.t);
+    else endSongNow();
     return;
   }
 }
@@ -9167,7 +9197,14 @@ function setupMidiUI() {
     }
     let anyFired = false;
     for (const e of automationEvents) {
-      if (!e.fired && e.t > automationLastTime && e.t <= now) {
+      // Normal forward sweep: events whose time falls inside (lastTime, now].
+      // Plus init-block semantics: any t === 0 event fires on the FIRST tick
+      // after play begins (lastTime is still 0, now has just advanced past
+      // it). The strict-> in the normal predicate would otherwise skip t=0
+      // events forever because 0 > 0 is false.
+      const inWindow  = e.t > automationLastTime && e.t <= now;
+      const atZeroNow = e.t === 0 && automationLastTime === 0 && now > 0;
+      if (!e.fired && (inWindow || atZeroNow)) {
         fireAutomationEvent(e).catch(err => console.warn('[automation] fire failed:', err));
         e.fired = true;
         anyFired = true;
