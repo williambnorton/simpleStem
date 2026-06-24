@@ -8029,7 +8029,27 @@ async function loadAutomationForSong(songBase) {
     const r = await fetch(`/api/song/${encodeURIComponent(songBase)}/automation`);
     const d = await r.json();
     const events = d.automation || [];
+    // ── Lyric-line auto-repair ──────────────────────────────────────────
+    // Songs saved before the server fix had `text` and `mode` stripped by
+    // the whitelist. The label field WAS preserved (truncated to 28-30
+    // chars), so we can resurrect a useful approximation of each line by
+    // copying label → text. The repaired events get marked dirty so the
+    // next SAVE persists the recovered text and the corruption disappears
+    // for good. Only fires when text is empty AND label is non-empty —
+    // freshly-saved events with full text round-trip untouched.
+    let repaired = 0;
+    for (const e of events) {
+      if (e.type === 'lyric-line' && !((e.text || '').trim()) && (e.label || '').trim()) {
+        e.text = e.label.replace(/[……]+$/, '').trim();   // strip ellipsis
+        if (!e.mode) e.mode = 'replace';
+        repaired++;
+      }
+    }
+    if (repaired > 0) {
+      console.log(`[lyric] auto-repaired ${repaired} legacy lyric-line action(s) using label → text`);
+    }
     automationEvents = events.map(e => ({ ...e, fired: false }));
+    if (repaired > 0 && typeof markAutomationDirty === 'function') markAutomationDirty();
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
