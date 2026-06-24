@@ -6409,30 +6409,32 @@ let lyricsState = {
   hiddenForSong: false,  // user pressed Hide; suppress until next song
 };
 
-function setupLyrics() {
-  // Re-query in case els was constructed before the DOM had the button
-  // (defensive — other buttons follow the same pattern and work, but if
-  // the script order ever changes this still binds).
-  const btn = els.btnLyricAdd || document.getElementById('midi-btn-add-lyric');
-  if (!btn) {
-    console.warn('[lyric] + Lyric button not found in DOM — wiring skipped');
-    return;
-  }
-  els.btnLyricAdd = btn;
-  btn.addEventListener('click', onLyricTap);
-  // Right-click anywhere on the button always opens the editor — escape
-  // hatch for re-editing lyrics that already exist.
-  btn.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    openLyricsModal('edit');
-  });
-  console.log('[lyric] + Lyric button wired');
+// Event-delegated lyric handler. Bound on the document so it can't be
+// broken by anything that happens (or fails) earlier in the init chain.
+// Both left-click and right-click are delegated; the right-click skips
+// the tap and goes straight to the editor.
+document.addEventListener('click', (e) => {
+  const btn = e.target && e.target.closest && e.target.closest('#midi-btn-add-lyric');
+  if (!btn) return;
+  console.log('[lyric] delegated click hit');
+  onLyricTap(e);
+}, false);
+document.addEventListener('contextmenu', (e) => {
+  const btn = e.target && e.target.closest && e.target.closest('#midi-btn-add-lyric');
+  if (!btn) return;
+  e.preventDefault();
+  console.log('[lyric] delegated right-click hit');
+  openLyricsModal('edit');
+}, false);
+console.log('[lyric] document-level delegation installed');
 
+function setupLyrics() {
+  // The document-level delegation above ALWAYS captures the button. This
+  // function only wires the in-modal helpers + the in-overlay Hide.
   if (els.lyricsHide) els.lyricsHide.addEventListener('click', () => {
     lyricsState.hiddenForSong = true;
     _hideOverlay();
   });
-  // Modal wiring
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
@@ -6443,6 +6445,9 @@ function setupLyrics() {
     const sb = document.getElementById('lyrics-strip-blanks');
     if (sh) sh.addEventListener('click', stripLyricsHeaders);
     if (sb) sb.addEventListener('click', stripLyricsBlanks);
+    console.log('[lyric] modal helpers wired');
+  } else {
+    console.warn('[lyric] lyrics modal element not in DOM — paste UI unavailable');
   }
 }
 
