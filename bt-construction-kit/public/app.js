@@ -6408,9 +6408,18 @@ let lyricsState = {
   activeLines:  [],       // [{text, addedAt}] — what the overlay is showing
   playbackOff:  false,    // user toggled or clicked the overlay off
 };
-// Currently-mode is derived: have we placed any lyric-line actions?
+// Mode is derived from how much of the cached lyrics file has been
+// placed. While the cursor is anywhere shy of the last cached line,
+// every tap drops the next line (TAP-ALONG / PLACEMENT MODE). Once the
+// cursor has consumed every cached line, the button flips to a
+// SHOW/HIDE toggle (PLAYBACK MODE). Re-editing the lyrics file (which
+// resets cursor to 0) puts the button back into placement mode.
 function lyricsHasPlacedActions() {
   return Array.isArray(automationEvents) && automationEvents.some(e => e.type === 'lyric-line');
+}
+function lyricsAllPlaced() {
+  return lyricsState.cachedLines.length > 0
+      && lyricsState.cursor >= lyricsState.cachedLines.length;
 }
 
 // Event-delegated lyric handler. Bound on the document so it can't be
@@ -6436,6 +6445,34 @@ function setupLyrics() {
   // Tick that ages out lines on the playback overlay. Cheap enough to
   // run unconditionally; if no lines are alive the inner render no-ops.
   setInterval(_renderLyricDisplay, 250);
+  // Escape key → drop an "L0" (clear-lyric) action at the playhead. On
+  // playback it kills whatever lyrics are visible on the mixer-console
+  // overlay (mode='replace' + empty text), and Bill can place an L0
+  // wherever he wants the lyrics to vanish between verses. Ignored
+  // while focus is inside an input/textarea so editing remains normal.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (e.target && e.target.isContentEditable)) return;
+    if (!currentSong) return;
+    if (!automationCurrentBase) return;
+    const playhead = currentPlayheadSec();
+    const ev = {
+      t: Math.round(playhead * 1000) / 1000,
+      type: 'lyric-line',
+      text: '',                  // empty body → overlay clears on fire
+      mode: 'replace',
+      label: 'L0 clear',
+    };
+    if (typeof automationEvents !== 'undefined') {
+      automationEvents.push(ev);
+      automationEvents.sort((a, b) => a.t - b.t);
+      if (typeof renderAutomationLane === 'function') renderAutomationLane();
+      if (typeof markAutomationDirty === 'function') markAutomationDirty();
+    }
+    try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] L0 live fire failed:', er); }
+    console.log('[lyric] L0 placed at', playhead.toFixed(2));
+  });
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
@@ -6529,20 +6566,14 @@ async function onLyricTap(e) {
     return;
   }
 
-  // PLAYBACK MODE: actions already exist on the timeline → toggle the
-  // overlay show/hide. Don't drop a new line.
-  if (lyricsHasPlacedActions()) {
+  // PLAYBACK MODE: every cached line has already been placed → toggle
+  // the overlay show/hide. Bill's "Show Lyrics" / "Hide Lyrics" state.
+  // To add MORE lines after this point: right-click → re-open editor →
+  // edit + Save (resets cursor) → tap again.
+  if (lyricsAllPlaced()) {
     lyricsState.playbackOff = !lyricsState.playbackOff;
     console.log('[lyric] playback overlay toggled', { off: lyricsState.playbackOff });
     _renderLyricDisplay();
-    return;
-  }
-
-  // PLACEMENT MODE: drop the next cached line at the playhead.
-  if (lyricsState.cursor >= lyricsState.cachedLines.length) {
-    if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
-      openLyricsModal('edit');
-    }
     return;
   }
   const now = Date.now();
@@ -6575,6 +6606,14 @@ async function onLyricTap(e) {
 function fireLyricLine(e) {
   const text = e.text || '';
   const now = Date.now();
+  // L0 clear-action: empty text + replace mode → wipe the overlay.
+  // This is Bill's Escape-key drop; on playback it makes the overlay
+  // disappear at that exact timeline position until the next lyric fires.
+  if (e.mode === 'replace' && !text.trim()) {
+    lyricsState.activeLines = [];
+    _renderLyricDisplay();
+    return;
+  }
   if (e.mode === 'replace') {
     lyricsState.activeLines = [{ text, addedAt: now }];
   } else {
@@ -6607,13 +6646,18 @@ function _refreshLyricButtonLabel() {
     btn.classList.add('mode-fetch');
     return;
   }
-  if (lyricsHasPlacedActions()) {
+  // Show/Hide toggle ONLY after every cached line has been placed; until
+  // then keep dropping lines on each tap (Bill's tap-along workflow).
+  if (lyricsAllPlaced()) {
     const showing = lyricsState.activeLines.length > 0 && !lyricsState.playbackOff;
     btn.textContent = showing ? 'Hide Lyrics' : 'Show Lyrics';
     btn.classList.add('mode-show');
     return;
   }
-  btn.textContent = '+ Lyric';
+  // Placement mode — show remaining-count so Bill knows how many taps
+  // are left before the button flips to Show/Hide.
+  const remaining = lyricsState.cachedLines.length - lyricsState.cursor;
+  btn.textContent = `+ Lyric (${remaining})`;
   btn.classList.add('mode-place');
 }
 
@@ -8098,7 +8142,10 @@ function eventMarkerLabel(e) {
     return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
   }
   if (e.type === 'skip-section') return '⏩';
-  if (e.type === 'lyric-line')   return e.mode === 'append' ? 'L+' : 'L';
+  if (e.type === 'lyric-line') {
+    if (!e.text || !String(e.text).trim()) return 'L0';      // Escape-clear
+    return e.mode === 'append' ? 'L+' : 'L';
+  }
   const ch = e.channel || 1;
   if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
   if (e.type === 'cc')       return `M${ch}C${e.controller ?? '?'}`;
@@ -8133,7 +8180,10 @@ function eventSummary(e) {
   if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
   if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
   if (e.type === 'skip-section') return 'SKIP to next section';
-  if (e.type === 'lyric-line')   return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
+  if (e.type === 'lyric-line') {
+    if (!e.text || !String(e.text).trim()) return 'L0 — clear lyric overlay';
+    return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
+  }
   return e.type || 'event';
 }
 
