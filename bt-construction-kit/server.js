@@ -2890,6 +2890,19 @@ app.put('/api/song/:base/automation', (req, res) => {
           }
           base.state = state;
           base.t = 0;
+        } else if (e.type === 'lyric-line') {
+          // Lyric overlay action. `text` is the lyric body (empty string
+          // is a valid value — the L0 escape-clear). `mode` is 'replace'
+          // (resets the overlay to this line) or 'append' (stacks under
+          // whatever is already showing). Whitelist clamps text length
+          // so a runaway paste can't bloat metadata.json.
+          base.text = String(e.text == null ? '' : e.text).slice(0, 240);
+          base.mode = (e.mode === 'append') ? 'append' : 'replace';
+        } else if (e.type === 'skip-section') {
+          // No extra fields — t alone defines the skip's firing time.
+          // The target is computed dynamically at fire time from the
+          // current section list, so editing sections doesn't break
+          // saved skips.
         }
         return base;
       })
