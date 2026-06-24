@@ -6583,6 +6583,40 @@ function fireLyricLine(e) {
   _renderLyricDisplay();
 }
 
+// Keeps the + Lyric button label in sync with the current state:
+//   no lyrics file              → "Fetch Lyrics"
+//   lyrics file, no placements  → "+ Lyric"
+//   lyrics file + placements    → "Show Lyrics" / "Hide Lyrics" toggle
+// Called from _renderLyricDisplay so it auto-runs every 250ms tick AND
+// on every state change without needing to remember to call it.
+function _refreshLyricButtonLabel() {
+  const btn = document.getElementById('midi-btn-add-lyric');
+  if (!btn) return;
+  // Treat currentSong.lyrics as "we have a file" even if cachedLines
+  // hasn't been derived yet — avoids a flash of "Fetch Lyrics" while
+  // self-heal is in flight.
+  const hasLyrics = lyricsState.cachedLines.length > 0 || !!(currentSong && currentSong.lyrics);
+  btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
+  if (!currentSong) {
+    btn.textContent = '+ Lyric';
+    btn.classList.add('mode-place');
+    return;
+  }
+  if (!hasLyrics) {
+    btn.textContent = 'Fetch Lyrics';
+    btn.classList.add('mode-fetch');
+    return;
+  }
+  if (lyricsHasPlacedActions()) {
+    const showing = lyricsState.activeLines.length > 0 && !lyricsState.playbackOff;
+    btn.textContent = showing ? 'Hide Lyrics' : 'Show Lyrics';
+    btn.classList.add('mode-show');
+    return;
+  }
+  btn.textContent = '+ Lyric';
+  btn.classList.add('mode-place');
+}
+
 // Build the overlay (if missing) and paint the current lyrics state.
 // Called on every state change AND from a 250ms tick to handle the
 // time-based fade. The overlay is positioned over the stem mixer
@@ -6590,6 +6624,7 @@ function fireLyricLine(e) {
 // most-recently-placed line is shown without a fade until the next
 // drop replaces or appends.
 function _renderLyricDisplay() {
+  _refreshLyricButtonLabel();
   const ov = _ensureLyricsDisplay();
   if (!ov) return;
 
