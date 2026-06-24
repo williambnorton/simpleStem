@@ -5629,6 +5629,97 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
 .midi-event-marker.evt-skip   { background: #9b59b6; color: #fff; box-shadow: 0 0 4px rgba(155, 89, 182, 0.6); }
 
+/* Lyrics button — lives in the active-track title row. Pill-shaped,
+   accent color, with a mic icon. Only visible when a stems song is
+   loaded (refreshLyricsButton flips display:none/inline-flex). */
+.btn-lyrics {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.7rem; font-weight: 700;
+  background: rgba(155, 89, 182, 0.18);
+  border: 1px solid rgba(155, 89, 182, 0.6);
+  color: #d9b4f0;
+  border-radius: 8px;
+  padding: 3px 10px;
+  margin-left: 10px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: var(--transition-smooth);
+}
+.btn-lyrics:hover { background: rgba(155, 89, 182, 0.35); color: #fff; }
+.btn-lyrics:disabled { opacity: 0.5; cursor: default; }
+.btn-lyrics i { width: 13px; height: 13px; }
+
+/* Lyrics overlay — full-canvas, semi-transparent. Sits z-index above the
+   waveform but below the buffering spinner so a load mid-gig is still
+   surfaced. Pointer-events:auto on the box so the Hide button works.
+   Header carries the section label + chunk progress + shift/hide
+   controls; body shows the chunk text in large readable type. */
+.lyrics-overlay {
+  position: absolute;
+  inset: 20px 8px 8px 8px;     /* respect the section-label strip + scrubber */
+  background: rgba(8, 10, 16, 0.78);
+  border: 1px solid rgba(155, 89, 182, 0.35);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  z-index: 7;                  /* above bands + automation, below buffering */
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  pointer-events: auto;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+}
+.lyrics-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(155, 89, 182, 0.25);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(155, 89, 182, 0.12);
+  border-radius: 9px 9px 0 0;
+}
+.lyrics-section-label { color: #d9b4f0; }
+.lyrics-progress      { color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; }
+.lyrics-shift {
+  margin-left: auto; display: flex; gap: 3px;
+}
+.lyrics-shift button {
+  width: 26px; height: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+.lyrics-shift button:hover { background: rgba(255,255,255,0.18); }
+.lyrics-hide {
+  background: rgba(220, 80, 80, 0.18);
+  color: #ffb3b3;
+  border: 1px solid rgba(220, 80, 80, 0.5);
+  border-radius: 5px;
+  padding: 4px 11px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.lyrics-hide:hover { background: rgba(220, 80, 80, 0.35); color: #fff; }
+.lyrics-body {
+  flex: 1;
+  padding: 16px 22px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+}
+
 /* Visualizer zoom controls — small overlay on the top-right of the
    waveform canvas. Three pill-shaped buttons (− level + ) with
    semi-transparent backing so they sit on top of the wave without

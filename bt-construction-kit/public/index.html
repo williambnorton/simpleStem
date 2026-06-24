@@ -203,6 +203,9 @@
               <h1 class="track-title">
                 <button id="active-track-star" class="active-track-star" title="Click to favorite" style="display:none;">☆</button>
                 <span id="active-track-title">Song Title</span><span id="active-track-sep" class="track-sep"> &mdash; </span><span id="active-track-artist">Artist Name</span>
+                <button id="btn-lyrics" class="btn-lyrics" title="Show lyrics — auto-aligns chunks of 4–6 lines to the song's sections. Fetches from Genius on first click if not cached." style="display:none;">
+                  <i data-lucide="mic"></i> Lyrics
+                </button>
               </h1>
               <!-- Drum machine status banner. Visible only while the drum
                    pill is engaged. Mutually exclusive with backing-track
@@ -304,6 +307,21 @@
                   <div id="buffering-caption" class="spinner-caption">Waiting on audio stream…</div>
                   <button type="button" class="buffering-skip" onclick="window.__bufferingPlayAnyway && window.__bufferingPlayAnyway()" title="Stop waiting; start with whatever has buffered. If stems haven't loaded enough, HTML5 will pause briefly mid-song to re-buffer — better than a stuck spinner.">Play Anyway</button>
                 </div>
+              </div>
+              <!-- Lyrics overlay — full-canvas, semi-transparent, shows the
+                   current section's lyric chunk in large readable text.
+                   Toggled by #btn-lyrics; hidden by default. -->
+              <div id="lyrics-overlay" class="lyrics-overlay" style="display:none;">
+                <div class="lyrics-header">
+                  <span class="lyrics-section-label" id="lyrics-section-label">—</span>
+                  <span class="lyrics-progress" id="lyrics-progress">1 / 1</span>
+                  <div class="lyrics-shift">
+                    <button type="button" id="lyrics-shift-back"    title="Shift this chunk backward (start earlier in the lyrics)">−</button>
+                    <button type="button" id="lyrics-shift-forward" title="Shift this chunk forward (start later in the lyrics)">+</button>
+                  </div>
+                  <button type="button" id="lyrics-hide" class="lyrics-hide" title="Hide lyrics for the rest of this song">Hide</button>
+                </div>
+                <div class="lyrics-body" id="lyrics-body">—</div>
               </div>
               <div id="automation-overlay" class="automation-overlay">
                 <div id="midi-lane-bands" class="midi-lane-bands"></div>
