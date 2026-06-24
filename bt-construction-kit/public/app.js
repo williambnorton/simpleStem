@@ -6554,32 +6554,90 @@ function _hideOverlay() {
 }
 
 // ─── Lyrics editor modal (fetch / paste / curate) ────────────────────────
-// Opens in two modes — 'initial' is the first time for a song with no
-// cached lyrics; 'edit' is for revising what's already there. The body
-// is the same in both cases — only the status hint differs.
-function openLyricsModal(mode = 'initial') {
-  if (!els.lyricsModal) {
-    console.warn('[lyric] modal element missing');
-    return;
+// Self-injecting: if the static HTML doesn't carry the modal markup
+// (Drive sync lag, stale browser cache, etc.), we build it on first open
+// and stash it in #lyrics-modal-mount. Subsequent opens reuse the same
+// nodes. This removes the dependency on the static HTML being current —
+// the moment app.js loads, the lyrics editor works.
+function _ensureLyricsModal() {
+  if (els.lyricsModal && document.body.contains(els.lyricsModal)) return els.lyricsModal;
+  // Try the static markup first (matches what index.html now declares).
+  let m = document.getElementById('lyrics-modal');
+  if (!m) {
+    console.log('[lyric] static modal absent — injecting');
+    const mount = document.createElement('div');
+    mount.id = 'lyrics-modal-mount';
+    mount.innerHTML = `
+      <div id="lyrics-modal" class="midi-modal" style="display:none;">
+        <div class="midi-modal-backdrop" data-close-lyrics-modal></div>
+        <div class="midi-modal-card" style="max-width:580px;">
+          <h3 id="lyrics-modal-title">Lyrics editor</h3>
+          <div class="midi-modal-status" id="lyrics-modal-status"></div>
+          <div class="midi-row" style="display:flex; gap:8px; align-items:center;">
+            <button id="lyrics-modal-fetch" class="btn-primary">Fetch from Genius</button>
+            <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
+          </div>
+          <div class="midi-row">
+            <label for="lyrics-modal-paste">Lyrics file — one line per displayed line:</label>
+            <textarea id="lyrics-modal-paste" rows="16" style="width:100%; font-family:'Space Grotesk',sans-serif; font-size:13px; line-height:1.5;" placeholder="Paste from Google / AZLyrics / Genius / wherever. Edit so each line you want displayed on screen is on its own row."></textarea>
+          </div>
+          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span id="lyrics-modal-count" class="lyrics-line-count">0 displayable lines</span>
+            <button type="button" id="lyrics-strip-headers" class="btn-secondary" title="Remove [Verse 1] / [Chorus] / [Bridge] header lines">Strip headers</button>
+            <button type="button" id="lyrics-strip-blanks" class="btn-secondary" title="Collapse blank lines">Strip blanks</button>
+          </div>
+          <div class="midi-modal-buttons">
+            <button id="lyrics-modal-cancel" class="btn-secondary" data-close-lyrics-modal>Cancel</button>
+            <button id="lyrics-modal-save"   class="btn-primary">Save lyrics</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(mount);
+    m = mount.querySelector('#lyrics-modal');
   }
+  els.lyricsModal         = m;
+  els.lyricsModalPaste    = m.querySelector('#lyrics-modal-paste');
+  els.lyricsModalStatus   = m.querySelector('#lyrics-modal-status');
+  els.lyricsModalFetch    = m.querySelector('#lyrics-modal-fetch');
+  els.lyricsModalFetching = m.querySelector('#lyrics-modal-fetching');
+  els.lyricsModalSave     = m.querySelector('#lyrics-modal-save');
+  // Wire handlers — idempotent dataset guard so re-injection doesn't
+  // double-bind. The handlers reference the (now valid) els references.
+  if (!m.dataset.wired) {
+    m.dataset.wired = '1';
+    m.querySelectorAll('[data-close-lyrics-modal]').forEach(b => b.addEventListener('click', closeLyricsModal));
+    els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
+    els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
+    els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
+    m.querySelector('#lyrics-strip-headers').addEventListener('click', stripLyricsHeaders);
+    m.querySelector('#lyrics-strip-blanks').addEventListener('click', stripLyricsBlanks);
+  }
+  return m;
+}
+
+function openLyricsModal(mode = 'initial') {
+  const modal = _ensureLyricsModal();
+  if (!modal) { console.warn('[lyric] could not create modal'); return; }
   const songTitle = (currentSong && currentSong.title) || (currentSong && currentSong.folderName) || 'this song';
-  const titleEl = document.getElementById('lyrics-modal-title');
+  const titleEl = modal.querySelector('#lyrics-modal-title');
   if (titleEl) titleEl.textContent = `Lyrics editor — ${songTitle}`;
   els.lyricsModalPaste.value = (currentSong && currentSong.lyrics) || '';
   if (mode === 'edit') {
-    els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. <strong>Fetch from Genius</strong> replaces the textarea content. Right-click the + Lyric button anytime to re-open this editor.`;
+    els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. <strong>Fetch from Genius</strong> replaces the textarea. Right-click the + Lyric button to re-open this editor anytime.`;
   } else if (currentSong && currentSong.lyrics) {
     els.lyricsModalStatus.innerHTML = `Lyrics already cached. Edit + <strong>Save</strong> to overwrite, or close to start tapping along.`;
   } else {
     els.lyricsModalStatus.innerHTML = `No lyrics file yet. Try <strong>Fetch from Genius</strong>, or paste from Google / AZLyrics / any lyrics site and edit so each line is on its own row.`;
   }
   els.lyricsModalFetching.style.display = 'none';
-  els.lyricsModal.style.display = 'flex';
+  modal.style.display = 'flex';
   _refreshLyricsLineCount();
   setTimeout(() => { try { els.lyricsModalPaste.focus(); } catch (e) {} }, 50);
 }
 function closeLyricsModal() {
-  if (els.lyricsModal) els.lyricsModal.style.display = 'none';
+  const m = els.lyricsModal || document.getElementById('lyrics-modal');
+  if (m) m.style.display = 'none';
 }
 
 // Live counter — recomputes the displayed-line count as Bill types or
