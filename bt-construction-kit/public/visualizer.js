@@ -270,11 +270,14 @@ async function setWaveformStems(sources) {
   if (requestId !== stemPeaksRequestId) return;
   waveformLoading = false;
   if (!stemPeaks.size) waveformError = true;
-  // New song: keep the user's current zoom level (per Bill's spec) but
-  // reset the center so we don't carry over the previous song's view
-  // window. visibleSpanSec()/2 puts the window at the start of the new
-  // song; visibleStartSec clamps to 0 anyway.
-  vizCenterSec = visibleSpanSec() / 2;
+  // New song: reset zoom to 1x so the operator always sees the whole
+  // song with sections filling it — preferred for playing along ("knowing
+  // what's coming next"). Earlier spec was "keep current zoom"; live
+  // experience showed that always leaves you zoomed into the wrong
+  // place across song transitions. Also reset center.
+  vizZoom = 1;
+  vizCenterSec = waveformDuration ? waveformDuration / 2 : 0;
+  persistZoom();
 
   // Onset detection: walk the combined-peaks envelope and find local rises
   // that exceed a threshold with minimum spacing. Each rise is a 'spike'
@@ -586,14 +589,48 @@ function getPlayheadPxX(width) {
 // Best-effort: read currentTime off any HTMLAudioElement the app exposes.
 // The app's `audioElements` object is shared on window when the player
 // initializes; fall back to scanning DOM <audio> tags.
+//
+// PLAYHEAD-OFFSET COMPENSATION
+// Bill observed at 16x zoom that the audible sound lags the visual
+// playhead by ~200ms. Two causes stacked: macOS Core Audio outputLatency
+// (~20-80ms on USB) and AAC decoder pre-roll on m4a stems (~50-200ms).
+// The element's currentTime is the file position being DECODED, which is
+// ahead of what's coming out of the speakers — so the visual playhead
+// draws ahead of audible sound. We subtract a compensation value so the
+// playhead lands where you HEAR.
+//
+// `vizPlayheadOffsetMs` is the total compensation in ms (default 200,
+// user-tunable via window.setVizPlayheadOffsetMs() or just edit the
+// localStorage key). Positive = shift visual playhead BACK in time so
+// it matches the speakers.
+let vizPlayheadOffsetMs = (function () {
+  try {
+    const v = parseInt(localStorage.getItem('simpleStem.vizPlayheadOffsetMs') || '200', 10);
+    return Number.isFinite(v) ? v : 200;
+  } catch (e) { return 200; }
+})();
+window.setVizPlayheadOffsetMs = function (ms) {
+  vizPlayheadOffsetMs = Math.max(-500, Math.min(1000, Number(ms) || 0));
+  try { localStorage.setItem('simpleStem.vizPlayheadOffsetMs', String(vizPlayheadOffsetMs)); } catch (e) {}
+  return vizPlayheadOffsetMs;
+};
+window.getVizPlayheadOffsetMs = function () { return vizPlayheadOffsetMs; };
+
 function currentPlaybackTime() {
+  const offsetSec = (vizPlayheadOffsetMs || 0) / 1000;
   const els = window.audioElements;
   if (els) {
     for (const k of Object.keys(els)) {
       const ae = els[k];
-      if (ae && ae.src && !ae.paused) return ae.currentTime || 0;
+      if (ae && ae.src && !ae.paused) {
+        // Don't pull the playhead below 0 during the first few hundred
+        // ms of playback — compensation only matters once we're moving.
+        return Math.max(0, (ae.currentTime || 0) - offsetSec);
+      }
     }
-    // No element is currently playing — fall back to whatever's loaded
+    // No element is currently playing — fall back to whatever's loaded.
+    // While paused we don't apply offset (no audio rendering pipeline
+    // running, so currentTime IS the position).
     for (const k of Object.keys(els)) {
       const ae = els[k];
       if (ae && ae.src && (ae.currentTime > 0 || ae.duration > 0)) return ae.currentTime || 0;

@@ -277,8 +277,30 @@ _emit_one_video() {
 
 # A directly-dropped single video. If it's a chaptered "full album" it becomes
 # a setlist (staged folder); otherwise one flat file in STEM_QUEUE.
+# Has this YouTube id already been ingested? Greps STEMS/*/metadata.json
+# for any source_url containing the id. Returns 0 if a match exists; the
+# matching path is echoed for the caller's log. Cheap (grep -l only reads
+# until match) so it's safe to call on every webloc.
+_already_ingested() {
+  local id="$1"
+  [[ -z "$id" ]] && return 1
+  local hit
+  hit="$(grep -l -E "(youtube\\.com/watch\\?v=|youtu\\.be/|/shorts/)$id([^a-zA-Z0-9_-]|$)" \
+                "$STEMS"/*/metadata.json 2>/dev/null | head -n1)"
+  [[ -n "$hit" ]] || return 1
+  printf '%s' "$hit"
+  return 0
+}
+
 process_single() {
   local id="$1" url="https://www.youtube.com/watch?v=$id"
+  # Skip if this id is already in the library — re-ingest of the same
+  # video creates the Harvest-Moon-style duplicates Bill ran into.
+  local existing
+  if existing="$(_already_ingested "$id")"; then
+    echo "== [$id] already ingested at $(basename "$(dirname "$existing")") — skipping"
+    return 0
+  fi
   local work rc=0; work="$(mktemp -d)"
   _process_single_body "$id" "$url" "$work" || rc=$?
   rm -rf "$work"; return $rc
@@ -322,6 +344,12 @@ _process_single_body() {
 process_entry() {
   local id="$1" seq="$2" ptitle="$3" stage="$4"
   local url="https://www.youtube.com/watch?v=$id"
+  # Same dedup guard the single-video path uses.
+  local existing
+  if existing="$(_already_ingested "$id")"; then
+    echo "== [$id] already ingested at $(basename "$(dirname "$existing")") — skipping"
+    return 0
+  fi
   local work rc=0; work="$(mktemp -d)"
   if _download "$work" "$url" "$id"; then
     local info="$work/source.info.json"
