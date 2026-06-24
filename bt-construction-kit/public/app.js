@@ -5283,10 +5283,18 @@ function startSyncLoop() {
       }
     }
 
-    // Update timeline slider
-    const progress = (masterTime / masterAe.duration) * 100 || 0;
-    els.timeline.value = progress;
-    els.timelineFill.style.width = `${progress}%`;
+    // Update timeline slider — uses the visualizer's current zoom window
+    // so the scrubber position matches the visible portion of the
+    // waveform. Clamped to [0,100]: when the playhead is outside the
+    // window (rare, autoFollow re-centers fast), the slider parks at the
+    // nearest edge until autoFollow catches up.
+    {
+      const _vw = getViewWindow(masterAe.duration);
+      const _progress = ((masterTime - _vw.s) / _vw.span) * 100;
+      const _clamped  = Math.max(0, Math.min(100, _progress)) || 0;
+      els.timeline.value = _clamped;
+      els.timelineFill.style.width = `${_clamped}%`;
+    }
     els.timeCurrent.textContent = formatTime(masterTime);
     
     // Synchronize rest of faders
@@ -6171,13 +6179,17 @@ function abortInFlightFetches() {
   driveFetchAbort = new AbortController();
 }
 
-// Click timeline to seek
+// Click timeline to seek — drag scrubs WITHIN the current zoom window.
+// At zoom=1 this is the whole song; at higher zoom, it's the magnified
+// slice around the playhead. To seek outside the window, right-click on
+// the canvas to reset zoom to 1x.
 function seekAudio(e) {
   const pct = parseFloat(e.target.value);
   const activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
   if (activeElements.length === 0) return;
 
-  const targetTime = (pct / 100) * activeElements[0].duration;
+  const _vw = getViewWindow(activeElements[0].duration);
+  const targetTime = _vw.s + (pct / 100) * _vw.span;
 
   activeElements.forEach(ae => {
     ae.currentTime = targetTime;
@@ -6186,6 +6198,14 @@ function seekAudio(e) {
   els.timeCurrent.textContent = formatTime(targetTime);
   els.timelineFill.style.width = `${pct}%`;
 }
+
+// Re-render the section bands / lane / candidate hints whenever the
+// visualizer's zoom window changes. Without this hook, the canvas would
+// update on every zoom but the bands would stay at the previous scale
+// until the next save or song-load — exactly the bug Bill flagged.
+window.addEventListener('viz-window-changed', () => {
+  try { if (typeof renderAutomationLane === 'function') renderAutomationLane(); } catch (e) {}
+});
 
 // Skip past the current section to the next boundary on the yellow lane.
 // CALLED BY the ⏩ chevron button. Two side effects, both intentional:
@@ -7645,11 +7665,14 @@ function renderAutomationLane() {
   }
 
   // Pass 1 — compute each event's x position (px) so we can detect
-  // horizontal collisions for row assignment.
+  // horizontal collisions for row assignment. Uses the zoom window so a
+  // 16x view shows the markers stretched across the full lane width;
+  // events outside the visible window are filtered out by the pct guard.
   const laneWidth = lane.clientWidth || 1;
+  const { s: _vs, span: _vspan } = getViewWindow(dur);
   const positioned = automationEvents.map((e, idx) => {
-    const pct = (e.t / dur) * 100;
-    const xpx = (e.t / dur) * laneWidth;
+    const pct = ((e.t - _vs) / _vspan) * 100;
+    const xpx = ((e.t - _vs) / _vspan) * laneWidth;
     return { idx, e, pct, xpx };
   }).filter(p => p.pct >= 0 && p.pct <= 100);
 
@@ -7706,42 +7729,64 @@ const SECTION_COLORS = {
 // each section's t (which marks the END of that section). The first
 // section runs from 0 to its t; subsequent sections run from the prior
 // section's t to their own.
+// Map a song-time (sec) to a 0-100 percentage inside the currently visible
+// zoom window. At zoom=1 this is identical to `(t/dur)*100` — at higher
+// zoom levels it stretches the timeline so sections, automation markers,
+// scrubber, and waveform all share one time axis (Logic-style).
+function getViewWindow(dur) {
+  const vs = (typeof window.vizVisibleStartSec === 'function') ? window.vizVisibleStartSec() : 0;
+  const ve = (typeof window.vizVisibleEndSec   === 'function') ? window.vizVisibleEndSec()   : dur;
+  const safeDur = dur || 0;
+  if (!safeDur || ve <= vs) return { s: 0, e: safeDur, span: safeDur || 1 };
+  return { s: vs, e: ve, span: ve - vs };
+}
+function timePctInView(t, dur) {
+  const { s, span } = getViewWindow(dur);
+  return ((t - s) / span) * 100;
+}
+
 function renderSectionBands(container, dur) {
   const sections = (automationSections || []).slice().sort((a, b) => a.t - b.t);
   if (!sections.length) return;
+  const { s: vs, e: ve, span } = getViewWindow(dur);
   let prevT = 0;
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];
     const color = SECTION_COLORS[s.color];
     if (!color) { prevT = s.t; continue; }
-    const startPct = (prevT / dur) * 100;
-    const endPct   = (s.t   / dur) * 100;
-    const widthPct = endPct - startPct;
-    // Colored band with the section name centered inside.
-    const band = document.createElement('div');
-    band.className = 'automation-section-band';
-    band.style.left  = startPct + '%';
-    band.style.width = widthPct + '%';
-    band.style.background = color.bg;
-    const clickInBadge = s.clickIn ? ' <span class="section-click-in-badge" title="4-beat click pre-roll before this section">♩♩♩♩</span>' : '';
-    band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s${s.clickIn ? ' · click 4 beats in' : ''}`;
-    band.innerHTML = `<span class="automation-section-label" data-section-idx="${i}" title="Click to change section type / click-in">${escapeHtml(color.name)}${clickInBadge}</span>`;
-    container.appendChild(band);
-    // Click the label to open the picker. Use mousedown so the click
-    // doesn't bubble to the lane (which would drop a new event).
-    const labelEl = band.querySelector('.automation-section-label');
-    if (labelEl) labelEl.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openSectionPicker(i, labelEl);
-    });
-    // Black draggable divider at the END of this section.
-    const divider = document.createElement('div');
-    divider.className = 'automation-section-divider';
-    divider.style.left = endPct + '%';
-    divider.dataset.idx = String(i);
-    divider.title = `${color.name} ends at ${s.t.toFixed(2)}s — drag to retime`;
-    attachSectionDividerHandlers(divider, i);
-    container.appendChild(divider);
+    // Clip the band [prevT, s.t] to the visible window [vs, ve]. Skip
+    // bands that fall entirely outside the zoom range.
+    const t0 = Math.max(prevT, vs);
+    const t1 = Math.min(s.t, ve);
+    if (t1 > t0) {
+      const startPct = ((t0 - vs) / span) * 100;
+      const widthPct = ((t1 - t0)    / span) * 100;
+      const band = document.createElement('div');
+      band.className = 'automation-section-band';
+      band.style.left  = startPct + '%';
+      band.style.width = widthPct + '%';
+      band.style.background = color.bg;
+      const clickInBadge = s.clickIn ? ' <span class="section-click-in-badge" title="4-beat click pre-roll before this section">♩♩♩♩</span>' : '';
+      band.title = `${color.name} (#${s.color}) — ${prevT.toFixed(1)}s → ${s.t.toFixed(1)}s${s.clickIn ? ' · click 4 beats in' : ''}`;
+      band.innerHTML = `<span class="automation-section-label" data-section-idx="${i}" title="Click to change section type / click-in">${escapeHtml(color.name)}${clickInBadge}</span>`;
+      container.appendChild(band);
+      const labelEl = band.querySelector('.automation-section-label');
+      if (labelEl) labelEl.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openSectionPicker(i, labelEl);
+      });
+    }
+    // Divider at s.t — render only if it falls inside the zoom window.
+    if (s.t >= vs && s.t <= ve) {
+      const dividerPct = ((s.t - vs) / span) * 100;
+      const divider = document.createElement('div');
+      divider.className = 'automation-section-divider';
+      divider.style.left = dividerPct + '%';
+      divider.dataset.idx = String(i);
+      divider.title = `${color.name} ends at ${s.t.toFixed(2)}s — drag to retime`;
+      attachSectionDividerHandlers(divider, i);
+      container.appendChild(divider);
+    }
     prevT = s.t;
   }
 }
@@ -7752,9 +7797,10 @@ function renderSectionBands(container, dur) {
 // drop a 1-9 key right on top of one.
 function renderSectionCandidateHints(container, dur) {
   if (!Array.isArray(automationSectionCandidates) || !automationSectionCandidates.length) return;
+  const { s: vs, e: ve, span } = getViewWindow(dur);
   for (const t of automationSectionCandidates) {
-    if (t < 0 || t > dur) continue;
-    const pct = (t / dur) * 100;
+    if (t < vs || t > ve) continue;       // outside the zoom window
+    const pct = ((t - vs) / span) * 100;
     const hint = document.createElement('div');
     hint.className = 'automation-section-hint';
     hint.style.left = pct + '%';

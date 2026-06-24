@@ -33,6 +33,62 @@ let beatInterval = null;
 const PEAK_BUCKETS = 1500;
 const AUDIBLE_THRESHOLD = 0.01;
 
+// Zoom state — persists across songs within a session. New song load keeps
+// the current vizZoom but recenters vizCenterSec to the new song's start.
+// vizZoom is one of VIZ_ZOOM_LEVELS; vizCenterSec is the time at the
+// HORIZONTAL CENTER of the visible window. visibleStartSec / visibleEndSec
+// derive from those plus waveformDuration with clamping at the ends.
+const VIZ_ZOOM_LEVELS = [1, 2, 4, 8, 16];
+let vizZoom = (function () {
+  try {
+    const v = parseInt(localStorage.getItem('simpleStem.vizZoom') || '1', 10);
+    return VIZ_ZOOM_LEVELS.includes(v) ? v : 1;
+  } catch (e) { return 1; }
+})();
+let vizCenterSec = 0;
+
+function visibleSpanSec() {
+  if (!waveformDuration) return 0;
+  return waveformDuration / vizZoom;
+}
+function visibleStartSec() {
+  if (vizZoom === 1 || !waveformDuration) return 0;
+  const span = visibleSpanSec();
+  let s = vizCenterSec - span / 2;
+  if (s < 0) s = 0;
+  if (s + span > waveformDuration) s = Math.max(0, waveformDuration - span);
+  return s;
+}
+function visibleEndSec() {
+  if (vizZoom === 1 || !waveformDuration) return waveformDuration;
+  return visibleStartSec() + visibleSpanSec();
+}
+function timeToX(t, width) {
+  const s = visibleStartSec(), e = visibleEndSec();
+  if (e <= s) return 0;
+  return ((t - s) / (e - s)) * width;
+}
+function xToTime(x, width) {
+  const s = visibleStartSec(), e = visibleEndSec();
+  return s + (x / width) * (e - s);
+}
+function persistZoom() {
+  try { localStorage.setItem('simpleStem.vizZoom', String(vizZoom)); } catch (e) {}
+}
+// Auto-follow the playhead. When zoomed in, recenter so the playhead
+// doesn't scroll off the visible window mid-song. Only kicks in past
+// 80% of the visible span on either side so we're not constantly
+// recentering by half a beat.
+function autoFollowPlayhead() {
+  if (vizZoom === 1 || !waveformDuration) return;
+  const t = currentPlaybackTime();
+  if (t == null) return;
+  const s = visibleStartSec(), e = visibleEndSec(), span = e - s;
+  if (t > s + span * 0.8 || t < s + span * 0.2) {
+    vizCenterSec = t + span * 0.3;        // give the playhead room to advance
+  }
+}
+
 function initVisualizer(analyserNode) {
   // Idempotent: app.js calls this eagerly at boot with null and later
   // again from initAudioCtx with the real analyser. The second call only
@@ -59,19 +115,97 @@ function initVisualizer(analyserNode) {
 
   // Click / drag to seek. We attach to the canvas itself; the canvas is
   // already sized to fill its container, so click coordinates map cleanly.
+  // xToTime converts the screen X into the song time using the current
+  // zoom window — at 1x this is identity, at 16x this is the magnified
+  // chunk around vizCenterSec.
   let dragging = false;
   const onSeek = (e) => {
     if (waveformDuration <= 0) return;
     const rect = canvas.getBoundingClientRect();
     const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
-    const targetSec = (x / rect.width) * waveformDuration;
-    seekAllAudioTo(targetSec);
+    seekAllAudioTo(xToTime(x, rect.width));
   };
   canvas.addEventListener('mousedown', (e) => { dragging = true; onSeek(e); });
   canvas.addEventListener('mousemove', (e) => { if (dragging) onSeek(e); });
   canvas.addEventListener('mouseup',   () => { dragging = false; });
   canvas.addEventListener('mouseleave', () => { dragging = false; });
+
+  // Zoom: double-click anywhere on the canvas to zoom in centered at that
+  // point; right-click to reset to 1x. The two single-clicks before the
+  // double-click each seek (intentional — both land on the same point),
+  // then the dblclick zooms.
+  canvas.addEventListener('dblclick', (e) => {
+    if (waveformDuration <= 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const target = xToTime(x, rect.width);
+    const idx = VIZ_ZOOM_LEVELS.indexOf(vizZoom);
+    if (idx < VIZ_ZOOM_LEVELS.length - 1) vizZoom = VIZ_ZOOM_LEVELS[idx + 1];
+    vizCenterSec = target;
+    persistZoom();
+  });
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    vizZoom = 1;
+    persistZoom();
+  });
 }
+
+// Public zoom API used by the +/- buttons in the visualizer header.
+function vizZoomIn() {
+  const idx = VIZ_ZOOM_LEVELS.indexOf(vizZoom);
+  if (idx < VIZ_ZOOM_LEVELS.length - 1) {
+    vizZoom = VIZ_ZOOM_LEVELS[idx + 1];
+    const t = currentPlaybackTime();
+    if (t != null) vizCenterSec = t;
+  }
+  persistZoom();
+  return vizZoom;
+}
+function vizZoomOut() {
+  const idx = VIZ_ZOOM_LEVELS.indexOf(vizZoom);
+  if (idx > 0) vizZoom = VIZ_ZOOM_LEVELS[idx - 1];
+  persistZoom();
+  return vizZoom;
+}
+function vizZoomResetPublic() { vizZoom = 1; persistZoom(); return vizZoom; }
+function vizZoomLevel() { return vizZoom; }
+// Expose on window for app.js wiring without a module system. The
+// visible-window helpers let app.js render section bands, automation
+// markers, and the timeline scrubber against the same time-window the
+// waveform uses, so a Logic-style zoom stretches EVERYTHING in time.
+window.vizZoomIn          = vizZoomIn;
+window.vizZoomOut         = vizZoomOut;
+window.vizZoomReset       = vizZoomResetPublic;
+window.vizZoomLevel       = vizZoomLevel;
+window.vizVisibleStartSec = () => visibleStartSec();
+window.vizVisibleEndSec   = () => visibleEndSec();
+window.vizSongDuration    = () => waveformDuration;
+
+// Notify the host (app.js) when the visible window changes — wraps every
+// zoom-state mutation so the section bands / lane / scrubber can repaint
+// in lockstep with the canvas. Without this, mousewheel/double-click zoom
+// would update the canvas but leave bands at the previous scale until the
+// next renderAutomationLane fires.
+function notifyZoomChanged() {
+  try { window.dispatchEvent(new CustomEvent('viz-window-changed')); } catch (e) {}
+}
+// Re-wrap the public mutators so they emit the event after persisting.
+['vizZoomIn', 'vizZoomOut', 'vizZoomReset'].forEach(fn => {
+  const orig = window[fn];
+  window[fn] = function () { const r = orig.apply(this, arguments); notifyZoomChanged(); return r; };
+});
+// Also fire after the inline canvas zoom mutators (double-click,
+// right-click, autoFollow). We patch by hooking the existing functions —
+// since they're closures we can't override them directly, so instead we
+// emit from a low-frequency tick that detects vizZoom or vizCenterSec drift.
+let _lastEmittedZoom = vizZoom, _lastEmittedCenter = vizCenterSec;
+setInterval(() => {
+  if (vizZoom !== _lastEmittedZoom || Math.abs(vizCenterSec - _lastEmittedCenter) > 0.05) {
+    _lastEmittedZoom = vizZoom; _lastEmittedCenter = vizCenterSec;
+    notifyZoomChanged();
+  }
+}, 100);
 
 function startLoop() {
   if (animationFrameId) return;
@@ -136,6 +270,11 @@ async function setWaveformStems(sources) {
   if (requestId !== stemPeaksRequestId) return;
   waveformLoading = false;
   if (!stemPeaks.size) waveformError = true;
+  // New song: keep the user's current zoom level (per Bill's spec) but
+  // reset the center so we don't carry over the previous song's view
+  // window. visibleSpanSec()/2 puts the window at the start of the new
+  // song; visibleStartSec clamps to 0 anyway.
+  vizCenterSec = visibleSpanSec() / 2;
 
   // Onset detection: walk the combined-peaks envelope and find local rises
   // that exceed a threshold with minimum spacing. Each rise is a 'spike'
@@ -242,6 +381,17 @@ function draw() {
   // localStorage as 'simpleStem.vizMode' ('sum' or 'stems').
   const mode = (window.__vizMode === 'stems') ? 'stems' : 'sum';
 
+  // Auto-follow the playhead if we're zoomed and it's drifting out of
+  // the visible window. Runs before any draw math so this frame uses the
+  // newly-recentered window.
+  autoFollowPlayhead();
+
+  // Compute the visible peak slice for the current zoom window. At 1x
+  // this is the whole peaks array; at NX it's a 1/N-wide slice.
+  const _vs = visibleStartSec(), _ve = visibleEndSec();
+  const _sliceStartFrac = waveformDuration > 0 ? _vs / waveformDuration : 0;
+  const _sliceEndFrac   = waveformDuration > 0 ? _ve / waveformDuration : 1;
+
   if (mode === 'sum') {
     // Combine the per-stem peaks weighted by audible volume.
     const combined = combineAudiblePeaks();
@@ -249,11 +399,17 @@ function draw() {
     grad.addColorStop(0, 'rgba(156, 39, 176, 0.85)');
     grad.addColorStop(0.5, 'rgba(0, 188, 212, 0.85)');
     grad.addColorStop(1, 'rgba(46, 204, 113, 0.85)');
-    const bucketW = width / combined.length;
+    // Slice the full-song peaks down to the visible window. At 1x this
+    // is the whole array; at higher zoom we render only the buckets
+    // covering [_vs, _ve] across the full canvas width.
+    const startBucket = Math.max(0, Math.floor(_sliceStartFrac * combined.length));
+    const endBucket   = Math.min(combined.length, Math.ceil(_sliceEndFrac * combined.length));
+    const visBuckets  = Math.max(1, endBucket - startBucket);
+    const bucketW = width / visBuckets;
     const half = height / 2;
     ctx.fillStyle = grad;
-    for (let i = 0; i < combined.length; i++) {
-      const p = combined[i];
+    for (let i = 0; i < visBuckets; i++) {
+      const p = combined[startBucket + i];
       const scaled = Math.min(1, Math.sqrt(p) * 1.15);
       const barH = scaled * (height * 0.95);
       const x = i * bucketW;
@@ -298,17 +454,17 @@ function draw() {
       }
       if (peaks) {
         // Peaks span the FULL canvas width [0, width], matching the
-        // playhead and beat grid coordinate system. An earlier version
-        // reserved an 18 px label gutter and drew peaks at [18, width],
-        // which shifted the audio waveform ~half a measure to the RIGHT
-        // of the playhead — the playhead appeared to lead the audio.
-        // Now the label sits ON TOP of the leftmost peaks (usually a
-        // silent intro), and time t is at x = t/duration*width
-        // EVERYWHERE on the canvas.
-        const bucketW = width / peaks.length;
+        // playhead and beat grid coordinate system. With zoom active we
+        // render only the slice covering [visibleStart, visibleEnd]; at
+        // zoom=1 startBucket=0 and endBucket=peaks.length so this is
+        // identical to the unzoomed path.
+        const startBucket = Math.max(0, Math.floor(_sliceStartFrac * peaks.length));
+        const endBucket   = Math.min(peaks.length, Math.ceil(_sliceEndFrac * peaks.length));
+        const visBuckets  = Math.max(1, endBucket - startBucket);
+        const bucketW = width / visBuckets;
         ctx.fillStyle = color;
-        for (let i = 0; i < peaks.length; i++) {
-          const p = peaks[i];
+        for (let i = 0; i < visBuckets; i++) {
+          const p = peaks[startBucket + i];
           const scaled = Math.min(1, Math.sqrt(p) * 1.15);
           const barH = scaled * (laneH * 0.88);
           const x = i * bucketW;
@@ -335,10 +491,13 @@ function draw() {
   const bpm = (window.currentSong && window.currentSong.practiceBpm) || null;
   if (bpm && waveformDuration > 0) {
     const beatSec = 60 / bpm;
-    const totalBeats = Math.floor(waveformDuration / beatSec);
-    // Skip beat 0 (left edge is its own boundary); start at 1.
-    for (let i = 1; i <= totalBeats; i++) {
-      const x = (i * beatSec / waveformDuration) * width;
+    // With zoom, only draw beat lines that fall inside the visible
+    // window. At 1x this is every beat in the song; at 16x it's just
+    // those in the magnified slice.
+    const firstBeat = Math.max(1, Math.ceil(_vs / beatSec));
+    const lastBeat  = Math.floor(_ve / beatSec);
+    for (let i = firstBeat; i <= lastBeat; i++) {
+      const x = timeToX(i * beatSec, width);
       const isDownbeat = i % 4 === 0;
       ctx.strokeStyle = isDownbeat ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.07)';
       ctx.lineWidth = isDownbeat ? 1.5 : 0.6;
@@ -418,7 +577,10 @@ function getPlayheadPxX(width) {
   if (!waveformDuration) return -1;
   const t = currentPlaybackTime();
   if (t == null) return -1;
-  return (t / waveformDuration) * width;
+  // Uses the zoom-aware mapping so the playhead lands at the right pixel
+  // inside the visible window. Off-window times return a value outside
+  // [0,width] and the draw code naturally clips them.
+  return timeToX(t, width);
 }
 
 // Best-effort: read currentTime off any HTMLAudioElement the app exposes.

@@ -2062,6 +2062,13 @@ select {
   min-width: 0;
   height: 100%;
   position: relative;
+  /* Padding-top reserves a strip above the canvas for section labels so
+     they sit above the vocal stem instead of on top of it. The canvas
+     fills the content box (100% height) which now excludes this strip;
+     the .automation-overlay extends into the strip via inset:0 +
+     `top:0` measured against the padding box, so band tints + labels
+     can paint there while waveform sits below. */
+  padding-top: 20px;
 }
 
 /* "Visualizer" badge in the BOTTOM-right of the canvas area, paired
@@ -5421,12 +5428,15 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   z-index: 0;
 }
 .automation-section-label {
-  margin-top: 4px;
-  padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.45);
+  /* Lives in the padding-top strip above the canvas (see .canvas-wrap
+     padding-top:20px). Sits flush with the strip and clear of the
+     vocal track waveform that paints at the top of the canvas. */
+  margin-top: 2px;
+  padding: 1px 7px;
+  background: rgba(0, 0, 0, 0.55);
   color: #fff;
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5435,8 +5445,9 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   pointer-events: auto;
   cursor: pointer;
   user-select: none;
+  line-height: 1.2;
 }
-.automation-section-label:hover { background: rgba(0, 0, 0, 0.7); outline: 1px solid #fff; }
+.automation-section-label:hover { background: rgba(0, 0, 0, 0.78); outline: 1px solid #fff; }
 
 /* Section picker popup — opens when a section label is clicked. */
 .section-picker {
