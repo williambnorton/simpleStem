@@ -3054,6 +3054,59 @@ app.post('/api/song/:base/fetch-lyrics', (req, res) => {
   child.on('error', e => res.status(500).json({ error: `spawn failed: ${e.message}` }));
 });
 
+// Manual-paste lyrics. Saves whatever the operator pasted from Google /
+// AZLyrics / a tab site directly into the song's metadata.json so the
+// next + Lyric tap can use them. No Genius involvement; this is the
+// escape hatch for songs Genius doesn't have.
+app.put('/api/song/:base/lyrics', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const text = (req.body && typeof req.body.lyrics === 'string') ? req.body.lyrics : '';
+  if (!text.trim()) return res.status(400).json({ error: 'lyrics body is empty' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.lyrics = text.trim();
+    meta.lyrics_source = 'manual';
+    meta.lyrics_fetched_at = new Date().toISOString();
+    // Build lyrics_chunks the same way lyrics_fetch.py does: split on
+    // bracketed section markers, keep the body in each chunk. Falls back
+    // to a single "Lyrics" chunk if no markers found.
+    const re = /^\s*\[([^\]]+)\]\s*$/gm;
+    const matches = [];
+    let m;
+    while ((m = re.exec(text)) !== null) matches.push({ label: m[1].trim(), idx: m.index, end: re.lastIndex });
+    let chunks;
+    if (!matches.length) {
+      chunks = [{ label: 'Lyrics', text: text.trim() }];
+    } else {
+      chunks = [];
+      if (matches[0].idx > 0) {
+        const pre = text.slice(0, matches[0].idx).trim();
+        if (pre) chunks.push({ label: 'Intro', text: pre });
+      }
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].end;
+        const end   = i + 1 < matches.length ? matches[i + 1].idx : text.length;
+        const body  = text.slice(start, end).trim();
+        if (body) chunks.push({ label: matches[i].label, text: body });
+      }
+    }
+    meta.lyrics_chunks = chunks;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    // Patch libraryCache in place.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) { row.lyrics = meta.lyrics; row.lyrics_chunks = chunks; }
+      }
+    } catch (e) {}
+    res.json({ ok: true, lyrics: meta.lyrics, lyrics_chunks: chunks, chunkCount: chunks.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.put('/api/song/:base/favorite', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });

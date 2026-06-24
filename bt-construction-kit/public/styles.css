@@ -5629,25 +5629,15 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .midi-event-marker.evt-fade-mid { background: #f39c12; color: #111; box-shadow: 0 0 4px rgba(243, 156, 18, 0.6); }
 .midi-event-marker.evt-skip   { background: #9b59b6; color: #fff; box-shadow: 0 0 4px rgba(155, 89, 182, 0.6); }
 
-/* Lyrics button — lives in the active-track title row. Pill-shaped,
-   accent color, with a mic icon. Only visible when a stems song is
-   loaded (refreshLyricsButton flips display:none/inline-flex). */
-.btn-lyrics {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 0.7rem; font-weight: 700;
+/* + Lyric action toolbar button — purple accent to match the
+   evt-lyric markers on the lane. Sits next to + Clip and + Action. */
+.midi-action-lyric {
   background: rgba(155, 89, 182, 0.18);
-  border: 1px solid rgba(155, 89, 182, 0.6);
+  border: 1px solid rgba(155, 89, 182, 0.55);
   color: #d9b4f0;
-  border-radius: 8px;
-  padding: 3px 10px;
-  margin-left: 10px;
-  cursor: pointer;
-  vertical-align: middle;
-  transition: var(--transition-smooth);
 }
-.btn-lyrics:hover { background: rgba(155, 89, 182, 0.35); color: #fff; }
-.btn-lyrics:disabled { opacity: 0.5; cursor: default; }
-.btn-lyrics i { width: 13px; height: 13px; }
+.midi-action-lyric:hover { background: rgba(155, 89, 182, 0.35); color: #fff; }
+.midi-event-marker.evt-lyric { background: #b16fd1; color: #fff; box-shadow: 0 0 4px rgba(177, 111, 209, 0.6); }
 
 /* Lyrics overlay — full-canvas, semi-transparent. Sits z-index above the
    waveform but below the buffering spinner so a load mid-gig is still
@@ -5679,22 +5669,8 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   background: rgba(155, 89, 182, 0.12);
   border-radius: 9px 9px 0 0;
 }
-.lyrics-section-label { color: #d9b4f0; }
-.lyrics-progress      { color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; }
-.lyrics-shift {
-  margin-left: auto; display: flex; gap: 3px;
-}
-.lyrics-shift button {
-  width: 26px; height: 22px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 5px;
-  font-size: 14px; font-weight: 700;
-  cursor: pointer;
-  line-height: 1;
-}
-.lyrics-shift button:hover { background: rgba(255,255,255,0.18); }
+.lyrics-cursor { color: #d9b4f0; font-variant-numeric: tabular-nums; }
+.lyrics-hide   { margin-left: auto; }
 .lyrics-hide {
   background: rgba(220, 80, 80, 0.18);
   color: #ffb3b3;
