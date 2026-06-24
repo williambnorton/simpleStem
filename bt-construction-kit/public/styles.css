@@ -5659,61 +5659,46 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   border-color: rgba(244, 196, 48, 0.45);
 }
 
-/* Lyrics overlay — full-canvas, semi-transparent. Sits z-index above the
-   waveform but below the buffering spinner so a load mid-gig is still
-   surfaced. Pointer-events:auto on the box so the Hide button works.
-   Header carries the section label + chunk progress + shift/hide
-   controls; body shows the chunk text in large readable type. */
+/* Lyrics overlay — sits over the stem mixer console. Two visual modes:
+   mode-placement (no fade, persistent — operator is curating) and
+   mode-playback (lines auto-fade per the LYRIC_LINE_LIFETIME_MS rule
+   plus click-to-dismiss reveals the mixer underneath). The mixer
+   container has position:relative; this overlay is inset:0 inside it. */
 .lyrics-overlay {
   position: absolute;
-  inset: 20px 8px 8px 8px;     /* respect the section-label strip + scrubber */
-  background: rgba(8, 10, 16, 0.78);
-  border: 1px solid rgba(155, 89, 182, 0.35);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  z-index: 7;                  /* above bands + automation, below buffering */
+  inset: 0;
+  background: rgba(8, 10, 16, 0.86);
+  border-radius: inherit;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 15;                       /* above strips + their controls */
   color: #fff;
   font-family: 'Space Grotesk', sans-serif;
-  pointer-events: auto;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
-}
-.lyrics-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px;
-  border-bottom: 1px solid rgba(155, 89, 182, 0.25);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: rgba(155, 89, 182, 0.12);
-  border-radius: 9px 9px 0 0;
-}
-.lyrics-cursor { color: #d9b4f0; font-variant-numeric: tabular-nums; }
-.lyrics-hide   { margin-left: auto; }
-.lyrics-hide {
-  background: rgba(220, 80, 80, 0.18);
-  color: #ffb3b3;
-  border: 1px solid rgba(220, 80, 80, 0.5);
-  border-radius: 5px;
-  padding: 4px 11px;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: var(--transition-smooth);
-}
-.lyrics-hide:hover { background: rgba(220, 80, 80, 0.35); color: #fff; }
-.lyrics-body {
-  flex: 1;
-  padding: 16px 22px;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-y: auto;
-  display: flex; align-items: center; justify-content: center;
   text-align: center;
+  pointer-events: auto;
+  cursor: pointer;                   /* hint: click to dismiss */
+  user-select: none;
+}
+.lyrics-overlay.mode-placement {
+  background: rgba(8, 10, 16, 0.78);
+  border: 1px dashed rgba(177, 111, 209, 0.45);   /* "still editing" hint */
+}
+.lyrics-overlay.mode-playback {
+  background: rgba(0, 0, 0, 0.88);
+  transition: opacity 0.3s ease;
+}
+.lyrics-display-body {
+  padding: 28px;
+  white-space: pre-wrap;
+  /* Auto-scaling font: clamp between 22 and 56px, biased toward the
+     short axis of the mixer container so it fills the screen without
+     clipping. Browsers without clamp() fall back to the middle value. */
+  font-size: clamp(22px, 5vw, 56px);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
   text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 /* Visualizer zoom controls — small overlay on the top-right of the

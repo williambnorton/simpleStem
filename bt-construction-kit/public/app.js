@@ -120,10 +120,6 @@ const els = {
   trackTitle: document.getElementById('active-track-title'),
   trackArtist: document.getElementById('active-track-artist'),
   btnLyricAdd: document.getElementById('midi-btn-add-lyric'),
-  lyricsOverlay: document.getElementById('lyrics-overlay'),
-  lyricsBody: document.getElementById('lyrics-body'),
-  lyricsCursor: document.getElementById('lyrics-cursor'),
-  lyricsHide: document.getElementById('lyrics-hide'),
   lyricsModal: document.getElementById('lyrics-modal'),
   lyricsModalFetch: document.getElementById('lyrics-modal-fetch'),
   lyricsModalFetching: document.getElementById('lyrics-modal-fetching'),
@@ -6391,23 +6387,31 @@ function applyMixerVolumes() {
    Shows the running version; if a newer VERSION has synced to disk,
    reveals an Update button that restarts the Performer into it.
    ========================================== */
-// ── Lyrics — tap-along workflow ───────────────────────────────────────────
-// Each press of the + Lyric button drops a `lyric-line` automation action
-// at the current playhead with the NEXT cached lyric line. Two consecutive
-// presses within 2s create APPEND-mode events (the second's text stacks
-// on the first). A press after >2s of silence creates a REPLACE-mode event
-// (the on-screen lyrics are reset to just this line). Standard SAVE
-// persists. The overlay is purely render-driven — it only updates when a
-// lyric-line event fires during playback.
+// ── Lyrics — two-mode workflow ───────────────────────────────────────────
+// MODE 1 (PLACEMENT): no lyric-line actions on the timeline yet. Each
+//   press of + Lyric drops the next cached line at the playhead. The
+//   overlay (positioned over the stem mixer console) persistently shows
+//   what was just placed so Bill can see his progress while tapping.
+// MODE 2 (PLAYBACK):  lyric-line actions exist on the timeline. Press
+//   toggles the playback overlay on/off. Each line auto-fades after
+//   LYRIC_LINE_LIFETIME_MS so the screen doesn't drown in stacked lines.
+//   Any click on the overlay also dismisses it (revealing the mixer).
+// Right-click (or Shift / Cmd / Ctrl-click) on the button at any time
+// re-opens the editor regardless of mode.
 const LYRIC_TAP_BUNDLE_MS = 2000;
+const LYRIC_LINE_LIFETIME_MS = 4500;   // each line on the playback overlay
 let lyricsState = {
-  fetching:    false,    // genius fetch in flight
-  cachedLines: [],       // flat array of next-to-drop lines for the song
-  cursor:      0,        // index into cachedLines[]
-  lastTapAt:   0,        // ms timestamp; used to decide replace vs append
-  overlayText: '',       // what the overlay is currently showing
-  hiddenForSong: false,  // user pressed Hide; suppress until next song
+  fetching:     false,    // genius fetch in flight
+  cachedLines:  [],       // flat array of next-to-drop lines for the song
+  cursor:       0,        // index into cachedLines[]
+  lastTapAt:    0,        // ms timestamp; used to decide replace vs append
+  activeLines:  [],       // [{text, addedAt}] — what the overlay is showing
+  playbackOff:  false,    // user toggled or clicked the overlay off
 };
+// Currently-mode is derived: have we placed any lyric-line actions?
+function lyricsHasPlacedActions() {
+  return Array.isArray(automationEvents) && automationEvents.some(e => e.type === 'lyric-line');
+}
 
 // Event-delegated lyric handler. Bound on the document so it can't be
 // broken by anything that happens (or fails) earlier in the init chain.
@@ -6429,12 +6433,9 @@ document.addEventListener('contextmenu', (e) => {
 console.log('[lyric] document-level delegation installed');
 
 function setupLyrics() {
-  // The document-level delegation above ALWAYS captures the button. This
-  // function only wires the in-modal helpers + the in-overlay Hide.
-  if (els.lyricsHide) els.lyricsHide.addEventListener('click', () => {
-    lyricsState.hiddenForSong = true;
-    _hideOverlay();
-  });
+  // Tick that ages out lines on the playback overlay. Cheap enough to
+  // run unconditionally; if no lines are alive the inner render no-ops.
+  setInterval(_renderLyricDisplay, 250);
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
@@ -6452,16 +6453,16 @@ function setupLyrics() {
 }
 
 // Called from loadSong on every song change so the per-song tap cursor
-// and hidden-flag reset. Also seeds cachedLines from the loaded song's
-// metadata.json passthrough so we don't have to wait for a fetch on
-// every tap of a song that's already enriched.
+// and active-line state resets. Also seeds cachedLines from the loaded
+// song's metadata.json passthrough so we don't have to wait for a fetch
+// on every tap of a song that's already enriched.
 function refreshLyricsForNewSong() {
   lyricsState.cursor = 0;
   lyricsState.lastTapAt = 0;
-  lyricsState.overlayText = '';
-  lyricsState.hiddenForSong = false;
+  lyricsState.activeLines = [];
+  lyricsState.playbackOff = false;
   lyricsState.cachedLines = _normalizeLyrics(currentSong && currentSong.lyrics);
-  _hideOverlay();
+  _renderLyricDisplay();
 }
 
 function _normalizeLyrics(text) {
@@ -6471,15 +6472,15 @@ function _normalizeLyrics(text) {
     .filter(s => s && !/^\[.*\]$/.test(s));  // strip blanks + [Verse 1] headers
 }
 
-// Main click handler.
-//   - No song loaded                       → alert
-//   - Shift / Ctrl / Meta-click           → always open editor (alt route
-//                                            in addition to right-click).
-//   - Empty lyrics file                   → open editor so Bill can curate.
-//   - Lyrics file has content + cursor in → drop a lyric-line action at
-//                                            the playhead (the tap-along
-//                                            workflow Bill specified).
-//   - Cursor past last line               → offer to re-open the editor.
+// Main click handler — three states based on lyric data:
+//   - No song / no cached lyrics → editor.
+//   - Shift / Ctrl / Meta click   → always editor (re-edit existing).
+//   - PLACEMENT MODE (no lyric-line actions exist yet) → drop next line
+//     at the playhead. Operator can tap-along during playback or place
+//     while paused; either works.
+//   - PLAYBACK MODE  (lyric-line actions exist)        → toggle the
+//     playback overlay on/off. The actions themselves fire automatically
+//     on playback; the button just shows/hides the display.
 async function onLyricTap(e) {
   console.log('[lyric] tap', {
     song: currentSong && currentSong.folderName,
@@ -6527,14 +6528,23 @@ async function onLyricTap(e) {
     openLyricsModal('initial');
     return;
   }
-  // Past last line → ask whether to re-open editor.
+
+  // PLAYBACK MODE: actions already exist on the timeline → toggle the
+  // overlay show/hide. Don't drop a new line.
+  if (lyricsHasPlacedActions()) {
+    lyricsState.playbackOff = !lyricsState.playbackOff;
+    console.log('[lyric] playback overlay toggled', { off: lyricsState.playbackOff });
+    _renderLyricDisplay();
+    return;
+  }
+
+  // PLACEMENT MODE: drop the next cached line at the playhead.
   if (lyricsState.cursor >= lyricsState.cachedLines.length) {
     if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
       openLyricsModal('edit');
     }
     return;
   }
-  // Normal tap → drop a lyric-line action at the playhead.
   const now = Date.now();
   const playhead = currentPlayheadSec();
   const mode = (now - lyricsState.lastTapAt) <= LYRIC_TAP_BUNDLE_MS ? 'append' : 'replace';
@@ -6552,34 +6562,85 @@ async function onLyricTap(e) {
     if (typeof renderAutomationLane === 'function') renderAutomationLane();
     if (typeof markAutomationDirty === 'function') markAutomationDirty();
   }
+  // Live-fire so the operator sees the placement land in the overlay.
   try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
   lyricsState.cursor += 1;
   lyricsState.lastTapAt = now;
 }
 
 // Lyric-line dispatcher — called from fireAutomationEvent when an event
-// of type 'lyric-line' fires during playback.
+// of type 'lyric-line' fires during playback (or from the live-fire on
+// placement). Pushes the line onto activeLines with a timestamp; the
+// render tick ages it out after LYRIC_LINE_LIFETIME_MS.
 function fireLyricLine(e) {
-  if (lyricsState.hiddenForSong && e.mode !== 'replace') return;
-  // A REPLACE event always re-shows the overlay even if the user hit
-  // Hide on a previous block — assumption: Bill hid because he memorized
-  // the prior block, but a new block is fresh content worth seeing.
-  if (e.mode === 'replace') lyricsState.hiddenForSong = false;
   const text = e.text || '';
-  if (e.mode === 'append' && lyricsState.overlayText) {
-    lyricsState.overlayText += '\n' + text;
+  const now = Date.now();
+  if (e.mode === 'replace') {
+    lyricsState.activeLines = [{ text, addedAt: now }];
   } else {
-    lyricsState.overlayText = text;
+    lyricsState.activeLines.push({ text, addedAt: now });
   }
-  if (!lyricsState.hiddenForSong) {
-    if (els.lyricsOverlay) els.lyricsOverlay.style.display = 'flex';
-    if (els.lyricsBody)    els.lyricsBody.textContent = lyricsState.overlayText;
-    if (els.lyricsCursor)  els.lyricsCursor.textContent = `Lyrics · ${lyricsState.cursor}/${lyricsState.cachedLines.length}`;
-  }
+  _renderLyricDisplay();
 }
-function _hideOverlay() {
-  if (els.lyricsOverlay) els.lyricsOverlay.style.display = 'none';
-  lyricsState.overlayText = '';
+
+// Build the overlay (if missing) and paint the current lyrics state.
+// Called on every state change AND from a 250ms tick to handle the
+// time-based fade. The overlay is positioned over the stem mixer
+// console; in playback mode lines auto-fade, in placement mode the
+// most-recently-placed line is shown without a fade until the next
+// drop replaces or appends.
+function _renderLyricDisplay() {
+  const ov = _ensureLyricsDisplay();
+  if (!ov) return;
+
+  // Age out lines older than LIFETIME — but only when we're in PLAYBACK
+  // mode (actions exist on the timeline). In placement mode the operator
+  // is curating, so we keep the most recent block visible until the next
+  // tap replaces it.
+  const inPlayback = lyricsHasPlacedActions();
+  if (inPlayback) {
+    const cutoff = Date.now() - LYRIC_LINE_LIFETIME_MS;
+    lyricsState.activeLines = lyricsState.activeLines.filter(l => l.addedAt >= cutoff);
+  }
+
+  // playbackOff (clicked or button-toggled) suppresses the overlay even
+  // when there are active lines. In placement mode playbackOff has no
+  // effect — the operator always wants to see what they just placed.
+  const visible = lyricsState.activeLines.length > 0 && (!inPlayback || !lyricsState.playbackOff);
+
+  if (!visible) { ov.style.display = 'none'; return; }
+  const body = ov.querySelector('.lyrics-display-body');
+  if (body) body.textContent = lyricsState.activeLines.map(l => l.text).join('\n');
+  ov.classList.toggle('mode-playback', inPlayback);
+  ov.classList.toggle('mode-placement', !inPlayback);
+  ov.style.display = 'flex';
+}
+
+// Build (or return existing) overlay element absolutely-positioned over
+// the stem mixer console. Self-injecting so it works regardless of
+// static HTML state.
+function _ensureLyricsDisplay() {
+  let ov = document.getElementById('lyrics-overlay');
+  if (ov && document.body.contains(ov)) return ov;
+  const mixer = document.getElementById('mixer-container');
+  if (!mixer) return null;
+  // Make sure mixer-container can host an absolute child.
+  if (getComputedStyle(mixer).position === 'static') mixer.style.position = 'relative';
+  ov = document.createElement('div');
+  ov.id = 'lyrics-overlay';
+  ov.className = 'lyrics-overlay';
+  ov.style.display = 'none';
+  ov.innerHTML = `<div class="lyrics-display-body">—</div>`;
+  // Click anywhere on the overlay during playback dismisses it. The
+  // operator can re-show by pressing the + Lyric button again.
+  ov.addEventListener('click', () => {
+    if (lyricsHasPlacedActions()) {
+      lyricsState.playbackOff = true;
+      _renderLyricDisplay();
+    }
+  });
+  mixer.appendChild(ov);
+  return ov;
 }
 
 // ─── Lyrics editor modal (fetch / paste / curate) ────────────────────────

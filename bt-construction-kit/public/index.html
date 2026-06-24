@@ -305,18 +305,9 @@
                   <button type="button" class="buffering-skip" onclick="window.__bufferingPlayAnyway && window.__bufferingPlayAnyway()" title="Stop waiting; start with whatever has buffered. If stems haven't loaded enough, HTML5 will pause briefly mid-song to re-buffer — better than a stuck spinner.">Play Anyway</button>
                 </div>
               </div>
-              <!-- Lyrics overlay — driven by lyric-line actions firing during
-                   playback. Each action either REPLACES (new block after
-                   >2s gap) or APPENDS (within 2s of the previous tap).
-                   Hide button dismisses for the rest of the song; next
-                   replace-mode action brings it back. -->
-              <div id="lyrics-overlay" class="lyrics-overlay" style="display:none;">
-                <div class="lyrics-header">
-                  <span class="lyrics-cursor" id="lyrics-cursor">Lyrics</span>
-                  <button type="button" id="lyrics-hide" class="lyrics-hide" title="Hide lyrics for the rest of this song">Hide</button>
-                </div>
-                <div class="lyrics-body" id="lyrics-body">—</div>
-              </div>
+              <!-- Lyrics overlay moved out of the canvas-wrap and into the
+                   stem mixer area — see #lyrics-overlay built dynamically
+                   into #mixer-container by ensureLyricsDisplay(). -->
               <div id="automation-overlay" class="automation-overlay">
                 <div id="midi-lane-bands" class="midi-lane-bands"></div>
                 <div id="midi-lane" class="midi-lane" title="Drag a divider to move it. Click x or right-click a divider to delete. Use + Action below to add an action at the playhead.">
