@@ -6410,8 +6410,25 @@ let lyricsState = {
 };
 
 function setupLyrics() {
-  if (els.btnLyricAdd) els.btnLyricAdd.addEventListener('click', onLyricTap);
-  if (els.lyricsHide)  els.lyricsHide.addEventListener('click', () => {
+  // Re-query in case els was constructed before the DOM had the button
+  // (defensive — other buttons follow the same pattern and work, but if
+  // the script order ever changes this still binds).
+  const btn = els.btnLyricAdd || document.getElementById('midi-btn-add-lyric');
+  if (!btn) {
+    console.warn('[lyric] + Lyric button not found in DOM — wiring skipped');
+    return;
+  }
+  els.btnLyricAdd = btn;
+  btn.addEventListener('click', onLyricTap);
+  // Right-click anywhere on the button always opens the editor — escape
+  // hatch for re-editing lyrics that already exist.
+  btn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openLyricsModal('edit');
+  });
+  console.log('[lyric] + Lyric button wired');
+
+  if (els.lyricsHide) els.lyricsHide.addEventListener('click', () => {
     lyricsState.hiddenForSong = true;
     _hideOverlay();
   });
@@ -6421,6 +6438,11 @@ function setupLyrics() {
       b.addEventListener('click', closeLyricsModal));
     if (els.lyricsModalFetch) els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
     if (els.lyricsModalSave)  els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
+    if (els.lyricsModalPaste) els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
+    const sh = document.getElementById('lyrics-strip-headers');
+    const sb = document.getElementById('lyrics-strip-blanks');
+    if (sh) sh.addEventListener('click', stripLyricsHeaders);
+    if (sb) sb.addEventListener('click', stripLyricsBlanks);
   }
 }
 
@@ -6444,22 +6466,41 @@ function _normalizeLyrics(text) {
     .filter(s => s && !/^\[.*\]$/.test(s));  // strip blanks + [Verse 1] headers
 }
 
-// Main click handler. If no cached lyrics, opens the modal (fetch +
-// paste). Otherwise drops the next-cursor line as a lyric-line action
-// at the playhead, with the replace/append flag set by tap timing.
-async function onLyricTap() {
-  if (!currentSong || currentSong.type !== 'stems' || !automationCurrentBase) {
-    alert('Load a stems song first.');
+// Main click handler.
+//   - No song loaded                       → alert
+//   - Shift / Ctrl / Meta-click           → always open editor (alt route
+//                                            in addition to right-click).
+//   - Empty lyrics file                   → open editor so Bill can curate.
+//   - Lyrics file has content + cursor in → drop a lyric-line action at
+//                                            the playhead (the tap-along
+//                                            workflow Bill specified).
+//   - Cursor past last line               → offer to re-open the editor.
+async function onLyricTap(e) {
+  console.log('[lyric] tap', {
+    song: currentSong && currentSong.folderName,
+    cachedLines: lyricsState.cachedLines.length,
+    cursor: lyricsState.cursor,
+    mods: e ? { shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey } : null,
+  });
+  if (!currentSong) { alert('Load a song first.'); return; }
+  // Modifier click → editor (re-edit existing lyrics without right-click).
+  if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+    openLyricsModal('edit');
     return;
   }
+  // Empty lyrics file → editor to curate.
   if (!lyricsState.cachedLines.length) {
-    openLyricsModal();
+    openLyricsModal('initial');
     return;
   }
+  // Past last line → ask whether to re-open editor.
   if (lyricsState.cursor >= lyricsState.cachedLines.length) {
-    alert('All lyric lines have been placed. Open the editor to revise existing actions, or clear the timeline to start over.');
+    if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
+      openLyricsModal('edit');
+    }
     return;
   }
+  // Normal tap → drop a lyric-line action at the playhead.
   const now = Date.now();
   const playhead = currentPlayheadSec();
   const mode = (now - lyricsState.lastTapAt) <= LYRIC_TAP_BUNDLE_MS ? 'append' : 'replace';
@@ -6471,12 +6512,13 @@ async function onLyricTap() {
     mode,
     label: text.length > 30 ? text.slice(0, 28) + '…' : text,
   };
-  automationEvents.push(ev);
-  automationEvents.sort((a, b) => a.t - b.t);
-  renderAutomationLane();
-  markAutomationDirty();
-  // Fire immediately so Bill sees the result while he's tapping along.
-  try { fireAutomationEvent(ev); } catch (e) { console.warn('[lyric] live fire failed:', e); }
+  if (typeof automationEvents !== 'undefined') {
+    automationEvents.push(ev);
+    automationEvents.sort((a, b) => a.t - b.t);
+    if (typeof renderAutomationLane === 'function') renderAutomationLane();
+    if (typeof markAutomationDirty === 'function') markAutomationDirty();
+  }
+  try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
   lyricsState.cursor += 1;
   lyricsState.lastTapAt = now;
 }
@@ -6506,18 +6548,64 @@ function _hideOverlay() {
   lyricsState.overlayText = '';
 }
 
-// ─── Lyrics fetch / paste modal ──────────────────────────────────────────
-function openLyricsModal() {
-  if (!els.lyricsModal) return;
-  els.lyricsModalPaste.value = currentSong && currentSong.lyrics ? currentSong.lyrics : '';
-  els.lyricsModalStatus.textContent = currentSong && currentSong.lyrics
-    ? 'Lyrics already cached. Edit and Save to overwrite, or Fetch to re-pull from Genius.'
-    : 'No lyrics cached yet. Try Genius first; if it has no match, paste them from any lyrics site.';
+// ─── Lyrics editor modal (fetch / paste / curate) ────────────────────────
+// Opens in two modes — 'initial' is the first time for a song with no
+// cached lyrics; 'edit' is for revising what's already there. The body
+// is the same in both cases — only the status hint differs.
+function openLyricsModal(mode = 'initial') {
+  if (!els.lyricsModal) {
+    console.warn('[lyric] modal element missing');
+    return;
+  }
+  const songTitle = (currentSong && currentSong.title) || (currentSong && currentSong.folderName) || 'this song';
+  const titleEl = document.getElementById('lyrics-modal-title');
+  if (titleEl) titleEl.textContent = `Lyrics editor — ${songTitle}`;
+  els.lyricsModalPaste.value = (currentSong && currentSong.lyrics) || '';
+  if (mode === 'edit') {
+    els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. <strong>Fetch from Genius</strong> replaces the textarea content. Right-click the + Lyric button anytime to re-open this editor.`;
+  } else if (currentSong && currentSong.lyrics) {
+    els.lyricsModalStatus.innerHTML = `Lyrics already cached. Edit + <strong>Save</strong> to overwrite, or close to start tapping along.`;
+  } else {
+    els.lyricsModalStatus.innerHTML = `No lyrics file yet. Try <strong>Fetch from Genius</strong>, or paste from Google / AZLyrics / any lyrics site and edit so each line is on its own row.`;
+  }
   els.lyricsModalFetching.style.display = 'none';
   els.lyricsModal.style.display = 'flex';
+  _refreshLyricsLineCount();
+  setTimeout(() => { try { els.lyricsModalPaste.focus(); } catch (e) {} }, 50);
 }
 function closeLyricsModal() {
   if (els.lyricsModal) els.lyricsModal.style.display = 'none';
+}
+
+// Live counter — recomputes the displayed-line count as Bill types or
+// pastes. Drops blank lines and [Verse 1] / [Chorus] headers, same
+// rule used by the tap engine, so the count is honest.
+function _refreshLyricsLineCount() {
+  const count = _normalizeLyrics(els.lyricsModalPaste.value || '').length;
+  const counter = document.getElementById('lyrics-modal-count');
+  if (counter) {
+    counter.textContent = `${count} displayable line${count === 1 ? '' : 's'}`;
+    counter.classList.toggle('warn', count === 0);
+  }
+}
+
+// Helpers a user can click while curating pasted lyrics.
+function stripLyricsHeaders() {
+  if (!els.lyricsModalPaste) return;
+  els.lyricsModalPaste.value = els.lyricsModalPaste.value
+    .split(/\r?\n/)
+    .filter(l => !/^\s*\[[^\]]+\]\s*$/.test(l))
+    .join('\n');
+  _refreshLyricsLineCount();
+}
+function stripLyricsBlanks() {
+  if (!els.lyricsModalPaste) return;
+  els.lyricsModalPaste.value = els.lyricsModalPaste.value
+    .split(/\r?\n/)
+    .map(l => l.replace(/\s+$/, ''))
+    .filter(l => l.trim())
+    .join('\n');
+  _refreshLyricsLineCount();
 }
 async function onLyricsModalFetch() {
   const base = currentSong && currentSong.folderName;

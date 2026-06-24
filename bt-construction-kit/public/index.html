@@ -992,8 +992,13 @@
       <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
     </div>
     <div class="midi-row">
-      <label for="lyrics-modal-paste">Or paste lyrics (one line per line of song):</label>
-      <textarea id="lyrics-modal-paste" rows="14" style="width:100%; font-family:'Space Grotesk',sans-serif; font-size:13px; line-height:1.5;" placeholder="Paste from Genius, AZLyrics, Google, etc. Blank lines and [Verse 1] / [Chorus] headers will be stripped automatically."></textarea>
+      <label for="lyrics-modal-paste">Lyrics file — one line per displayed line:</label>
+      <textarea id="lyrics-modal-paste" rows="16" style="width:100%; font-family:'Space Grotesk',sans-serif; font-size:13px; line-height:1.5;" placeholder="Paste from Genius, AZLyrics, Google, etc. Edit so each line you want to display on screen is on its own row. Blank lines and [Verse 1] / [Chorus] headers are stripped automatically when you tap along."></textarea>
+    </div>
+    <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <span id="lyrics-modal-count" class="lyrics-line-count">0 displayable lines</span>
+      <button type="button" id="lyrics-strip-headers" class="btn-secondary" title="Remove [Verse 1] / [Chorus] / [Bridge] header lines from the textarea">Strip headers</button>
+      <button type="button" id="lyrics-strip-blanks" class="btn-secondary" title="Collapse blank lines">Strip blanks</button>
     </div>
     <div class="midi-modal-buttons">
       <button id="lyrics-modal-cancel" class="btn-secondary" data-close-lyrics-modal>Cancel</button>

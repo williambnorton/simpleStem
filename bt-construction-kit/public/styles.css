@@ -5638,6 +5638,26 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .midi-action-lyric:hover { background: rgba(155, 89, 182, 0.35); color: #fff; }
 .midi-event-marker.evt-lyric { background: #b16fd1; color: #fff; box-shadow: 0 0 4px rgba(177, 111, 209, 0.6); }
+/* Live counter inside the lyrics editor — shows how many displayed
+   lines the current textarea will produce after stripping blanks +
+   [Verse] headers. Yellow when zero so the operator knows Save is
+   pointless. */
+.lyrics-line-count {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #a3d9ff;
+  background: rgba(70, 130, 200, 0.18);
+  border: 1px solid rgba(70, 130, 200, 0.45);
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
+}
+.lyrics-line-count.warn {
+  color: #f4c430;
+  background: rgba(244, 196, 48, 0.16);
+  border-color: rgba(244, 196, 48, 0.45);
+}
 
 /* Lyrics overlay — full-canvas, semi-transparent. Sits z-index above the
    waveform but below the buffering spinner so a load mid-gig is still
