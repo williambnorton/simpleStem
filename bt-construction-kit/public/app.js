@@ -6407,6 +6407,7 @@ let lyricsState = {
   lastTapAt:    0,        // ms timestamp; used to decide replace vs append
   activeLines:  [],       // [{text, addedAt}] — what the overlay is showing
   playbackOff:  false,    // user toggled or clicked the overlay off
+  placedStack:  [],       // [eventRef, ...] in tap order — backs Backspace undo
 };
 // Mode is derived from how much of the cached lyrics file has been
 // placed. While the cursor is anywhere shy of the last cached line,
@@ -6445,8 +6446,20 @@ function setupLyrics() {
   // Tick that ages out lines on the playback overlay. Cheap enough to
   // run unconditionally; if no lines are alive the inner render no-ops.
   setInterval(_renderLyricDisplay, 250);
-  // (Escape → L0 was removed. Lines auto-fade after LYRIC_LINE_LIFETIME_MS
-  //  so an explicit clear action isn't needed.)
+  // Backspace → undo the most recent lyric tap. Pops the placed event
+  // off the stack, removes it from the lane, and rewinds the cursor by
+  // one so the next + Lyric press re-drops that same line. Ignored
+  // while focus is in an input/textarea so the editor's Backspace
+  // continues to delete characters normally.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Backspace') return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (e.target && e.target.isContentEditable)) return;
+    if (!currentSong || !automationCurrentBase) return;
+    if (!lyricsState.placedStack.length) return;
+    e.preventDefault();           // suppress the browser's "go back" gesture
+    undoLastLyricTap();
+  });
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
@@ -6472,6 +6485,7 @@ function refreshLyricsForNewSong() {
   lyricsState.lastTapAt = 0;
   lyricsState.activeLines = [];
   lyricsState.playbackOff = false;
+  lyricsState.placedStack = [];
   lyricsState.cachedLines = _normalizeLyrics(currentSong && currentSong.lyrics);
   _renderLyricDisplay();
 }
@@ -6567,10 +6581,45 @@ async function onLyricTap(e) {
     if (typeof renderAutomationLane === 'function') renderAutomationLane();
     if (typeof markAutomationDirty === 'function') markAutomationDirty();
   }
+  // Record this tap on the undo stack so Backspace can pop the last
+  // placement and rewind the cursor. Holds an event reference, not a
+  // copy, so we can match-and-remove from automationEvents on undo.
+  lyricsState.placedStack.push(ev);
   // Live-fire so the operator sees the placement land in the overlay.
   try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
   lyricsState.cursor += 1;
   lyricsState.lastTapAt = now;
+}
+
+// Undo the most recent lyric tap. Removes the event from the lane,
+// decrements the cursor so the next + Lyric press re-drops that same
+// line, and yanks the line from the active overlay if it's still alive.
+// Bound to Backspace; ignored while focus is in an input/textarea/select.
+function undoLastLyricTap() {
+  if (!lyricsState.placedStack.length) return false;
+  const ev = lyricsState.placedStack.pop();
+  // Remove the event from the lane.
+  if (typeof automationEvents !== 'undefined') {
+    const idx = automationEvents.indexOf(ev);
+    if (idx >= 0) automationEvents.splice(idx, 1);
+  }
+  // Back the cursor up so the next tap re-drops that line.
+  if (lyricsState.cursor > 0) lyricsState.cursor -= 1;
+  // If the event's line is still showing on the overlay, pull it back.
+  const text = (ev && ev.text) || '';
+  if (text) {
+    const i = lyricsState.activeLines.findIndex(l => l.text === text);
+    if (i >= 0) lyricsState.activeLines.splice(i, 1);
+  }
+  // Allow the next tap to be treated as a fresh "replace" if Bill
+  // pauses to undo and resume — don't accidentally append onto a
+  // partially-undone block.
+  lyricsState.lastTapAt = 0;
+  if (typeof renderAutomationLane === 'function') renderAutomationLane();
+  if (typeof markAutomationDirty === 'function') markAutomationDirty();
+  _renderLyricDisplay();
+  console.log('[lyric] undo: cursor now', lyricsState.cursor);
+  return true;
 }
 
 // Lyric-line dispatcher — called from fireAutomationEvent when an event
@@ -9921,6 +9970,7 @@ function setupMidiUI() {
       lyricsState.lastTapAt = 0;
       lyricsState.activeLines = [];
       lyricsState.playbackOff = false;
+      lyricsState.placedStack = [];
       if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
     }
     renderAutomationLane();
