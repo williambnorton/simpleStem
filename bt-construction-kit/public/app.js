@@ -6493,7 +6493,36 @@ async function onLyricTap(e) {
     openLyricsModal('edit');
     return;
   }
-  // Empty lyrics file → editor to curate.
+  // Self-heal: if the in-memory cache is empty but the song actually has
+  // lyrics on disk (refresh between save + next tap, or initial library
+  // load didn't include them yet), re-derive from currentSong.lyrics. If
+  // that's empty too, fall back to the API as a last resort so the very
+  // next click after Save Just Works.
+  if (!lyricsState.cachedLines.length && currentSong.lyrics) {
+    console.log('[lyric] self-heal: re-deriving cachedLines from currentSong.lyrics');
+    lyricsState.cachedLines = _normalizeLyrics(currentSong.lyrics);
+    lyricsState.cursor = 0;
+  }
+  if (!lyricsState.cachedLines.length) {
+    // One more shot: hit the library endpoint for the live row in case
+    // currentSong is a stale variant from before Save patched libraryCache.
+    try {
+      const r = await fetch('/api/library', { cache: 'no-store' });
+      if (r.ok) {
+        const data = await r.json();
+        const row = (data.songs || []).find(s =>
+          s.type === 'stems' && s.folderName === currentSong.folderName);
+        if (row && row.lyrics) {
+          console.log('[lyric] self-heal: pulled lyrics from /api/library');
+          currentSong.lyrics = row.lyrics;
+          currentSong.lyrics_chunks = row.lyrics_chunks;
+          lyricsState.cachedLines = _normalizeLyrics(row.lyrics);
+          lyricsState.cursor = 0;
+        }
+      }
+    } catch (er) { console.warn('[lyric] self-heal /api/library failed:', er); }
+  }
+  // Still empty after self-heal? → open the editor to curate.
   if (!lyricsState.cachedLines.length) {
     openLyricsModal('initial');
     return;
@@ -6573,9 +6602,13 @@ function _ensureLyricsModal() {
         <div class="midi-modal-card" style="max-width:580px;">
           <h3 id="lyrics-modal-title">Lyrics editor</h3>
           <div class="midi-modal-status" id="lyrics-modal-status"></div>
-          <div class="midi-row" style="display:flex; gap:8px; align-items:center;">
+          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <button id="lyrics-modal-fetch" class="btn-primary">Fetch from Genius</button>
             <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
+            <span style="opacity:0.55; font-size:11px;">— or search the web:</span>
+            <a id="lyrics-search-google"   class="btn-secondary" target="_blank" rel="noopener" title="Open a Google search for this song's lyrics in a new tab; copy from a result, switch back, paste below.">Google</a>
+            <a id="lyrics-search-azlyrics" class="btn-secondary" target="_blank" rel="noopener" title="Open AZLyrics search — straightforward plain-text lyrics on most hits.">AZLyrics</a>
+            <a id="lyrics-search-genius"   class="btn-secondary" target="_blank" rel="noopener" title="Open Genius search — section-marked lyrics ([Verse 1] / [Chorus]).">Genius site</a>
           </div>
           <div class="midi-row">
             <label for="lyrics-modal-paste">Lyrics file — one line per displayed line:</label>
@@ -6631,6 +6664,16 @@ function openLyricsModal(mode = 'initial') {
     els.lyricsModalStatus.innerHTML = `No lyrics file yet. Try <strong>Fetch from Genius</strong>, or paste from Google / AZLyrics / any lyrics site and edit so each line is on its own row.`;
   }
   els.lyricsModalFetching.style.display = 'none';
+  // Wire the Google / AZLyrics / Genius search links to point at THIS
+  // song's title + artist. target=_blank opens in a new tab so Bill can
+  // copy from there and switch back to paste here.
+  const q = encodeURIComponent(`${(currentSong && currentSong.title) || ''} ${(currentSong && currentSong.artist) || ''} lyrics`.trim());
+  const linkGoogle   = modal.querySelector('#lyrics-search-google');
+  const linkAz       = modal.querySelector('#lyrics-search-azlyrics');
+  const linkGenius   = modal.querySelector('#lyrics-search-genius');
+  if (linkGoogle)   linkGoogle.href   = `https://www.google.com/search?q=${q}`;
+  if (linkAz)       linkAz.href       = `https://search.azlyrics.com/search.php?q=${q}`;
+  if (linkGenius)   linkGenius.href   = `https://genius.com/search?q=${q}`;
   modal.style.display = 'flex';
   _refreshLyricsLineCount();
   setTimeout(() => { try { els.lyricsModalPaste.focus(); } catch (e) {} }, 50);
@@ -6704,14 +6747,18 @@ async function onLyricsModalSave() {
       body: JSON.stringify({ lyrics: text }),
     });
     const data = await r.json().catch(() => ({}));
+    console.log('[lyric] save response', { ok: r.ok, status: r.status, lyrics_len: (data.lyrics || '').length, chunkCount: data.chunkCount });
     if (!r.ok) { alert(`Save failed: ${data.error || r.statusText}`); return; }
-    currentSong.lyrics = data.lyrics;
-    currentSong.lyrics_chunks = data.lyrics_chunks;
-    lyricsState.cachedLines = _normalizeLyrics(data.lyrics);
+    // Use the response lyrics if the server returned them; otherwise fall
+    // back to what we just pasted (so a server-side response shape change
+    // can't silently empty cachedLines).
+    const persisted = (data && data.lyrics) || text;
+    currentSong.lyrics = persisted;
+    currentSong.lyrics_chunks = data.lyrics_chunks || null;
+    lyricsState.cachedLines = _normalizeLyrics(persisted);
     lyricsState.cursor = 0;
+    console.log('[lyric] cachedLines populated:', lyricsState.cachedLines.length, 'lines');
     closeLyricsModal();
-    // Don't drop an action automatically — give Bill the next tap to
-    // place the first line at his chosen moment.
   } finally {
     els.lyricsModalSave.disabled = false;
   }
