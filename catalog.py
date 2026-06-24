@@ -63,6 +63,24 @@ DRIVE_DUP_DIR_RE = re.compile(r' \(\d+\)$')
 PER_FOLDER_LOOP_RE = re.compile(r'^([a-z+]+)_loop(\d+)_(\d+)bars\.(m4a|wav)$', re.I)
 
 
+def _extract_video_id(source_url):
+    """Pull the YouTube video ID out of a source URL. Mirrors the JS
+    extractVideoId() in app.js so client-side ingest-tracker matching can
+    use an exact === comparison. Returns None if no recognizable id.
+    """
+    if not source_url:
+        return None
+    m = re.search(r'[?&]v=([\w-]{6,})', source_url)
+    if m: return m.group(1)
+    m = re.search(r'youtu\.be/([\w-]{6,})', source_url)
+    if m: return m.group(1)
+    m = re.search(r'/shorts/([\w-]{6,})', source_url, re.IGNORECASE)
+    if m: return m.group(1)
+    m = re.search(r'status/(\d{6,})', source_url)
+    if m: return 'tw' + m.group(1)
+    return None
+
+
 def default_root():
     env = os.environ.get('SIMPLE_STEM_ROOT')
     if env:
@@ -209,6 +227,16 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         'readiness':          meta.get('readiness'),
         'favorite':           bool(meta.get('favorite')),
         'favorited_at':       meta.get('favorited_at'),
+        # Source URL + extracted YouTube video ID — used by the portal's
+        # ingest tracker to recognize when a submitted URL has landed in
+        # the library. Without these the tracker can never trim a row.
+        'source_url':         meta.get('source_url'),
+        'videoId':            _extract_video_id(meta.get('source_url')),
+        # Lyrics — fetched at ingest by lyrics_fetch.py. lyrics_chunks is
+        # the section-split form ({label, text}[]); lyrics is the full
+        # flat text as a fallback. Both null when Genius had no match.
+        'lyrics':             meta.get('lyrics'),
+        'lyrics_chunks':      meta.get('lyrics_chunks'),
         'stems': stems,
         'cached': False,
         'logicProjectName': find_logicx(files_in_folder),

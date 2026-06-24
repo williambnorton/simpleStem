@@ -444,6 +444,14 @@ async function scanStems() {
     // shape stays stable whether or not the importer has run.
     let singerLead = null, singerBackup = null, singerGroupVocal = null;
     let bandRequired = null, drumPattern = null, readiness = null;
+    // Source URL + extracted YouTube video ID. The ingest tracker uses
+    // these to match a submitted URL against the library so the row can
+    // transition from "submitted" → "in library" when stems land. Without
+    // them the tracker has no way to recognize completion (folderName is
+    // a title/artist slug, never the video id).
+    let sourceUrl = null, videoId = null;
+    // Lyrics — fetched at ingest by lyrics_fetch.py on the Librarian.
+    let lyricsText = null, lyricsChunks = null;
     const metaJsonPath = path.join(folderPath, 'metadata.json');
     let usedMetaJson = false;
     if (fs.existsSync(metaJsonPath)) {
@@ -461,6 +469,18 @@ async function scanStems() {
         bandRequired = Array.isArray(mj.band_required) ? mj.band_required : null;
         drumPattern = mj.drum_pattern || null;
         readiness = mj.readiness || null;
+        sourceUrl = mj.source_url || null;
+        lyricsText = mj.lyrics || null;
+        lyricsChunks = Array.isArray(mj.lyrics_chunks) ? mj.lyrics_chunks : null;
+        if (sourceUrl) {
+          // Extract the YouTube video ID — the substring that uniquely
+          // identifies a video across watch?v=, youtu.be/, and /shorts/.
+          let m;
+          if      ((m = sourceUrl.match(/[?&]v=([\w-]{6,})/)))      videoId = m[1];
+          else if ((m = sourceUrl.match(/youtu\.be\/([\w-]{6,})/))) videoId = m[1];
+          else if ((m = sourceUrl.match(/\/shorts\/([\w-]{6,})/i))) videoId = m[1];
+          else if ((m = sourceUrl.match(/status\/(\d{6,})/)))       videoId = 'tw' + m[1];
+        }
         // Favorite flag + timestamp — surfaced so the client renders a
         // star next to the song name and the Favorites pseudo-gig can
         // aggregate them.
@@ -506,6 +526,15 @@ async function scanStems() {
       // Favorite — set via PUT /api/song/:base/favorite.
       favorite: (typeof favorite_meta !== 'undefined') ? favorite_meta : false,
       favorited_at: (typeof favorited_at_meta !== 'undefined') ? favorited_at_meta : null,
+      // Source URL + extracted videoId — used by the ingest tracker to
+      // recognize when a submitted URL has finished rendering.
+      source_url: sourceUrl,
+      videoId: videoId,
+      // Lyrics — fetched at ingest by lyrics_fetch.py (Librarian).
+      // Pass through for the show-lyrics action overlay; both fields
+      // null when Genius had no match.
+      lyrics: lyricsText,
+      lyrics_chunks: lyricsChunks,
       stems: stems,
       cached: isStemsFolderCached(folder),
       logicProjectName: logicProjectName,
