@@ -9913,6 +9913,16 @@ function setupMidiUI() {
     if (automationEvents.length === 0) return;
     if (!confirm(`Clear all ${automationEvents.length} action(s) on this song's timeline? (Section markers will be kept.)`)) return;
     automationEvents = [];
+    // Also rewind the lyrics tap-along state so the next + Lyric press
+    // starts from the first cached line. The cached lyrics file (text +
+    // chunks) stays — only the placement cursor + overlay state reset.
+    if (typeof lyricsState !== 'undefined') {
+      lyricsState.cursor = 0;
+      lyricsState.lastTapAt = 0;
+      lyricsState.activeLines = [];
+      lyricsState.playbackOff = false;
+      if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
+    }
     renderAutomationLane();
     markAutomationDirty();
     try {
