@@ -6399,7 +6399,7 @@ function applyMixerVolumes() {
 // Right-click (or Shift / Cmd / Ctrl-click) on the button at any time
 // re-opens the editor regardless of mode.
 const LYRIC_TAP_BUNDLE_MS = 2000;
-const LYRIC_LINE_LIFETIME_MS = 4500;   // each line on the playback overlay
+const LYRIC_LINE_LIFETIME_MS = 3500;   // each line auto-fades after ~3.5s
 let lyricsState = {
   fetching:     false,    // genius fetch in flight
   cachedLines:  [],       // flat array of next-to-drop lines for the song
@@ -6445,34 +6445,8 @@ function setupLyrics() {
   // Tick that ages out lines on the playback overlay. Cheap enough to
   // run unconditionally; if no lines are alive the inner render no-ops.
   setInterval(_renderLyricDisplay, 250);
-  // Escape key → drop an "L0" (clear-lyric) action at the playhead. On
-  // playback it kills whatever lyrics are visible on the mixer-console
-  // overlay (mode='replace' + empty text), and Bill can place an L0
-  // wherever he wants the lyrics to vanish between verses. Ignored
-  // while focus is inside an input/textarea so editing remains normal.
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    const tag = (e.target && e.target.tagName) || '';
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (e.target && e.target.isContentEditable)) return;
-    if (!currentSong) return;
-    if (!automationCurrentBase) return;
-    const playhead = currentPlayheadSec();
-    const ev = {
-      t: Math.round(playhead * 1000) / 1000,
-      type: 'lyric-line',
-      text: '',                  // empty body → overlay clears on fire
-      mode: 'replace',
-      label: 'L0 clear',
-    };
-    if (typeof automationEvents !== 'undefined') {
-      automationEvents.push(ev);
-      automationEvents.sort((a, b) => a.t - b.t);
-      if (typeof renderAutomationLane === 'function') renderAutomationLane();
-      if (typeof markAutomationDirty === 'function') markAutomationDirty();
-    }
-    try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] L0 live fire failed:', er); }
-    console.log('[lyric] L0 placed at', playhead.toFixed(2));
-  });
+  // (Escape → L0 was removed. Lines auto-fade after LYRIC_LINE_LIFETIME_MS
+  //  so an explicit clear action isn't needed.)
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
@@ -6605,15 +6579,12 @@ async function onLyricTap(e) {
 // render tick ages it out after LYRIC_LINE_LIFETIME_MS.
 function fireLyricLine(e) {
   const text = e.text || '';
+  // No-op for empty-text events (legacy L0 actions or any future regression
+  // that strips text). The auto-fade after LYRIC_LINE_LIFETIME_MS handles
+  // clearing — we don't want a corrupt event to silently wipe what's on
+  // screen.
+  if (!text.trim()) return;
   const now = Date.now();
-  // L0 clear-action: empty text + replace mode → wipe the overlay.
-  // This is Bill's Escape-key drop; on playback it makes the overlay
-  // disappear at that exact timeline position until the next lyric fires.
-  if (e.mode === 'replace' && !text.trim()) {
-    lyricsState.activeLines = [];
-    _renderLyricDisplay();
-    return;
-  }
   if (e.mode === 'replace') {
     lyricsState.activeLines = [{ text, addedAt: now }];
   } else {
@@ -8142,10 +8113,7 @@ function eventMarkerLabel(e) {
     return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
   }
   if (e.type === 'skip-section') return '⏩';
-  if (e.type === 'lyric-line') {
-    if (!e.text || !String(e.text).trim()) return 'L0';      // Escape-clear
-    return e.mode === 'append' ? 'L+' : 'L';
-  }
+  if (e.type === 'lyric-line') return e.mode === 'append' ? 'L+' : 'L';
   const ch = e.channel || 1;
   if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
   if (e.type === 'cc')       return `M${ch}C${e.controller ?? '?'}`;
@@ -8180,10 +8148,7 @@ function eventSummary(e) {
   if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
   if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
   if (e.type === 'skip-section') return 'SKIP to next section';
-  if (e.type === 'lyric-line') {
-    if (!e.text || !String(e.text).trim()) return 'L0 — clear lyric overlay';
-    return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
-  }
+  if (e.type === 'lyric-line') return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
   return e.type || 'event';
 }
 
