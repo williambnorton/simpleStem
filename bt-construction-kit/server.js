@@ -3067,6 +3067,38 @@ app.post('/api/song/:base/fetch-lyrics', (req, res) => {
   child.on('error', e => res.status(500).json({ error: `spawn failed: ${e.message}` }));
 });
 
+// Read the current lyrics for ONE song straight from metadata.json on
+// disk. Bypasses libraryCache / CATALOG.json — those rehydrate from
+// catalog.py output which lags whenever the Performer edits a song
+// locally. When the client's currentSong.lyrics is missing but the
+// file actually has them, this endpoint serves as the self-heal path
+// so + Lyric stops launching the editor.
+app.get('/api/song/:base/lyrics', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
+    // While we're here, patch libraryCache in place so subsequent
+    // GET /api/library responses include lyrics for this song.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) { row.lyrics = meta.lyrics || null; row.lyrics_chunks = meta.lyrics_chunks || null; }
+      }
+    } catch (e) {}
+    res.json({
+      ok: true,
+      lyrics: meta.lyrics || null,
+      lyrics_chunks: Array.isArray(meta.lyrics_chunks) ? meta.lyrics_chunks : null,
+      source: meta.lyrics_source || null,
+      fetchedAt: meta.lyrics_fetched_at || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Manual-paste lyrics. Saves whatever the operator pasted from Google /
 // AZLyrics / a tab site directly into the song's metadata.json so the
 // next + Lyric tap can use them. No Genius involvement; this is the

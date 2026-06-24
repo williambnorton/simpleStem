@@ -6488,6 +6488,28 @@ function refreshLyricsForNewSong() {
   lyricsState.placedStack = [];
   lyricsState.cachedLines = _normalizeLyrics(currentSong && currentSong.lyrics);
   _renderLyricDisplay();
+  // Background: if the library row didn't have lyrics, ask the server
+  // to read metadata.json fresh. The library is sourced from CATALOG.json
+  // which lags whenever lyrics get saved on the Performer, so we always
+  // re-confirm against disk for the currently-loaded song. Fire-and-
+  // forget; updates state when it lands.
+  if (currentSong && currentSong.folderName && !(currentSong.lyrics && currentSong.lyrics.trim())) {
+    fetch(`/api/song/${encodeURIComponent(currentSong.folderName)}/lyrics`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d || !d.lyrics) return;
+        if (!currentSong || currentSong.folderName !== d.folderName && !currentSong.lyrics) {
+          // Defensive: song may have changed during the fetch. Only apply
+          // if the operator is still on the same song.
+        }
+        currentSong.lyrics = d.lyrics;
+        currentSong.lyrics_chunks = d.lyrics_chunks;
+        lyricsState.cachedLines = _normalizeLyrics(d.lyrics);
+        _renderLyricDisplay();
+        console.log('[lyric] prefetched lyrics from disk for', currentSong.folderName);
+      })
+      .catch(() => { /* network/404; silent */ });
+  }
 }
 
 function _normalizeLyrics(text) {
@@ -6530,23 +6552,24 @@ async function onLyricTap(e) {
     lyricsState.cursor = 0;
   }
   if (!lyricsState.cachedLines.length) {
-    // One more shot: hit the library endpoint for the live row in case
-    // currentSong is a stale variant from before Save patched libraryCache.
+    // Read straight from metadata.json on disk. The library row may be
+    // stale because CATALOG.json (the canonical index) hasn't been
+    // rebuilt since the lyrics were saved — catalog.py runs daily on
+    // the Librarian, so freshly-saved lyrics aren't in the catalog until
+    // the next rebuild. The per-song endpoint bypasses that.
     try {
-      const r = await fetch('/api/library', { cache: 'no-store' });
+      const r = await fetch(`/api/song/${encodeURIComponent(currentSong.folderName)}/lyrics`, { cache: 'no-store' });
       if (r.ok) {
         const data = await r.json();
-        const row = (data.songs || []).find(s =>
-          s.type === 'stems' && s.folderName === currentSong.folderName);
-        if (row && row.lyrics) {
-          console.log('[lyric] self-heal: pulled lyrics from /api/library');
-          currentSong.lyrics = row.lyrics;
-          currentSong.lyrics_chunks = row.lyrics_chunks;
-          lyricsState.cachedLines = _normalizeLyrics(row.lyrics);
+        if (data && data.lyrics) {
+          console.log('[lyric] self-heal: pulled lyrics from disk');
+          currentSong.lyrics = data.lyrics;
+          currentSong.lyrics_chunks = data.lyrics_chunks;
+          lyricsState.cachedLines = _normalizeLyrics(data.lyrics);
           lyricsState.cursor = 0;
         }
       }
-    } catch (er) { console.warn('[lyric] self-heal /api/library failed:', er); }
+    } catch (er) { console.warn('[lyric] self-heal /api/song/.../lyrics failed:', er); }
   }
   // Still empty after self-heal? → open the editor to curate.
   if (!lyricsState.cachedLines.length) {
