@@ -4789,12 +4789,13 @@ function loadSong(song, opts) {
   if (_songBaseForRestore) {
     try { localStorage.setItem(LAST_SONG_BASE_KEY, _songBaseForRestore); } catch (e) {}
   }
+  // Lyrics MUST be populated before the automation auto-repair runs,
+  // because the repair re-inflates truncated labels by matching them
+  // against the cached lyric lines. Reverse from the old order.
+  if (typeof refreshLyricsForNewSong === 'function') refreshLyricsForNewSong();
   // Load this song's MIDI automation so the lane shows its markers and the
   // dispatcher fires events during playback.
   loadAutomationForSong(_songBaseForRestore);
-  // Reset per-song lyrics state (cursor, overlay text, hidden flag) and
-  // re-seed cachedLines from the new song's metadata.json passthrough.
-  if (typeof refreshLyricsForNewSong === 'function') refreshLyricsForNewSong();
   // Kick off server-side precache so subsequent plays of this song are
   // hot. Fire-and-forget; the audio elements still drive the immediate
   // first-play stream. This dramatically reduces the cold-fetch wait for
@@ -6515,6 +6516,28 @@ function refreshLyricsForNewSong() {
         lyricsState.cachedLines = _normalizeLyrics(d.lyrics);
         _renderLyricDisplay();
         console.log('[lyric] prefetched lyrics from disk for', currentSong.folderName);
+        // Now that cachedLines is populated, re-run the truncation-repair
+        // pass on any lyric-line actions already loaded from disk. Catches
+        // the race where loadAutomationForSong finished before the lyrics
+        // prefetch did.
+        if (Array.isArray(automationEvents) && automationEvents.length) {
+          let healed = 0;
+          for (const e of automationEvents) {
+            if (e.type !== 'lyric-line' || !(e.text || '').trim()) continue;
+            const prefix = e.text.replace(/[……]+$/, '').trim();
+            if (prefix.length >= 60) continue;
+            const match = lyricsState.cachedLines.find(line => line.startsWith(prefix));
+            if (match && match.length > e.text.length) {
+              e.text = match;
+              healed++;
+            }
+          }
+          if (healed > 0) {
+            console.log(`[lyric] post-prefetch re-inflated ${healed} truncated action(s)`);
+            renderAutomationLane();
+            markAutomationDirty();
+          }
+        }
       })
       .catch(() => { /* network/404; silent */ });
   }
@@ -8032,24 +8055,48 @@ async function loadAutomationForSong(songBase) {
     // ── Lyric-line auto-repair ──────────────────────────────────────────
     // Songs saved before the server fix had `text` and `mode` stripped by
     // the whitelist. The label field WAS preserved (truncated to 28-30
-    // chars), so we can resurrect a useful approximation of each line by
-    // copying label → text. The repaired events get marked dirty so the
-    // next SAVE persists the recovered text and the corruption disappears
-    // for good. Only fires when text is empty AND label is non-empty —
-    // freshly-saved events with full text round-trip untouched.
-    let repaired = 0;
+    // chars + ellipsis), so we can resurrect each line in two passes:
+    //   1. Copy label → text (truncated form).
+    //   2. If the loaded song has cached lyrics on disk, find the FULL
+    //      cached line that starts with the truncated prefix and replace
+    //      `text` with the complete line. This restores lyrics that were
+    //      cut at the 28-char label cap.
+    // Repaired events get marked dirty so the next SAVE persists the
+    // recovered text and the corruption clears for good. Freshly-saved
+    // events with full text round-trip untouched.
+    const cached = (lyricsState && Array.isArray(lyricsState.cachedLines)) ? lyricsState.cachedLines : [];
+    let repairedFromLabel = 0, repairedFromCache = 0;
     for (const e of events) {
-      if (e.type === 'lyric-line' && !((e.text || '').trim()) && (e.label || '').trim()) {
-        e.text = e.label.replace(/[……]+$/, '').trim();   // strip ellipsis
+      if (e.type !== 'lyric-line') continue;
+      const text = (e.text || '').trim();
+      const label = (e.label || '').trim();
+      // Pass 1: text empty + label populated → take the label.
+      if (!text && label) {
+        e.text = label.replace(/[……]+$/, '').trim();
         if (!e.mode) e.mode = 'replace';
-        repaired++;
+        repairedFromLabel++;
+      }
+      // Pass 2: text looks truncated (matches a cached line as prefix).
+      // Reinflate to the full line. Runs on both freshly-restored events
+      // AND on previously-saved-but-truncated events.
+      if (cached.length && e.text) {
+        const prefix = e.text.replace(/[……]+$/, '').trim();
+        if (prefix.length < 60) {                     // skip likely-complete lines
+          const match = cached.find(line => line.startsWith(prefix));
+          if (match && match !== e.text && match.length > e.text.length) {
+            e.text = match;
+            repairedFromCache++;
+          }
+        }
       }
     }
-    if (repaired > 0) {
-      console.log(`[lyric] auto-repaired ${repaired} legacy lyric-line action(s) using label → text`);
+    if (repairedFromLabel || repairedFromCache) {
+      console.log(`[lyric] auto-repair: ${repairedFromLabel} from label, ${repairedFromCache} reinflated from lyrics cache`);
     }
     automationEvents = events.map(e => ({ ...e, fired: false }));
-    if (repaired > 0 && typeof markAutomationDirty === 'function') markAutomationDirty();
+    if ((repairedFromLabel || repairedFromCache) && typeof markAutomationDirty === 'function') {
+      markAutomationDirty();
+    }
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
