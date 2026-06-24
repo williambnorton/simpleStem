@@ -6606,10 +6606,8 @@ function _ensureLyricsModal() {
             <button id="lyrics-modal-fetch" class="btn-primary">Fetch from Genius</button>
             <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
             <span style="opacity:0.55; font-size:11px;">— or search the web:</span>
-            <a id="lyrics-search-lyrics-google" class="btn-secondary" target="_blank" rel="noopener" title='Google search: "Lyrics <title> <artist>" — opens in a new tab.'>🔎 Lyrics</a>
-            <a id="lyrics-search-chords-google" class="btn-secondary" target="_blank" rel="noopener" title='Google search: "Chords <title> <artist>" — opens in a new tab. Handy when the lyrics page also shows chord positions.'>🎸 Chords</a>
-            <a id="lyrics-search-azlyrics"      class="btn-secondary" target="_blank" rel="noopener" title="Open AZLyrics search — straightforward plain-text lyrics on most hits.">AZLyrics</a>
-            <a id="lyrics-search-genius"        class="btn-secondary" target="_blank" rel="noopener" title="Open Genius search — section-marked lyrics ([Verse 1] / [Chorus]).">Genius site</a>
+            <a id="lyrics-search-google-lyrics"   class="btn-secondary" target="_blank" rel="noopener" title='Google: "Lyrics <title> <artist>" — opens in a new tab.'>Google Lyrics</a>
+            <a id="lyrics-search-ultimate-chords" class="btn-secondary" target="_blank" rel="noopener" title="Ultimate Guitar search — chord charts and tabs for this song.">Ultimate Chords</a>
           </div>
           <div class="midi-row">
             <label for="lyrics-modal-paste">Lyrics file — one line per displayed line:</label>
@@ -6667,23 +6665,17 @@ function openLyricsModal(mode = 'initial') {
   els.lyricsModalFetching.style.display = 'none';
   // Wire the search links to point at THIS song's title + artist.
   // target=_blank opens each in a new tab so Bill can copy from there
-  // and switch back to paste into the textarea below. The two Google
-  // queries use the "Lyrics <title> <artist>" / "Chords <title> <artist>"
-  // order Bill specifically asked for (different from "<title> <artist>
-  // lyrics" which Google sometimes interprets as the song name).
+  // and switch back to paste into the textarea below.
+  //  - Google Lyrics: search query "Lyrics <title> <artist>"
+  //  - Ultimate Chords: Ultimate Guitar's title-search endpoint
   const title  = (currentSong && currentSong.title)  || '';
   const artist = (currentSong && currentSong.artist) || '';
-  const qLyrics = encodeURIComponent(`Lyrics ${title} ${artist}`.trim());
-  const qChords = encodeURIComponent(`Chords ${title} ${artist}`.trim());
-  const qPlain  = encodeURIComponent(`${title} ${artist} lyrics`.trim());
-  const linkLyricsGoogle = modal.querySelector('#lyrics-search-lyrics-google');
-  const linkChordsGoogle = modal.querySelector('#lyrics-search-chords-google');
-  const linkAz       = modal.querySelector('#lyrics-search-azlyrics');
-  const linkGenius   = modal.querySelector('#lyrics-search-genius');
-  if (linkLyricsGoogle) linkLyricsGoogle.href = `https://www.google.com/search?q=${qLyrics}`;
-  if (linkChordsGoogle) linkChordsGoogle.href = `https://www.google.com/search?q=${qChords}`;
-  if (linkAz)       linkAz.href       = `https://search.azlyrics.com/search.php?q=${qPlain}`;
-  if (linkGenius)   linkGenius.href   = `https://genius.com/search?q=${qPlain}`;
+  const qGoogleLyrics = encodeURIComponent(`Lyrics ${title} ${artist}`.trim());
+  const qUG           = encodeURIComponent(`${title} ${artist}`.trim());
+  const linkGoogle = modal.querySelector('#lyrics-search-google-lyrics');
+  const linkUG     = modal.querySelector('#lyrics-search-ultimate-chords');
+  if (linkGoogle) linkGoogle.href = `https://www.google.com/search?q=${qGoogleLyrics}`;
+  if (linkUG)     linkUG.href     = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${qUG}`;
   modal.style.display = 'flex';
   _refreshLyricsLineCount();
   setTimeout(() => { try { els.lyricsModalPaste.focus(); } catch (e) {} }, 50);
