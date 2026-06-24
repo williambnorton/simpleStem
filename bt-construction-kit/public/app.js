@@ -6428,10 +6428,18 @@ function lyricsAllPlaced() {
 // Both left-click and right-click are delegated; the right-click skips
 // the tap and goes straight to the editor.
 document.addEventListener('click', (e) => {
-  const btn = e.target && e.target.closest && e.target.closest('#midi-btn-add-lyric');
-  if (!btn) return;
-  console.log('[lyric] delegated click hit');
-  onLyricTap(e);
+  if (!e.target || !e.target.closest) return;
+  if (e.target.closest('#midi-btn-add-lyric')) {
+    console.log('[lyric] delegated click hit (+ Lyric)');
+    onLyricTap(e);
+    return;
+  }
+  if (e.target.closest('#midi-btn-lyrics-show')) {
+    console.log('[lyric] delegated click hit (Show/Hide)');
+    lyricsState.playbackOff = !lyricsState.playbackOff;
+    _renderLyricDisplay();
+    return;
+  }
 }, false);
 document.addEventListener('contextmenu', (e) => {
   const btn = e.target && e.target.closest && e.target.closest('#midi-btn-add-lyric');
@@ -6577,14 +6585,12 @@ async function onLyricTap(e) {
     return;
   }
 
-  // PLAYBACK MODE: every cached line has already been placed → toggle
-  // the overlay show/hide. Bill's "Show Lyrics" / "Hide Lyrics" state.
-  // To add MORE lines after this point: right-click → re-open editor →
-  // edit + Save (resets cursor) → tap again.
-  if (lyricsAllPlaced()) {
-    lyricsState.playbackOff = !lyricsState.playbackOff;
-    console.log('[lyric] playback overlay toggled', { off: lyricsState.playbackOff });
-    _renderLyricDisplay();
+  // + Lyric is ALWAYS placement now. Show/Hide is a separate button.
+  // Past the last cached line → prompt to re-open the editor.
+  if (lyricsState.cursor >= lyricsState.cachedLines.length) {
+    if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
+      openLyricsModal('edit');
+    }
     return;
   }
   const now = Date.now();
@@ -6655,7 +6661,11 @@ function fireLyricLine(e) {
   // that strips text). The auto-fade after LYRIC_LINE_LIFETIME_MS handles
   // clearing — we don't want a corrupt event to silently wipe what's on
   // screen.
-  if (!text.trim()) return;
+  if (!text.trim()) {
+    console.log('[lyric] fire: skip (empty text — likely a stripped/legacy action)', { t: e.t });
+    return;
+  }
+  console.log('[lyric] fire:', { t: e.t, mode: e.mode, text: text.slice(0, 40), playbackOff: lyricsState.playbackOff });
   const now = Date.now();
   if (e.mode === 'replace') {
     lyricsState.activeLines = [{ text, addedAt: now }];
@@ -6672,36 +6682,37 @@ function fireLyricLine(e) {
 // Called from _renderLyricDisplay so it auto-runs every 250ms tick AND
 // on every state change without needing to remember to call it.
 function _refreshLyricButtonLabel() {
+  // + Lyric button — always placement mode; label shows remaining
+  // cached-line count.
   const btn = document.getElementById('midi-btn-add-lyric');
-  if (!btn) return;
-  // Treat currentSong.lyrics as "we have a file" even if cachedLines
-  // hasn't been derived yet — avoids a flash of "Fetch Lyrics" while
-  // self-heal is in flight.
-  const hasLyrics = lyricsState.cachedLines.length > 0 || !!(currentSong && currentSong.lyrics);
-  btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
-  if (!currentSong) {
-    btn.textContent = '+ Lyric';
-    btn.classList.add('mode-place');
-    return;
+  if (btn) {
+    btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
+    const hasLyrics = lyricsState.cachedLines.length > 0 || !!(currentSong && currentSong.lyrics);
+    if (!currentSong) {
+      btn.textContent = '+ Lyric';
+      btn.classList.add('mode-place');
+    } else if (!hasLyrics) {
+      btn.textContent = 'Fetch Lyrics';
+      btn.classList.add('mode-fetch');
+    } else {
+      const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsState.cursor);
+      btn.textContent = `+ Lyric (${remaining})`;
+      btn.classList.add('mode-place');
+    }
   }
-  if (!hasLyrics) {
-    btn.textContent = 'Fetch Lyrics';
-    btn.classList.add('mode-fetch');
-    return;
+  // Show/Hide Lyrics — separate button. Only visible when this song has
+  // lyric actions placed (otherwise nothing to show). Label flips with
+  // playbackOff state.
+  const showBtn = document.getElementById('midi-btn-lyrics-show');
+  if (showBtn) {
+    const hasActions = lyricsHasPlacedActions();
+    if (hasActions) {
+      showBtn.style.display = '';
+      showBtn.textContent = lyricsState.playbackOff ? 'Show Lyrics' : 'Hide Lyrics';
+    } else {
+      showBtn.style.display = 'none';
+    }
   }
-  // Show/Hide toggle ONLY after every cached line has been placed; until
-  // then keep dropping lines on each tap (Bill's tap-along workflow).
-  if (lyricsAllPlaced()) {
-    const showing = lyricsState.activeLines.length > 0 && !lyricsState.playbackOff;
-    btn.textContent = showing ? 'Hide Lyrics' : 'Show Lyrics';
-    btn.classList.add('mode-show');
-    return;
-  }
-  // Placement mode — show remaining-count so Bill knows how many taps
-  // are left before the button flips to Show/Hide.
-  const remaining = lyricsState.cachedLines.length - lyricsState.cursor;
-  btn.textContent = `+ Lyric (${remaining})`;
-  btn.classList.add('mode-place');
 }
 
 // Build the overlay (if missing) and paint the current lyrics state.

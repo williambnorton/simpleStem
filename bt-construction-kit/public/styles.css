@@ -5652,6 +5652,12 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   color: #b9f0cd;
 }
 .midi-action-lyric.mode-show:hover { background: rgba(46, 204, 113, 0.34); color: #fff; }
+.midi-action-lyric-show {
+  background: rgba(46, 204, 113, 0.18);
+  border: 1px solid rgba(46, 204, 113, 0.55);
+  color: #b9f0cd;
+}
+.midi-action-lyric-show:hover { background: rgba(46, 204, 113, 0.34); color: #fff; }
 .midi-event-marker.evt-lyric { background: #b16fd1; color: #fff; box-shadow: 0 0 4px rgba(177, 111, 209, 0.6); }
 /* Live counter inside the lyrics editor — shows how many displayed
    lines the current textarea will produce after stripping blanks +
