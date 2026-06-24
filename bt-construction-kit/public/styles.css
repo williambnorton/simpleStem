@@ -2128,6 +2128,50 @@ select {
 }
 .buffering-skip:hover { filter: brightness(1.1); }
 
+/* Song-failed marker — applied to library rows AND gig-sidebar setlist
+   rows when a song's stems couldn't load. Visible but unmistakably dead
+   so you can SEE which rows would hang the player if clicked. */
+.song-row.song-failed, .sls-row.song-failed {
+  opacity: 0.45;
+  background: rgba(220, 60, 60, 0.06);
+}
+.song-row.song-failed .song-title-cell,
+.song-row.song-failed .col-title,
+.sls-row.song-failed .sls-title {
+  text-decoration: line-through;
+  color: rgba(255, 130, 130, 0.85);
+}
+.song-row.song-failed::before,
+.sls-row.song-failed::before {
+  content: '⚠';
+  color: #ff8a8a;
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+/* In-spinner song-load error — replaces the spinner content with a
+   clear, dismissible message when a load fails (404, decoder error,
+   timeout with zero loaded stems). */
+.song-load-error {
+  display: flex; gap: 12px; align-items: flex-start; max-width: 88%;
+  text-align: left;
+}
+.song-load-error-icon {
+  font-size: 22px;
+  color: #ff8a8a;
+  line-height: 1;
+}
+.song-load-error-title {
+  font-weight: 700; color: #ff8a8a;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.song-load-error-body {
+  font-size: 12px;
+  opacity: 0.92;
+  line-height: 1.4;
+}
+
 .spinner {
   width: 18px;
   height: 18px;

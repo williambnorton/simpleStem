@@ -1260,6 +1260,9 @@ function renderOneGigSetlist(sl, idx) {
     const row = document.createElement('div');
     row.className = 'sls-row';
     if (isPlayingThisSetlist && gigPlayingSongIdx === songIdx) row.classList.add('playing');
+    // Grey out failed songs so the operator can SEE which setlist entries
+    // would hang the player if clicked. Matches the library row treatment.
+    if (s.song_base && isSongFailed(s.song_base)) row.classList.add('song-failed');
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
@@ -2807,7 +2810,12 @@ function renderLibrary() {
     // hides these rows entirely so the user can't accidentally click a song
     // that would stall mid-song trying to stream from Drive.
     const hasCachedVariant = merged.variants.some(v => v.cached);
-    row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'}`;
+    // Failed rows are flagged via the localStorage failed-songs list (see
+    // watchBuffering's onFailure path). Match against any of the song's
+    // variant folderNames — usually the stems variant — so the row greys
+    // out whether the user opened it as STEMS or as an M4A variant.
+    const isFailed = merged.variants.some(v => isSongFailed(v.folderName));
+    row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'} ${isFailed ? 'song-failed' : ''}`;
     row.dataset.id = merged.id;
 
     // Library row checkbox doubles as both:
@@ -4488,6 +4496,54 @@ function renderRoutingGrids() {
 function renderRoutingButtons() { renderRoutingGrids(); }
 
 // Load song into the mixer
+// ── Failed-song tracking ──────────────────────────────────────────────────
+// Persists which song bases failed to load (404'd stems, missing files,
+// decoder rejection). Used by the library + gig sidebar to grey out
+// known-bad rows so the operator never accidentally picks one mid-gig.
+// Clears on a successful subsequent load — server-side recovery (e.g.
+// re-cache, files restored) propagates the moment the file plays cleanly.
+const FAILED_SONGS_KEY = 'simpleStem.failedSongs.v1';
+let failedSongBases = (() => {
+  try {
+    const raw = localStorage.getItem(FAILED_SONGS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (e) { return new Set(); }
+})();
+function persistFailedSongs() {
+  try { localStorage.setItem(FAILED_SONGS_KEY, JSON.stringify([...failedSongBases])); } catch (e) {}
+}
+function markSongFailed(base) {
+  if (!base) return;
+  failedSongBases.add(base);
+  persistFailedSongs();
+}
+function clearSongFailed(base) {
+  if (!base) return;
+  if (failedSongBases.delete(base)) persistFailedSongs();
+}
+function isSongFailed(base) { return !!base && failedSongBases.has(base); }
+
+// Shown in the player area when a song's stems can't be loaded. Replaces
+// the buffering spinner content with a clear, dismissible error so the
+// operator can move on to the next song instead of staring at a hung wheel.
+function showSongLoadError(base, info) {
+  const box = document.getElementById('player-buffering-indicator');
+  if (!box) return;
+  const reason = (info && (info.message || info.code)) ? `(${escapeHtml(String(info.message || info.code))})` : '';
+  box.innerHTML = `
+    <div class="song-load-error">
+      <div class="song-load-error-icon">⚠</div>
+      <div class="song-load-error-body">
+        <div class="song-load-error-title">Song files missing</div>
+        <div>"<strong>${escapeHtml(base || 'unknown')}</strong>" can't play ${reason}. It's now greyed out in the library so you can delete it. Pick another song to keep going.</div>
+      </div>
+      <button type="button" class="buffering-skip"
+              onclick="document.getElementById('player-buffering-indicator').style.display='none'">Dismiss</button>
+    </div>
+  `;
+  box.style.display = 'flex';
+}
+
 // ── Buffering watchdog ────────────────────────────────────────────────────
 // Replaces the bare-inline "wait for every stem's oncanplaythrough" pattern
 // that used to live in loadSong / outro / loop-restart. Bill's gig nightmare
@@ -4507,9 +4563,30 @@ function renderRoutingButtons() { renderRoutingGrids(); }
 // previous one's timers so a fast song-switch doesn't leak old captions
 // or fire stale callbacks.
 let _bufferWatchCancel = null;
-function watchBuffering({ activeElements, channels, onReady, softWarnMs = 8000, hardTimeoutMs = 15000 }) {
+function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 8000, hardTimeoutMs = 15000 }) {
   if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
+  // Zero-stem edge case: the song's stems object had no usable sources,
+  // so there's literally nothing to wait for. Don't show the spinner —
+  // call onFailure immediately so the caller can surface the error and
+  // grey out the song. Prevents a 15-second wait for an empty array.
+  if (!activeElements.length) {
+    if (onFailure) onFailure({ code: 'no-stems', message: 'song has no playable stems' });
+    return;
+  }
+
   els.buffering.style.display = 'flex';
+  // Reset the box contents in case a previous error left a custom message
+  // there. Without this the spinner re-appears with stale error text.
+  els.buffering.innerHTML = `
+    <div class="spinner"></div>
+    <span>Buffering Audio...</span>
+    <div id="buffering-caption" class="spinner-caption">Waiting on audio stream…</div>
+    <button type="button" class="buffering-skip"
+            onclick="window.__bufferingPlayAnyway && window.__bufferingPlayAnyway()"
+            title="Stop waiting; start with whatever has buffered.">Play Anyway</button>
+  `;
+  els.bufferingCaption = document.getElementById('buffering-caption');
+
   const loaded = new Set();
   let finished = false;
   const STEM_LETTER = { vocals:'V', drums:'D', bass:'B', guitar:'G', piano:'P', other:'O' };
@@ -4531,9 +4608,28 @@ function watchBuffering({ activeElements, channels, onReady, softWarnMs = 8000, 
     clearTimeout(hardTimer);
     clearInterval(refreshTimer);
     els.buffering.style.display = 'none';
-    activeElements.forEach(ae => { try { ae.oncanplaythrough = null; } catch (e) {} });
+    activeElements.forEach(ae => {
+      try { ae.oncanplaythrough = null; } catch (e) {}
+      try { ae.onerror = null; } catch (e) {}
+    });
     if (_bufferWatchCancel === cancel) _bufferWatchCancel = null;
     try { onReady && onReady(reason); } catch (e) { console.warn('[buffering] onReady failed:', e); }
+  };
+  const fail = (info) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(softTimer);
+    clearTimeout(hardTimer);
+    clearInterval(refreshTimer);
+    activeElements.forEach(ae => {
+      try { ae.oncanplaythrough = null; } catch (e) {}
+      try { ae.onerror = null; } catch (e) {}
+    });
+    if (_bufferWatchCancel === cancel) _bufferWatchCancel = null;
+    // We DON'T hide the buffering box — the failure UI lives in the same
+    // box. Caller's onFailure should call showSongLoadError() to replace
+    // the spinner content with a clear error message.
+    try { onFailure && onFailure(info); } catch (e) { console.warn('[buffering] onFailure failed:', e); }
   };
   const cancel = () => { if (!finished) { finished = true; clearTimeout(softTimer); clearTimeout(hardTimer); clearInterval(refreshTimer); } };
 
@@ -4546,15 +4642,31 @@ function watchBuffering({ activeElements, channels, onReady, softWarnMs = 8000, 
       renderCaption();
       if (loaded.size === activeElements.length) finish('ready');
     };
+    // The HTMLMediaElement error event fires on 404, CORS reject, decoder
+    // failure, etc. If ANY stem errors we treat the whole song as failed
+    // — partial-stem playback would be misleading.
+    ae.onerror = () => {
+      const code = ae.error && ae.error.code;
+      const msg  = ae.error && ae.error.message;
+      console.warn(`[buffering] stem '${chan}' error:`, code, msg, ae.src);
+      fail({ channel: chan, src: ae.src, code, message: msg || `stem ${chan} failed (code ${code})` });
+    };
   });
 
   const softTimer = setTimeout(() => { if (!finished) renderCaption('slow'); }, softWarnMs);
   const hardTimer = setTimeout(() => {
     if (!finished) {
       const missing = channels.filter(c => !loaded.has(c));
-      console.warn('[buffering] hard timeout — missing stems:', missing, '· proceeding anyway');
-      renderCaption('timeout');
-      finish('timeout');
+      if (!loaded.size) {
+        // Nothing loaded at all — this is a failure, not a slow load.
+        // Don't blast through into playback with zero stems.
+        console.warn('[buffering] hard timeout with zero loaded stems — failing.');
+        fail({ code: 'timeout', message: `no stems responded after ${hardTimeoutMs/1000}s` });
+      } else {
+        console.warn('[buffering] hard timeout — missing stems:', missing, '· proceeding anyway');
+        renderCaption('timeout');
+        finish('timeout');
+      }
     }
   }, hardTimeoutMs);
   const refreshTimer = setInterval(() => { if (!finished) renderCaption(); }, 800);
@@ -4855,15 +4967,24 @@ function loadSong(song, opts) {
     document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'none');
   }
   
-  // Buffering loader — watchdog-protected. Per-stem progress badges replace
-  // the generic "Waiting on audio stream" caption; if any stem doesn't
-  // canplaythrough within 15s the spinner clears anyway and we attempt to
-  // play with whatever buffered. No more gig-killing hangs.
+  // Buffering loader — watchdog-protected + onerror-aware. Per-stem badges
+  // replace the generic "Waiting on audio stream" caption. Any stem 404
+  // or media error fails the whole song fast (no 15s wait), grey-lists it
+  // in the library, and replaces the spinner with a clear error message
+  // — never a frozen wheel mid-gig.
   const activeChans   = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
   const activeElements = activeChans.map(c => audioElements[c]);
+  const _songBase = (song && song.folderName) || (song && song.id) || '';
   watchBuffering({
     activeElements, channels: activeChans,
     onReady: () => {
+      // Successful load — if this song was previously marked failed
+      // (server recovered the files), clear the flag and re-render so
+      // the row stops looking dead.
+      if (_songBase && isSongFailed(_songBase)) {
+        clearSongFailed(_songBase);
+        if (typeof renderLibrary === 'function') renderLibrary();
+      }
       if (resumeAt > 0) {
         activeElements.forEach(el => {
           try {
@@ -4874,6 +4995,18 @@ function loadSong(song, opts) {
         els.timeCurrent.textContent = formatTime(resumeAt);
       }
       if ((resumePlaying || opts.autoplay) && !isPlaying) togglePlayPause();
+    },
+    onFailure: (info) => {
+      console.warn('[loadSong] failed for', _songBase, info);
+      markSongFailed(_songBase);
+      showSongLoadError(_songBase, info);
+      // Re-render so the row in the library appears greyed; also the gig
+      // sidebar if that render is available.
+      try { if (typeof renderLibrary === 'function') renderLibrary(); } catch (e) {}
+      try { if (typeof renderGigSidebar === 'function') renderGigSidebar(); } catch (e) {}
+      // The audio elements are in a bad state — clear their sources so a
+      // subsequent click on a healthy song starts clean.
+      activeElements.forEach(ae => { try { setAudioSrc(ae, ''); } catch (e) {} });
     },
   });
 
