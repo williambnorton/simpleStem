@@ -245,18 +245,6 @@ _emit_metadata() {
     [[ -f "$info" ]] && cp -f "$info" "$cdir/source.info.json"
     cp -f "$adir/metadata.json" "$cdir/metadata.json"
     echo ">> [$idtag] cached source.wav → STEMS/$cbase/"
-    # Lyrics enrichment — fetched at INGEST time (Librarian, online) so
-    # the Performer plays back fully offline. Best-effort; misses are
-    # logged but never fail the ingest. Requires GENIUS_ACCESS_TOKEN env
-    # var or ~/.simpleStem-genius-token. Without a token the script
-    # exits 1 and we just print a single warning per session.
-    if command -v python3 >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lyrics_fetch.py" ]]; then
-      if python3 "$SCRIPT_DIR/lyrics_fetch.py" --dir "$cdir" --quiet 2>>"$BASE/.run/lyrics_fetch.log"; then
-        echo ">> [$idtag] lyrics ingested"
-      else
-        : # silent; the log file captures details
-      fi
-    fi
   fi
   local dest="$destdir/$name"
   [[ -e "$dest" ]] && dest="$destdir/${name%.json}_$idtag.json"   # avoid clobber
