@@ -6829,8 +6829,19 @@ function _ensureLyricsModal() {
         <div class="midi-modal-card" style="max-width:580px;">
           <h3 id="lyrics-modal-title">Lyrics editor</h3>
           <div class="midi-modal-status" id="lyrics-modal-status"></div>
+          <!-- Recommended workflow: a one-click button that creates an
+               empty lyrics.txt in the song's STEMS folder, opens it in
+               TextEdit, AND launches a Google "Lyrics <title> <artist>"
+               search in a new tab. Bill pastes from Google into TextEdit,
+               saves, comes back and clicks Reload from disk. The text-
+               area below stays as a backup paste surface. -->
           <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button id="lyrics-modal-fetch" class="btn-primary">Fetch from Genius</button>
+            <button id="lyrics-open-txt" class="btn-primary" title="Create STEMS/<song>/lyrics.txt (empty if needed) and open it in TextEdit, plus a Google search tab. Paste, save, click Reload from disk.">📝 Open lyrics.txt + Google</button>
+            <button id="lyrics-reload-txt" class="btn-secondary" title="Re-read lyrics.txt from disk into the textarea below.">Reload from disk</button>
+            <span id="lyrics-txt-status" style="opacity:0.7; font-size:11px;"></span>
+          </div>
+          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button id="lyrics-modal-fetch" class="btn-secondary">Fetch from Genius</button>
             <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
             <span style="opacity:0.55; font-size:11px;">— or search the web:</span>
             <a id="lyrics-search-google-lyrics"   class="btn-secondary" target="_blank" rel="noopener" title='Google: "Lyrics <title> <artist>" — opens in a new tab.'>Google Lyrics</a>
@@ -6871,6 +6882,10 @@ function _ensureLyricsModal() {
     els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
     m.querySelector('#lyrics-strip-headers').addEventListener('click', stripLyricsHeaders);
     m.querySelector('#lyrics-strip-blanks').addEventListener('click', stripLyricsBlanks);
+    const openTxt   = m.querySelector('#lyrics-open-txt');
+    const reloadTxt = m.querySelector('#lyrics-reload-txt');
+    if (openTxt)   openTxt.addEventListener('click', onLyricsOpenTxt);
+    if (reloadTxt) reloadTxt.addEventListener('click', onLyricsReloadTxt);
   }
   return m;
 }
@@ -6942,6 +6957,69 @@ function stripLyricsBlanks() {
     .join('\n');
   _refreshLyricsLineCount();
 }
+// "Open lyrics.txt + Google" — server creates STEMS/<base>/lyrics.txt
+// (empty if needed), opens it in the default text editor via `open -t`,
+// and returns the Google search URL which we open in a new tab. Bill
+// pastes from Google into TextEdit, saves the file, then clicks
+// "Reload from disk" to pull the new content back into the modal.
+async function onLyricsOpenTxt() {
+  const base = currentSong && currentSong.folderName;
+  if (!base) return;
+  const status = document.getElementById('lyrics-txt-status');
+  if (status) status.textContent = 'opening lyrics.txt…';
+  try {
+    const r = await fetch(`/api/song/${encodeURIComponent(base)}/lyrics-file/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: (currentSong && currentSong.title) || '',
+        artist: (currentSong && currentSong.artist) || '',
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (status) status.textContent = `error: ${data.error || r.statusText}`;
+      return;
+    }
+    if (status) status.textContent = `opened: ${data.path}`;
+    // Pop the Google search tab. window.open is suppressed if the click
+    // wasn't trusted; this handler is invoked from a real click so it
+    // should be allowed.
+    if (data.googleUrl) {
+      try { window.open(data.googleUrl, '_blank', 'noopener'); } catch (e) {}
+    }
+  } catch (e) {
+    if (status) status.textContent = `failed: ${e.message}`;
+  }
+}
+
+// "Reload from disk" — pull the latest lyrics.txt content into the
+// modal's textarea. Used after Bill pastes + saves in TextEdit and
+// wants to commit to simpleStem without re-typing.
+async function onLyricsReloadTxt() {
+  const base = currentSong && currentSong.folderName;
+  if (!base) return;
+  const status = document.getElementById('lyrics-txt-status');
+  if (status) status.textContent = 'reading lyrics.txt…';
+  try {
+    const r = await fetch(`/api/song/${encodeURIComponent(base)}/lyrics-file`, { cache: 'no-store' });
+    if (r.status === 404) {
+      if (status) status.textContent = 'no lyrics.txt yet — click Open first.';
+      return;
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || typeof data.text !== 'string') {
+      if (status) status.textContent = `error: ${(data && data.error) || r.statusText}`;
+      return;
+    }
+    els.lyricsModalPaste.value = data.text;
+    if (status) status.textContent = `loaded ${data.size} bytes from lyrics.txt`;
+    _refreshLyricsLineCount();
+  } catch (e) {
+    if (status) status.textContent = `failed: ${e.message}`;
+  }
+}
+
 async function onLyricsModalFetch() {
   const base = currentSong && currentSong.folderName;
   if (!base) return;
@@ -6970,6 +7048,14 @@ async function onLyricsModalSave() {
   if (!text) { alert('Paste lyrics first or hit Fetch.'); return; }
   els.lyricsModalSave.disabled = true;
   try {
+    // Save BOTH to metadata.json (existing path, populates lyrics_chunks)
+    // AND to lyrics.txt (operator-curated source of truth). Failures on
+    // either are surfaced but the other still attempts to land.
+    fetch(`/api/song/${encodeURIComponent(base)}/lyrics-file`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).catch(e => console.warn('[lyric] lyrics-file save failed:', e));
     const r = await fetch(`/api/song/${encodeURIComponent(base)}/lyrics`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

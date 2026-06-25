@@ -3067,6 +3067,77 @@ app.post('/api/song/:base/fetch-lyrics', (req, res) => {
   child.on('error', e => res.status(500).json({ error: `spawn failed: ${e.message}` }));
 });
 
+// ── Per-song lyrics.txt — the operator-curated source of truth ──────────
+// Lives next to source.wav at STEMS/<base>/lyrics.txt. Plain text, one
+// displayed line per row. Bill paste-curates in TextEdit (or any editor)
+// from Google search results; simpleStem reads the file on demand. This
+// route checks for the file FIRST in the lyrics-fetch fall-through chain
+// — only when it doesn't exist does the modal's paste dialog get used.
+//
+// Three endpoints:
+//   GET    /api/song/:base/lyrics-file        — read text content
+//   PUT    /api/song/:base/lyrics-file        — write text content
+//   POST   /api/song/:base/lyrics-file/open   — create-if-empty + open in
+//                                               TextEdit (macOS `open`),
+//                                               returns the path + the
+//                                               Google search URL for
+//                                               the song title + artist
+function lyricsTxtPath(songDir) { return path.join(songDir, 'lyrics.txt'); }
+app.get('/api/song/:base/lyrics-file', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const lp = lyricsTxtPath(s.dir);
+  if (!fs.existsSync(lp)) return res.status(404).json({ error: 'no lyrics.txt' });
+  try {
+    const text = fs.readFileSync(lp, 'utf8');
+    res.json({ ok: true, text, path: lp, size: Buffer.byteLength(text, 'utf8') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/song/:base/lyrics-file', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const text = (req.body && typeof req.body.text === 'string') ? req.body.text : '';
+  try {
+    fs.writeFileSync(lyricsTxtPath(s.dir), text, 'utf8');
+    res.json({ ok: true, path: lyricsTxtPath(s.dir), size: Buffer.byteLength(text, 'utf8') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/song/:base/lyrics-file/open', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const lp = lyricsTxtPath(s.dir);
+  // Create empty file if it doesn't exist so `open -t` has something to
+  // open. Pre-existing files are preserved.
+  try { if (!fs.existsSync(lp)) fs.writeFileSync(lp, '', 'utf8'); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+  // `-t` opens in the default text editor (TextEdit on a clean Mac, or
+  // whatever the user has registered as the .txt handler — VS Code,
+  // BBEdit, etc.). Fire-and-forget; spawn is detached so it survives
+  // this request.
+  try {
+    spawn('open', ['-t', lp], { detached: true, stdio: 'ignore' }).unref();
+  } catch (e) {
+    return res.status(500).json({ error: `open failed: ${e.message}` });
+  }
+  // Build the Google search URL using the song's metadata.json title +
+  // artist (whatever the client has — pass them in body to override).
+  let title = (req.body && req.body.title) || '';
+  let artist = (req.body && req.body.artist) || '';
+  if (!title || !artist) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(s.dir, 'metadata.json'), 'utf8'));
+      title  = title  || meta.title  || '';
+      artist = artist || meta.artist || '';
+    } catch (e) {}
+  }
+  const q = encodeURIComponent(`Lyrics ${title} ${artist}`.trim());
+  res.json({
+    ok: true,
+    path: lp,
+    googleUrl: `https://www.google.com/search?q=${q}`,
+  });
+});
+
 // Read the current lyrics for ONE song straight from metadata.json on
 // disk. Bypasses libraryCache / CATALOG.json — those rehydrate from
 // catalog.py output which lags whenever the Performer edits a song
@@ -3080,20 +3151,33 @@ app.get('/api/song/:base/lyrics', (req, res) => {
   if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
+    // Prefer lyrics.txt next to source.wav if it exists AND has content.
+    // That's the operator-curated file Bill paste-edits in TextEdit. Falls
+    // back to whatever's stored in metadata.json (legacy / Genius fetch).
+    let lyrics = null;
+    let source = meta.lyrics_source || null;
+    const lp = lyricsTxtPath(s.dir);
+    if (fs.existsSync(lp)) {
+      try {
+        const txt = fs.readFileSync(lp, 'utf8').trim();
+        if (txt) { lyrics = txt; source = 'lyrics.txt'; }
+      } catch (e) {}
+    }
+    if (!lyrics) lyrics = meta.lyrics || null;
     // While we're here, patch libraryCache in place so subsequent
     // GET /api/library responses include lyrics for this song.
     try {
       const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
       if (Array.isArray(songs)) {
         const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
-        if (row) { row.lyrics = meta.lyrics || null; row.lyrics_chunks = meta.lyrics_chunks || null; }
+        if (row) { row.lyrics = lyrics; row.lyrics_chunks = meta.lyrics_chunks || null; }
       }
     } catch (e) {}
     res.json({
       ok: true,
-      lyrics: meta.lyrics || null,
+      lyrics,
       lyrics_chunks: Array.isArray(meta.lyrics_chunks) ? meta.lyrics_chunks : null,
-      source: meta.lyrics_source || null,
+      source,
       fetchedAt: meta.lyrics_fetched_at || null,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
