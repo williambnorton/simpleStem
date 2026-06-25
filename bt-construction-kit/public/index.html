@@ -192,8 +192,12 @@
           <div class="track-header">
             <div class="track-meta-left">
               <div class="track-badge-row">
+                <!-- STEMS type badge + Gig Mode toggle hidden per user
+                     request (06/2026). #active-track-type and #btn-gig-mode
+                     kept in the DOM so existing JS references don't crash;
+                     CSS sets display:none on both. -->
                 <span id="active-track-type" class="badge">STEMS</span>
-                <button id="btn-gig-mode" class="gig-mode-toggle" title="Gig Mode: hide everything not cached locally, so nothing you can click will spin during a show" aria-pressed="false">
+                <button id="btn-gig-mode" class="gig-mode-toggle" aria-pressed="false">
                   <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
                 </button>
                 <button id="btn-restart-top" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
