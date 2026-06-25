@@ -6401,6 +6401,12 @@ function applyMixerVolumes() {
 // re-opens the editor regardless of mode.
 const LYRIC_TAP_BUNDLE_MS = 2000;
 const LYRIC_LINE_LIFETIME_MS = 3500;   // each line auto-fades after ~3.5s
+// Show each lyric-line N ms BEFORE the playhead crosses its action time
+// so the singer has visual prep. Bill's tap-along records the moment the
+// line is heard; without lead time the display lands too late to be
+// useful. Visual placement on the lane stays at e.t (where Bill tapped) —
+// only the FIRE TIME is advanced.
+const LYRIC_LOOK_AHEAD_SEC = 1.0;
 let lyricsState = {
   fetching:     false,    // genius fetch in flight
   cachedLines:  [],       // flat array of next-to-drop lines for the song
@@ -10128,7 +10134,11 @@ function setupMidiUI() {
       // after play begins (lastTime is still 0, now has just advanced past
       // it). The strict-> in the normal predicate would otherwise skip t=0
       // events forever because 0 > 0 is false.
-      const inWindow  = e.t > automationLastTime && e.t <= now;
+      // LYRIC LOOK-AHEAD: lyric-line events fire LYRIC_LOOK_AHEAD_SEC
+      // (1 s) before their tap time so the singer gets visual prep. Visual
+      // position on the lane stays at e.t; only the dispatch boundary moves.
+      const effectiveT = (e.type === 'lyric-line') ? e.t - LYRIC_LOOK_AHEAD_SEC : e.t;
+      const inWindow  = effectiveT > automationLastTime && effectiveT <= now;
       const atZeroNow = e.t === 0 && automationLastTime === 0 && now > 0;
       if (!e.fired && (inWindow || atZeroNow)) {
         fireAutomationEvent(e).catch(err => console.warn('[automation] fire failed:', err));
