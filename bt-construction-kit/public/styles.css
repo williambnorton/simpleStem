@@ -5714,6 +5714,74 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   border-color: rgba(244, 196, 48, 0.45);
 }
 
+/* Lyrics editor — two-column layout. Left column: search + tools buttons
+   (stack vertically, full width of column). Right column: the textarea,
+   counter, strip helpers. Wide modal so the textarea has breathing room
+   for a typical 30-50 line song. */
+.lyrics-modal-card-wide { max-width: 880px !important; width: 92vw; }
+.lyrics-modal-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  margin-top: 8px;
+}
+.lyrics-modal-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lyrics-modal-right {
+  display: flex;
+  flex-direction: column;
+}
+.lyrics-modal-right textarea {
+  width: 100%;
+  height: 320px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 4px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.lyrics-modal-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 2px;
+}
+
+/* Site-search buttons. Bold solid backgrounds so they don't look greyed
+   out, and each gets its source's brand color so they're recognizable
+   from across the room. Opens in a NEW WINDOW (window.open with popup
+   features) per Bill's spec. */
+.lyrics-search-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  letter-spacing: 0.01em;
+}
+.lyrics-search-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.lyrics-search-btn:active { transform: translateY(0); }
+
+.lyrics-search-google   { background: rgba(66, 133, 244, 0.55); border-color: rgba(66, 133, 244, 0.95); }
+.lyrics-search-ug       { background: rgba(255, 110, 0, 0.55);   border-color: rgba(255, 110, 0, 0.95); }
+.lyrics-search-az       { background: rgba(240, 200, 60, 0.55);  border-color: rgba(240, 200, 60, 0.95); color: #111; }
+.lyrics-search-txt      { background: rgba(155, 89, 182, 0.55);  border-color: rgba(155, 89, 182, 0.95); }
+.lyrics-search-reload   { background: rgba(46, 204, 113, 0.45);  border-color: rgba(46, 204, 113, 0.85); }
+.lyrics-search-genius   { background: rgba(230, 70, 70, 0.45);   border-color: rgba(230, 70, 70, 0.85); }
+
 /* Lyrics overlay — sits over the stem mixer console. Two visual modes:
    mode-placement (no fade, persistent — operator is curating) and
    mode-playback (lines auto-fade per the LYRIC_LINE_LIFETIME_MS rule

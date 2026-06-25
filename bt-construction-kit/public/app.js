@@ -6817,55 +6817,57 @@ function _ensureLyricsDisplay() {
 // the moment app.js loads, the lyrics editor works.
 function _ensureLyricsModal() {
   if (els.lyricsModal && document.body.contains(els.lyricsModal)) return els.lyricsModal;
-  // Try the static markup first (matches what index.html now declares).
+  // Always inject (replacing any stale static markup) so the layout
+  // updates as we ship. The legacy #lyrics-modal in index.html has been
+  // removed; the only modal is the one this function paints.
   let m = document.getElementById('lyrics-modal');
-  if (!m) {
-    console.log('[lyric] static modal absent — injecting');
-    const mount = document.createElement('div');
-    mount.id = 'lyrics-modal-mount';
-    mount.innerHTML = `
-      <div id="lyrics-modal" class="midi-modal" style="display:none;">
-        <div class="midi-modal-backdrop" data-close-lyrics-modal></div>
-        <div class="midi-modal-card" style="max-width:580px;">
-          <h3 id="lyrics-modal-title">Lyrics editor</h3>
-          <div class="midi-modal-status" id="lyrics-modal-status"></div>
-          <!-- Recommended workflow: a one-click button that creates an
-               empty lyrics.txt in the song's STEMS folder, opens it in
-               TextEdit, AND launches a Google "Lyrics <title> <artist>"
-               search in a new tab. Bill pastes from Google into TextEdit,
-               saves, comes back and clicks Reload from disk. The text-
-               area below stays as a backup paste surface. -->
-          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button id="lyrics-open-txt" class="btn-primary" title="Create STEMS/<song>/lyrics.txt (empty if needed) and open it in TextEdit, plus a Google search tab. Paste, save, click Reload from disk.">📝 Open lyrics.txt + Google</button>
-            <button id="lyrics-reload-txt" class="btn-secondary" title="Re-read lyrics.txt from disk into the textarea below.">Reload from disk</button>
+  if (m) m.remove();   // wipe any prior version (re-inject keeps wiring fresh)
+  console.log('[lyric] injecting lyrics-modal');
+  const mount = document.createElement('div');
+  mount.id = 'lyrics-modal-mount';
+  mount.innerHTML = `
+    <div id="lyrics-modal" class="midi-modal" style="display:none;">
+      <div class="midi-modal-backdrop" data-close-lyrics-modal></div>
+      <div class="midi-modal-card lyrics-modal-card-wide">
+        <h3 id="lyrics-modal-title">Lyrics editor</h3>
+        <div class="midi-modal-status" id="lyrics-modal-status"></div>
+        <div class="lyrics-modal-grid">
+          <!-- LEFT COLUMN: search + tools. Each button opens a NEW
+               BROWSER WINDOW (popup features set) so the search result
+               doesn't get lost in the operator's tab strip. -->
+          <div class="lyrics-modal-left">
+            <div class="lyrics-modal-section-label">Search the web</div>
+            <button type="button" id="lyrics-search-google"   class="lyrics-search-btn lyrics-search-google"   title='Open google.com/search?q=lyrics <title> <artist> in a NEW WINDOW.'>Google</button>
+            <button type="button" id="lyrics-search-ug"       class="lyrics-search-btn lyrics-search-ug"       title='Open Ultimate Guitar search for this song in a NEW WINDOW.'>Ultimate Guitar</button>
+            <button type="button" id="lyrics-search-azlyrics" class="lyrics-search-btn lyrics-search-az"       title='Open AZLyrics search for this song in a NEW WINDOW.'>AZLyrics</button>
+            <div class="lyrics-modal-section-label" style="margin-top:14px;">lyrics.txt on disk</div>
+            <button type="button" id="lyrics-open-txt"        class="lyrics-search-btn lyrics-search-txt"      title="Create STEMS/<song>/lyrics.txt (empty if needed) and open it in TextEdit. Paste lyrics there, save, then click Reload from disk.">📝 Open lyrics.txt</button>
+            <button type="button" id="lyrics-reload-txt"      class="lyrics-search-btn lyrics-search-reload"   title="Re-read lyrics.txt from disk into the textarea on the right.">Reload from disk</button>
+            <div class="lyrics-modal-section-label" style="margin-top:14px;">Direct API</div>
+            <button type="button" id="lyrics-modal-fetch"     class="lyrics-search-btn lyrics-search-genius"   title="Auto-fetch from Genius via the API (uses your token).">Fetch from Genius</button>
+            <span id="lyrics-modal-fetching" style="display:none; opacity:0.7; font-size:11px;">fetching…</span>
             <span id="lyrics-txt-status" style="opacity:0.7; font-size:11px;"></span>
           </div>
-          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button id="lyrics-modal-fetch" class="btn-secondary">Fetch from Genius</button>
-            <span id="lyrics-modal-fetching" style="display:none; opacity:0.7;">fetching…</span>
-            <span style="opacity:0.55; font-size:11px;">— or search the web:</span>
-            <a id="lyrics-search-google-lyrics"   class="btn-secondary" target="_blank" rel="noopener" title='Google: "Lyrics <title> <artist>" — opens in a new tab.'>Google Lyrics</a>
-            <a id="lyrics-search-ultimate-chords" class="btn-secondary" target="_blank" rel="noopener" title="Ultimate Guitar search — chord charts and tabs for this song.">Ultimate Chords</a>
-          </div>
-          <div class="midi-row">
-            <label for="lyrics-modal-paste">Lyrics file — one line per displayed line:</label>
-            <textarea id="lyrics-modal-paste" rows="16" style="width:100%; font-family:'Space Grotesk',sans-serif; font-size:13px; line-height:1.5;" placeholder="Paste from Google / AZLyrics / Genius / wherever. Edit so each line you want displayed on screen is on its own row."></textarea>
-          </div>
-          <div class="midi-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <span id="lyrics-modal-count" class="lyrics-line-count">0 displayable lines</span>
-            <button type="button" id="lyrics-strip-headers" class="btn-secondary" title="Remove [Verse 1] / [Chorus] / [Bridge] header lines">Strip headers</button>
-            <button type="button" id="lyrics-strip-blanks" class="btn-secondary" title="Collapse blank lines">Strip blanks</button>
-          </div>
-          <div class="midi-modal-buttons">
-            <button id="lyrics-modal-cancel" class="btn-secondary" data-close-lyrics-modal>Cancel</button>
-            <button id="lyrics-modal-save"   class="btn-primary">Save lyrics</button>
+          <!-- RIGHT COLUMN: the textarea + counter + strip helpers. -->
+          <div class="lyrics-modal-right">
+            <label for="lyrics-modal-paste" style="font-size:12px; opacity:0.8;">Lyrics — one line per displayed line:</label>
+            <textarea id="lyrics-modal-paste" placeholder="Paste lyrics here, or use Open lyrics.txt to curate in TextEdit. Each line you want displayed on screen goes on its own row."></textarea>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+              <span id="lyrics-modal-count" class="lyrics-line-count">0 displayable lines</span>
+              <button type="button" id="lyrics-strip-headers" class="btn-secondary" title="Remove [Verse 1] / [Chorus] / [Bridge] header lines">Strip headers</button>
+              <button type="button" id="lyrics-strip-blanks" class="btn-secondary" title="Collapse blank lines">Strip blanks</button>
+            </div>
           </div>
         </div>
+        <div class="midi-modal-buttons">
+          <button id="lyrics-modal-cancel" class="btn-secondary" data-close-lyrics-modal>Cancel</button>
+          <button id="lyrics-modal-save"   class="btn-primary">Save lyrics</button>
+        </div>
       </div>
-    `;
-    document.body.appendChild(mount);
-    m = mount.querySelector('#lyrics-modal');
-  }
+    </div>
+  `;
+  document.body.appendChild(mount);
+  m = mount.querySelector('#lyrics-modal');
   els.lyricsModal         = m;
   els.lyricsModalPaste    = m.querySelector('#lyrics-modal-paste');
   els.lyricsModalStatus   = m.querySelector('#lyrics-modal-status');
@@ -6874,19 +6876,39 @@ function _ensureLyricsModal() {
   els.lyricsModalSave     = m.querySelector('#lyrics-modal-save');
   // Wire handlers — idempotent dataset guard so re-injection doesn't
   // double-bind. The handlers reference the (now valid) els references.
-  if (!m.dataset.wired) {
-    m.dataset.wired = '1';
-    m.querySelectorAll('[data-close-lyrics-modal]').forEach(b => b.addEventListener('click', closeLyricsModal));
-    els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
-    els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
-    els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
-    m.querySelector('#lyrics-strip-headers').addEventListener('click', stripLyricsHeaders);
-    m.querySelector('#lyrics-strip-blanks').addEventListener('click', stripLyricsBlanks);
-    const openTxt   = m.querySelector('#lyrics-open-txt');
-    const reloadTxt = m.querySelector('#lyrics-reload-txt');
-    if (openTxt)   openTxt.addEventListener('click', onLyricsOpenTxt);
-    if (reloadTxt) reloadTxt.addEventListener('click', onLyricsReloadTxt);
-  }
+  // Re-injected every open, so wire fresh every time. Re-injection guard
+  // not needed.
+  m.querySelectorAll('[data-close-lyrics-modal]').forEach(b => b.addEventListener('click', closeLyricsModal));
+  els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
+  els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
+  els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
+  m.querySelector('#lyrics-strip-headers').addEventListener('click', stripLyricsHeaders);
+  m.querySelector('#lyrics-strip-blanks').addEventListener('click', stripLyricsBlanks);
+  const openTxt   = m.querySelector('#lyrics-open-txt');
+  const reloadTxt = m.querySelector('#lyrics-reload-txt');
+  if (openTxt)   openTxt.addEventListener('click', onLyricsOpenTxt);
+  if (reloadTxt) reloadTxt.addEventListener('click', onLyricsReloadTxt);
+  // Search buttons — each opens a NEW BROWSER WINDOW (popup features
+  // force Chrome to open a window rather than a tab) at the right URL
+  // for the currently-loaded song.
+  const wireSearch = (id, urlBuilder) => {
+    const b = m.querySelector('#' + id);
+    if (!b) return;
+    b.addEventListener('click', () => {
+      const title  = (currentSong && currentSong.title)  || '';
+      const artist = (currentSong && currentSong.artist) || '';
+      const url = urlBuilder(title, artist);
+      // popup=yes + width/height forces a separate window on Chrome.
+      try { window.open(url, '_blank', 'popup=yes,width=1100,height=820,noopener'); }
+      catch (e) { console.warn('[lyric] window.open blocked:', e); }
+    });
+  };
+  wireSearch('lyrics-search-google', (t, a) =>
+    `https://www.google.com/search?q=${encodeURIComponent(`lyrics ${t} ${a}`.trim())}`);
+  wireSearch('lyrics-search-ug',     (t, a) =>
+    `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(`${t} ${a}`.trim())}`);
+  wireSearch('lyrics-search-azlyrics', (t, a) =>
+    `https://search.azlyrics.com/search.php?q=${encodeURIComponent(`${t} ${a}`.trim())}`);
   return m;
 }
 
@@ -6982,12 +7004,8 @@ async function onLyricsOpenTxt() {
       return;
     }
     if (status) status.textContent = `opened: ${data.path}`;
-    // Pop the Google search tab. window.open is suppressed if the click
-    // wasn't trusted; this handler is invoked from a real click so it
-    // should be allowed.
-    if (data.googleUrl) {
-      try { window.open(data.googleUrl, '_blank', 'noopener'); } catch (e) {}
-    }
+    // (No longer auto-opens Google here — the dedicated Google button
+    // in the left column handles that on demand.)
   } catch (e) {
     if (status) status.textContent = `failed: ${e.message}`;
   }
