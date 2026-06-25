@@ -3897,6 +3897,25 @@ input:checked + .slider-round:before {
 @keyframes restart-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .restart-circle.is-restarting i { animation: restart-spin 0.9s linear infinite; }
 
+/* First-aid (kick coreaudiod) — same circle as restart, red accent so it
+   reads as the emergency button rather than another restart. Sits next
+   to btn-restart-top in the track-badge-row. Pulses while kicking. */
+.first-aid-circle {
+  color: #ffb3b3;
+  background: rgba(220, 80, 80, 0.16);
+  border-color: rgba(220, 80, 80, 0.55);
+}
+.first-aid-circle:hover {
+  background: rgba(220, 80, 80, 0.32);
+  color: #fff;
+  border-color: rgba(220, 80, 80, 0.85);
+}
+@keyframes first-aid-pulse {
+  0%, 100% { transform: scale(1);     opacity: 1;   }
+  50%      { transform: scale(1.08);  opacity: 0.6; }
+}
+.first-aid-circle.is-kicking { animation: first-aid-pulse 0.6s ease-in-out infinite; }
+
 /* Spinner caption — small italic text under any of the loading spinners.
    Tells the operator WHAT the wheel is waiting on so a stuck boot isn't
    silent. Used by the library-load spinner and the audio-buffering
