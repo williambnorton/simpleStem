@@ -4257,25 +4257,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const rs = document.getElementById('btn-restart-mixer');
   if (rs) rs.addEventListener('click', restartBackend);
   // ── XR18 connection-state badge ───────────────────────────────────
-  // outputChannelCount is the live device channel count (set when Web
-  // Audio probes the destination). 18 → XR18; <=2 → stereo-only / not
-  // detected. Update the mixer header's badge + container background
-  // every 500ms so a USB disconnect is reflected immediately.
+  // Tri-state. Web Audio can't tell us the real device channel count
+  // until the user has produced a gesture and the audioCtx has been
+  // created. Before that, outputChannelCount is the default 2 — NOT
+  // because XR18 is unplugged, but because we haven't probed yet.
+  //   - UNKNOWN (no audioCtx OR no sound check yet) → neutral, "probing".
+  //   - CONNECTED (ch >= 6 after probe) → green.
+  //   - DISCONNECTED (ch <= 5 after probe) → yellow with recovery prompt.
   setInterval(() => {
     const wrap   = document.getElementById('mixer-container');
     const label  = document.getElementById('mixer-xr18-label');
     const stateW = document.getElementById('mixer-xr18-state');
     if (!wrap || !label) return;
     const ch = (typeof outputChannelCount === 'number') ? outputChannelCount : 0;
-    const connected = ch >= 6;     // 6+ → multi-channel device; XR18 = 18
-    wrap.classList.toggle('xr18-connected', connected);
-    wrap.classList.toggle('xr18-disconnected', !connected);
-    label.textContent = connected
-      ? `● XR18 ACTIVE · ${ch} ch out`
-      : `XR18 NOT DETECTED · check USB, then click first aid →`;
-    if (stateW) stateW.title = connected
-      ? `XR18 is connected and Core Audio sees ${ch} channels.`
-      : 'XR18 not detected. Check: USB cable seated, XR18 powered, and macOS Sound Output set to XR18. Then click the red first-aid button to kick coreaudiod.';
+    const probed = !!(window.audioCtx || window.__soundCheckStamp);
+    let state;
+    if (!probed)        state = 'unknown';
+    else if (ch >= 6)   state = 'connected';
+    else                state = 'disconnected';
+    wrap.classList.toggle('xr18-connected',    state === 'connected');
+    wrap.classList.toggle('xr18-disconnected', state === 'disconnected');
+    wrap.classList.toggle('xr18-unknown',      state === 'unknown');
+    if (state === 'connected') {
+      label.textContent = `● XR18 ACTIVE · ${ch} ch out`;
+      if (stateW) stateW.title = `XR18 connected; Core Audio sees ${ch} channels.`;
+    } else if (state === 'unknown') {
+      label.textContent = `XR18 status — click play or Sound Check to probe`;
+      if (stateW) stateW.title = 'Web Audio needs a user gesture to read the real device channel count. Click Play (or the Sound Check tone) and the badge will switch to green if the XR18 is connected.';
+    } else {
+      label.textContent = `XR18 NOT DETECTED · check USB, then click first aid →`;
+      if (stateW) stateW.title = 'XR18 not detected after probe. Check: USB cable seated, XR18 powered, macOS Sound Output set to XR18. Then click the red first-aid button to kick coreaudiod.';
+    }
   }, 500);
   // ── Server heartbeat ──────────────────────────────────────────────
   // Polls /api/health every 3s. If we don't get a successful response

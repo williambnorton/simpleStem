@@ -3953,6 +3953,15 @@ input:checked + .slider-round:before {
   border: 1px solid rgba(46, 204, 113, 0.55);
   color: #b9f0cd;
 }
+.mixer-console.xr18-unknown {
+  /* Neutral until we've actually probed. No yellow alarm yet. */
+}
+.mixer-console.xr18-unknown .mixer-xr18-state {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 600;
+}
 .mixer-console.xr18-disconnected {
   background: linear-gradient(180deg, rgba(244, 196, 48, 0.20) 0%, rgba(244, 196, 48, 0.04) 100%);
   border-color: rgba(244, 196, 48, 0.65) !important;
