@@ -2257,7 +2257,25 @@ function renderIngestTracker() {
   const el = document.getElementById('ingest-tracker');
   if (!el) return;
   const watch = loadIngestWatch();
-  const active = watch.filter(w => w.status !== 'done' || (Date.now() - (w.doneAt || 0)) < 60000);
+  // Auto-archive entries stuck at 'pasted' for >2 hours — most likely
+  // the video DID complete but the videoId never matched a library row
+  // (CATALOG.json on the Performer can lag the Librarian's catalog
+  // rebuild). After the timeout we drop them from the visible list and
+  // from localStorage so the panel doesn't accumulate indefinitely.
+  const STALE_MS = 2 * 60 * 60 * 1000;   // 2 hours
+  const now = Date.now();
+  const pruned = watch.filter(w => {
+    if (w.status === 'done') return (now - (w.doneAt || 0)) < 60000;
+    if (w.status === 'pasted' || w.status === 'librarian') {
+      // Stale 'pasted'/'librarian' — assume it landed and we missed it.
+      if (now - (w.submittedAt || 0) > STALE_MS) return false;
+    }
+    return true;
+  });
+  if (pruned.length !== watch.length) {
+    saveIngestWatch(pruned);
+  }
+  const active = pruned;
   if (!active.length) { el.innerHTML = ''; el.classList.remove('show'); return; }
   el.classList.add('show');
   el.innerHTML = active.slice().reverse().map(w => {
@@ -2280,6 +2298,15 @@ function renderIngestTracker() {
       <span class="ingest-stage">${escapeHtml(stageLabel)}</span>
     </div>`;
   }).join('');
+  // Append a clear-all link at the bottom so the operator can nuke
+  // stuck rows immediately instead of waiting for the 2-hour timeout.
+  el.innerHTML += `<div class="ingest-row ingest-clear-row"><a id="ingest-clear-all" class="ingest-clear-link" href="#" title="Remove all rows from the tracker. Doesn't affect the queue or library — just the visible list.">clear all</a></div>`;
+  const clr = document.getElementById('ingest-clear-all');
+  if (clr) clr.addEventListener('click', (e) => {
+    e.preventDefault();
+    saveIngestWatch([]);
+    renderIngestTracker();
+  });
 }
 async function pollIngestWatch() {
   const watch = loadIngestWatch();
@@ -6426,12 +6453,24 @@ let lyricsState = {
 // cursor has consumed every cached line, the button flips to a
 // SHOW/HIDE toggle (PLAYBACK MODE). Re-editing the lyrics file (which
 // resets cursor to 0) puts the button back into placement mode.
+//
+// CURSOR IS DERIVED, not session-tracked. The count of lyric-line
+// actions currently on the lane IS the cursor. So any path that
+// mutates automationEvents — tap (push), undo (splice), manual delete
+// (the lane marker's × button), CLEAR, save-and-reload — all stay
+// consistent without dedicated bookkeeping.
 function lyricsHasPlacedActions() {
   return Array.isArray(automationEvents) && automationEvents.some(e => e.type === 'lyric-line');
 }
+function lyricsCursor() {
+  if (!Array.isArray(automationEvents)) return 0;
+  let n = 0;
+  for (const e of automationEvents) if (e.type === 'lyric-line') n++;
+  return n;
+}
 function lyricsAllPlaced() {
   return lyricsState.cachedLines.length > 0
-      && lyricsState.cursor >= lyricsState.cachedLines.length;
+      && lyricsCursor() >= lyricsState.cachedLines.length;
 }
 
 // Event-delegated lyric handler. Bound on the document so it can't be
@@ -6573,7 +6612,7 @@ async function onLyricTap(e) {
   console.log('[lyric] tap', {
     song: currentSong && currentSong.folderName,
     cachedLines: lyricsState.cachedLines.length,
-    cursor: lyricsState.cursor,
+    cursor: lyricsCursor(),
     mods: e ? { shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey } : null,
   });
   if (!currentSong) { alert('Load a song first.'); return; }
@@ -6620,7 +6659,8 @@ async function onLyricTap(e) {
 
   // + Lyric is ALWAYS placement now. Show/Hide is a separate button.
   // Past the last cached line → prompt to re-open the editor.
-  if (lyricsState.cursor >= lyricsState.cachedLines.length) {
+  const cur = lyricsCursor();
+  if (cur >= lyricsState.cachedLines.length) {
     if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
       openLyricsModal('edit');
     }
@@ -6629,7 +6669,10 @@ async function onLyricTap(e) {
   const now = Date.now();
   const playhead = currentPlayheadSec();
   const mode = (now - lyricsState.lastTapAt) <= LYRIC_TAP_BUNDLE_MS ? 'append' : 'replace';
-  const text = lyricsState.cachedLines[lyricsState.cursor];
+  // Read cachedLines[cur] BEFORE pushing — cur is derived from current
+  // lyric-line count, and after push the next derived cursor will be
+  // cur+1 automatically.
+  const text = lyricsState.cachedLines[cur];
   const ev = {
     t: Math.round(playhead * 1000) / 1000,
     type: 'lyric-line',
@@ -6644,12 +6687,12 @@ async function onLyricTap(e) {
     if (typeof markAutomationDirty === 'function') markAutomationDirty();
   }
   // Record this tap on the undo stack so Backspace can pop the last
-  // placement and rewind the cursor. Holds an event reference, not a
-  // copy, so we can match-and-remove from automationEvents on undo.
+  // placement. Holds an event reference; if save runs between push and
+  // pop the indexOf will fail (new objects) and undoLastLyricTap falls
+  // back to text-match.
   lyricsState.placedStack.push(ev);
   // Live-fire so the operator sees the placement land in the overlay.
   try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
-  lyricsState.cursor += 1;
   lyricsState.lastTapAt = now;
 }
 
@@ -6658,15 +6701,42 @@ async function onLyricTap(e) {
 // line, and yanks the line from the active overlay if it's still alive.
 // Bound to Backspace; ignored while focus is in an input/textarea/select.
 function undoLastLyricTap() {
-  if (!lyricsState.placedStack.length) return false;
+  if (!lyricsState.placedStack.length) {
+    // No stack entry — fall back to "remove last lyric-line by t".
+    // Covers the case where a save round-trip wiped the references.
+    if (Array.isArray(automationEvents)) {
+      let lastIdx = -1, lastT = -Infinity;
+      for (let i = 0; i < automationEvents.length; i++) {
+        const e = automationEvents[i];
+        if (e.type === 'lyric-line' && e.t > lastT) { lastT = e.t; lastIdx = i; }
+      }
+      if (lastIdx < 0) return false;
+      automationEvents.splice(lastIdx, 1);
+      lyricsState.lastTapAt = 0;
+      if (typeof renderAutomationLane === 'function') renderAutomationLane();
+      if (typeof markAutomationDirty === 'function') markAutomationDirty();
+      _renderLyricDisplay();
+      console.log('[lyric] undo (fallback): cursor now', lyricsCursor());
+      return true;
+    }
+    return false;
+  }
   const ev = lyricsState.placedStack.pop();
-  // Remove the event from the lane.
+  // Remove the event from the lane. If the reference is stale (save
+  // rebuilt automationEvents with new objects between push and pop),
+  // match by t + text + mode instead. Cursor is derived from
+  // automationEvents count, so removing an event is what rewinds it.
   if (typeof automationEvents !== 'undefined') {
-    const idx = automationEvents.indexOf(ev);
+    let idx = automationEvents.indexOf(ev);
+    if (idx < 0 && ev) {
+      idx = automationEvents.findIndex(e =>
+        e.type === 'lyric-line' &&
+        Math.abs((e.t || 0) - (ev.t || 0)) < 0.005 &&
+        (e.text || '') === (ev.text || '') &&
+        (e.mode || '') === (ev.mode || ''));
+    }
     if (idx >= 0) automationEvents.splice(idx, 1);
   }
-  // Back the cursor up so the next tap re-drops that line.
-  if (lyricsState.cursor > 0) lyricsState.cursor -= 1;
   // If the event's line is still showing on the overlay, pull it back.
   const text = (ev && ev.text) || '';
   if (text) {
@@ -6680,7 +6750,7 @@ function undoLastLyricTap() {
   if (typeof renderAutomationLane === 'function') renderAutomationLane();
   if (typeof markAutomationDirty === 'function') markAutomationDirty();
   _renderLyricDisplay();
-  console.log('[lyric] undo: cursor now', lyricsState.cursor);
+  console.log('[lyric] undo: cursor now', lyricsCursor());
   return true;
 }
 
@@ -6728,7 +6798,7 @@ function _refreshLyricButtonLabel() {
       btn.textContent = 'Fetch Lyrics';
       btn.classList.add('mode-fetch');
     } else {
-      const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsState.cursor);
+      const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsCursor());
       btn.textContent = `+ Lyric (${remaining})`;
       btn.classList.add('mode-place');
     }
