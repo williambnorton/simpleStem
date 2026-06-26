@@ -4303,6 +4303,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (rs) rs.addEventListener('click', restartBackend);
   const tt = document.getElementById('btn-test-tone-mixer');
   if (tt) tt.addEventListener('click', playXr18TestTone);
+  const swxr = document.getElementById('btn-switch-xr18');
+  if (swxr) swxr.addEventListener('click', () => switchOsOutputAndReload('XR18', swxr));
+  const swsys = document.getElementById('btn-switch-sysout');
+  if (swsys) swsys.addEventListener('click', () => switchOsOutputAndReload('MacBook Pro Speakers', swsys));
+  const snap = document.getElementById('btn-snapshot-state');
+  if (snap) snap.addEventListener('click', () => captureStateSnapshot('manual'));
   // ── XR18 connection-state badge ───────────────────────────────────
   // Asks the server (which runs system_profiler) every 2 seconds whether
   // the XR18 is physically connected AND is macOS's default output
@@ -4434,6 +4440,123 @@ async function playXr18TestTone() {
     testToneInProgress = false;
     if (btn) { btn.disabled = false; btn.classList.remove('is-testing'); }
   }
+}
+
+// Pure OS-default-output switch (does NOT modify the in-app routing matrix
+// the way Preset:Stereo / Preset:Spread do). Used by the two pill buttons
+// in the mixer header for fast A/B comparison during XR18 recovery. Snaps
+// state to the debug log BEFORE the switch, hits set-output, reloads so
+// Chrome rebinds Web Audio to whichever device just became default.
+async function switchOsOutputAndReload(deviceName, btn) {
+  if (btn) { btn.disabled = true; }
+  try {
+    await captureStateSnapshot(`pre-switch:${deviceName}`);
+    const r = await fetch('/api/audio/set-output', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: deviceName }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      alert(`Couldn't switch to "${deviceName}":\n\n${d.error || r.statusText}\n${d.hint || ''}`);
+      if (btn) btn.disabled = false;
+      return;
+    }
+    // Tell the server we're about to reload so the post-reload snapshot
+    // can be paired with this transition in the log.
+    await captureStateSnapshot(`post-switch-pre-reload:${deviceName}`);
+    // ~600 ms gives macOS time to actually flip the device before Chrome
+    // rebinds its AudioContext to the new default.
+    setTimeout(() => location.reload(), 600);
+  } catch (e) {
+    alert(`Switch failed: ${e.message}`);
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Capture every observable client-side audio state, POST to the server's
+// debug log endpoint so Claude can read it later via the on-disk log file.
+// Includes: XR18 probe round-trip, AudioContext state + destination, every
+// strip's routing/gain/mute/solo, every audio element's playback state.
+// Call with a `label` describing where in the diagnostic protocol this
+// snapshot lives (e.g. "pre-switch:XR18", "after-first-aid", "after-usb-replug").
+async function captureStateSnapshot(label) {
+  const snap = {
+    label,
+    when: new Date().toISOString(),
+    href: location.href,
+    audioCtx: null,
+    strips: [],
+    routingMatrix: null,
+    mixerState: null,
+    xr18Probe: null,
+    boostState: null,
+    soundCheckStamp: window.__soundCheckStamp || null,
+  };
+  try {
+    if (audioCtx) {
+      snap.audioCtx = {
+        state: audioCtx.state,
+        sampleRate: audioCtx.sampleRate,
+        destMaxCh: audioCtx.destination && audioCtx.destination.maxChannelCount,
+        destCh: audioCtx.destination && audioCtx.destination.channelCount,
+        destChMode: audioCtx.destination && audioCtx.destination.channelCountMode,
+        destSinkId: audioCtx.destination && audioCtx.destination.sinkId,
+        outputChannelCount,
+        masterGain: masterGainNode && masterGainNode.gain && masterGainNode.gain.value,
+      };
+    }
+    snap.routingMatrix = JSON.parse(JSON.stringify(routingMatrix || {}));
+    snap.mixerState = {
+      muted: { ...((mixerState && mixerState.muted) || {}) },
+      soloed: { ...((mixerState && mixerState.soloed) || {}) },
+      volumes: { ...((mixerState && mixerState.volumes) || {}) },
+      boost: { ...((mixerState && mixerState.boost) || {}) },
+    };
+    Object.keys(stripNodes || {}).forEach(k => {
+      const s = stripNodes[k];
+      const ae = (audioElements || {})[k];
+      snap.strips.push({
+        stem: k,
+        stripGain: s && s.stripGain && s.stripGain.gain && +s.stripGain.gain.value.toFixed(4),
+        mediaMute: s && s.mediaMute && s.mediaMute.gain && +s.mediaMute.gain.value.toFixed(4),
+        ae: ae ? {
+          paused: ae.paused,
+          muted: ae.muted,
+          volume: ae.volume,
+          currentTime: +(ae.currentTime || 0).toFixed(2),
+          hasSrc: !!ae.src,
+          srcEndsWith: ae.src ? ae.src.slice(-60) : null,
+          readyState: ae.readyState,
+          networkState: ae.networkState,
+        } : null,
+      });
+    });
+  } catch (e) {
+    snap.captureError = String(e && e.message || e);
+  }
+  try {
+    const r = await fetch('/api/audio/xr18-status', { cache: 'no-store' });
+    if (r.ok) snap.xr18Probe = await r.json();
+  } catch (e) { snap.xr18Probe = { error: String(e && e.message || e) }; }
+  try {
+    await fetch('/api/debug/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snap),
+    });
+    console.log('[snapshot]', label, snap);
+  } catch (e) {
+    console.warn('[snapshot] POST failed:', e);
+  }
+  // Brief visual confirmation on the snapshot button.
+  const btn = document.getElementById('btn-snapshot-state');
+  if (btn) {
+    const orig = btn.style.background;
+    btn.style.background = 'rgba(110, 170, 235, 0.85)';
+    setTimeout(() => { btn.style.background = orig; }, 400);
+  }
+  return snap;
 }
 
 // Channel-index → spoken-word label for Sound Check. The 8 named channels

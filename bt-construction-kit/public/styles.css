@@ -3931,6 +3931,27 @@ input:checked + .slider-round:before {
 #active-track-type,
 #btn-gig-mode { display: none !important; }
 
+/* Always-visible OS-default-output switch pills. These do NOT change the
+   in-app routing matrix — they're a pure macOS-Sound toggle for diagnostic
+   A/B testing (XR18 vs Mac speakers) during XR18 recovery. Page reloads
+   after switch so Chrome rebinds Web Audio to the new device. */
+.switch-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 26px; padding: 0 10px;
+  border-radius: 13px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.30);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.switch-pill:hover { filter: brightness(1.10); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.20); }
+.switch-pill:active { filter: brightness(0.90); }
+.switch-pill:disabled { opacity: 0.5; cursor: wait; }
+.switch-pill-xr18   { background: #2e8b57; }      /* mint, matches connected-state panel */
+.switch-pill-sysout { background: #c2992f; }      /* amber, matches disconnected-state panel */
+
 /* #5: Stem Mixer Console XR18 state. Container background tints based on
    .xr18-connected vs .xr18-disconnected; the latter dims and disables
    the channel strips so only the recovery buttons remain interactive. */

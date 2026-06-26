@@ -2705,23 +2705,57 @@ app.post('/api/restart', (req, res) => {
 // with "a password is required" on stderr, which we surface to the UI.
 app.post('/api/audio/kick-coreaudio', (req, res) => {
   const { spawn } = require('child_process');
+  logDebugEvent('kick-coreaudio-start', {});
   const child = spawn('sudo', ['-n', '/usr/bin/killall', 'coreaudiod']);
   let stderr = '';
   child.stderr.on('data', d => { stderr += d.toString(); });
   child.on('close', code => {
     if (code === 0) {
+      logDebugEvent('kick-coreaudio-ok', {});
       res.json({ ok: true });
     } else {
+      const msg = stderr.trim() || `sudo killall coreaudiod exited ${code}`;
+      logDebugEvent('kick-coreaudio-fail', { code, stderr: msg });
       res.status(500).json({
-        error: stderr.trim() || `sudo killall coreaudiod exited ${code}`,
+        error: msg,
         hint: 'Add a passwordless sudoers entry: see /api/audio/kick-coreaudio source for the one-line config.',
       });
     }
   });
   child.on('error', e => {
+    logDebugEvent('kick-coreaudio-spawn-error', { error: e.message });
     res.status(500).json({ error: `spawn failed: ${e.message}` });
   });
 });
+
+// Debug snapshot log — append-only JSON-lines file. The client's "Snapshot"
+// button POSTs the full audio state here before/after each step in the
+// XR18 recovery protocol so Claude can read it later via the Read tool.
+// One line per snapshot, no rotation (file is small per session and
+// gig-tagged transitions are the interesting parts).
+const DEBUG_SNAPSHOT_PATH = path.join(os.homedir(), '.simpleStem-catalog', 'debug-snapshots.log');
+app.post('/api/debug/snapshot', (req, res) => {
+  try {
+    const dir = path.dirname(DEBUG_SNAPSHOT_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = { server_when: new Date().toISOString(), ...req.body };
+    fs.appendFileSync(DEBUG_SNAPSHOT_PATH, JSON.stringify(payload) + '\n');
+    res.json({ ok: true, path: DEBUG_SNAPSHOT_PATH });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Helper: append a server-side diagnostic event to the same log so the
+// client-side snapshots and server-side actions interleave on disk.
+function logDebugEvent(label, details) {
+  try {
+    const dir = path.dirname(DEBUG_SNAPSHOT_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = { server_when: new Date().toISOString(), source: 'server', label, ...details };
+    fs.appendFileSync(DEBUG_SNAPSHOT_PATH, JSON.stringify(payload) + '\n');
+  } catch (e) {}
+}
 
 // Spoken sound-check words. macOS `say` renders each label to an .aiff,
 // ffmpeg transcodes to .m4a, both cached on disk per-word. First request
@@ -2808,9 +2842,11 @@ app.post('/api/audio/set-output', (req, res) => {
         const r = spawnSync(bin, ['-c', '-t', 'output'], { encoding: 'utf8' });
         if (r.status === 0) current = (r.stdout || '').trim();
       } catch (e) {}
+      logDebugEvent('set-output-ok', { requested: name, current });
       res.json({ ok: true, switched: true, requested: name, current });
     } else {
       const msg = (stderr || stdout || '').trim() || `SwitchAudioSource exited ${code}`;
+      logDebugEvent('set-output-fail', { requested: name, error: msg });
       res.status(500).json({
         ok: false,
         switched: false,

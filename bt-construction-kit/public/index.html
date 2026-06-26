@@ -485,6 +485,11 @@
                    kick CoreAudio. -->
               <div class="mixer-xr18-state" id="mixer-xr18-state">
                 <span class="mixer-xr18-label" id="mixer-xr18-label">XR18 …</span>
+                <button id="btn-switch-xr18" class="switch-pill switch-pill-xr18" title="Switch macOS default output to XR18 and reload the page so Chrome rebinds Web Audio to the new device. Does NOT touch the routing matrix — use this for quick A/B testing during XR18 recovery." aria-label="Switch to XR18">→ XR18</button>
+                <button id="btn-switch-sysout" class="switch-pill switch-pill-sysout" title="Switch macOS default output to MacBook Pro Speakers and reload the page. Does NOT touch the routing matrix — use this to confirm the rest of the audio chain works while diagnosing an XR18 problem." aria-label="Switch to System Output">→ Sys Out</button>
+                <button id="btn-snapshot-state" class="restart-circle" title="Snapshot the full audio state (XR18 probe, AudioContext, routing matrix, mixer state, per-strip gain) to the debug log so Claude can read it later. Click before AND after each diagnostic step so the log captures the transition." aria-label="Snapshot state">
+                  <i data-lucide="clipboard-list"></i>
+                </button>
                 <button id="btn-test-tone-mixer" class="restart-circle" title="Play a short test tone on XR18 Left+Right (or whatever the current macOS default output is). Ground-truth check that audio is actually reaching the board — if you don't hear a beep, the XR18 USB endpoint is hung." aria-label="Play test tone">
                   <i data-lucide="bell"></i>
                 </button>
