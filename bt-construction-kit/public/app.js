@@ -4301,6 +4301,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (fa) fa.addEventListener('click', kickCoreaudiod);
   const rs = document.getElementById('btn-restart-mixer');
   if (rs) rs.addEventListener('click', restartBackend);
+  const tt = document.getElementById('btn-test-tone-mixer');
+  if (tt) tt.addEventListener('click', playXr18TestTone);
   // ── XR18 connection-state badge ───────────────────────────────────
   // Asks the server (which runs system_profiler) every 2 seconds whether
   // the XR18 is physically connected AND is macOS's default output
@@ -4379,15 +4381,96 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 500);
 });
 
+// Ground-truth XR18-alive check. Plays a short tone on the current default
+// output's channels 1+2 (Left+Right). If you hear it, audio is reaching the
+// board; if you don't, the XR18 USB endpoint is hung (kick-coreaudio first,
+// then power-cycle the board — see the first-aid button tooltip for the
+// full escalation path).
+let testToneInProgress = false;
+async function playXr18TestTone() {
+  if (testToneInProgress) return;
+  testToneInProgress = true;
+  window.__hadUserGesture = true;
+  const btn = document.getElementById('btn-test-tone-mixer');
+  if (btn) { btn.disabled = true; btn.classList.add('is-testing'); }
+  try {
+    initAudioCtx();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) {}
+    }
+    if (!audioCtx) {
+      alert('Test tone: AudioContext is not available. Try reloading the page.');
+      return;
+    }
+    // Dedicated subgraph so the test doesn't depend on stripNodes existing
+    // (cold launch before any song is loaded).
+    const detected = audioCtx.destination.maxChannelCount || 2;
+    const merger = audioCtx.createChannelMerger(detected);
+    try {
+      merger.channelCount = detected;
+      merger.channelCountMode = 'explicit';
+      merger.channelInterpretation = 'discrete';
+    } catch (e) {}
+    merger.connect(audioCtx.destination);
+    const TONE_HZ = 880;
+    const TONE_MS = 350;
+    const GAIN = 0.35;
+    // Two oscillators — one to merger input 0 (L) and one to input 1 (R).
+    for (const out of [0, 1]) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.frequency.value = TONE_HZ;
+      g.gain.setValueAtTime(0, audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(GAIN, audioCtx.currentTime + 0.01);
+      g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + TONE_MS / 1000);
+      osc.connect(g);
+      g.connect(merger, 0, out);
+      osc.start();
+      osc.stop(audioCtx.currentTime + TONE_MS / 1000 + 0.02);
+    }
+    await new Promise(r => setTimeout(r, TONE_MS + 80));
+    try { merger.disconnect(); } catch (e) {}
+  } finally {
+    testToneInProgress = false;
+    if (btn) { btn.disabled = false; btn.classList.remove('is-testing'); }
+  }
+}
+
+// Channel-index → spoken-word label for Sound Check. The 8 named channels
+// correspond to the Spread preset routing: L+R on 0/1 (XR18 Main), and the
+// six stem home channels on 10-15 (XR18 11-16). Other in-use channels
+// (2-9, 16, 17) fall back to the 440 Hz tone — they're not labeled because
+// they're not part of the standard simpleStem routing.
+const SOUNDCHECK_WORDS = {
+  0: 'left', 1: 'right',
+  10: 'voice', 11: 'drums', 12: 'bass', 13: 'guitar', 14: 'piano', 15: 'other',
+};
+// Decoded-AudioBuffer cache keyed by word slug. First Sound Check fetches
+// + decodes once per word (~150 ms each on first run; server-side cache
+// makes the byte fetch instant on subsequent boots). Subsequent Sound
+// Checks reuse the decoded buffers in-memory.
+const SC_WORD_BUFFER_CACHE = {};
+async function fetchSoundCheckWord(slug) {
+  if (SC_WORD_BUFFER_CACHE[slug]) return SC_WORD_BUFFER_CACHE[slug];
+  const r = await fetch(`/api/audio/soundcheck-word/${encodeURIComponent(slug)}`, { cache: 'force-cache' });
+  if (!r.ok) throw new Error(`fetch ${slug}: ${r.status}`);
+  const arr = await r.arrayBuffer();
+  const buf = await audioCtx.decodeAudioData(arr.slice(0));
+  SC_WORD_BUFFER_CACHE[slug] = buf;
+  return buf;
+}
+
 // Pre-show readiness check.
 // 1. Supplies the user-gesture browsers require before they will report the
 //    real device channel count.
 // 2. Creates the AudioContext (initAudioCtx is gated on the gesture flag).
 // 3. Probes destination.maxChannelCount. If the XR18 is selected as system
 //    output, this is the moment we learn 18 not 2.
-// 4. Plays a brief 440 Hz sine tone on every output channel in sequence, so
-//    the FOH engineer can confirm signal lands on every XR18 input. Each
-//    tone is short (~180 ms) and quiet (~-12 dBFS).
+// 4. Speaks "Left", "Right", "Voice", "Drums", "Bass", "Guitar", "Piano",
+//    "Other" on the eight stem-routing channels (0, 1, 10-15) so the
+//    operator hears WHICH stem is supposed to land on which output. Other
+//    in-use channels still get a 440 Hz tone — they're not part of the
+//    standard simpleStem routing so a label would be misleading.
 // 5. Updates the badge to "✓ N channels verified at HH:MM" so the band can
 //    see at a glance that the rig is hot before downbeat.
 let soundCheckInProgress = false;
@@ -4436,25 +4519,62 @@ async function runSoundCheck() {
     const TONE_MS = 180;
     const GAP_MS  = 80;
     const GAIN    = 0.25;   // ~-12 dBFS, comfortable on headphones too
+    const SPOKEN_GAIN = 1.0; // `say` output is already moderate; full gain
+    // Pre-fetch the spoken words we'll use this run (only the ones we'll
+    // actually play given the detected channel count). Concurrent fetch
+    // so the check doesn't stall on the first named channel.
+    const wordsNeeded = Object.entries(SOUNDCHECK_WORDS)
+      .filter(([ch]) => Number(ch) < detected)
+      .map(([, w]) => w);
+    await Promise.all(wordsNeeded.map(w => fetchSoundCheckWord(w).catch(e => {
+      console.warn('[soundcheck] word fetch failed:', w, e.message);
+    })));
     for (let ch = 0; ch < detected; ch++) {
-      const osc = audioCtx.createOscillator();
-      const g   = audioCtx.createGain();
-      osc.frequency.value = TONE_HZ;
-      g.gain.setValueAtTime(0, audioCtx.currentTime);
-      g.gain.linearRampToValueAtTime(GAIN, audioCtx.currentTime + 0.01);
-      g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + TONE_MS / 1000);
-      osc.connect(g);
-      g.connect(merger, 0, ch);   // mono signal → input #ch of the merger
-      osc.start();
-      osc.stop(audioCtx.currentTime + TONE_MS / 1000 + 0.02);
-      if (tag) tag.textContent = `🔊 Sound check… ${ch + 1}/${detected}`;
-      // Light up the matching strip button (if present) so the user sees
-      // which channel is currently sounding. Bright class fades naturally
-      // via CSS transition.
+      const word = SOUNDCHECK_WORDS[ch];
+      const buf = word ? SC_WORD_BUFFER_CACHE[word] : null;
+      if (tag) tag.textContent = `🔊 Sound check… ${ch + 1}/${detected}${word ? ' "' + word + '"' : ''}`;
       document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
         b.classList.add('soundcheck-flash')
       );
-      await new Promise(r => setTimeout(r, TONE_MS + GAP_MS));
+      let durMs;
+      if (buf) {
+        // Spoken word — route the buffer's mono mix through merger input #ch.
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g = audioCtx.createGain();
+        g.gain.value = SPOKEN_GAIN;
+        // If the buffer is stereo, fold to mono so it goes cleanly to one
+        // output channel rather than splitting across destination L+R.
+        if (buf.numberOfChannels > 1) {
+          const splitter = audioCtx.createChannelSplitter(buf.numberOfChannels);
+          const monoMix = audioCtx.createGain();
+          monoMix.gain.value = 1 / buf.numberOfChannels;
+          src.connect(splitter);
+          for (let i = 0; i < buf.numberOfChannels; i++) {
+            splitter.connect(monoMix, i, 0);
+          }
+          monoMix.connect(g);
+        } else {
+          src.connect(g);
+        }
+        g.connect(merger, 0, ch);
+        src.start();
+        durMs = Math.ceil(buf.duration * 1000);
+      } else {
+        // Fall-through tone for unnamed channels (or when word fetch failed).
+        const osc = audioCtx.createOscillator();
+        const g   = audioCtx.createGain();
+        osc.frequency.value = TONE_HZ;
+        g.gain.setValueAtTime(0, audioCtx.currentTime);
+        g.gain.linearRampToValueAtTime(GAIN, audioCtx.currentTime + 0.01);
+        g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + TONE_MS / 1000);
+        osc.connect(g);
+        g.connect(merger, 0, ch);
+        osc.start();
+        osc.stop(audioCtx.currentTime + TONE_MS / 1000 + 0.02);
+        durMs = TONE_MS;
+      }
+      await new Promise(r => setTimeout(r, durMs + GAP_MS));
       document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
         b.classList.remove('soundcheck-flash')
       );

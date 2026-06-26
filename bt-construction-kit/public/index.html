@@ -485,6 +485,9 @@
                    kick CoreAudio. -->
               <div class="mixer-xr18-state" id="mixer-xr18-state">
                 <span class="mixer-xr18-label" id="mixer-xr18-label">XR18 …</span>
+                <button id="btn-test-tone-mixer" class="restart-circle" title="Play a short test tone on XR18 Left+Right (or whatever the current macOS default output is). Ground-truth check that audio is actually reaching the board — if you don't hear a beep, the XR18 USB endpoint is hung." aria-label="Play test tone">
+                  <i data-lucide="bell"></i>
+                </button>
                 <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
                   <i data-lucide="rotate-cw"></i>
                 </button>

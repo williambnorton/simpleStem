@@ -2723,6 +2723,47 @@ app.post('/api/audio/kick-coreaudio', (req, res) => {
   });
 });
 
+// Spoken sound-check words. macOS `say` renders each label to an .aiff,
+// ffmpeg transcodes to .m4a, both cached on disk per-word. First request
+// for a given word is ~600 ms (synthesis + transcode); subsequent requests
+// stream from cache. Used by the upgraded Sound Check button to play
+// "Left", "Right", "Voice", "Drums", "Bass", "Guitar", "Piano", "Other"
+// on each of the eight named XR18 outputs so the operator can verify by
+// ear that the right stem is on the right channel.
+const SC_WORD_CACHE_DIR = path.join(os.homedir(), '.simpleStem-cache', 'soundcheck');
+const SC_WORDS = {
+  left: 'Left', right: 'Right',
+  voice: 'Voice', drums: 'Drums', bass: 'Bass',
+  guitar: 'Guitar', piano: 'Piano', other: 'Other',
+  test: 'Test',
+};
+app.get('/api/audio/soundcheck-word/:word', (req, res) => {
+  const word = String(req.params.word || '').toLowerCase();
+  const text = SC_WORDS[word];
+  if (!text) return res.status(404).send('unknown word');
+  const out = path.join(SC_WORD_CACHE_DIR, `${word}.m4a`);
+  const serve = () => {
+    res.set('Content-Type', 'audio/mp4');
+    res.set('Cache-Control', 'public, max-age=86400');
+    fs.createReadStream(out).pipe(res);
+  };
+  if (fs.existsSync(out) && fs.statSync(out).size > 0) return serve();
+  try { fs.mkdirSync(SC_WORD_CACHE_DIR, { recursive: true }); } catch (e) {}
+  const aiff = path.join(SC_WORD_CACHE_DIR, `${word}.aiff`);
+  const { execFile } = require('child_process');
+  // `say -r 180` is moderately fast — clear without dragging out the
+  // sound check. `-v` left default (system voice) so users hear the
+  // voice their Mac already uses.
+  execFile('say', ['-r', '180', '-o', aiff, text], (err) => {
+    if (err) return res.status(500).send(`say failed: ${err.message}`);
+    execFile('ffmpeg', ['-y', '-i', aiff, '-c:a', 'aac', '-b:a', '64k', out], (err2) => {
+      try { fs.unlinkSync(aiff); } catch (e) {}
+      if (err2) return res.status(500).send(`ffmpeg failed: ${err2.message}`);
+      serve();
+    });
+  });
+});
+
 // Set macOS default audio output device by name. Used by the "Preset:
 // Stereo" / "Preset: Spread to 6 Stems" buttons so the operator can
 // flip the entire rig (Chrome → speakers vs Chrome → XR18) with one
