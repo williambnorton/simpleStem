@@ -3944,32 +3944,43 @@ input:checked + .slider-round:before {
   letter-spacing: 0.03em;
 }
 .mixer-xr18-label { white-space: nowrap; }
+/* XR18 state — LIGHT panel tint with DARK high-contrast text. Designed
+   for at-a-glance verification across a rehearsal room. */
 .mixer-console.xr18-connected {
-  background: linear-gradient(180deg, rgba(46, 204, 113, 0.18) 0%, rgba(46, 204, 113, 0.04) 100%);
-  border-color: rgba(46, 204, 113, 0.55) !important;
+  background: #d6f5e0 !important;          /* light mint */
+  border-color: #2e8b57 !important;
 }
 .mixer-console.xr18-connected .mixer-xr18-state {
-  background: rgba(46, 204, 113, 0.22);
-  border: 1px solid rgba(46, 204, 113, 0.55);
-  color: #b9f0cd;
+  background: #2e8b57;                     /* dark green */
+  border: 1px solid #1f5e3b;
+  color: #ffffff;
+  font-weight: 800;
 }
-.mixer-console.xr18-unknown {
-  /* Neutral until we've actually probed. No yellow alarm yet. */
-}
-.mixer-console.xr18-unknown .mixer-xr18-state {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.20);
-  color: rgba(255, 255, 255, 0.65);
-  font-weight: 600;
+.mixer-console.xr18-connected .section-title {
+  color: #1f5e3b;
 }
 .mixer-console.xr18-disconnected {
-  background: linear-gradient(180deg, rgba(244, 196, 48, 0.20) 0%, rgba(244, 196, 48, 0.04) 100%);
-  border-color: rgba(244, 196, 48, 0.65) !important;
+  background: #fff4cc !important;          /* light cream */
+  border-color: #c2992f !important;
 }
 .mixer-console.xr18-disconnected .mixer-xr18-state {
-  background: rgba(244, 196, 48, 0.28);
-  border: 1px solid rgba(244, 196, 48, 0.75);
-  color: #2a1f00;
+  background: #c2992f;                     /* dark amber */
+  border: 1px solid #8a6c1a;
+  color: #ffffff;
+  font-weight: 800;
+}
+.mixer-console.xr18-disconnected .section-title {
+  color: #5a4400;
+}
+.mixer-console.xr18-unknown {
+  background: #f0f0f0 !important;          /* light neutral grey */
+  border-color: #999 !important;
+}
+.mixer-console.xr18-unknown .mixer-xr18-state {
+  background: #777;
+  border: 1px solid #555;
+  color: #ffffff;
+  font-weight: 700;
 }
 /* Channel strips dimmed + non-interactive when XR18 is missing — except
    any restart-circle / first-aid-circle inside the header stays alive. */

@@ -2723,6 +2723,62 @@ app.post('/api/audio/kick-coreaudio', (req, res) => {
   });
 });
 
+// XR18 device status — interrogates macOS via system_profiler so we can
+// truthfully say "XR18 is connected" on page load, BEFORE the user has
+// triggered the Web Audio context with a click. Web Audio can't tell us
+// the device channel count until the AudioContext is resumed by a
+// gesture; system_profiler can, with no user interaction.
+//
+// Returns:
+//   { ok: true, present, isDefaultOutput, deviceName, channels }
+//
+// `present` — XR18 hardware visible to macOS.
+// `isDefaultOutput` — XR18 is the macOS default output device.
+// `channels` — number of output channels the device exposes (18 for XR18).
+//
+// On non-macOS or system_profiler failure, returns { ok: false, error } and
+// the client falls back to the Web Audio probe.
+app.get('/api/audio/xr18-status', (req, res) => {
+  const { execFile } = require('child_process');
+  execFile('system_profiler', ['SPAudioDataType', '-json'], { timeout: 4000 }, (err, stdout) => {
+    if (err) return res.json({ ok: false, error: err.message });
+    let data;
+    try { data = JSON.parse(stdout); }
+    catch (e) { return res.json({ ok: false, error: 'unparseable system_profiler output' }); }
+    const items = (data && data.SPAudioDataType && data.SPAudioDataType[0] && data.SPAudioDataType[0]._items) || [];
+    let xr18 = null;
+    let defaultOutputName = null;
+    // Walk all audio items; XR18 appears as "Behringer XR18" or similar.
+    // The default-output device is flagged with coreaudio_default_audio_output_device = "spaudio_yes".
+    const walk = (arr) => {
+      for (const it of arr) {
+        const name = it._name || '';
+        if (/xr18|behringer/i.test(name)) xr18 = it;
+        if (it.coreaudio_default_audio_output_device === 'spaudio_yes' ||
+            it.coreaudio_default_audio_system_device === 'spaudio_yes') {
+          defaultOutputName = name;
+        }
+        if (Array.isArray(it._items)) walk(it._items);
+      }
+    };
+    walk(items);
+    const present = !!xr18;
+    const isDefaultOutput = !!(xr18 && defaultOutputName && /xr18|behringer/i.test(defaultOutputName));
+    // coreaudio_device_output_channels = N when present.
+    const channels = xr18
+      ? (parseInt(xr18.coreaudio_device_output_channels, 10) || 0)
+      : 0;
+    res.json({
+      ok: true,
+      present,
+      isDefaultOutput,
+      deviceName: xr18 ? xr18._name : null,
+      defaultOutputName,
+      channels,
+    });
+  });
+});
+
 // Health probe — extremely cheap, no Drive, no FS scan. The client spinner
 // uses it to distinguish "server is up but library is still loading" from
 // "server itself is not answering". Useful during boot when /api/library is
