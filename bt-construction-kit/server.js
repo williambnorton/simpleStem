@@ -2738,44 +2738,104 @@ app.post('/api/audio/kick-coreaudio', (req, res) => {
 //
 // On non-macOS or system_profiler failure, returns { ok: false, error } and
 // the client falls back to the Web Audio probe.
+// Two-stage probe. Stage 1 (ioreg) is FAST (~50-100ms) and tells us
+// whether the XR18 is on a USB bus — no parsing of nested JSON. Stage 2
+// (system_profiler) is SLOW (1-3 sec) and tells us which output device
+// macOS has selected by default. We run them in parallel and cache for
+// 1.5 sec server-side so multiple clients (or the 2-sec poll on this
+// one) don't slam the system.
+let _xr18CacheAt = 0;
+let _xr18Cache = null;
 app.get('/api/audio/xr18-status', (req, res) => {
+  if (_xr18Cache && (Date.now() - _xr18CacheAt) < 1500) {
+    return res.json({ ..._xr18Cache, cached: true });
+  }
   const { execFile } = require('child_process');
-  execFile('system_profiler', ['SPAudioDataType', '-json'], { timeout: 4000 }, (err, stdout) => {
-    if (err) return res.json({ ok: false, error: err.message });
-    let data;
-    try { data = JSON.parse(stdout); }
-    catch (e) { return res.json({ ok: false, error: 'unparseable system_profiler output' }); }
-    const items = (data && data.SPAudioDataType && data.SPAudioDataType[0] && data.SPAudioDataType[0]._items) || [];
-    let xr18 = null;
-    let defaultOutputName = null;
-    // Walk all audio items; XR18 appears as "Behringer XR18" or similar.
-    // The default-output device is flagged with coreaudio_default_audio_output_device = "spaudio_yes".
-    const walk = (arr) => {
-      for (const it of arr) {
-        const name = it._name || '';
-        if (/xr18|behringer/i.test(name)) xr18 = it;
-        if (it.coreaudio_default_audio_output_device === 'spaudio_yes' ||
-            it.coreaudio_default_audio_system_device === 'spaudio_yes') {
-          defaultOutputName = name;
-        }
-        if (Array.isArray(it._items)) walk(it._items);
-      }
-    };
-    walk(items);
-    const present = !!xr18;
-    const isDefaultOutput = !!(xr18 && defaultOutputName && /xr18|behringer/i.test(defaultOutputName));
-    // coreaudio_device_output_channels = N when present.
-    const channels = xr18
-      ? (parseInt(xr18.coreaudio_device_output_channels, 10) || 0)
-      : 0;
-    res.json({
-      ok: true,
-      present,
-      isDefaultOutput,
-      deviceName: xr18 ? xr18._name : null,
-      defaultOutputName,
-      channels,
+  const runIoreg = new Promise(resolve => {
+    execFile('/bin/sh', ['-c', 'ioreg -p IOUSB -l 2>/dev/null'], { timeout: 2500 }, (err, stdout) => {
+      if (err) return resolve({ ok: false, err: err.message });
+      // Look for "USB Product Name" = "XR18" / "BEHRINGER ..." lines.
+      const hit = /(XR18|BEHRINGER)/i.test(stdout || '');
+      resolve({ ok: true, present: hit });
     });
+  });
+  const runProfiler = new Promise(resolve => {
+    execFile('/usr/sbin/system_profiler', ['SPAudioDataType', '-json'], { timeout: 6000 }, (err, stdout) => {
+      if (err) return resolve({ ok: false, err: err.message });
+      let data;
+      try { data = JSON.parse(stdout); }
+      catch (e) { return resolve({ ok: false, err: 'unparseable system_profiler output: ' + e.message }); }
+      // The structure varies by macOS version; walk every nested _items
+      // array and look for the XR18 + the default-output flag wherever
+      // they appear.
+      let xr18 = null, defaultOutputName = null;
+      const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) { node.forEach(walk); return; }
+        const name = node._name || '';
+        if (/xr18|behringer/i.test(name)) xr18 = xr18 || node;
+        if (node.coreaudio_default_audio_output_device === 'spaudio_yes' ||
+            node.coreaudio_default_audio_system_device === 'spaudio_yes' ||
+            node.coreaudio_default_output_device === 'spaudio_yes') {
+          if (name) defaultOutputName = name;
+        }
+        for (const k of Object.keys(node)) {
+          if (k === '_items' || k === 'SPAudioDataType' || k === 'items') walk(node[k]);
+        }
+      };
+      walk(data);
+      const channels = xr18 ? (parseInt(xr18.coreaudio_device_output_channels, 10) || 0) : 0;
+      resolve({
+        ok: true,
+        present: !!xr18,
+        deviceName: xr18 ? xr18._name : null,
+        defaultOutputName,
+        channels,
+        isDefaultOutput: !!(xr18 && defaultOutputName && /xr18|behringer/i.test(defaultOutputName)),
+      });
+    });
+  });
+  Promise.all([runIoreg, runProfiler]).then(([ioreg, prof]) => {
+    // Prefer system_profiler's data because it has channel count + default
+    // output info. Use ioreg as a fast confirmation OR fallback when
+    // system_profiler is dead. If both fail, report ok:false with both
+    // errors so the client can surface them.
+    let payload;
+    if (prof.ok) {
+      payload = {
+        ok: true,
+        present: prof.present || (ioreg.ok && ioreg.present),
+        deviceName: prof.deviceName,
+        defaultOutputName: prof.defaultOutputName,
+        channels: prof.channels,
+        isDefaultOutput: prof.isDefaultOutput,
+        source: 'system_profiler',
+      };
+    } else if (ioreg.ok) {
+      payload = {
+        ok: true,
+        present: ioreg.present,
+        deviceName: ioreg.present ? 'BEHRINGER XR18 (via ioreg)' : null,
+        defaultOutputName: null,
+        channels: ioreg.present ? 18 : 0,
+        // We don't know if XR18 is the default output without system_profiler;
+        // assume it IS if it's connected so the operator doesn't get a
+        // false alarm.
+        isDefaultOutput: ioreg.present,
+        source: 'ioreg-fallback',
+        warning: 'system_profiler failed: ' + (prof.err || 'unknown'),
+      };
+    } else {
+      payload = {
+        ok: false,
+        error: 'Both probes failed',
+        ioregError: ioreg.err,
+        profilerError: prof.err,
+      };
+    }
+    _xr18Cache = payload;
+    _xr18CacheAt = Date.now();
+    res.json(payload);
   });
 });
 

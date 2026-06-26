@@ -4290,14 +4290,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else throw new Error(`status ${r.status}`);
     } catch (e) {
-      // Server unreachable — fall back to Web Audio channel count if we
-      // have it. Otherwise stay 'unknown' so the operator at least sees
-      // it's not asserting a state it can't verify.
+      // Server unreachable OR endpoint returned non-2xx. Surface the
+      // ACTUAL error in the tooltip so post-mortem isn't guesswork.
       const ch = (typeof outputChannelCount === 'number') ? outputChannelCount : 0;
       const probed = !!(window.audioCtx || window.__soundCheckStamp);
-      if (probed && ch >= 6) { state = 'connected';   text = `● XR18 ACTIVE · ${ch} ch out`;                    tip = `Server probe unreachable; Web Audio sees ${ch} channels (XR18-shaped).`; }
-      else if (probed)       { state = 'disconnected'; text = `XR18 NOT DETECTED · ${ch} ch (Web Audio fallback)`; tip = `Server probe unreachable; Web Audio sees ${ch} channels (stereo only).`; }
-      else                   { state = 'unknown';      text = `XR18 status — server probe unavailable`;            tip = `Server probe failed (${e.message}). Click play to fall back to a Web Audio probe.`; }
+      const errMsg = (e && e.message) || String(e || 'unknown');
+      console.warn('[xr18-status] probe failed:', errMsg);
+      if (probed && ch >= 6) {
+        state = 'connected';   text = `● XR18 ACTIVE · ${ch} ch (server probe down)`;
+        tip = `Server probe failed (${errMsg}). Web Audio sees ${ch} channels — assuming XR18 is connected.`;
+      } else if (probed) {
+        state = 'disconnected'; text = `XR18 NOT DETECTED · ${ch} ch (server probe down)`;
+        tip = `Server probe failed (${errMsg}). Web Audio sees only ${ch} channels.`;
+      } else {
+        state = 'unknown';      text = `XR18 status — server probe failed (${errMsg.slice(0, 40)})`;
+        tip = `The /api/audio/xr18-status endpoint isn't responding. Cause: ${errMsg}. Confirm: (1) the server restarted with the latest deploy, (2) the endpoint is in server.js (grep -c xr18-status), (3) curl http://localhost:3000/api/audio/xr18-status from a terminal.`;
+      }
     }
     wrap.classList.toggle('xr18-connected',    state === 'connected');
     wrap.classList.toggle('xr18-disconnected', state === 'disconnected');
