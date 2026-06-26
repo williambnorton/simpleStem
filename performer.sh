@@ -131,6 +131,22 @@ start_one() {
   if is_running "$name"; then
     echo "  $name already running (pid $(cat "$(pidfile "$name")"))"; return
   fi
+  # Belt-and-suspenders for the server: kill anything bound to $PORT before
+  # starting a fresh node. .run/perf-server.pid only tracks what we started;
+  # a stale process from a previous boot (or a manual `node server.js`) can
+  # still own the port silently — our new server then fails to bind, and the
+  # "restart" becomes a no-op while the old code keeps serving. Hit by Bill
+  # 2026-06-26 when a Sunday-old node was squatting :3000 for 5 days. Only
+  # runs for the server service — the others (runner, midi) don't bind a port.
+  if [[ "$name" == "server" ]]; then
+    local squatters
+    squatters=$(lsof -nP -iTCP:"${PORT:-3000}" -sTCP:LISTEN -t 2>/dev/null || true)
+    if [[ -n "$squatters" ]]; then
+      echo "  killing port-${PORT:-3000} squatter(s): $squatters"
+      kill -9 $squatters 2>/dev/null || true
+      sleep 1
+    fi
+  fi
   # nohup + setsid-style detach so the service SURVIVES closing the terminal
   # (without nohup, a plain & job gets SIGHUP and dies on terminal close).
   nohup bash -c "$(start_cmd "$name")" >"$(logfile "$name")" 2>&1 &

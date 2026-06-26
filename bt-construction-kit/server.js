@@ -2769,22 +2769,44 @@ app.get('/api/audio/xr18-status', (req, res) => {
       // array and look for the XR18 + the default-output flag wherever
       // they appear.
       let xr18 = null, defaultOutputName = null;
+      // The exact JSON key for "is default output" varies across macOS
+      // versions. We catch ALL the variants by checking any key that
+      // contains "default" and "output" (or just "default"), with any
+      // truthy-ish value (`spaudio_yes`, `Yes`, `true`, 1). Same for
+      // channel counts — we scan any key matching "output_channels".
+      const looksLikeYes = (v) => {
+        if (v == null) return false;
+        if (v === true) return true;
+        if (typeof v === 'number' && v) return true;
+        const s = String(v).toLowerCase();
+        return s === 'spaudio_yes' || s === 'yes' || s === 'true' || s === '1';
+      };
       const walk = (node) => {
         if (!node || typeof node !== 'object') return;
         if (Array.isArray(node)) { node.forEach(walk); return; }
         const name = node._name || '';
         if (/xr18|behringer/i.test(name)) xr18 = xr18 || node;
-        if (node.coreaudio_default_audio_output_device === 'spaudio_yes' ||
-            node.coreaudio_default_audio_system_device === 'spaudio_yes' ||
-            node.coreaudio_default_output_device === 'spaudio_yes') {
-          if (name) defaultOutputName = name;
-        }
         for (const k of Object.keys(node)) {
+          const lk = k.toLowerCase();
+          if (lk.includes('default') && (lk.includes('output') || lk.includes('audio'))) {
+            if (looksLikeYes(node[k]) && name) defaultOutputName = name;
+          }
           if (k === '_items' || k === 'SPAudioDataType' || k === 'items') walk(node[k]);
         }
       };
       walk(data);
-      const channels = xr18 ? (parseInt(xr18.coreaudio_device_output_channels, 10) || 0) : 0;
+      // Channel count — XR18 entry might use any of these keys depending
+      // on macOS version. Take the first match.
+      let channels = 0;
+      if (xr18) {
+        for (const k of Object.keys(xr18)) {
+          const lk = k.toLowerCase();
+          if (lk.includes('output') && lk.includes('channel')) {
+            const n = parseInt(xr18[k], 10);
+            if (n > 0) { channels = n; break; }
+          }
+        }
+      }
       resolve({
         ok: true,
         present: !!xr18,
