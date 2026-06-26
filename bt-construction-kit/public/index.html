@@ -200,12 +200,9 @@
                 <button id="btn-gig-mode" class="gig-mode-toggle" aria-pressed="false">
                   <i data-lucide="zap"></i> <span class="gig-mode-label">Gig Mode</span>
                 </button>
-                <button id="btn-restart-top" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
-                  <i data-lucide="rotate-cw"></i>
-                </button>
-                <button id="btn-kick-coreaudio-top" class="restart-circle first-aid-circle" title="First aid: kick coreaudiod (sudo killall coreaudiod). Forces the Mac+XR18 USB engine to renegotiate when audio drops out mid-gig. ~1 sec of silence; page reloads after." aria-label="Kick Core Audio">
-                  <i data-lucide="briefcase-medical"></i>
-                </button>
+                <!-- Restart + First Aid buttons moved to the Stem Mixer
+                     Console header per Bill's request. They live with the
+                     XR18 connection-state indicator there now. -->
               </div>
               <h1 class="track-title">
                 <button id="active-track-star" class="active-track-star" title="Click to favorite" style="display:none;">☆</button>
@@ -480,6 +477,21 @@
                    the collapse arrow so it lives with the other mixer-level
                    controls. -->
               <button id="btn-clear-all-solos" class="btn-mixer-master clear-solos-btn" type="button" style="display:none;" title="Click to drop every solo at once">UNSOLO</button>
+              <!-- XR18 connection state indicator + recovery buttons.
+                   Updates live based on Web Audio's outputChannelCount:
+                   18 ch = green / connected; <=2 = yellow / disconnected.
+                   When yellow, the channel strips are dimmed and not
+                   clickable; the only things you can do are restart and
+                   kick CoreAudio. -->
+              <div class="mixer-xr18-state" id="mixer-xr18-state">
+                <span class="mixer-xr18-label" id="mixer-xr18-label">XR18 …</span>
+                <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
+                  <i data-lucide="rotate-cw"></i>
+                </button>
+                <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="First aid: kick coreaudiod (sudo killall coreaudiod). Forces Mac+XR18 USB engine to renegotiate when audio drops out. ~1s of silence; page reloads after." aria-label="Kick Core Audio">
+                  <i data-lucide="briefcase-medical"></i>
+                </button>
+              </div>
               <!-- Collapse-mixer toggle: clicking this shrinks the entire top
                    pane down to just title / BPM / key / drum-pattern, so the
                    library and gig sidebar get more room. -->

@@ -192,7 +192,7 @@ const els = {
   // Version / update
   versionRunning: document.getElementById('version-running'),
   btnUpdate: document.getElementById('btn-update'),
-  btnRestart: document.getElementById('btn-restart-top'),
+  btnRestart: document.getElementById('btn-restart-mixer') || document.getElementById('btn-restart-top'),
   librarySpinnerCaption: document.getElementById('library-spinner-caption'),
   bufferingCaption: document.getElementById('buffering-caption'),
   updateLabel: document.getElementById('update-label'),
@@ -4230,7 +4230,7 @@ function injectMixerHeaderInfo() {
 // Audio drops for ~1s. Page reloads so the routing badge re-detects.
 async function kickCoreaudiod() {
   if (!confirm('First aid: kick Core Audio (sudo killall coreaudiod)? All audio drops for ~1s; the page reloads after.')) return;
-  const btn = document.getElementById('btn-kick-coreaudio-top');
+  const btn = document.getElementById('btn-kick-coreaudio-mixer') || document.getElementById('btn-kick-coreaudio-top');
   if (btn) { btn.disabled = true; btn.classList.add('is-kicking'); btn.title = 'Kicking Core Audio…'; }
   try {
     const r = await fetch('/api/audio/kick-coreaudio', { method: 'POST' });
@@ -4248,12 +4248,52 @@ async function kickCoreaudiod() {
   setTimeout(() => location.reload(), 1500);
 }
 
-// Wire the top-level First Aid button. Uses the same handler as before
-// — only the trigger location changed (was in the routing-info row,
-// now next to the cycle-power button at the very top of the app).
+// Wire the recovery buttons inside the Stem Mixer Console header.
+// Same handlers as the legacy top-of-app buttons — only the location
+// changed. Bill: now they sit with the XR18 connection state badge.
 document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('btn-kick-coreaudio-top');
-  if (btn) btn.addEventListener('click', kickCoreaudiod);
+  const fa = document.getElementById('btn-kick-coreaudio-mixer');
+  if (fa) fa.addEventListener('click', kickCoreaudiod);
+  const rs = document.getElementById('btn-restart-mixer');
+  if (rs) rs.addEventListener('click', restartBackend);
+  // ── XR18 connection-state badge ───────────────────────────────────
+  // outputChannelCount is the live device channel count (set when Web
+  // Audio probes the destination). 18 → XR18; <=2 → stereo-only / not
+  // detected. Update the mixer header's badge + container background
+  // every 500ms so a USB disconnect is reflected immediately.
+  setInterval(() => {
+    const wrap   = document.getElementById('mixer-container');
+    const label  = document.getElementById('mixer-xr18-label');
+    const stateW = document.getElementById('mixer-xr18-state');
+    if (!wrap || !label) return;
+    const ch = (typeof outputChannelCount === 'number') ? outputChannelCount : 0;
+    const connected = ch >= 6;     // 6+ → multi-channel device; XR18 = 18
+    wrap.classList.toggle('xr18-connected', connected);
+    wrap.classList.toggle('xr18-disconnected', !connected);
+    label.textContent = connected
+      ? `● XR18 ACTIVE · ${ch} ch out`
+      : `XR18 NOT DETECTED · check USB, then click first aid →`;
+    if (stateW) stateW.title = connected
+      ? `XR18 is connected and Core Audio sees ${ch} channels.`
+      : 'XR18 not detected. Check: USB cable seated, XR18 powered, and macOS Sound Output set to XR18. Then click the red first-aid button to kick coreaudiod.';
+  }, 500);
+  // ── Server heartbeat ──────────────────────────────────────────────
+  // Polls /api/health every 3s. If we don't get a successful response
+  // for >5s, add body.server-stale so the player-hero-section turns
+  // yellow until the next successful ping.
+  let lastHealthAt = Date.now();
+  const HEARTBEAT_INTERVAL_MS = 3000;
+  const STALE_THRESHOLD_MS = 5000;
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/health', { cache: 'no-store' });
+      if (r.ok) lastHealthAt = Date.now();
+    } catch (e) { /* timeout / no-network */ }
+  }, HEARTBEAT_INTERVAL_MS);
+  setInterval(() => {
+    const stale = (Date.now() - lastHealthAt) > STALE_THRESHOLD_MS;
+    document.body.classList.toggle('server-stale', stale);
+  }, 500);
 });
 
 // Pre-show readiness check.
@@ -8368,7 +8408,13 @@ function refreshAutomationToolbar() {
   if (saveBtn) saveBtn.disabled = !automationCurrentBase || !automationDirty;
   // CLEAR is always available when a song is loaded — even with 0 visible
   // actions, the user might want to wipe sections (or just be sure).
-  if (clearBtn) clearBtn.disabled = !automationCurrentBase;
+  if (clearBtn) {
+    clearBtn.disabled = !automationCurrentBase;
+    // Yellow background when there's actually something to clear so the
+    // dark-red text becomes readable. Empty timeline reverts to the
+    // subtle danger style.
+    clearBtn.classList.toggle('has-actions', automationEvents.length > 0);
+  }
 }
 
 // Mark the in-memory event list as differing from what's on disk. Triggered

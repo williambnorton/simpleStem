@@ -3931,6 +3931,68 @@ input:checked + .slider-round:before {
 #active-track-type,
 #btn-gig-mode { display: none !important; }
 
+/* #5: Stem Mixer Console XR18 state. Container background tints based on
+   .xr18-connected vs .xr18-disconnected; the latter dims and disables
+   the channel strips so only the recovery buttons remain interactive. */
+.mixer-xr18-state {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin-left: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.mixer-xr18-label { white-space: nowrap; }
+.mixer-console.xr18-connected {
+  background: linear-gradient(180deg, rgba(46, 204, 113, 0.18) 0%, rgba(46, 204, 113, 0.04) 100%);
+  border-color: rgba(46, 204, 113, 0.55) !important;
+}
+.mixer-console.xr18-connected .mixer-xr18-state {
+  background: rgba(46, 204, 113, 0.22);
+  border: 1px solid rgba(46, 204, 113, 0.55);
+  color: #b9f0cd;
+}
+.mixer-console.xr18-disconnected {
+  background: linear-gradient(180deg, rgba(244, 196, 48, 0.20) 0%, rgba(244, 196, 48, 0.04) 100%);
+  border-color: rgba(244, 196, 48, 0.65) !important;
+}
+.mixer-console.xr18-disconnected .mixer-xr18-state {
+  background: rgba(244, 196, 48, 0.28);
+  border: 1px solid rgba(244, 196, 48, 0.75);
+  color: #2a1f00;
+}
+/* Channel strips dimmed + non-interactive when XR18 is missing — except
+   any restart-circle / first-aid-circle inside the header stays alive. */
+.mixer-console.xr18-disconnected .channel-strip {
+  opacity: 0.40;
+  pointer-events: none;
+  filter: grayscale(0.4);
+}
+
+/* #6: Server-heartbeat staleness indicator. body.server-stale tints the
+   top hero section yellow so the operator instantly sees the server
+   isn't responding. Returns to default the moment the next heartbeat
+   lands. */
+body.server-stale .player-hero-section,
+body.server-stale .player-active {
+  background: linear-gradient(180deg, rgba(244, 196, 48, 0.28) 0%, rgba(244, 196, 48, 0.10) 100%) !important;
+  transition: background 0.4s ease;
+}
+body.server-stale .player-hero-section::after,
+body.server-stale .player-active::after {
+  content: 'SERVER NOT RESPONDING — try the restart button →';
+  position: absolute; top: 6px; right: 12px;
+  font-size: 11px; font-weight: 800; color: #2a1f00;
+  background: #f4c430;
+  padding: 3px 9px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 200;
+}
+
 /* Spinner caption — small italic text under any of the loading spinners.
    Tells the operator WHAT the wheel is waiting on so a stuck boot isn't
    silent. Used by the library-load spinner and the audio-buffering
@@ -5674,12 +5736,14 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   color: #d9b4f0;
 }
 .midi-action-lyric:hover { background: rgba(155, 89, 182, 0.35); color: #fff; }
+/* #4: Fetch Lyrics — yellow text on navy blue so it shouts "act here" */
 .midi-action-lyric.mode-fetch {
-  background: rgba(70, 130, 200, 0.20);
-  border-color: rgba(70, 130, 200, 0.60);
-  color: #a3d9ff;
+  background: #14213d;                                 /* navy */
+  border-color: #f4c430;                               /* yellow */
+  color: #f4c430;                                      /* yellow */
+  font-weight: 800;
 }
-.midi-action-lyric.mode-fetch:hover { background: rgba(70, 130, 200, 0.38); color: #fff; }
+.midi-action-lyric.mode-fetch:hover { background: #1d2e54; color: #fff; border-color: #fff; }
 .midi-action-lyric.mode-show {
   background: rgba(46, 204, 113, 0.18);
   border-color: rgba(46, 204, 113, 0.55);
@@ -5810,26 +5874,27 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   transition: opacity 0.3s ease;
 }
 .lyrics-display-body {
-  padding: 28px;
-  /* `pre-wrap` keeps explicit newlines (the append-mode "stack" of lines
-     uses \n), `overflow-wrap: anywhere` lets a too-long single word wrap
-     within its bounds instead of overflowing the mixer-console box. */
+  padding: 20px 28px;
+  /* Wrap aggressively. `pre-wrap` preserves the \n stack from append
+     mode; `break-word` + `anywhere` ensures even a long single word
+     wraps inside the panel. */
   white-space: pre-wrap;
-  word-break: normal;
+  word-break: break-word;
   overflow-wrap: anywhere;
-  /* Auto-scaling font: clamp between 22 and 56px. Use min() against the
-     container's narrower axis (40vw + 5vh) so the type shrinks BEFORE it
-     overflows wide screens. Browsers without clamp() fall back to the
-     middle value. */
-  font-size: clamp(22px, min(4vw, 5vh), 56px);
+  /* #2 fix: cap the font size more strictly so a long lyric line wraps
+     onto a second row inside the mixer console instead of overflowing
+     to the right. 36px is the cap (was 56) — still readable from the
+     wedge but no longer eats the panel. */
+  font-size: clamp(22px, min(2.4vw, 4vh), 36px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0.01em;
   text-shadow: 0 2px 6px rgba(0,0,0,0.7);
-  max-width: 100%;
+  width: 100%;
   max-height: 100%;
   overflow: hidden;
   box-sizing: border-box;
+  text-align: center;
 }
 
 /* Visualizer zoom controls — small overlay on the top-right of the
@@ -5993,7 +6058,8 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   padding: 4px 8px;
   border-radius: 4px;
 }
-.midi-lane-counter { font-weight: 600; }
+/* #3: Action count — yellow + bold so it's readable against the dark toolbar */
+.midi-lane-counter { font-weight: 800; color: #f4c430; }
 .midi-lane-dirty { color: #f4c430; font-weight: 800; }
 .midi-toolbar-btn {
   padding: 4px 12px;
@@ -6006,7 +6072,17 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   cursor: pointer;
 }
 .midi-toolbar-btn.primary { background: var(--color-blue, #4f9cf0); border-color: transparent; color: #fff; }
-.midi-toolbar-btn.danger  { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.4); color: #e74c3c; }
+/* #1: CLEAR — when disabled (nothing to clear), dim grey is fine. When
+   enabled AND there are actions to clear, switch to a yellow background
+   so the dark-red text is readable. The .has-actions class is added by
+   refreshAutomationToolbar (or its caller). */
+.midi-toolbar-btn.danger { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.4); color: #e74c3c; font-weight: 700; }
+.midi-toolbar-btn.danger.has-actions {
+  background: #f4c430;
+  border-color: #c2992f;
+  color: #6a1a10;
+}
+.midi-toolbar-btn.danger.has-actions:hover { background: #ffd84a; color: #000; }
 .midi-toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .midi-event-marker .midi-event-tip {
   position: absolute;
