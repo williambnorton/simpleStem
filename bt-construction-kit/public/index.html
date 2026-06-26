@@ -488,7 +488,12 @@
                 <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
                   <i data-lucide="rotate-cw"></i>
                 </button>
-                <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="First aid: kick coreaudiod (sudo killall coreaudiod). Forces Mac+XR18 USB engine to renegotiate when audio drops out. ~1s of silence; page reloads after." aria-label="Kick Core Audio">
+                <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="First aid: kick coreaudiod (sudo killall coreaudiod). Forces the Mac side of the USB audio engine to renegotiate. ~1s of silence; page reloads after.
+
+If kicking does NOT bring XR18 meters back, the XR18's own USB endpoint is hung — coreaudiod can't reset it. Escalation:
+1) Unplug USB at the XR18 end, wait 5s, replug. Cmd+R the page.
+2) Power-cycle the XR18 (off, wait 10s, on). Re-pick XR18 in macOS Sound. Cmd+R.
+3) Try a different USB cable / port. XR18 needs USB 2.0 — adapters that downgrade to 1.1 show 18 channels but pass no audio." aria-label="Kick Core Audio">
                   <i data-lucide="briefcase-medical"></i>
                 </button>
               </div>
