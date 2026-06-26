@@ -2723,6 +2723,68 @@ app.post('/api/audio/kick-coreaudio', (req, res) => {
   });
 });
 
+// Set macOS default audio output device by name. Used by the "Preset:
+// Stereo" / "Preset: Spread to 6 Stems" buttons so the operator can
+// flip the entire rig (Chrome → speakers vs Chrome → XR18) with one
+// click instead of trudging through System Settings → Sound. Requires
+// the switchaudio-osx Homebrew package:
+//
+//   brew install switchaudio-osx
+//
+// If SwitchAudioSource isn't on PATH we return a structured 200 with
+// `switched: false` so the client can surface a clean "install this"
+// hint without treating it as a hard failure.
+app.post('/api/audio/set-output', (req, res) => {
+  const { spawn, spawnSync } = require('child_process');
+  const name = (req.body && req.body.name && String(req.body.name).trim()) || '';
+  if (!name) return res.status(400).json({ ok: false, error: 'name required (e.g. "XR18" or "MacBook Pro Speakers")' });
+  // PATH on a GUI-launched Node misses /usr/local/bin and /opt/homebrew/bin
+  // by default; check both explicitly. Take the first one that exists.
+  const fs = require('fs');
+  const candidates = ['/opt/homebrew/bin/SwitchAudioSource', '/usr/local/bin/SwitchAudioSource'];
+  const bin = candidates.find(p => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } });
+  if (!bin) {
+    return res.json({
+      ok: false,
+      switched: false,
+      error: 'SwitchAudioSource is not installed.',
+      hint: 'Install on the Performer with: brew install switchaudio-osx',
+    });
+  }
+  // -s <name> sets the default output device; -t output limits to outputs
+  // so a same-named INPUT (rare) can't be picked instead.
+  const child = spawn(bin, ['-s', name, '-t', 'output']);
+  let stderr = '', stdout = '';
+  child.stdout.on('data', d => { stdout += d.toString(); });
+  child.stderr.on('data', d => { stderr += d.toString(); });
+  child.on('close', code => {
+    if (code === 0) {
+      // Confirm by asking SwitchAudioSource what the current default
+      // output is now. Lets the client display the truth instead of
+      // assuming the requested device took.
+      let current = null;
+      try {
+        const r = spawnSync(bin, ['-c', '-t', 'output'], { encoding: 'utf8' });
+        if (r.status === 0) current = (r.stdout || '').trim();
+      } catch (e) {}
+      res.json({ ok: true, switched: true, requested: name, current });
+    } else {
+      const msg = (stderr || stdout || '').trim() || `SwitchAudioSource exited ${code}`;
+      res.status(500).json({
+        ok: false,
+        switched: false,
+        error: msg,
+        hint: msg.match(/could not find an audio device/i)
+          ? `No output device named "${name}" was found. Check the spelling (case-sensitive) or list devices on the Performer: SwitchAudioSource -a -t output`
+          : undefined,
+      });
+    }
+  });
+  child.on('error', e => {
+    res.status(500).json({ ok: false, switched: false, error: `spawn failed: ${e.message}` });
+  });
+});
+
 // XR18 device status — interrogates macOS via system_profiler so we can
 // truthfully say "XR18 is connected" on page load, BEFORE the user has
 // triggered the Web Audio context with a click. Web Audio can't tell us

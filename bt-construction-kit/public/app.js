@@ -3745,19 +3745,19 @@ function setupPitchKnobs() {
 // so the selection [0..5] fans L→1,3,5 and R→2,4,6. Single-channel selection
 // sums L+R to mono. Lets the user click any combination of channels and get
 // a sensible result.
+//
+// Per-stem "home" channels (0-indexed). The V button is XR18 ch 11, D is
+// ch 12, etc. Used by the default routing AND by the Spread preset, which
+// re-applies the same mapping so each stem gets L+R+its-own-letter.
+const HOME_CHAN = {
+  vocals: 10,  // V (ch 11)
+  drums:  11,  // D (ch 12)
+  bass:   12,  // B (ch 13)
+  guitar: 13,  // G (ch 14)
+  piano:  14,  // P (ch 15)
+  other:  15,  // O (ch 16)
+};
 function loadRoutingMatrix() {
-  // Default routing: each stem goes to L (0) + R (1) PLUS its "home"
-  // instrument channel on the XR18 split. So the V button is pre-lit on
-  // Vocals, D on Drums, etc., communicating which stem each strip is.
-  // (Home channels are 0-indexed: V=10, D=11, B=12, G=13, P=14, O=15.)
-  const HOME_CHAN = {
-    vocals: 10,  // V (ch 11)
-    drums:  11,  // D (ch 12)
-    bass:   12,  // B (ch 13)
-    guitar: 13,  // G (ch 14)
-    piano:  14,  // P (ch 15)
-    other:  15,  // O (ch 16)
-  };
   routingMatrix = {};
   Object.keys(audioElements).forEach(ch => {
     const home = HOME_CHAN[ch];
@@ -3906,9 +3906,45 @@ function applyRoutingForStem(chan) {
   }
 }
 
-function presetSpreadToSixAux() {
+// Switch macOS default output device server-side via `SwitchAudioSource`
+// (the switchaudio-osx Homebrew package). Returns true on success, false
+// if the tool isn't installed or the switch failed — caller decides
+// whether to surface that to the user. Always re-routes inside the app
+// regardless of the OS switch outcome, so the matrix UI stays consistent.
+async function switchSystemAudioOutput(deviceName) {
+  try {
+    const r = await fetch('/api/audio/set-output', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: deviceName }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      console.warn('[audio] set-output failed:', d.error || r.statusText);
+      if (d && d.hint) console.warn('[audio]', d.hint);
+      return { ok: false, error: d.error || r.statusText, hint: d.hint };
+    }
+    return { ok: true, switched: !!d.switched, current: d.current };
+  } catch (e) {
+    console.warn('[audio] set-output threw:', e);
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+// "Preset: Spread to 6 Stems" — sends Chrome audio to the XR18 AND assigns
+// each stem its dedicated XR18 output channel (vocals→ch 11, drums→ch 12,
+// bass→ch 13, guitar→ch 14, piano→ch 15, other→ch 16). Result on each
+// strip: L, R, and the stem's own letter (V/D/B/G/P/O) are lit. The other
+// XR18 channels are reserved for monitor mixes / FOH at the board.
+async function presetSpreadToSixAux() {
+  const res = await switchSystemAudioOutput('XR18');
+  if (!res.ok) {
+    const hint = res.hint ? `\n\n${res.hint}` : '';
+    alert(`Couldn't switch the macOS default output to XR18.\n\n${res.error}${hint}\n\nFalling back to in-app routing only — open System Settings → Sound → Output and pick XR18 manually.`);
+  }
   Object.keys(audioElements).forEach(ch => {
-    routingMatrix[ch] = [0, 1, 2, 3, 4, 5].filter(i => i < outputChannelCount);
+    const home = HOME_CHAN[ch];
+    routingMatrix[ch] = home !== undefined ? [0, 1, home] : [0, 1];
   });
   saveRoutingMatrix();
   applyRouting();
@@ -4115,7 +4151,16 @@ function setupFormatFilters() {
   });
 }
 
-function presetStereoMain() {
+// "Preset: Stereo" — sends Chrome audio back to the built-in Mac speakers
+// (or whatever the laptop's default 2-channel output is) AND collapses
+// every stem to L+R only. Use when XR18 is unplugged, or for desk-side
+// rehearsal where the board isn't needed.
+async function presetStereoMain() {
+  const res = await switchSystemAudioOutput('MacBook Pro Speakers');
+  if (!res.ok) {
+    const hint = res.hint ? `\n\n${res.hint}` : '';
+    alert(`Couldn't switch the macOS default output to MacBook Pro Speakers.\n\n${res.error}${hint}\n\nFalling back to in-app routing only — open System Settings → Sound → Output and pick the speakers manually.`);
+  }
   Object.keys(audioElements).forEach(ch => {
     routingMatrix[ch] = [0, 1];
   });
@@ -4209,8 +4254,8 @@ function injectMixerHeaderInfo() {
         ● ${deviceName} ACTIVE · ${outputChannelCount} ch out${stamp}
       </button>
       <button class="btn-secondary routing-soundcheck" title="Re-run the sound check — plays a brief test tone on every XR18 output.">Sound Check</button>
-      <button class="btn-secondary routing-preset-stereo" title="All stems → Out 1-2 only">Preset: Stereo</button>
-      <button class="btn-secondary routing-preset-spread" title="Each stem fans to outputs 1-2, 3-4, and 5-6 (three amp aux sends)">Preset: Spread to 6 AUX</button>
+      <button class="btn-secondary routing-preset-stereo" title="Send Chrome audio to MacBook Pro Speakers and collapse every stem to L+R. Use when the XR18 isn't plugged in or for desk-side rehearsal.">Preset: Stereo</button>
+      <button class="btn-secondary routing-preset-spread" title="Send Chrome audio to the XR18 and light L+R+the stem's own letter on every strip (vocals→V/ch11, drums→D/ch12, bass→B/ch13, guitar→G/ch14, piano→P/ch15, other→O/ch16).">Preset: Spread to 6 Stems</button>
     `;
   }
   const ps = info.querySelector('.routing-preset-stereo');
