@@ -3982,12 +3982,12 @@ input:checked + .slider-round:before {
   color: #ffffff;
   font-weight: 700;
 }
-/* Channel strips dimmed + non-interactive when XR18 is missing — except
-   any restart-circle / first-aid-circle inside the header stays alive. */
+/* Mixer stays FULLY USABLE without XR18 — playback through Mac speakers
+   (or any 2-channel default) is still useful for level-setting, lyric
+   placement, and rehearsal. The amber panel tint is the only state
+   signal; strips remain at full opacity and full interactivity. */
 .mixer-console.xr18-disconnected .channel-strip {
-  opacity: 0.40;
-  pointer-events: none;
-  filter: grayscale(0.4);
+  /* intentionally no opacity/pointer-events overrides */
 }
 
 /* #6: Server-heartbeat staleness indicator. body.server-stale tints the

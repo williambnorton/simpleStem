@@ -6524,27 +6524,34 @@ let lyricsState = {
   activeLines:  [],       // [{text, addedAt}] — what the overlay is showing
   playbackOff:  false,    // user toggled or clicked the overlay off
   placedStack:  [],       // [eventRef, ...] in tap order — backs Backspace undo
+  placedCount:  0,        // monotonic — only ++ on tap, -- on Backspace undo
 };
-// Mode is derived from how much of the cached lyrics file has been
-// placed. While the cursor is anywhere shy of the last cached line,
-// every tap drops the next line (TAP-ALONG / PLACEMENT MODE). Once the
-// cursor has consumed every cached line, the button flips to a
-// SHOW/HIDE toggle (PLAYBACK MODE). Re-editing the lyrics file (which
-// resets cursor to 0) puts the button back into placement mode.
+// CURSOR IS NOW SESSION-TRACKED (placedCount), no longer derived from
+// the lyric-line count on the lane. Reason: Bill needs to be able to
+// DELETE a placed lyric-line marker (Delete key, or the marker's × UI)
+// without that line jumping back into the "next to place" queue. A
+// derived cursor decrements on splice, which re-queues whatever line
+// the user just intentionally removed — the opposite of what they want.
 //
-// CURSOR IS DERIVED, not session-tracked. The count of lyric-line
-// actions currently on the lane IS the cursor. So any path that
-// mutates automationEvents — tap (push), undo (splice), manual delete
-// (the lane marker's × button), CLEAR, save-and-reload — all stay
-// consistent without dedicated bookkeeping.
+// Contract for placedCount:
+//   - ++ on +Lyric tap (onLyricTap)
+//   - -- on Backspace undo (undoLastLyricTap)
+//   - reset to 0 on song load + on CLEAR
+//   - all other splice paths (Delete key, marker × button) DO NOT touch it
+//
+// On song load we snap placedCount up to the existing lyric-line count
+// so a half-tapped song reopens at the right cursor position.
 function lyricsHasPlacedActions() {
   return Array.isArray(automationEvents) && automationEvents.some(e => e.type === 'lyric-line');
 }
 function lyricsCursor() {
-  if (!Array.isArray(automationEvents)) return 0;
+  // Snap up to the on-disk count if it's somehow ahead of placedCount
+  // (e.g. fresh page load before any reset path has run).
   let n = 0;
-  for (const e of automationEvents) if (e.type === 'lyric-line') n++;
-  return n;
+  if (Array.isArray(automationEvents)) {
+    for (const e of automationEvents) if (e.type === 'lyric-line') n++;
+  }
+  return Math.max(lyricsState.placedCount || 0, n);
 }
 function lyricsAllPlaced() {
   return lyricsState.cachedLines.length > 0
@@ -6623,6 +6630,14 @@ function refreshLyricsForNewSong() {
   lyricsState.playbackOff = false;
   lyricsState.placedStack = [];
   lyricsState.cachedLines = _normalizeLyrics(currentSong && currentSong.lyrics);
+  // Snap placedCount to whatever's already on disk for this song, so
+  // a song reopened mid-tap resumes at the right line. Deletions after
+  // this point are session-local and won't roll the counter back.
+  let _placedNow = 0;
+  if (Array.isArray(automationEvents)) {
+    for (const e of automationEvents) if (e.type === 'lyric-line') _placedNow++;
+  }
+  lyricsState.placedCount = _placedNow;
   _renderLyricDisplay();
   // Background: if the library row didn't have lyrics, ask the server
   // to read metadata.json fresh. The library is sourced from CATALOG.json
@@ -6737,7 +6752,9 @@ async function onLyricTap(e) {
 
   // + Lyric is ALWAYS placement now. Show/Hide is a separate button.
   // Past the last cached line → prompt to re-open the editor.
-  const cur = lyricsCursor();
+  // Use placedCount (monotonic) — Delete-key on a placed marker must
+  // NOT shift the cursor backward.
+  const cur = lyricsState.placedCount || 0;
   if (cur >= lyricsState.cachedLines.length) {
     if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
       openLyricsModal('edit');
@@ -6769,6 +6786,7 @@ async function onLyricTap(e) {
   // pop the indexOf will fail (new objects) and undoLastLyricTap falls
   // back to text-match.
   lyricsState.placedStack.push(ev);
+  lyricsState.placedCount = (lyricsState.placedCount || 0) + 1;
   // Live-fire so the operator sees the placement land in the overlay.
   try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
   lyricsState.lastTapAt = now;
@@ -6790,6 +6808,7 @@ function undoLastLyricTap() {
       }
       if (lastIdx < 0) return false;
       automationEvents.splice(lastIdx, 1);
+      lyricsState.placedCount = Math.max(0, (lyricsState.placedCount || 0) - 1);
       lyricsState.lastTapAt = 0;
       if (typeof renderAutomationLane === 'function') renderAutomationLane();
       if (typeof markAutomationDirty === 'function') markAutomationDirty();
@@ -6802,8 +6821,8 @@ function undoLastLyricTap() {
   const ev = lyricsState.placedStack.pop();
   // Remove the event from the lane. If the reference is stale (save
   // rebuilt automationEvents with new objects between push and pop),
-  // match by t + text + mode instead. Cursor is derived from
-  // automationEvents count, so removing an event is what rewinds it.
+  // match by t + text + mode instead. placedCount decrements here —
+  // this IS the explicit "rewind" gesture.
   if (typeof automationEvents !== 'undefined') {
     let idx = automationEvents.indexOf(ev);
     if (idx < 0 && ev) {
@@ -6815,6 +6834,7 @@ function undoLastLyricTap() {
     }
     if (idx >= 0) automationEvents.splice(idx, 1);
   }
+  lyricsState.placedCount = Math.max(0, (lyricsState.placedCount || 0) - 1);
   // If the event's line is still showing on the overlay, pull it back.
   const text = (ev && ev.text) || '';
   if (text) {
@@ -8797,19 +8817,37 @@ function attachSectionDividerHandlers(node, idx) {
       if (!dragging && Math.abs(dx) < 3) return;
       dragging = true;
       const dur = songDurationSec();
+      // Drag math is in VISIBLE-WINDOW seconds, not whole-song seconds.
+      // When zoomed in to a 10-s window the same pixel moves the divider
+      // 20x more finely than at zoom=1; without this, dragging a single
+      // pixel jumps the divider by full-song proportion.
+      const { span } = getViewWindow(dur);
       const r = overlay.getBoundingClientRect();
-      const newT = Math.max(0, Math.min(dur, startTime + (dx / r.width) * dur));
-      automationSections[idx].t = Math.round(newT * 100) / 100;
-      // Live reposition without rebuilding all DOM — bands re-anchor on mouseup.
-      node.style.left = ((automationSections[idx].t / dur) * 100) + '%';
+      const newT = Math.max(0, Math.min(dur, startTime + (dx / r.width) * span));
+      automationSections[idx].t = Math.round(newT * 1000) / 1000;
+      // Live reposition matches the visible-window mapping the rest of the
+      // lane uses, so the divider tracks the cursor on zoomed timelines.
+      node.style.left = timePctInView(automationSections[idx].t, dur) + '%';
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (dragging) {
-        // Snap to the nearest sectionCandidate within ±2 s if one exists,
-        // otherwise fall back to BPM-grid + onset snap.
-        const snappedT = snapSectionToCandidate(automationSections[idx].t);
+        // Snap window scales with zoom — when the user has zoomed in to
+        // fine-tune a loop boundary, a 2-second candidate magnet would
+        // swallow every drag. Pin the window to ≤ 4 % of the visible span
+        // (≤ 0.4 s when looking at a 10-s window, ≤ 0.04 s at 1 s), and
+        // skip the BPM-grid fallback entirely past ~10x zoom — the user
+        // is asking for raw fine control, not musical alignment.
+        const dur = songDurationSec();
+        const { span } = getViewWindow(dur);
+        const zoomFactor = (dur > 0 && span > 0) ? (dur / span) : 1;
+        const dynWindow = Math.max(0.05, Math.min(2.0, span * 0.04));
+        const allowBeatSnap = zoomFactor < 10;
+        const snappedT = snapSectionToCandidate(
+          automationSections[idx].t,
+          { maxWindow: dynWindow, allowBeatFallback: allowBeatSnap }
+        );
         automationSections[idx].t = snappedT;
         // Slide-over-merge: if the dragged divider landed within 0.4 s of
         // ANOTHER divider, that's a "remove the underlying one" gesture.
@@ -9678,8 +9716,15 @@ function snapTimeToBeat(t) {
 // user's target; if none is in range, falls back to the regular
 // snapTimeToBeat (BPM-grid + onset refine). This gives section
 // boundaries musical accuracy even when the user clicks fuzzy.
-function snapSectionToCandidate(t) {
-  const CANDIDATE_WINDOW = 2.0;
+function snapSectionToCandidate(t, opts) {
+  // opts.maxWindow lets the section-drag handler tighten the magnet
+  // radius when zoomed in for fine loop-boundary tuning. Defaults to
+  // 2.0 s for the keyboard-drop path (key 1-9), which still wants a
+  // generous snap because the user is tapping in roughly.
+  // opts.allowBeatFallback=false skips the BPM-grid snap entirely so
+  // a fine-tune drag at high zoom doesn't get re-quantized to a beat.
+  const CANDIDATE_WINDOW = (opts && opts.maxWindow != null) ? opts.maxWindow : 2.0;
+  const allowBeatFallback = !(opts && opts.allowBeatFallback === false);
   if (Array.isArray(automationSectionCandidates) && automationSectionCandidates.length) {
     let best = null, bestDist = CANDIDATE_WINDOW;
     for (const ct of automationSectionCandidates) {
@@ -9688,9 +9733,14 @@ function snapSectionToCandidate(t) {
       else if (ct - t > CANDIDATE_WINDOW) break;
     }
     if (best !== null) {
-      // Round to centiseconds — candidates are stored 2 decimals already.
-      return Math.max(0, Math.round(best * 100) / 100);
+      // Keep millisecond precision when fine-tuning; only round to
+      // centiseconds for the generous default window.
+      const precision = (CANDIDATE_WINDOW < 0.5) ? 1000 : 100;
+      return Math.max(0, Math.round(best * precision) / precision);
     }
+  }
+  if (!allowBeatFallback) {
+    return Math.max(0, Math.round(t * 1000) / 1000);
   }
   return snapTimeToBeat(t);
 }
@@ -10340,6 +10390,7 @@ function setupMidiUI() {
       lyricsState.activeLines = [];
       lyricsState.playbackOff = false;
       lyricsState.placedStack = [];
+      lyricsState.placedCount = 0;
       if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
     }
     renderAutomationLane();
