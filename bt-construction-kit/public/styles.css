@@ -3980,6 +3980,23 @@ input:checked + .slider-round:before {
 .mixer-console.xr18-connected .section-title {
   color: #1f5e3b;
 }
+.mixer-console.xr18-orphaned {
+  background: #ffd6d6 !important;          /* light salmon — alarm-level */
+  border-color: #c23030 !important;
+  animation: xr18-orphan-pulse 1.6s ease-in-out infinite;
+}
+.mixer-console.xr18-orphaned .mixer-xr18-state {
+  background: #c23030;                     /* deep red */
+  border: 1px solid #7a1b1b;
+  color: #fff !important;
+  font-weight: 800;
+}
+.mixer-console.xr18-orphaned .section-title { color: #7a1b1b; }
+@keyframes xr18-orphan-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(194, 48, 48, 0.0); }
+  50%      { box-shadow: inset 0 0 0 3px rgba(194, 48, 48, 0.55); }
+}
+
 .mixer-console.xr18-disconnected {
   background: #fff4cc !important;          /* light cream */
   border-color: #c2992f !important;

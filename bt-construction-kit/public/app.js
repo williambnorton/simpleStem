@@ -4290,7 +4290,13 @@ async function kickCoreaudiod() {
     if (btn) { btn.disabled = false; btn.classList.remove('is-kicking'); btn.title = 'First aid: kick Core Audio'; }
     return;
   }
-  setTimeout(() => location.reload(), 1500);
+  // Pre-2026-06-26 this was 1500 ms. The debug log captured an instance
+  // where kicking coreaudiod then reloading at 1.5 s gave Chrome's new
+  // AudioContext a half-enumerated USB device — XR18 visible but only the
+  // 2-channel descriptor available, with the 18-ch descriptor missing for
+  // the life of that context. 4 s gives coreaudiod time to fully
+  // re-enumerate the XR18 over USB before Chrome's new AudioContext binds.
+  setTimeout(() => location.reload(), 4000);
 }
 
 // Wire the recovery buttons inside the Stem Mixer Console header.
@@ -4329,9 +4335,25 @@ document.addEventListener('DOMContentLoaded', () => {
         _lastXr18Check = Date.now();
         if (!d.ok) throw new Error(d.error || 'probe failed');
         if (d.present && d.isDefaultOutput) {
-          state = 'connected';
-          text  = `● XR18 ACTIVE · ${d.channels || 18} ch out`;
-          tip   = `XR18 (${d.deviceName}) is connected AND macOS default output.`;
+          // Cross-check the server probe against what Chrome's AudioContext
+          // is actually bound to. If the server says XR18 is the default
+          // and reports 18 channels, but Chrome's destination only sees 2,
+          // the device is ORPHANED: discoverable + nominally default, but
+          // the multichannel binding is broken. Confirmed failure mode after
+          // kick-coreaudio while the XR18 USB endpoint was already flaky
+          // (debug log captured 2026-06-26, snapshots 13-21). Recovery
+          // requires physical USB unplug+replug — no software path clears it.
+          const chromeMaxCh = (window.audioCtx && audioCtx.destination && audioCtx.destination.maxChannelCount) || 0;
+          const probeCh = d.channels || 0;
+          if (probeCh >= 6 && chromeMaxCh > 0 && chromeMaxCh < probeCh) {
+            state = 'orphaned';
+            text  = `⚠ XR18 ORPHANED · probe says ${probeCh} ch but Chrome sees only ${chromeMaxCh} — unplug + replug USB at the board`;
+            tip   = `system_profiler reports the XR18 as a ${probeCh}-channel default-output device, but Chrome's AudioContext only enumerated ${chromeMaxCh} channels for it. This usually happens after kick-coreaudio caught the XR18 mid-re-enumeration. Software can't repair this — the only fix is to physically unplug the USB cable at the XR18 end, wait ~5 seconds, replug it, then click → XR18 to force a fresh AudioContext.`;
+          } else {
+            state = 'connected';
+            text  = `● XR18 ACTIVE · ${d.channels || 18} ch out`;
+            tip   = `XR18 (${d.deviceName}) is connected AND macOS default output. Chrome sees ${chromeMaxCh || '?'} channels.`;
+          }
         } else if (d.present && !d.isDefaultOutput) {
           state = 'disconnected';
           text  = `XR18 connected but NOT default output (now: ${d.defaultOutputName || '?'})`;
@@ -4362,6 +4384,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     wrap.classList.toggle('xr18-connected',    state === 'connected');
     wrap.classList.toggle('xr18-disconnected', state === 'disconnected');
+    wrap.classList.toggle('xr18-orphaned',     state === 'orphaned');
     wrap.classList.toggle('xr18-unknown',      state === 'unknown');
     label.textContent = text;
     if (stateW) stateW.title = tip;
@@ -4539,6 +4562,16 @@ async function captureStateSnapshot(label) {
     const r = await fetch('/api/audio/xr18-status', { cache: 'no-store' });
     if (r.ok) snap.xr18Probe = await r.json();
   } catch (e) { snap.xr18Probe = { error: String(e && e.message || e) }; }
+  // Derive the orphan flag here so the log line shows it without us
+  // having to cross-reference fields by eye later.
+  try {
+    const probeCh = (snap.xr18Probe && snap.xr18Probe.channels) || 0;
+    const chromeMaxCh = (snap.audioCtx && snap.audioCtx.destMaxCh) || 0;
+    snap.orphaned = !!(
+      snap.xr18Probe && snap.xr18Probe.present && snap.xr18Probe.isDefaultOutput &&
+      probeCh >= 6 && chromeMaxCh > 0 && chromeMaxCh < probeCh
+    );
+  } catch (e) {}
   try {
     await fetch('/api/debug/snapshot', {
       method: 'POST',
