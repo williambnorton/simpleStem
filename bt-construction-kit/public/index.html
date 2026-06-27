@@ -496,12 +496,14 @@
                 <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
                   <i data-lucide="rotate-cw"></i>
                 </button>
-                <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="First aid: kick coreaudiod (sudo killall coreaudiod). Forces the Mac side of the USB audio engine to renegotiate. ~1s of silence; page reloads after.
+                <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="⚠ TRY USB UNPLUG/REPLUG FIRST. First aid kicks coreaudiod (sudo killall coreaudiod) — this resets the Mac side of Core Audio but can ORPHAN the XR18 when the board's USB endpoint is already flaky. Logic will show '(XR18)' in parens (= unavailable) afterward, and you'll need a physical USB replug to get it back.
 
-If kicking does NOT bring XR18 meters back, the XR18's own USB endpoint is hung — coreaudiod can't reset it. Escalation:
-1) Unplug USB at the XR18 end, wait 5s, replug. Cmd+R the page.
-2) Power-cycle the XR18 (off, wait 10s, on). Re-pick XR18 in macOS Sound. Cmd+R.
-3) Try a different USB cable / port. XR18 needs USB 2.0 — adapters that downgrade to 1.1 show 18 channels but pass no audio." aria-label="Kick Core Audio">
+Use this button only when the Mac-side audio daemon is wedged (rare). The full recovery ladder, in order:
+1) Unplug USB at the XR18 end, wait 5s, replug. Switch to Sys Out → switch to XR18.
+2) IF #1 didn't help: this button (first aid / kick coreaudiod).
+3) Restart backend (↻ button).
+4) Power-cycle the XR18 (off, 10s, on). Re-pick XR18 in macOS Sound.
+5) Try a different USB cable / port. XR18 needs USB 2.0 — downgrading adapters show 18 channels but pass no audio." aria-label="Kick Core Audio">
                   <i data-lucide="briefcase-medical"></i>
                 </button>
               </div>
