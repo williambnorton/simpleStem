@@ -4308,7 +4308,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const rs = document.getElementById('btn-restart-mixer');
   if (rs) rs.addEventListener('click', restartBackend);
   const tt = document.getElementById('btn-test-tone-mixer');
-  if (tt) tt.addEventListener('click', playXr18TestTone);
+  // The bell now fires the full 8-step Sound Check (Left, Right, One..Six)
+  // instead of just an L+R beep — Bill's "round-the-horn" preference. The
+  // old single-beep helper is kept in the file for callers/tests but no
+  // longer wired to a button.
+  if (tt) tt.addEventListener('click', runSoundCheck);
+  // First-gesture audio bootstrap. The routing buttons disable themselves
+  // when `outputChannelCount < N`, and outputChannelCount is only honest
+  // after audioCtx is created — which requires a user gesture. After
+  // every page reload (incl. the one triggered by → XR18 / → Sys Out)
+  // the buttons stay disabled until something happens to call initAudioCtx.
+  // Latch onto the very first click anywhere so the multichannel UI
+  // un-greys without the operator having to play a song first.
+  const firstClickInit = () => {
+    try {
+      window.__hadUserGesture = true;
+      initAudioCtx();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      const n = audioCtx && audioCtx.destination && audioCtx.destination.maxChannelCount;
+      if (n && n !== outputChannelCount) outputChannelCount = n;
+      try { renderRoutingGrids(); } catch (e) {}
+    } catch (e) { console.warn('[firstClickInit]', e); }
+  };
+  document.addEventListener('click', firstClickInit, { once: true, capture: true });
   const swxr = document.getElementById('btn-switch-xr18');
   if (swxr) swxr.addEventListener('click', () => switchOsOutputAndReload('XR18', swxr));
   const swsys = document.getElementById('btn-switch-sysout');

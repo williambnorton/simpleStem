@@ -490,7 +490,7 @@
                 <button id="btn-snapshot-state" class="restart-circle" title="Snapshot the full audio state (XR18 probe, AudioContext, routing matrix, mixer state, per-strip gain) to the debug log so Claude can read it later. Click before AND after each diagnostic step so the log captures the transition." aria-label="Snapshot state">
                   <i data-lucide="clipboard-list"></i>
                 </button>
-                <button id="btn-test-tone-mixer" class="restart-circle" title="Play a short test tone on XR18 Left+Right (or whatever the current macOS default output is). Ground-truth check that audio is actually reaching the board — if you don't hear a beep, the XR18 USB endpoint is hung." aria-label="Play test tone">
+                <button id="btn-test-tone-mixer" class="restart-circle" title="Round-the-horn channel check. Speaks 'Left, Right, One, Two, Three, Four, Five, Six' onto XR18 outputs 1, 2, 11, 12, 13, 14, 15, 16 in turn. If everything lands on the same speaker, the XR18's USB Sends/Returns map is sending all USB channels to Main LR — open X-Air → Setup → Routing → USB Sends/Returns and map USB 11-16 to six channel strips of your choice." aria-label="Round-the-horn sound check">
                   <i data-lucide="bell"></i>
                 </button>
                 <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
