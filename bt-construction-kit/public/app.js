@@ -4592,15 +4592,29 @@ async function captureStateSnapshot(label) {
   return snap;
 }
 
-// Channel-index → spoken-word label for Sound Check. The 8 named channels
-// correspond to the Spread preset routing: L+R on 0/1 (XR18 Main), and the
-// six stem home channels on 10-15 (XR18 11-16). Other in-use channels
-// (2-9, 16, 17) fall back to the 440 Hz tone — they're not labeled because
-// they're not part of the standard simpleStem routing.
-const SOUNDCHECK_WORDS = {
-  0: 'left', 1: 'right',
-  10: 'voice', 11: 'drums', 12: 'bass', 13: 'guitar', 14: 'piano', 15: 'other',
-};
+// Sound Check plays a fixed 8-word sequence on a fixed 8-channel route:
+//   "Left"  → ch 0  (XR18 Out 1, Main L)
+//   "Right" → ch 1  (XR18 Out 2, Main R)
+//   "One"   → ch 10 (XR18 Out 11, Spread-preset Voice)
+//   "Two"   → ch 11 (XR18 Out 12, Spread-preset Drums)
+//   "Three" → ch 12 (XR18 Out 13, Spread-preset Bass)
+//   "Four"  → ch 13 (XR18 Out 14, Spread-preset Guitar)
+//   "Five"  → ch 14 (XR18 Out 15, Spread-preset Piano)
+//   "Six"   → ch 15 (XR18 Out 16, Spread-preset Other)
+// The numbered labels (instead of stem names) let the operator verify each
+// XR18 output without having to remember the stem-to-channel map. Other
+// in-use XR18 channels (2-9, 16-17) are skipped — Sound Check is a
+// targeted check of the 8 channels simpleStem actually drives.
+const SOUNDCHECK_SEQUENCE = [
+  { ch: 0,  word: 'left'  },
+  { ch: 1,  word: 'right' },
+  { ch: 10, word: 'one'   },
+  { ch: 11, word: 'two'   },
+  { ch: 12, word: 'three' },
+  { ch: 13, word: 'four'  },
+  { ch: 14, word: 'five'  },
+  { ch: 15, word: 'six'   },
+];
 // Decoded-AudioBuffer cache keyed by word slug. First Sound Check fetches
 // + decodes once per word (~150 ms each on first run; server-side cache
 // makes the byte fetch instant on subsequent boots). Subsequent Sound
@@ -4622,11 +4636,10 @@ async function fetchSoundCheckWord(slug) {
 // 2. Creates the AudioContext (initAudioCtx is gated on the gesture flag).
 // 3. Probes destination.maxChannelCount. If the XR18 is selected as system
 //    output, this is the moment we learn 18 not 2.
-// 4. Speaks "Left", "Right", "Voice", "Drums", "Bass", "Guitar", "Piano",
-//    "Other" on the eight stem-routing channels (0, 1, 10-15) so the
-//    operator hears WHICH stem is supposed to land on which output. Other
-//    in-use channels still get a 440 Hz tone — they're not part of the
-//    standard simpleStem routing so a label would be misleading.
+// 4. Walks the fixed 8-step SOUNDCHECK_SEQUENCE — speaks "Left", "Right",
+//    "One", "Two", "Three", "Four", "Five", "Six" onto XR18 channels
+//    1, 2, 11, 12, 13, 14, 15, 16 in turn. Channels not present on the
+//    active device are skipped (so MacBook Speakers fires only L+R).
 // 5. Updates the badge to "✓ N channels verified at HH:MM" so the band can
 //    see at a glance that the rig is hot before downbeat.
 let soundCheckInProgress = false;
@@ -4671,43 +4684,38 @@ async function runSoundCheck() {
     } catch (e) {}
     merger.connect(audioCtx.destination);
 
-    const TONE_HZ = 440;
-    const TONE_MS = 180;
-    const GAP_MS  = 80;
-    const GAIN    = 0.25;   // ~-12 dBFS, comfortable on headphones too
-    const SPOKEN_GAIN = 1.0; // `say` output is already moderate; full gain
-    // Pre-fetch the spoken words we'll use this run (only the ones we'll
-    // actually play given the detected channel count). Concurrent fetch
-    // so the check doesn't stall on the first named channel.
-    const wordsNeeded = Object.entries(SOUNDCHECK_WORDS)
-      .filter(([ch]) => Number(ch) < detected)
-      .map(([, w]) => w);
-    await Promise.all(wordsNeeded.map(w => fetchSoundCheckWord(w).catch(e => {
-      console.warn('[soundcheck] word fetch failed:', w, e.message);
+    const GAP_MS  = 120;
+    const SPOKEN_GAIN = 1.0;
+    // Only the 8 sequence steps whose target channel exists on the active
+    // output device. On a 2-channel default (MacBook speakers) that filters
+    // down to just "Left" and "Right". On the XR18 (18 ch) all 8 fire.
+    const steps = SOUNDCHECK_SEQUENCE.filter(s => s.ch < detected);
+    // Pre-fetch every word we'll need, concurrently.
+    await Promise.all(steps.map(s => fetchSoundCheckWord(s.word).catch(e => {
+      console.warn('[soundcheck] word fetch failed:', s.word, e.message);
     })));
-    for (let ch = 0; ch < detected; ch++) {
-      const word = SOUNDCHECK_WORDS[ch];
-      const buf = word ? SC_WORD_BUFFER_CACHE[word] : null;
-      if (tag) tag.textContent = `🔊 Sound check… ${ch + 1}/${detected}${word ? ' "' + word + '"' : ''}`;
+    for (let i = 0; i < steps.length; i++) {
+      const { ch, word } = steps[i];
+      const buf = SC_WORD_BUFFER_CACHE[word];
+      if (tag) tag.textContent = `🔊 Sound check… ${i + 1}/${steps.length} "${word}" → ch ${ch + 1}`;
       document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
         b.classList.add('soundcheck-flash')
       );
-      let durMs;
+      let durMs = 600; // safe default if buffer didn't load
       if (buf) {
-        // Spoken word — route the buffer's mono mix through merger input #ch.
         const src = audioCtx.createBufferSource();
         src.buffer = buf;
         const g = audioCtx.createGain();
         g.gain.value = SPOKEN_GAIN;
-        // If the buffer is stereo, fold to mono so it goes cleanly to one
-        // output channel rather than splitting across destination L+R.
+        // Fold any stereo source to mono so the word lands cleanly on one
+        // output channel rather than smearing across destination L+R.
         if (buf.numberOfChannels > 1) {
           const splitter = audioCtx.createChannelSplitter(buf.numberOfChannels);
           const monoMix = audioCtx.createGain();
           monoMix.gain.value = 1 / buf.numberOfChannels;
           src.connect(splitter);
-          for (let i = 0; i < buf.numberOfChannels; i++) {
-            splitter.connect(monoMix, i, 0);
+          for (let j = 0; j < buf.numberOfChannels; j++) {
+            splitter.connect(monoMix, j, 0);
           }
           monoMix.connect(g);
         } else {
@@ -4717,18 +4725,19 @@ async function runSoundCheck() {
         src.start();
         durMs = Math.ceil(buf.duration * 1000);
       } else {
-        // Fall-through tone for unnamed channels (or when word fetch failed).
+        // Word fetch failed — fall through to a short tone so the channel
+        // still gets verified.
         const osc = audioCtx.createOscillator();
         const g   = audioCtx.createGain();
-        osc.frequency.value = TONE_HZ;
+        osc.frequency.value = 440;
         g.gain.setValueAtTime(0, audioCtx.currentTime);
-        g.gain.linearRampToValueAtTime(GAIN, audioCtx.currentTime + 0.01);
-        g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + TONE_MS / 1000);
+        g.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
+        g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.18);
         osc.connect(g);
         g.connect(merger, 0, ch);
         osc.start();
-        osc.stop(audioCtx.currentTime + TONE_MS / 1000 + 0.02);
-        durMs = TONE_MS;
+        osc.stop(audioCtx.currentTime + 0.20);
+        durMs = 180;
       }
       await new Promise(r => setTimeout(r, durMs + GAP_MS));
       document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>

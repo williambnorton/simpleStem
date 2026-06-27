@@ -2767,6 +2767,9 @@ function logDebugEvent(label, details) {
 const SC_WORD_CACHE_DIR = path.join(os.homedir(), '.simpleStem-cache', 'soundcheck');
 const SC_WORDS = {
   left: 'Left', right: 'Right',
+  one: 'One', two: 'Two', three: 'Three',
+  four: 'Four', five: 'Five', six: 'Six',
+  // Kept for backward-compat with any old cached request:
   voice: 'Voice', drums: 'Drums', bass: 'Bass',
   guitar: 'Guitar', piano: 'Piano', other: 'Other',
   test: 'Test',
