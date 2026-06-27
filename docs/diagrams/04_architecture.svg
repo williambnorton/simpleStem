@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <linearGradient id="mac" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fde68a"/>
+    </linearGradient>
+    <linearGradient id="hw4" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fce7f3"/>
+      <stop offset="1" stop-color="#fbcfe8"/>
+    </linearGradient>
+    <filter id="shadow4" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <text x="700" y="48" text-anchor="middle" font-size="28" font-weight="800" fill="#0f172a">simpleStem — Architecture Overview</text>
+  <text x="700" y="74" text-anchor="middle" font-size="14" fill="#475569">two Macs share one Drive folder. GitHub is the only safe path for code. Drive carries the data + a code mirror.</text>
+
+  <!-- Performer Mac -->
+  <g filter="url(#shadow4)">
+    <rect x="60" y="120" width="500" height="380" rx="14" fill="url(#mac)" stroke="#2563eb" stroke-width="2"/>
+    <rect x="60" y="120" width="500" height="36" rx="14" fill="#2563eb"/>
+    <text x="310" y="144" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">PERFORMER (MacBook Pro, 36 GB)</text>
+
+    <text x="310" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">live App at gigs · runs Demucs at home</text>
+
+    <!-- Services -->
+    <rect x="84" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="194" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">performer.sh start</text>
+    <text x="194" y="240" text-anchor="middle" font-size="10" fill="#1e40af">queue_runner.sh (Demucs)</text>
+    <text x="194" y="254" text-anchor="middle" font-size="10" fill="#1e40af">bt-construction-kit @ :3000</text>
+
+    <rect x="316" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="426" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">midi_sidecar.py</text>
+    <text x="426" y="240" text-anchor="middle" font-size="10" fill="#1e40af">UDP :5555</text>
+    <text x="426" y="254" text-anchor="middle" font-size="10" fill="#1e40af">mido → MIDI ports</text>
+
+    <!-- Local files -->
+    <rect x="84" y="280" width="452" height="44" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="310" y="298" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">~/simpleStem-code/</text>
+    <text x="310" y="316" text-anchor="middle" font-size="10" fill="#1e40af">canonical git clone · push/pull from GitHub</text>
+
+    <rect x="84" y="332" width="452" height="44" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="310" y="350" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">~/.bt-cache/</text>
+    <text x="310" y="368" text-anchor="middle" font-size="10" fill="#1e40af">local audio cache · ~/.simpleStem-catalog/ mirror + debug log</text>
+
+    <!-- Editing role -->
+    <rect x="84" y="394" width="452" height="42" rx="8" fill="#1e3a8a"/>
+    <text x="310" y="412" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">PRIMARY EDITOR</text>
+    <text x="310" y="428" text-anchor="middle" font-size="10" fill="#bfdbfe">bt-construction-kit/* · catalog.py · shared scripts</text>
+
+    <rect x="84" y="446" width="452" height="42" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="310" y="464" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a">Hardware: XR18 (USB) · Helix (USB-C) · IAC Driver bus</text>
+    <text x="310" y="480" text-anchor="middle" font-size="10" fill="#1e40af">all audio + MIDI at gig time runs locally</text>
+  </g>
+
+  <!-- Librarian Mac -->
+  <g filter="url(#shadow4)">
+    <rect x="840" y="120" width="500" height="380" rx="14" fill="url(#mac)" stroke="#2563eb" stroke-width="2"/>
+    <rect x="840" y="120" width="500" height="36" rx="14" fill="#2563eb"/>
+    <text x="1090" y="144" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">SONG LIBRARIAN (Mac mini, 8 GB)</text>
+
+    <text x="1090" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">24/7 ingest + catalog · never runs Demucs</text>
+
+    <rect x="864" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="974" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">librarian.sh start</text>
+    <text x="974" y="240" text-anchor="middle" font-size="10" fill="#1e40af">webloc_watch.sh · catalog.py</text>
+    <text x="974" y="254" text-anchor="middle" font-size="10" fill="#1e40af">mpb_sync.py · catalogwatch</text>
+
+    <rect x="1096" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="1206" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">metadata.py</text>
+    <text x="1206" y="240" text-anchor="middle" font-size="10" fill="#1e40af">librosa BPM + key</text>
+    <text x="1206" y="254" text-anchor="middle" font-size="10" fill="#1e40af">MusicBrainz year + chapters</text>
+
+    <rect x="864" y="280" width="452" height="44" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="1090" y="298" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">~/simpleStem-code/</text>
+    <text x="1090" y="316" text-anchor="middle" font-size="10" fill="#1e40af">pull only from GitHub · NEVER simultaneous with Performer</text>
+
+    <rect x="864" y="332" width="452" height="44" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="1090" y="350" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">External disk for caching</text>
+    <text x="1090" y="368" text-anchor="middle" font-size="10" fill="#1e40af">Drive mirror mode · large library lives on attached disk</text>
+
+    <rect x="864" y="394" width="452" height="42" rx="8" fill="#1e3a8a"/>
+    <text x="1090" y="412" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">OWNER OF CATALOG.json</text>
+    <text x="1090" y="428" text-anchor="middle" font-size="10" fill="#bfdbfe">writes hourly · Performer reads mirrored copy</text>
+
+    <rect x="864" y="446" width="452" height="42" rx="8" fill="#fff" stroke="#3b82f6"/>
+    <text x="1090" y="464" text-anchor="middle" font-size="11" font-weight="800" fill="#1e3a8a">Network: yt-dlp · MusicBrainz · Google Sheet (gviz CSV)</text>
+    <text x="1090" y="480" text-anchor="middle" font-size="10" fill="#1e40af">all internet I/O happens here, never at gig time</text>
+  </g>
+
+  <!-- GitHub (canonical code) -->
+  <g filter="url(#shadow4)">
+    <rect x="540" y="540" width="320" height="80" rx="10" fill="url(#cloud)" stroke="#d97706" stroke-width="2"/>
+    <text x="700" y="566" text-anchor="middle" font-size="16" font-weight="800" fill="#78350f">github.com/williambnorton/simpleStem</text>
+    <text x="700" y="586" text-anchor="middle" font-size="11" fill="#92400e">canonical CODE only · both Macs push + pull here</text>
+    <text x="700" y="604" text-anchor="middle" font-size="11" fill="#92400e">NEVER run git on both Macs at the same time</text>
+  </g>
+
+  <!-- Google Drive (data) -->
+  <g filter="url(#shadow4)">
+    <rect x="60" y="660" width="500" height="160" rx="10" fill="url(#cloud)" stroke="#d97706" stroke-width="2"/>
+    <text x="310" y="688" text-anchor="middle" font-size="16" font-weight="800" fill="#78350f">~/ClaudeDrive/simpleStem (Google Drive sync)</text>
+    <text x="310" y="708" text-anchor="middle" font-size="11" fill="#92400e">DATA + a code mirror that both Macs execute from</text>
+    <line x1="84" y1="720" x2="536" y2="720" stroke="#d97706" stroke-dasharray="3 3"/>
+    <text x="310" y="740" text-anchor="middle" font-size="11" fill="#78350f" font-weight="700">DATA (gitignored): STEMS/ · M4A/ · GIGS/ · SETLISTS/ · CATALOG.json</text>
+    <text x="310" y="756" text-anchor="middle" font-size="11" fill="#78350f" font-weight="700">RECENTS.json · INCOMING_WEBLOC/ · STEM_QUEUE/ · DRUM_MACHINE/</text>
+    <text x="310" y="776" text-anchor="middle" font-size="11" fill="#92400e">CODE MIRROR: stem.sh · webloc_watch.sh · catalog.py · everything tracked</text>
+    <text x="310" y="800" text-anchor="middle" font-size="10" fill="#7c2d12" font-style="italic">.git removed · refresh via sync_to_drive.sh from the GitHub clone</text>
+  </g>
+
+  <!-- Hardware -->
+  <g filter="url(#shadow4)">
+    <rect x="840" y="660" width="500" height="160" rx="10" fill="url(#hw4)" stroke="#a21caf" stroke-width="2"/>
+    <text x="1090" y="688" text-anchor="middle" font-size="16" font-weight="800" fill="#701a75">Hardware + external feeds</text>
+    <text x="1090" y="708" text-anchor="middle" font-size="11" fill="#86198f">XR18 mixer (USB) → amps / monitors</text>
+    <text x="1090" y="724" text-anchor="middle" font-size="11" fill="#86198f">Helix guitar processor (USB-C) · Logic Pro (IAC)</text>
+    <text x="1090" y="740" text-anchor="middle" font-size="11" fill="#86198f">Google Sheet: "New Mitchell Park Song List"</text>
+    <text x="1090" y="756" text-anchor="middle" font-size="11" fill="#86198f">YouTube (yt-dlp ingest)</text>
+    <text x="1090" y="772" text-anchor="middle" font-size="11" fill="#86198f">MusicBrainz (metadata enrichment)</text>
+    <text x="1090" y="800" text-anchor="middle" font-size="10" fill="#701a75" font-style="italic">XR18 + Helix bind to the PERFORMER only</text>
+  </g>
+
+  <!-- Arrows -->
+  <path d="M 310 500 L 310 540 L 540 580" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow4)"/>
+  <text x="380" y="538" font-size="11" fill="#64748b">git push (code)</text>
+
+  <path d="M 1090 500 L 1090 540 L 860 580" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow4)"/>
+  <text x="990" y="538" font-size="11" fill="#64748b">git pull (code)</text>
+
+  <path d="M 310 500 L 310 660" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow4)"/>
+  <text x="320" y="582" font-size="11" fill="#64748b">stems · m4a · catalog</text>
+
+  <path d="M 1090 500 L 1090 660" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow4)"/>
+  <text x="1100" y="582" font-size="11" fill="#64748b">writes ingest output</text>
+
+  <path d="M 560 740 L 840 740" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="3 3"/>
+  <text x="680" y="734" text-anchor="middle" font-size="11" fill="#64748b">shared Drive — both Macs see same data dir</text>
+
+  <path d="M 1090 500 L 1300 660" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="3 3" marker-end="url(#arrow4)"/>
+  <text x="1230" y="582" font-size="11" fill="#64748b">yt-dlp + sheet</text>
+
+  <path d="M 310 500 L 1000 660" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="3 3" marker-end="url(#arrow4)"/>
+  <text x="640" y="608" font-size="11" fill="#64748b">XR18 + Helix at gig</text>
+</svg>

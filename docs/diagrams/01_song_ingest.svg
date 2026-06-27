@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <linearGradient id="user" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+    <linearGradient id="script" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#475569"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="transient" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fde68a"/>
+    </linearGradient>
+    <linearGradient id="storage" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#d1fae5"/>
+      <stop offset="1" stop-color="#a7f3d0"/>
+    </linearGradient>
+    <linearGradient id="index" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#dbeafe"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="700" y="48" text-anchor="middle" font-size="28" font-weight="800" fill="#0f172a">simpleStem — Song Ingest Workflow</text>
+  <text x="700" y="74" text-anchor="middle" font-size="14" fill="#475569">three user paths converge on INCOMING_WEBLOC, then the pipeline runs unattended</text>
+
+  <!-- Legend -->
+  <g transform="translate(40,100)">
+    <rect width="380" height="40" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <rect x="12" y="10" width="22" height="20" rx="3" fill="url(#user)"/>
+    <text x="42" y="25" font-size="12" fill="#1e293b">User action</text>
+    <rect x="120" y="10" width="22" height="20" rx="3" fill="url(#script)"/>
+    <text x="150" y="25" font-size="12" fill="#1e293b">Script</text>
+    <rect x="190" y="10" width="22" height="20" rx="3" fill="url(#transient)" stroke="#d97706"/>
+    <text x="220" y="25" font-size="12" fill="#1e293b">Transient queue</text>
+    <rect x="312" y="10" width="22" height="20" rx="3" fill="url(#storage)" stroke="#059669"/>
+    <text x="342" y="25" font-size="12" fill="#1e293b">Storage</text>
+  </g>
+
+  <!-- Machine bands -->
+  <text x="40" y="170" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">PERFORMER / LIBRARIAN — USER ENTRY POINTS</text>
+  <line x1="40" y1="180" x2="1360" y2="180" stroke="#7c3aed" stroke-dasharray="4 4" stroke-width="1"/>
+
+  <text x="40" y="460" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">LIBRARIAN — INGEST</text>
+  <line x1="40" y1="470" x2="1360" y2="470" stroke="#7c3aed" stroke-dasharray="4 4" stroke-width="1"/>
+
+  <text x="40" y="640" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">PERFORMER — RENDER</text>
+  <line x1="40" y1="650" x2="1360" y2="650" stroke="#7c3aed" stroke-dasharray="4 4" stroke-width="1"/>
+
+  <!-- Path A: Chrome Quick Action -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="200" width="280" height="92" rx="10" fill="url(#user)"/>
+    <text x="200" y="226" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">A · Chrome Quick Action</text>
+    <text x="200" y="250" text-anchor="middle" font-size="11" fill="#e0e7ff">Select YouTube URL → right-click →</text>
+    <text x="200" y="266" text-anchor="middle" font-size="11" fill="#e0e7ff">Services → "Send to simpleStem"</text>
+    <text x="200" y="284" text-anchor="middle" font-size="10" fill="#c7d2fe" font-style="italic">install_chrome_quick_action.sh installs it</text>
+  </g>
+
+  <!-- Path B: Portal paste -->
+  <g filter="url(#shadow)">
+    <rect x="560" y="200" width="280" height="92" rx="10" fill="url(#user)"/>
+    <text x="700" y="226" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">B · Portal "Add from YouTube"</text>
+    <text x="700" y="250" text-anchor="middle" font-size="11" fill="#e0e7ff">Paste URL in localhost:3000 box</text>
+    <text x="700" y="266" text-anchor="middle" font-size="11" fill="#e0e7ff">→ POST /api/enqueue</text>
+    <text x="700" y="284" text-anchor="middle" font-size="10" fill="#c7d2fe" font-style="italic">server.js writes the .webloc directly</text>
+  </g>
+
+  <!-- Path C: Manual drop -->
+  <g filter="url(#shadow)">
+    <rect x="1060" y="200" width="280" height="92" rx="10" fill="url(#user)"/>
+    <text x="1200" y="226" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">C · Finder drop</text>
+    <text x="1200" y="250" text-anchor="middle" font-size="11" fill="#e0e7ff">Drag a .webloc / .url file from</text>
+    <text x="1200" y="266" text-anchor="middle" font-size="11" fill="#e0e7ff">browser into INCOMING_WEBLOC/</text>
+    <text x="1200" y="284" text-anchor="middle" font-size="10" fill="#c7d2fe" font-style="italic">no script — just the file system</text>
+  </g>
+
+  <!-- Helper script A -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="320" width="200" height="50" rx="8" fill="url(#script)"/>
+    <text x="200" y="343" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">webloc_drop.sh</text>
+    <text x="200" y="358" text-anchor="middle" font-size="10" fill="#cbd5e1">slugify, name, write plist</text>
+  </g>
+  <line x1="200" y1="292" x2="200" y2="320" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Helper for B -->
+  <g filter="url(#shadow)">
+    <rect x="600" y="320" width="200" height="50" rx="8" fill="url(#script)"/>
+    <text x="700" y="343" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">server.js /api/enqueue</text>
+    <text x="700" y="358" text-anchor="middle" font-size="10" fill="#cbd5e1">portal_&lt;stamp&gt;_&lt;vid&gt;.webloc</text>
+  </g>
+  <line x1="700" y1="292" x2="700" y2="320" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- INCOMING_WEBLOC -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="396" width="320" height="58" rx="10" fill="url(#transient)" stroke="#d97706" stroke-width="2"/>
+    <text x="700" y="420" text-anchor="middle" font-size="14" font-weight="800" fill="#78350f" font-family="ui-monospace, monospace">INCOMING_WEBLOC/</text>
+    <text x="700" y="440" text-anchor="middle" font-size="11" fill="#92400e">chrome_*.webloc · portal_*.webloc · manual drops</text>
+  </g>
+  <!-- Lines from helpers to INCOMING_WEBLOC -->
+  <path d="M 200 370 L 200 425 L 540 425" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 700 370 L 700 396" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1200 292 L 1200 425 L 860 425" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- webloc_watch.sh -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="492" width="320" height="56" rx="8" fill="url(#script)"/>
+    <text x="700" y="514" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">webloc_watch.sh</text>
+    <text x="700" y="535" text-anchor="middle" font-size="10" fill="#cbd5e1">on Librarian · fswatch · downloads source.wav · enqueues metadata job</text>
+  </g>
+  <line x1="700" y1="454" x2="700" y2="492" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- STEM_QUEUE -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="572" width="320" height="56" rx="10" fill="url(#transient)" stroke="#d97706" stroke-width="2"/>
+    <text x="700" y="595" text-anchor="middle" font-size="14" font-weight="800" fill="#78350f" font-family="ui-monospace, monospace">STEM_QUEUE/</text>
+    <text x="700" y="614" text-anchor="middle" font-size="11" fill="#92400e">one job per song · &lt;slug&gt;.json + cached source.wav</text>
+  </g>
+  <line x1="700" y1="548" x2="700" y2="572" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- queue_runner.sh -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="676" width="320" height="56" rx="8" fill="url(#script)"/>
+    <text x="700" y="698" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">queue_runner.sh → stem.sh</text>
+    <text x="700" y="719" text-anchor="middle" font-size="10" fill="#cbd5e1">on Performer · Demucs htdemucs_6s (~25 min/song) · ffmpeg → m4a</text>
+  </g>
+  <line x1="700" y1="628" x2="700" y2="676" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Storage: STEMS/ and M4A/ -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="760" width="380" height="86" rx="10" fill="url(#storage)" stroke="#059669" stroke-width="2"/>
+    <text x="330" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/</text>
+    <text x="330" y="806" text-anchor="middle" font-size="11" fill="#065f46">source.wav · vocals/drums/bass/guitar/piano/other.m4a</text>
+    <text x="330" y="822" text-anchor="middle" font-size="11" fill="#065f46">metadata.json · loops · sectionCandidates</text>
+    <text x="330" y="838" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~250 MB per song</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="560" y="760" width="320" height="86" rx="10" fill="url(#storage)" stroke="#059669" stroke-width="2"/>
+    <text x="720" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">M4A/</text>
+    <text x="720" y="806" text-anchor="middle" font-size="11" fill="#065f46">&lt;Title&gt;_&lt;Artist&gt;_-V.m4a (no vocals)</text>
+    <text x="720" y="822" text-anchor="middle" font-size="11" fill="#065f46">_-V-G · _-V-G-B · _DO · FULL mixdowns</text>
+    <text x="720" y="838" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~5 MB each</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="920" y="760" width="320" height="86" rx="10" fill="url(#index)" stroke="#2563eb" stroke-width="2"/>
+    <text x="1080" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">CATALOG.json</text>
+    <text x="1080" y="806" text-anchor="middle" font-size="11" fill="#1e40af">written by catalog.py (hourly on Librarian)</text>
+    <text x="1080" y="822" text-anchor="middle" font-size="11" fill="#1e40af">mirrored to ~/.simpleStem-catalog/</text>
+    <text x="1080" y="838" text-anchor="middle" font-size="10" fill="#2563eb" font-style="italic">portal /api/library reads this</text>
+  </g>
+
+  <!-- Arrows from queue_runner to outputs -->
+  <path d="M 620 732 L 400 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 720 732 L 720 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 800 732 L 1010 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="3 3"/>
+  <text x="900" y="748" font-size="10" fill="#64748b" font-style="italic">indexed by</text>
+</svg>

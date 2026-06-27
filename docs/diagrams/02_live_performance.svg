@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <linearGradient id="user2" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+    <linearGradient id="script2" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#475569"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="storage2" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#d1fae5"/>
+      <stop offset="1" stop-color="#a7f3d0"/>
+    </linearGradient>
+    <linearGradient id="hw" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fce7f3"/>
+      <stop offset="1" stop-color="#fbcfe8"/>
+    </linearGradient>
+    <filter id="shadow2" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <text x="700" y="48" text-anchor="middle" font-size="28" font-weight="800" fill="#0f172a">simpleStem — Live Performance Workflow</text>
+  <text x="700" y="74" text-anchor="middle" font-size="14" fill="#475569">from the gig picker to audio out of the XR18 — every file the portal reads + writes during a song</text>
+
+  <!-- Phase labels -->
+  <text x="40" y="120" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">1 · PRE-SHOW · pick what to play</text>
+  <text x="40" y="370" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">2 · LOAD · select a song</text>
+  <text x="40" y="580" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="0.06em">3 · PLAY · audio + automation flow</text>
+
+  <line x1="40" y1="130" x2="1360" y2="130" stroke="#7c3aed" stroke-dasharray="4 4"/>
+  <line x1="40" y1="380" x2="1360" y2="380" stroke="#7c3aed" stroke-dasharray="4 4"/>
+  <line x1="40" y1="590" x2="1360" y2="590" stroke="#7c3aed" stroke-dasharray="4 4"/>
+
+  <!-- Pre-show -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="150" width="280" height="80" rx="10" fill="url(#user2)"/>
+    <text x="200" y="175" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Pick a gig from sidebar</text>
+    <text x="200" y="196" text-anchor="middle" font-size="11" fill="#e0e7ff">real gigs · YouTube Sync · Manual Setlists</text>
+    <text x="200" y="212" text-anchor="middle" font-size="11" fill="#e0e7ff">Bill / Matt / Dan / JD · Recents · Favorites</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="380" y="150" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="520" y="175" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">GIGS/&lt;slug&gt;.json</text>
+    <text x="520" y="195" text-anchor="middle" font-size="11" fill="#065f46">{title, setlists:[...]}</text>
+    <text x="520" y="213" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">written by user OR mpb_sync.py</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="700" y="150" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="840" y="175" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">SETLISTS/&lt;slug&gt;.json</text>
+    <text x="840" y="195" text-anchor="middle" font-size="11" fill="#065f46">{title, origin: 'manual' | 'playlist', songs:[...]}</text>
+    <text x="840" y="213" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">used by Manual Setlists + YouTube Sync</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="1020" y="150" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="1160" y="175" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">CATALOG.json</text>
+    <text x="1160" y="195" text-anchor="middle" font-size="11" fill="#065f46">every song in the library</text>
+    <text x="1160" y="213" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~/.simpleStem-catalog/ local mirror</text>
+  </g>
+
+  <line x1="340" y1="190" x2="380" y2="190" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="660" y1="190" x2="700" y2="190" stroke="#334155" stroke-width="2" stroke-dasharray="3 3"/>
+  <line x1="980" y1="190" x2="1020" y2="190" stroke="#334155" stroke-width="2" stroke-dasharray="3 3"/>
+
+  <g filter="url(#shadow2)">
+    <rect x="60" y="260" width="280" height="74" rx="10" fill="url(#user2)"/>
+    <text x="200" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Star songs in setlist</text>
+    <text x="200" y="305" text-anchor="middle" font-size="11" fill="#e0e7ff">+ Manage band-required filter</text>
+    <text x="200" y="320" text-anchor="middle" font-size="10" fill="#c7d2fe" font-style="italic">writes metadata.json.favorite</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="380" y="260" width="280" height="74" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="520" y="285" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/metadata.json</text>
+    <text x="520" y="305" text-anchor="middle" font-size="11" fill="#065f46">favorite · singer_lead · band_required</text>
+    <text x="520" y="321" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">PUT /api/song/:base/favorite + /singer</text>
+  </g>
+  <line x1="340" y1="297" x2="380" y2="297" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Load phase -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="400" width="280" height="80" rx="10" fill="url(#user2)"/>
+    <text x="200" y="425" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Click song in setlist</text>
+    <text x="200" y="446" text-anchor="middle" font-size="11" fill="#e0e7ff">stems decode + precache to ~/.bt-cache</text>
+    <text x="200" y="462" text-anchor="middle" font-size="11" fill="#e0e7ff">visualizer renders waveform</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="380" y="400" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="520" y="425" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/*.m4a</text>
+    <text x="520" y="445" text-anchor="middle" font-size="11" fill="#065f46">six stem files served by /api/audio/stems/</text>
+    <text x="520" y="463" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">read fresh each load (Drive-streamed)</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="700" y="400" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="840" y="425" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">~/.bt-cache/</text>
+    <text x="840" y="445" text-anchor="middle" font-size="11" fill="#065f46">local audio cache · keyed by hash</text>
+    <text x="840" y="463" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">second play of a song = instant</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="1020" y="400" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="1160" y="425" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">RECENTS.json</text>
+    <text x="1160" y="445" text-anchor="middle" font-size="11" fill="#065f46">last 50 songs loaded</text>
+    <text x="1160" y="463" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">feeds the "Recents" pseudo-gig</text>
+  </g>
+
+  <line x1="340" y1="440" x2="380" y2="440" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="660" y1="440" x2="700" y2="440" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <path d="M 200 480 L 200 510 L 1160 510 L 1160 480" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)" stroke-dasharray="3 3"/>
+
+  <!-- Play phase -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="610" width="240" height="100" rx="10" fill="url(#user2)"/>
+    <text x="180" y="638" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Press Play / Section keys</text>
+    <text x="180" y="660" text-anchor="middle" font-size="11" fill="#e0e7ff">1–9 drop section markers</text>
+    <text x="180" y="676" text-anchor="middle" font-size="11" fill="#e0e7ff">Click LOOPER for section loop</text>
+    <text x="180" y="694" text-anchor="middle" font-size="11" fill="#e0e7ff">+ Lyric / + Action / + Clip</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="340" y="610" width="280" height="100" rx="10" fill="url(#script2)"/>
+    <text x="480" y="638" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">Web Audio graph (Chrome)</text>
+    <text x="480" y="660" text-anchor="middle" font-size="10" fill="#cbd5e1">MediaElement → stripGain → boost</text>
+    <text x="480" y="676" text-anchor="middle" font-size="10" fill="#cbd5e1">→ ChannelMerger → destination</text>
+    <text x="480" y="694" text-anchor="middle" font-size="10" fill="#cbd5e1">SEMI/FINE pitch via playbackRate</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="660" y="610" width="280" height="100" rx="10" fill="url(#script2)"/>
+    <text x="800" y="638" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">midi_sidecar.py :5555</text>
+    <text x="800" y="660" text-anchor="middle" font-size="10" fill="#cbd5e1">automation events fire at playhead t</text>
+    <text x="800" y="676" text-anchor="middle" font-size="10" fill="#cbd5e1">browser POSTs /api/midi/send</text>
+    <text x="800" y="694" text-anchor="middle" font-size="10" fill="#cbd5e1">sidecar → mido → MIDI port</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="980" y="610" width="320" height="100" rx="10" fill="url(#hw)" stroke="#a21caf" stroke-width="2"/>
+    <text x="1140" y="638" text-anchor="middle" font-size="14" font-weight="800" fill="#701a75">Hardware out</text>
+    <text x="1140" y="660" text-anchor="middle" font-size="11" fill="#86198f">XR18 (USB · 18 ch · per-stem routing)</text>
+    <text x="1140" y="676" text-anchor="middle" font-size="11" fill="#86198f">Helix (PC/CC · channel 4 default)</text>
+    <text x="1140" y="694" text-anchor="middle" font-size="11" fill="#86198f">Logic Pro (IAC) · stage monitors</text>
+  </g>
+
+  <line x1="300" y1="660" x2="340" y2="660" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="620" y1="660" x2="660" y2="660" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="940" y1="660" x2="980" y2="660" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Bottom row: persistence + state -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="200" y="765" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">metadata.json.automation</text>
+    <text x="200" y="785" text-anchor="middle" font-size="11" fill="#065f46">[{t, type, device, channel, ...}]</text>
+    <text x="200" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">PUT /api/song/:base/automation</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="380" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="520" y="765" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">metadata.json.sections</text>
+    <text x="520" y="785" text-anchor="middle" font-size="11" fill="#065f46">section dividers · clickIn + countIn</text>
+    <text x="520" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">snaps to sectionCandidates</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="700" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="840" y="765" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/lyrics.txt</text>
+    <text x="840" y="785" text-anchor="middle" font-size="11" fill="#065f46">paste-or-fetch lyrics file</text>
+    <text x="840" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">PUT /api/song/:base/lyrics-file</text>
+  </g>
+  <g filter="url(#shadow2)">
+    <rect x="1020" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
+    <text x="1160" y="765" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">debug-snapshots.log</text>
+    <text x="1160" y="785" text-anchor="middle" font-size="11" fill="#065f46">📋 button + auto on state changes</text>
+    <text x="1160" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~/.simpleStem-catalog/</text>
+  </g>
+
+  <path d="M 180 710 L 180 740" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <path d="M 220 710 L 460 740" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <path d="M 260 710 L 800 740" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+  <path d="M 300 710 L 1100 740" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow2)"/>
+</svg>

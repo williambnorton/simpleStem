@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <linearGradient id="step" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+    <linearGradient id="diag" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#475569"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="ok" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#d1fae5"/>
+      <stop offset="1" stop-color="#a7f3d0"/>
+    </linearGradient>
+    <linearGradient id="warn" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fee2e2"/>
+      <stop offset="1" stop-color="#fecaca"/>
+    </linearGradient>
+    <filter id="shadow3" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <text x="700" y="48" text-anchor="middle" font-size="28" font-weight="800" fill="#0f172a">simpleStem — XR18 Recovery Ladder</text>
+  <text x="700" y="74" text-anchor="middle" font-size="14" fill="#475569">work TOP to BOTTOM — earlier steps are safer and faster. Click 📋 (Snapshot) at every transition.</text>
+
+  <!-- Symptom -->
+  <g filter="url(#shadow3)">
+    <rect x="500" y="100" width="400" height="56" rx="10" fill="url(#warn)" stroke="#dc2626" stroke-width="2"/>
+    <text x="700" y="124" text-anchor="middle" font-size="15" font-weight="800" fill="#7f1d1d">⚠ No sound from XR18</text>
+    <text x="700" y="145" text-anchor="middle" font-size="11" fill="#991b1b">badge says XR18 ACTIVE but the board's Main LR meters are dead</text>
+  </g>
+
+  <!-- Confirm it's the XR18 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="200" width="260" height="84" rx="10" fill="url(#step)"/>
+    <text x="190" y="225" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">0 · Confirm it's the XR18</text>
+    <text x="190" y="246" text-anchor="middle" font-size="11" fill="#e0e7ff">Click → Sys Out · play a song</text>
+    <text x="190" y="264" text-anchor="middle" font-size="10" fill="#c7d2fe">Sound from Mac speakers? → continue</text>
+    <text x="190" y="278" text-anchor="middle" font-size="10" fill="#c7d2fe">No sound → Chrome problem, Cmd+Shift+R</text>
+  </g>
+
+  <!-- Step 1 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="304" width="260" height="84" rx="10" fill="url(#step)"/>
+    <text x="190" y="329" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">1 · Click → XR18 + 🔔</text>
+    <text x="190" y="350" text-anchor="middle" font-size="11" fill="#e0e7ff">Switch back · run round-the-horn</text>
+    <text x="190" y="368" text-anchor="middle" font-size="10" fill="#c7d2fe">Beep + meters? → DONE</text>
+    <text x="190" y="382" text-anchor="middle" font-size="10" fill="#c7d2fe">Silent / wrong channels → continue</text>
+  </g>
+
+  <!-- Step 2 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="408" width="260" height="84" rx="10" fill="url(#step)"/>
+    <text x="190" y="433" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2 · Unplug + replug USB</text>
+    <text x="190" y="454" text-anchor="middle" font-size="11" fill="#e0e7ff">At the XR18 end · wait 5 sec</text>
+    <text x="190" y="472" text-anchor="middle" font-size="10" fill="#c7d2fe">~70% of XR18 hangs clear here</text>
+    <text x="190" y="486" text-anchor="middle" font-size="10" fill="#c7d2fe">→ XR18 + 🔔 again</text>
+  </g>
+
+  <!-- Step 3 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="512" width="260" height="100" rx="10" fill="url(#step)"/>
+    <text x="190" y="537" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">3 · 🩹 First aid</text>
+    <text x="190" y="556" text-anchor="middle" font-size="11" fill="#fde68a">kicks coreaudiod · 4 sec wait + reload</text>
+    <text x="190" y="572" text-anchor="middle" font-size="10" fill="#fecaca">⚠ can ORPHAN the XR18 if its USB</text>
+    <text x="190" y="586" text-anchor="middle" font-size="10" fill="#fecaca">endpoint is already flaky</text>
+    <text x="190" y="602" text-anchor="middle" font-size="10" fill="#c7d2fe">If badge turns red → back to step 2</text>
+  </g>
+
+  <!-- Step 4 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="632" width="260" height="80" rx="10" fill="url(#step)"/>
+    <text x="190" y="657" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">4 · 🔄 Restart backend</text>
+    <text x="190" y="678" text-anchor="middle" font-size="11" fill="#e0e7ff">performer.sh restart</text>
+    <text x="190" y="696" text-anchor="middle" font-size="10" fill="#c7d2fe">Clears Web Audio graph state</text>
+  </g>
+
+  <!-- Step 5 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="732" width="260" height="80" rx="10" fill="url(#step)"/>
+    <text x="190" y="757" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">5 · Power-cycle XR18</text>
+    <text x="190" y="778" text-anchor="middle" font-size="11" fill="#e0e7ff">Off · wait 10 sec · on</text>
+    <text x="190" y="796" text-anchor="middle" font-size="10" fill="#c7d2fe">Re-pick XR18 in macOS Sound · Cmd+R</text>
+  </g>
+
+  <!-- Step 6 -->
+  <g filter="url(#shadow3)">
+    <rect x="60" y="832" width="260" height="80" rx="10" fill="url(#step)"/>
+    <text x="190" y="857" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">6 · Swap USB cable</text>
+    <text x="190" y="878" text-anchor="middle" font-size="11" fill="#e0e7ff">Different cable · different port</text>
+    <text x="190" y="896" text-anchor="middle" font-size="10" fill="#c7d2fe">XR18 needs USB 2.0 — no 1.1 adapters</text>
+  </g>
+
+  <!-- Right column: parallel diagnostics -->
+  <g filter="url(#shadow3)">
+    <rect x="430" y="200" width="280" height="70" rx="10" fill="url(#diag)"/>
+    <text x="570" y="223" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Watch the badge</text>
+    <text x="570" y="244" text-anchor="middle" font-size="10" fill="#cbd5e1">green = healthy · amber = not default</text>
+    <text x="570" y="260" text-anchor="middle" font-size="10" fill="#cbd5e1">RED pulsing = ⚠ ORPHANED</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="430" y="290" width="280" height="80" rx="10" fill="url(#diag)"/>
+    <text x="570" y="313" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Watch X-Air on iPad / Mac</text>
+    <text x="570" y="334" text-anchor="middle" font-size="10" fill="#cbd5e1">Strip 17/18 meters move? = USB arriving</text>
+    <text x="570" y="350" text-anchor="middle" font-size="10" fill="#cbd5e1">Strip 1–6 meters move on "One"–"Six"?</text>
+    <text x="570" y="364" text-anchor="middle" font-size="10" fill="#cbd5e1">= USB Sends/Returns mapped correctly</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="430" y="390" width="280" height="80" rx="10" fill="url(#diag)"/>
+    <text x="570" y="413" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Logic Pro audio devices list</text>
+    <text x="570" y="434" text-anchor="middle" font-size="10" fill="#cbd5e1">XR18 = healthy</text>
+    <text x="570" y="450" text-anchor="middle" font-size="10" fill="#cbd5e1">(XR18) parens = orphaned</text>
+    <text x="570" y="464" text-anchor="middle" font-size="10" fill="#cbd5e1">missing = USB physical or driver dead</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="430" y="490" width="280" height="80" rx="10" fill="url(#diag)"/>
+    <text x="570" y="513" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Server probe</text>
+    <text x="570" y="534" text-anchor="middle" font-size="10" fill="#cbd5e1" font-family="ui-monospace, monospace">/api/audio/xr18-status</text>
+    <text x="570" y="550" text-anchor="middle" font-size="10" fill="#cbd5e1">present + isDefaultOutput + channels</text>
+    <text x="570" y="564" text-anchor="middle" font-size="10" fill="#cbd5e1">vs Chrome's destination.maxChannelCount</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="430" y="590" width="280" height="80" rx="10" fill="url(#diag)"/>
+    <text x="570" y="613" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">📋 Snapshot button</text>
+    <text x="570" y="634" text-anchor="middle" font-size="10" fill="#cbd5e1">writes a JSON line to disk per click</text>
+    <text x="570" y="650" text-anchor="middle" font-size="10" fill="#cbd5e1" font-family="ui-monospace, monospace">~/.simpleStem-catalog/</text>
+    <text x="570" y="664" text-anchor="middle" font-size="10" fill="#cbd5e1" font-family="ui-monospace, monospace">debug-snapshots.log</text>
+  </g>
+
+  <!-- Right column: fall-back -->
+  <g filter="url(#shadow3)">
+    <rect x="820" y="200" width="280" height="70" rx="10" fill="url(#warn)" stroke="#dc2626" stroke-width="2"/>
+    <text x="960" y="223" text-anchor="middle" font-size="13" font-weight="800" fill="#7f1d1d">Gig-survival fallback</text>
+    <text x="960" y="244" text-anchor="middle" font-size="10" fill="#991b1b">Headphone jack → amp line-in</text>
+    <text x="960" y="260" text-anchor="middle" font-size="10" fill="#991b1b">Click → Sys Out · stereo only</text>
+  </g>
+
+  <!-- Symptom decoder right column -->
+  <text x="960" y="305" text-anchor="middle" font-size="14" font-weight="800" fill="#0f172a">Symptom → likely fix</text>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="320" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="340" font-size="11" font-weight="700" fill="#1e293b">All 8 words came out of one speaker:</text>
+    <text x="836" y="358" font-size="11" fill="#475569">X-Air → Setup → Routing → USB Sends/Returns → map USB 11–16 to strips 1–6</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="378" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="398" font-size="11" font-weight="700" fill="#1e293b">Badge says XR18 ACTIVE but Chrome shows destMaxCh=2:</text>
+    <text x="836" y="416" font-size="11" fill="#475569">ORPHANED. USB replug is the only fix. Do NOT kick coreaudiod again.</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="436" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="456" font-size="11" font-weight="700" fill="#1e293b">Logic shows "(XR18)" in parens:</text>
+    <text x="836" y="474" font-size="11" fill="#475569">Same orphan state. USB replug.</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="494" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="514" font-size="11" font-weight="700" fill="#1e293b">Routing buttons stay greyed even after → XR18:</text>
+    <text x="836" y="532" font-size="11" fill="#475569">No user gesture yet — click anything to bootstrap AudioContext.</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="552" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="572" font-size="11" font-weight="700" fill="#1e293b">XR18 totally absent from macOS Sound:</text>
+    <text x="836" y="590" font-size="11" fill="#475569">USB cable / port. Try a known-good 2.0 cable to a built-in port.</text>
+  </g>
+  <g filter="url(#shadow3)">
+    <rect x="820" y="610" width="540" height="50" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="836" y="630" font-size="11" font-weight="700" fill="#1e293b">Channel buttons disabled even with XR18 connected:</text>
+    <text x="836" y="648" font-size="11" fill="#475569">Click anywhere — first-click handler initializes outputChannelCount.</text>
+  </g>
+
+  <!-- Vertical flow arrows -->
+  <line x1="190" y1="284" x2="190" y2="304" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="190" y1="388" x2="190" y2="408" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="190" y1="492" x2="190" y2="512" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="190" y1="612" x2="190" y2="632" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="190" y1="712" x2="190" y2="732" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="190" y1="812" x2="190" y2="832" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+
+  <line x1="500" y1="156" x2="200" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow3)"/>
+</svg>
