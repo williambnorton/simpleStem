@@ -35,9 +35,8 @@ for f in webloc_watch.sh stem.sh queue_runner.sh studio.sh \
          performer.sh librarian.sh webloc_drop.sh \
          install_chrome_quick_action.sh sync_to_drive.sh \
          catalog.py metadata.py mpb_sync.py post_process.py \
-         loop_detect.py section_detect.py lyrics_fetch.py \
-         cleanup_stems_wav.py backfill_section_detect.sh \
-         backfill_m4a_stems.sh migrate_per_folder_loops.sh \
+         section_detect.py cleanup_stems_wav.py \
+         backfill_section_detect.sh \
          build_drum_machine.py loop_regenerate.py make_stems_offline.sh \
          rename_loops_with_key.py rebuild.sh install.sh; do
   if [[ -e "$DRIVE/$f" ]]; then chmod +x "$DRIVE/$f"; fi

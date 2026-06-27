@@ -6868,13 +6868,26 @@ const LYRIC_LINE_LIFETIME_MS = 3500;   // each line auto-fades after ~3.5s
 // useful. Visual placement on the lane stays at e.t (where Bill tapped) —
 // only the FIRE TIME is advanced.
 const LYRIC_LOOK_AHEAD_SEC = 1.0;
+// localStorage key for the user's "show vs. hide lyrics overlay" preference.
+// The flag persists across songs and sessions — once Bill hides the overlay,
+// it stays hidden until he explicitly turns it back on. Rationale: when the
+// band knows the songs, the overlay is just visual noise covering the mixer.
+const LYRICS_PLAYBACK_OFF_KEY = 'simpleStem.lyricsPlaybackOff';
+function loadLyricsPlaybackOffPref() {
+  try { return localStorage.getItem(LYRICS_PLAYBACK_OFF_KEY) === '1'; }
+  catch (e) { return false; }
+}
+function saveLyricsPlaybackOffPref(off) {
+  try { localStorage.setItem(LYRICS_PLAYBACK_OFF_KEY, off ? '1' : '0'); }
+  catch (e) {}
+}
 let lyricsState = {
   fetching:     false,    // genius fetch in flight
   cachedLines:  [],       // flat array of next-to-drop lines for the song
   cursor:       0,        // index into cachedLines[]
   lastTapAt:    0,        // ms timestamp; used to decide replace vs append
   activeLines:  [],       // [{text, addedAt}] — what the overlay is showing
-  playbackOff:  false,    // user toggled or clicked the overlay off
+  playbackOff:  loadLyricsPlaybackOffPref(), // restored from localStorage
   placedStack:  [],       // [eventRef, ...] in tap order — backs Backspace undo
   placedCount:  0,        // monotonic — only ++ on tap, -- on Backspace undo
 };
@@ -6924,6 +6937,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('#midi-btn-lyrics-show')) {
     console.log('[lyric] delegated click hit (Show/Hide)');
     lyricsState.playbackOff = !lyricsState.playbackOff;
+    saveLyricsPlaybackOffPref(lyricsState.playbackOff);
     _renderLyricDisplay();
     return;
   }
@@ -6979,7 +6993,10 @@ function refreshLyricsForNewSong() {
   lyricsState.cursor = 0;
   lyricsState.lastTapAt = 0;
   lyricsState.activeLines = [];
-  lyricsState.playbackOff = false;
+  // Honor the persisted Show/Hide preference across song loads. The user's
+  // overlay choice is global ("I'm past the lyric-coaching phase"), not
+  // per-song — so loading a new song should NOT reset it to visible.
+  lyricsState.playbackOff = loadLyricsPlaybackOffPref();
   lyricsState.placedStack = [];
   lyricsState.cachedLines = _normalizeLyrics(currentSong && currentSong.lyrics);
   // Snap placedCount to whatever's already on disk for this song, so
@@ -7322,6 +7339,7 @@ function _ensureLyricsDisplay() {
   ov.addEventListener('click', () => {
     if (lyricsHasPlacedActions()) {
       lyricsState.playbackOff = true;
+      saveLyricsPlaybackOffPref(true);
       _renderLyricDisplay();
     }
   });
@@ -7363,8 +7381,10 @@ function _ensureLyricsModal() {
             <div class="lyrics-modal-section-label" style="margin-top:14px;">lyrics.txt on disk</div>
             <button type="button" id="lyrics-open-txt"        class="lyrics-search-btn lyrics-search-txt"      title="Create STEMS/<song>/lyrics.txt (empty if needed) and open it in TextEdit. Paste lyrics there, save, then click Reload from disk.">📝 Open lyrics.txt</button>
             <button type="button" id="lyrics-reload-txt"      class="lyrics-search-btn lyrics-search-reload"   title="Re-read lyrics.txt from disk into the textarea on the right.">Reload from disk</button>
-            <div class="lyrics-modal-section-label" style="margin-top:14px;">Direct API</div>
-            <button type="button" id="lyrics-modal-fetch"     class="lyrics-search-btn lyrics-search-genius"   title="Auto-fetch from Genius via the API (uses your token).">Fetch from Genius</button>
+            <!-- "Fetch from Genius" button retired 2026-06-27 — paste-only workflow.
+                 The DOM element is kept (display:none) so the existing handler
+                 wiring doesn't error if it's still looking for the id. -->
+            <button type="button" id="lyrics-modal-fetch" style="display:none;" aria-hidden="true">Fetch from Genius (retired)</button>
             <span id="lyrics-modal-fetching" style="display:none; opacity:0.7; font-size:11px;">fetching…</span>
             <span id="lyrics-txt-status" style="opacity:0.7; font-size:11px;"></span>
           </div>
@@ -7440,11 +7460,11 @@ function openLyricsModal(mode = 'initial') {
   if (titleEl) titleEl.textContent = `Lyrics editor — ${songTitle}`;
   els.lyricsModalPaste.value = (currentSong && currentSong.lyrics) || '';
   if (mode === 'edit') {
-    els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. <strong>Fetch from Genius</strong> replaces the textarea. Right-click the + Lyric button to re-open this editor anytime.`;
+    els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. Use the Google / Ultimate Guitar / AZLyrics buttons on the left to open a search in a new window, then paste here. Right-click the + Lyric button to re-open this editor anytime.`;
   } else if (currentSong && currentSong.lyrics) {
     els.lyricsModalStatus.innerHTML = `Lyrics already cached. Edit + <strong>Save</strong> to overwrite, or close to start tapping along.`;
   } else {
-    els.lyricsModalStatus.innerHTML = `No lyrics file yet. Try <strong>Fetch from Genius</strong>, or paste from Google / AZLyrics / any lyrics site and edit so each line is on its own row.`;
+    els.lyricsModalStatus.innerHTML = `No lyrics file yet. Use Google / Ultimate Guitar / AZLyrics on the left to open a search in a new window, then paste the result here (one line per displayed line).`;
   }
   els.lyricsModalFetching.style.display = 'none';
   // Wire the search links to point at THIS song's title + artist.
@@ -10740,7 +10760,10 @@ function setupMidiUI() {
       lyricsState.cursor = 0;
       lyricsState.lastTapAt = 0;
       lyricsState.activeLines = [];
-      lyricsState.playbackOff = false;
+      // Keep the persisted Show/Hide preference. CLEAR removes the song's
+      // automation actions, but the operator's overlay visibility choice
+      // is global and shouldn't get reset by a per-song wipe.
+      lyricsState.playbackOff = loadLyricsPlaybackOffPref();
       lyricsState.placedStack = [];
       lyricsState.placedCount = 0;
       if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();

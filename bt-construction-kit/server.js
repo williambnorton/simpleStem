@@ -3191,53 +3191,18 @@ app.put('/api/song/:base/action-sequences', (req, res) => {
 // stems row; the client renders a yellow star next to the song name and
 // a synthetic Favorites pseudo-gig aggregates all songs where the flag
 // is true. No restem / no audio change — purely a marker.
-// Fetch lyrics for ONE song on demand. Shells out to lyrics_fetch.py
-// (which writes lyrics + lyrics_chunks straight into the song's
-// metadata.json), then patches libraryCache so the next /api/library
-// read sees them without waiting for the hourly refresh. Bill's
-// workflow: he already knows most lyrics by heart — only triggers
-// this for the handful of songs he doesn't, so a per-song endpoint
-// beats the auto-on-every-ingest design.
+// Lyrics auto-lookup retired 2026-06-27. Bill curates lyrics by hand for
+// the handful of songs he wants them on; the modal's Google / UG / AZLyrics
+// buttons + per-song lyrics.txt cover that workflow. This endpoint stays
+// reachable so the legacy "Fetch from Genius" UI button doesn't 404 — it
+// just returns a friendly 410 explaining the new policy.
 app.post('/api/song/:base/fetch-lyrics', (req, res) => {
-  const s = safeSongDir(req.params.base);
-  if (!s) return res.status(400).json({ error: 'bad song id' });
-  const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
-  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
-  const script = path.join(root, 'lyrics_fetch.py');
-  if (!fs.existsSync(script)) return res.status(500).json({ error: 'lyrics_fetch.py not found at root' });
-  const force = !!(req.body && req.body.force);
-  const args = ['lyrics_fetch.py', '--dir', s.dir, '--quiet'];
-  if (force) args.push('--force');
-  const child = spawn('python3', args, { cwd: root });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', d => { stdout += d.toString(); });
-  child.stderr.on('data', d => { stderr += d.toString(); });
-  child.on('close', code => {
-    // Re-read the (possibly updated) metadata.json and patch libraryCache
-    // in place so the client doesn't have to wait for the hourly refresh.
-    let lyrics = null, chunks = null;
-    try {
-      const mj = JSON.parse(fs.readFileSync(mp, 'utf8'));
-      lyrics = mj.lyrics || null;
-      chunks = Array.isArray(mj.lyrics_chunks) ? mj.lyrics_chunks : null;
-    } catch (e) {}
-    try {
-      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
-      if (Array.isArray(songs)) {
-        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
-        if (row) { row.lyrics = lyrics; row.lyrics_chunks = chunks; }
-      }
-    } catch (e) {}
-    if (code !== 0 && !lyrics) {
-      return res.status(502).json({
-        error: stderr.trim() || stdout.trim() || `lyrics_fetch exited ${code}`,
-        hint: 'Genius may have no match for this title. Verify the title/artist in metadata.json, or pass force=true to retry.',
-      });
-    }
-    res.json({ ok: true, lyrics, lyrics_chunks: chunks, chunkCount: (chunks || []).length });
+  res.status(410).json({
+    ok: false,
+    retired: true,
+    error: 'Auto-fetch retired. Paste lyrics into the editor (or STEMS/<base>/lyrics.txt).',
+    hint: 'Use the Google / Ultimate Guitar / AZLyrics buttons on the left side of the editor to open a search in a new window, then copy-paste.',
   });
-  child.on('error', e => res.status(500).json({ error: `spawn failed: ${e.message}` }));
 });
 
 // ── Per-song lyrics.txt — the operator-curated source of truth ──────────
