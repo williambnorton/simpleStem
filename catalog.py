@@ -350,18 +350,20 @@ def _dir_mtime_iso(d):
 
 
 def build(root, do_fill):
+    # M4A mixdowns retired 2026-06-27 — the portal mixes the six stems
+    # client-side. catalog.py now only walks STEMS/. The build_m4a_rows /
+    # m4a drift logic is gone; if M4A/ exists from a pre-purge era, it is
+    # ignored by the catalog and will be moved aside by
+    # retire_legacy_files.sh.
     stems_root = root / 'STEMS'
-    m4a_root   = root / 'M4A'
 
     drift = {
         'stems_without_metadata': [],
         'metadata_without_stems': [],
         'incomplete':             [],
-        'm4a_without_stems_dir':  [],
     }
 
     stem_rows = []
-    stems_by_base = {}
     if stems_root.exists():
         dirs = sorted([d for d in stems_root.iterdir() if d.is_dir()])
         for d in dirs:
@@ -384,28 +386,14 @@ def build(root, do_fill):
             if row['stats']['stemCount'] < len(EXPECTED_STEMS):
                 drift['incomplete'].append(base)
             stem_rows.append(row)
-            stems_by_base[base] = row
 
-    m4a_rows = build_m4a_rows(m4a_root, stems_by_base)
-
-    # m4a_without_stems_dir drift report
-    if m4a_root.exists():
-        for f in sorted(m4a_root.iterdir()):
-            if not (f.is_file() and f.name.lower().endswith('.m4a')): continue
-            if DRIVE_DUP_M4A_RE.search(f.name): continue
-            if LOOP_M4A_RE.search(f.name): continue
-            stripped, _, _ = variant_for(f.name)
-            if stripped not in stems_by_base:
-                drift['m4a_without_stems_dir'].append(f.name)
-
-    all_rows = stem_rows + m4a_rows
-    stats = compute_stats(all_rows, stem_rows, m4a_rows)
+    all_rows = stem_rows
+    stats = compute_stats(all_rows, stem_rows, [])
 
     payload = {
         'scannedAt': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime()),
         'sourceMtimes': {
             'stems': _dir_mtime_iso(stems_root),
-            'm4a':   _dir_mtime_iso(m4a_root),
         },
         'data': {
             'stats': stats,
@@ -416,7 +404,7 @@ def build(root, do_fill):
 
 
 def print_drift(drift, n_rows, n_stems):
-    print(f"\n== catalog: {n_rows} rows ({n_stems} stems folders, {n_rows - n_stems} m4a files)")
+    print(f"\n== catalog: {n_rows} stems rows")
     for label, items in drift.items():
         if items:
             print(f"\n-- {label} ({len(items)}):")
@@ -450,7 +438,7 @@ def main():
         out = args.root / 'CATALOG.json'
         json.dump(payload, open(out, 'w'), indent=2, ensure_ascii=False)
         open(out, 'a').write('\n')
-        print(f">> wrote {out.name} ({n_rows} rows: {n_stems} stems + {n_rows - n_stems} m4a)")
+        print(f">> wrote {out.name} ({n_rows} stems rows)")
 
     print_drift(drift, n_rows, n_stems)
 

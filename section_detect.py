@@ -57,6 +57,12 @@ MIN_SPACING_SEC = 10.0       # shortest plausible section length (bumped
 THRESHOLD_FRACTION = 0.50    # peak must reach ≥ 50% of global max (bumped
                              # from 0.35 for the same reason)
 SMOOTH_FRAMES = 3            # 3 frames = 300 ms moving-average smoothing
+MAX_PEAKS = 12               # never emit more than this many candidates.
+                             # A typical song is intro-verse-chorus-verse-
+                             # chorus-bridge-solo-chorus-outro = ~9 sections;
+                             # 12 covers complex arrangements without
+                             # over-segmenting. If the threshold sweep
+                             # yields more we keep the strongest 12.
 
 
 def compute_envelope(audio_path: Path):
@@ -122,6 +128,14 @@ def detect_sections(song_dir: Path):
                 peaks[-1] = i
             continue
         peaks.append(i)
+
+    # Cap at MAX_PEAKS — keep the strongest if the threshold sweep yielded
+    # more. Sort the survivors back into time order before emitting so the
+    # client (which expects ascending t) doesn't have to re-sort.
+    if len(peaks) > MAX_PEAKS:
+        peaks.sort(key=lambda i: combined[i], reverse=True)
+        peaks = peaks[:MAX_PEAKS]
+        peaks.sort()
 
     return [round(p * HOP_LENGTH / SAMPLE_RATE, 2) for p in peaks]
 

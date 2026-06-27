@@ -7,18 +7,27 @@ stepping on the other machine.
 ## What this is
 
 A band backing-track system. It turns YouTube songs (and full-album/playlist
-URLs) into 6-stem Demucs separations plus small "minus" m4a mixdowns, then
-serves them through a web studio (`bt-construction-kit`) for rehearsal and
-live use. End goal: load a setlist and, live, start playing instantly on low
-(cell) bandwidth, upgrading quality as more audio arrives.
+URLs) into 6-stem Demucs separations served through a web studio
+(`bt-construction-kit`) for rehearsal and live use. The portal mixes the
+six stems client-side — no pre-baked mixdowns, no per-song loop files. End
+goal: load a setlist and, live, drive the XR18 with per-stem level + routing
+control.
 
 The end-to-end flow is drawn in `WORKFLOW.md` (Mermaid). In short:
 
 ```
 YouTube URL → INCOMING_WEBLOC/*.webloc → webloc_watch.sh → metadata jobs in
-STEM_QUEUE → queue_runner.sh → stem.sh (yt-dlp 48k → Demucs htdemucs_6s →
-m4a mixdowns) → STEMS/ + M4A/ → bt-construction-kit (Express :3000) plays them
+STEM_QUEUE → queue_runner.sh → stem.sh (yt-dlp 48k → Demucs htdemucs_6s)
+→ STEMS/<slug>/{vocals,drums,bass,guitar,piano,other}.m4a + metadata.json
+→ bt-construction-kit (Express :3000) mixes them client-side → XR18.
 ```
+
+> **2026-06-27 — Mixdowns and loops retired.** Earlier builds also emitted
+> "minus" variants (`-V`, `-V-G`, `-V-G-B`, `DO`) into `M4A/` and per-song
+> loop files. Those code paths are gone. The portal's Web Audio graph mixes
+> the six stems live; a future "loop construction kit" feature will be
+> designed from scratch when needed. Migration: `./retire_legacy_files.sh`
+> moves existing `M4A/` and loops aside; purge later with `rm -rf`.
 
 ## Architecture roles (important)
 
@@ -28,8 +37,8 @@ just by hardware. Three roles share the same Drive folder
 
 | Role | Hardware (typical) | Drive mode | Responsibility |
 |---|---|---|---|
-| **Performer** — the **live App** | MacBook Pro (36 GB, travels) | streams Drive, pins active jobs | The portal at gig time. Plays back stems + mixdowns + drum patterns + clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
-| **Song Librarian** | Mac mini (8 GB, 24/7) | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/`, `M4A/`, `CATALOG.json`. |
+| **Performer** — the **live App** | MacBook Pro (36 GB, travels) | streams Drive, pins active jobs | The portal at gig time. Plays back the six stems (mixed client-side) plus drum patterns and clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
+| **Song Librarian** | Mac mini (8 GB, 24/7) | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/` and `CATALOG.json`. |
 | **Clip Librarian** | Any Mac with Logic Pro + BlackHole | mirrors Drive (or copy out) | Curates the clip library. Uses video downloaders, BlackHole + Logic Pro for hard-to-grab sources, ffmpeg trim. Writes to `CUSTOM_LOOPS/`. **Lives outside the App** — see `clip_librarian/README.md`. |
 
 **Why this split:**
@@ -102,14 +111,13 @@ Pick from this table:
 | `metadata.py` (analyzing source.wav for BPM/key) | **Librarian** | Called by `webloc_watch.sh` after the slice is ready. |
 | `mpb_sync.py` / `./librarian.sh sheet` | **Librarian** | Pulls the Google Sheet songlist and writes singer/band/drum-pattern fields. |
 | `catalog.py` / `./librarian.sh catalog` | **Librarian** | **Owner of `CATALOG.json`.** Runs hourly via `librarian.sh start`; you can re-trigger by hand. Performer reads a mirror of the file. |
-| `queue_runner.sh` (Demucs queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs Demucs, writes 6 stems + m4a mixdowns. |
+| `queue_runner.sh` (Demucs queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs Demucs, writes 6 stems + metadata. |
 | `stem.sh` (single-job demucs render) | **Performer** | Called by `queue_runner.sh`. |
 | `bt-construction-kit/` Express server | **Performer** | `performer.sh start` brings up the portal at `:3000`. |
 | `backfill_section_detect.sh` | **Performer** | Needs the demucs venv's `librosa`. |
-| `backfill_m4a_stems.sh` | **Performer** | Uses ffmpeg; operates on cached stems. |
-| `migrate_per_folder_loops.sh` | **Either** | Just file moves; Performer is the safer default since it has the full STEMS cache. |
+| `retire_legacy_files.sh` | **Either** | One-shot migration that moves the retired `M4A/` and per-song loop artefacts aside. Reversible. |
 | `section_detect.py` (single-song) | **Performer** | Same reason as the backfill — librosa lives in the demucs venv. |
-| `post_process.py` / `loop_detect.py` | **Performer** | Both run as part of `stem.sh`. |
+| `post_process.py` | **Performer** | Optional gain-matching pass; not run automatically. |
 | MIDI sidecar (`midi_sidecar.py`) | **Performer** | Drives the user's Helix / XR18 / Logic via macOS MIDI ports — must be on the gig laptop. |
 | Editing `bt-construction-kit/` source | **Performer** | The Performer is the primary editor and pushes; the Librarian pulls. |
 | Editing `catalog.py` / `mpb_sync.py` / shared `.sh` | **Either, but commit + push from the Performer** | Drive sync of `.git` is unreliable; canonical writes go through GitHub. |
@@ -138,12 +146,13 @@ Pipeline (acquisition machine):
   the current job + phase to `STEM_QUEUE/.current`; moves finished jobs to
   `_done/`, failures to `_failed/`.
 - `stem.sh` — the heavy worker: yt-dlp → 48 kHz `source.wav` → Demucs
-  htdemucs_6s (6 stems) → m4a mixdowns. Writes `STEMS/<slug>/`.
-- `post_process.py` — gain-match stems to source. `loop_detect.py` — beat-synced
-  loops. The legacy Google-Sheet batch path (`mpbbatch.bash`) and the
-  Docker bundle (`Dockerfile`/`docker-compose.yml`/`entrypoint.sh`) have
-  been retired — `mpb_sync.py` driven by `librarian.sh sheet` is the only
-  sheet-sync entry point now; Docker will be rebuilt from scratch later.
+  htdemucs_6s (6 stems) → m4a transcode. Writes `STEMS/<slug>/`.
+- `post_process.py` — optional gain-matching pass, not run automatically.
+  Earlier `loop_detect.py` / mixdown emitters were retired 2026-06-27 — see
+  the Status & roadmap note about the future loop construction kit.
+  The legacy Google-Sheet batch path (`mpbbatch.bash`) and the Docker bundle
+  are likewise retired; `mpb_sync.py` driven by `librarian.sh sheet` is the
+  only sheet-sync entry point now.
 
 UI (studio machine):
 - `bt-construction-kit/` — Express 5 server (`server.js`, port 3000) + static
@@ -368,16 +377,13 @@ field. This is NOT YET WIRED — see the roadmap.
   uses going forward is **`.m4a`** (AAC in MPEG-4 container). The single
   exception is **`source.wav`** in each `STEMS/<slug>/` folder — the raw
   48 kHz ingest we keep so we can re-stem without re-downloading from
-  YouTube. Everything else — the 6 separated stems, the mixdowns, the
-  loops, the drum-machine patterns — lives as m4a on disk and is served
-  as m4a by the portal. Per-stem `.wav` files (vocals.wav, drums.wav,
-  bass.wav, guitar.wav, piano.wav, other.wav) and the loop `.wav` files
-  written by older versions of `stem.sh` should be cleaned up; see
-  `cleanup_stems_wav.py` at the simpleStem root. **Producers** (anything
-  that writes audio: `stem.sh`, `loop_regenerate.py`, the m4a backfill
-  scripts, future ingest paths) must emit m4a — never new `.wav` outside
-  of `source.wav`. **Consumers** (`bt-construction-kit/server.js`,
-  `catalog.py`, the portal) read m4a only.
+  YouTube. Everything else — the 6 separated stems and the drum-machine
+  patterns — lives as m4a on disk and is served as m4a by the portal.
+  Per-stem `.wav` files written by older versions of `stem.sh` should be
+  cleaned up; see `cleanup_stems_wav.py` at the simpleStem root.
+  **Producers** (`stem.sh` plus any future ingest paths) must emit m4a
+  — never new `.wav` outside of `source.wav`. **Consumers**
+  (`bt-construction-kit/server.js`, `catalog.py`, the portal) read m4a only.
 
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
   block, in any form, in any position.** No same-line trailing comments
@@ -394,9 +400,12 @@ field. This is NOT YET WIRED — see the roadmap.
 
 - **Slug**: lowercase, spaces → `_`, drop anything but `[a-z0-9_-]`. Song files
   are `<slug>.json`; setlist entries are `NN_<slug>.json` (zero-padded order).
-- **M4A naming**: `<Title>_<Artist>_<suffix>.m4a`, suffix ∈ `-V`, `-V-G`,
-  `-V-G-B`, `DO`; no suffix = full mix ("FULL"). The library scanner ignores
-  ` (N)` duplicate copies.
+- **Stem naming (inside `STEMS/<slug>/`)**: `vocals.m4a`, `drums.m4a`,
+  `bass.m4a`, `guitar.m4a`, `piano.m4a`, `other.m4a`. Plus `source.wav`
+  (the 48 kHz reference, kept so we can re-stem without re-downloading)
+  and `metadata.json`. The legacy `<Title>_<Artist>_<suffix>.m4a`
+  mixdowns in `M4A/` (`-V`, `-V-G`, `-V-G-B`, `DO`, `FULL`) were retired
+  2026-06-27 — the portal mixes the six stems client-side.
 - **metadata.json** (the contract between producer and consumer): `title`,
   `artist`, `source_url`, `version`, `duration_sec`, `clip_start_sec`,
   `clip_end_sec`, `bpm`, `key`, `key_signature`, `lyrics_search_url`,
@@ -522,14 +531,17 @@ machine pull from it, rather than trusting Drive to sync `.git`.
 ## Status & roadmap
 
 Built and working: the webloc watcher; metadata generation (incl. clip windows
-and the processing spec); the queue runner; portal enqueue + live queue status;
-`studio.sh`; library cleanup + scanner hardening against ` (N)` duplicates.
+and the processing spec); the queue runner; portal enqueue + live queue
+status; `studio.sh`; library cleanup + scanner hardening against ` (N)`
+duplicates; client-side six-stem mix; per-stem XR18 routing; XR18 recovery
+diagnostics + snapshot log; Chrome Quick Action ingest.
 
-Next (deferred "feature 2") — progressive live playback for low bandwidth:
-- Have `stem.sh` also export a small **full-mix m4a**, and emit the **`-V`**
-  mixdown (the `processing` spec already lists `-V`; `stem.sh` currently makes
-  only `-V-G`, `-V-G-B`, `DO`).
-- Reorder `stem.sh` to produce the small m4a files **before** the slow stems.
-- Client ladder: play full mix instantly → swap to `-V` → `-V-G` as each small
-  file arrives → pull 6 stems in the background. (`app.js` already hot-swaps
-  variants and precaches; this extends the ladder and ordering.)
+Deferred / future:
+- **Loop construction kit.** A new feature when needed — operator picks an
+  in-song range, the app slices the six stems at beat-aligned boundaries
+  and stores the result in a future per-song `loops/` directory served
+  through a new endpoint. The retired `loop_detect.py` from before
+  2026-06-27 is not a starting point; this will be designed fresh against
+  the current six-stem-only world.
+- **ActionSequence model** (task #17) — replaces the freeform Action
+  buttons with a typed, editable sequence.

@@ -52,22 +52,11 @@ Source selection (highest precedence first):
   (neither)        smart search: ytsearch5:<Artist> <Title> official audio,
                    filtering live|concert|cover|tribute|karaoke titles.
 
-Stems are placed in (all WAVs are 48 kHz):
-  ~/ClaudeDrive/simpleStem/STEMS/\${Title}_\${Artist}/
-    source.wav                        downloaded/imported audio (48 kHz)
-    vocals.wav  drums.wav  bass.wav  other.wav  piano.wav  guitar.wav
-                                      htdemucs_6s 6-stem split (48 kHz)
-    bass+drums.wav                    full-length rhythm-section mix
-    drums_loop{1..4}_<N>bars.wav      tiled, song-length jam loops
-    bass_loop{1..4}_<N>bars.wav
-    drumsbass_loop{1..4}_<N>bars.wav  combined rhythm-section loops
-    piano_loop{1..4}_<N>bars.wav
-    guitar_loop{1..4}_<N>bars.wav
-M4A mixes are placed in:
-  ~/ClaudeDrive/simpleStem/M4A/
-    \${Title}_\${Artist}_DO.m4a         drums only
-    \${Title}_\${Artist}_-V-G.m4a       source minus vocals, guitar
-    \${Title}_\${Artist}_-V-G-B.m4a     source minus vocals, guitar, bass
+Outputs (all in ~/ClaudeDrive/simpleStem/STEMS/\${Title}_\${Artist}/):
+  source.wav                          downloaded/imported audio (48 kHz reference)
+  vocals.m4a  drums.m4a  bass.m4a
+  other.m4a   piano.m4a  guitar.m4a   htdemucs_6s 6-stem split, 256k AAC
+  metadata.json                       BPM/key/version/sectionCandidates/…
 EOF
 }
 
@@ -204,7 +193,7 @@ if [[ ! -x "$VENV_PY" ]]; then
   VENV_PY="$(command -v python3 || true)"
 fi
 if [[ ! -x "$VENV_PY" ]]; then
-  echo "Could not locate a python interpreter to run loop_detect.py." >&2
+  echo "Could not locate a python interpreter (demucs venv)." >&2
   exit 1
 fi
 if ! "$VENV_PY" -c 'import librosa, soundfile' 2>/dev/null; then
@@ -216,11 +205,6 @@ if ! "$VENV_PY" -c 'import librosa, soundfile' 2>/dev/null; then
   fi
 fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOOP_SCRIPT="$SCRIPT_DIR/loop_detect.py"
-if [[ ! -f "$LOOP_SCRIPT" ]]; then
-  echo "Missing $LOOP_SCRIPT — keep it next to stem.sh." >&2
-  exit 1
-fi
 
 SRC="${OUT_DIR}/source.wav"
 
@@ -315,93 +299,19 @@ else
   rmdir "$OUT_DIR/htdemucs_6s/source" "$OUT_DIR/htdemucs_6s"
 fi
 
-# Ensure every stem is 48 kHz before downstream loop_detect runs.
+# Ensure every stem is 48 kHz before downstream m4a transcoding.
 # Demucs's output rate varies by version; this normalizes it.
 for stem in vocals drums bass other piano guitar; do
   ensure_48k "$OUT_DIR/${stem}.wav"
 done
 
-# 2c) Build M4A "minus" mixes in ~/ClaudeDrive/simpleStem/M4A/.
-#     - ${Title}_${Artist}_DO.m4a       : drums only
-#     - ${Title}_${Artist}_-V-G.m4a     : source - vocals - guitar
-#     - ${Title}_${Artist}_-V-G-B.m4a   : source - vocals - guitar - bass
-#     "Minus" mixes phase-invert the unwanted stems (volume=-1) and sum them
-#     onto the source via amix=normalize=0 — cleaner than summing the
-#     remaining stems, and preserves whatever residue Demucs left behind.
-M4A_DIR="$DATA_ROOT/M4A"
-mkdir -p "$M4A_DIR"
-M4A_BASE="${SLUG_TITLE}_${SLUG_ARTIST}"
-M4A_DO="$M4A_DIR/${M4A_BASE}_DO.m4a"
-M4A_V="$M4A_DIR/${M4A_BASE}_-V.m4a"
-M4A_VG="$M4A_DIR/${M4A_BASE}_-V-G.m4a"
-M4A_VGB="$M4A_DIR/${M4A_BASE}_-V-G-B.m4a"
+# NOTE: As of 2026-06-27 we no longer emit the -V / -V-G / -V-G-B / DO
+# mixdowns or per-song loop files. The portal mixes the six stems
+# client-side (Web Audio); pre-baked mixdowns and audio loops are dead
+# code paths. A future "loop construction kit" feature will be designed
+# from scratch when needed. — Bill (CLAUDE.md / Conventions)
 
-if [[ -f "$M4A_DO" ]]; then
-  echo ">> $(basename "$M4A_DO") exists, skipping."
-else
-  echo ">> Encoding $(basename "$M4A_DO") (drums only)"
-  ffmpeg -y -loglevel error -i "$OUT_DIR/drums.wav" \
-    -c:a aac -b:a 256k "$M4A_DO"
-fi
-
-# -V : source minus vocals (the most common "sing over the band" track).
-if [[ -f "$M4A_V" ]]; then
-  echo ">> $(basename "$M4A_V") exists, skipping."
-else
-  echo ">> Encoding $(basename "$M4A_V") (source - vocals)"
-  ffmpeg -y -loglevel error \
-    -i "$OUT_DIR/source.wav" \
-    -i "$OUT_DIR/vocals.wav" \
-    -filter_complex "[1:a]volume=-1[v];[0:a][v]amix=inputs=2:normalize=0[out]" \
-    -map "[out]" -c:a aac -b:a 256k "$M4A_V"
-fi
-
-if [[ -f "$M4A_VG" ]]; then
-  echo ">> $(basename "$M4A_VG") exists, skipping."
-else
-  echo ">> Encoding $(basename "$M4A_VG") (source - vocals - guitar)"
-  ffmpeg -y -loglevel error \
-    -i "$OUT_DIR/source.wav" \
-    -i "$OUT_DIR/vocals.wav" \
-    -i "$OUT_DIR/guitar.wav" \
-    -filter_complex "[1:a]volume=-1[v];[2:a]volume=-1[g];[0:a][v][g]amix=inputs=3:normalize=0[out]" \
-    -map "[out]" -c:a aac -b:a 256k "$M4A_VG"
-fi
-
-if [[ -f "$M4A_VGB" ]]; then
-  echo ">> $(basename "$M4A_VGB") exists, skipping."
-else
-  echo ">> Encoding $(basename "$M4A_VGB") (source - vocals - guitar - bass)"
-  ffmpeg -y -loglevel error \
-    -i "$OUT_DIR/source.wav" \
-    -i "$OUT_DIR/vocals.wav" \
-    -i "$OUT_DIR/guitar.wav" \
-    -i "$OUT_DIR/bass.wav" \
-    -filter_complex "[1:a]volume=-1[v];[2:a]volume=-1[g];[3:a]volume=-1[b];[0:a][v][g][b]amix=inputs=4:normalize=0[out]" \
-    -map "[out]" -c:a aac -b:a 256k "$M4A_VGB"
-fi
-
-# 3) Detect recurring sections in source.wav and tile aligned loops
-#    out of drums.wav and bass.wav (max 4 loops per stem). bass+drums.wav
-#    is the sentinel: if it exists, assume loops have already been built.
-#
-# Note: post_process.py (LSQ gain match) is NOT run automatically.
-# Invoke it manually if you want stem rebalancing:
-#     ./post_process.py --dir "$OUT_DIR" --dry-run   # preview
-#     ./post_process.py --dir "$OUT_DIR"             # apply
-if [[ -f "$OUT_DIR/bass+drums.wav" ]]; then
-  echo ">> Loops already present, skipping loop_detect."
-else
-  echo ">> Detecting jam loops in drums + bass + piano + guitar (aligned via source)…"
-  "$VENV_PY" "$LOOP_SCRIPT" \
-    --ref "$OUT_DIR/source.wav" \
-    --target "$OUT_DIR/drums.wav" "$OUT_DIR/bass.wav" \
-             "$OUT_DIR/piano.wav" "$OUT_DIR/guitar.wav" \
-    --out "$OUT_DIR" \
-    --max-loops 4
-fi
-
-# 3b) Encode each stem to m4a so the browser-side mixer can stream them
+# 3) Encode each stem to m4a so the browser-side mixer can stream them
 #     directly (a stem WAV is ~30-50 MB; the same content at 256k AAC is
 #     ~5-8 MB — major cache + Drive sync win).
 #
@@ -422,7 +332,7 @@ for stem in vocals drums bass other piano guitar; do
 done
 
 # Default: delete stem .wav files after m4a transcode. Opt-out via
-# KEEP_STEM_WAVS=1 for post-process / re-loop workflows.
+# KEEP_STEM_WAVS=1 for post-process workflows.
 if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
   for stem in vocals drums bass other piano guitar; do
     if [[ -f "$OUT_DIR/${stem}.m4a" && -f "$OUT_DIR/${stem}.wav" ]]; then
@@ -431,57 +341,10 @@ if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
   done
   echo ">> Deleted stem WAVs (m4a-only policy; set KEEP_STEM_WAVS=1 to keep)."
 fi
-# bass+drums.wav was an intermediate for loop_detect; clean it up unless
-# the operator has asked to keep the wavs around.
-if [[ "${KEEP_STEM_WAVS:-0}" != "1" && -f "$OUT_DIR/bass+drums.wav" ]]; then
-  rm -f "$OUT_DIR/bass+drums.wav"
-  echo ">> Deleted bass+drums.wav (loop intermediate)."
-fi
-# Any stray non-source loop wavs that earlier loop_detect builds left
-# behind (drums_loop*_Nbars.wav, bass_loop*_Nbars.wav, etc). The newer
-# loop_detect.py writes m4a directly so these usually aren't here on a
-# fresh render, but they accumulated on older songs.
-if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
-  rm -f "$OUT_DIR"/*_loop*_*bars.wav 2>/dev/null
-fi
-
-# 4) Mixdown loops: detect the most-repeated sections (from source.wav) and tile
-#    them out of EACH m4a mixdown (-V, -V-G, -V-G-B, DO), up to 4 per mixdown.
-#    Output: M4A/<base>_<variant>_loop<i>_<bars>bars.m4a
-#    Section names are loop1..loop4 (recurrence-ranked); intro/verse/chorus
-#    labels are NOT inferred — that detection is unreliable on live/extended cuts.
-#    Sentinel: M4A/<base>_-V_loop1_*bars.m4a — skip if mixdown loops already made.
-shopt -s nullglob
-_mixloop_done=("$M4A_DIR/${M4A_BASE}_-V_loop1_"*bars.m4a)
-shopt -u nullglob
-if (( ${#_mixloop_done[@]} > 0 )); then
-  echo ">> Mixdown loops already present, skipping."
-else
-  echo ">> Building mixdown loops for -V / -V-G / -V-G-B / DO…"
-  for pair in "-V:$M4A_V" "-V-G:$M4A_VG" "-V-G-B:$M4A_VGB" "DO:$M4A_DO"; do
-    variant="${pair%%:*}"; m4a="${pair#*:}"
-    [[ -f "$m4a" ]] || { echo "   (skip $variant — m4a missing)"; continue; }
-    tmp="$(mktemp -d)"
-    # decode mixdown → wav so loop_detect can tile from it
-    ffmpeg -y -loglevel error -i "$m4a" -ar 48000 "$tmp/mix.wav" </dev/null || { rm -rf "$tmp"; continue; }
-    "$VENV_PY" "$LOOP_SCRIPT" \
-      --ref "$OUT_DIR/source.wav" \
-      --target "$tmp/mix.wav" \
-      --out "$tmp" \
-      --max-loops 4 || { rm -rf "$tmp"; continue; }
-    # loop_detect.py now writes .m4a directly — just move each into M4A/ named
-    # <base>_<variant>_loopN_Mbars.m4a (no re-encode needed).
-    shopt -s nullglob
-    for lw in "$tmp"/mix_loop*bars.m4a; do
-      suffix="${lw##*/mix_}"        # e.g. loop2_27bars.m4a
-      suffix="${suffix%.m4a}"       # loop2_27bars
-      out="$M4A_DIR/${M4A_BASE}_${variant}_${suffix}.m4a"
-      mv -f "$lw" "$out" && echo "   + $(basename "$out")"
-    done
-    shopt -u nullglob
-    rm -rf "$tmp"
-  done
-fi
+# Legacy cleanup: bass+drums.wav and *_loop*_*bars.* artefacts came from the
+# retired loop_detect path. Sweep them out of older songs on every render
+# so we don't keep paying Drive sync cost for dead files.
+rm -f "$OUT_DIR/bass+drums.wav" "$OUT_DIR"/*_loop*_*bars.wav "$OUT_DIR"/*_loop*_*bars.m4a 2>/dev/null || true
 
 # Section-boundary detection — runs the multi-stem novelty function over
 # the freshly-rendered stems and writes a `sectionCandidates` array into

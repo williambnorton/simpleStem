@@ -110,7 +110,7 @@
     <text x="310" y="688" text-anchor="middle" font-size="16" font-weight="800" fill="#78350f">~/ClaudeDrive/simpleStem (Google Drive sync)</text>
     <text x="310" y="708" text-anchor="middle" font-size="11" fill="#92400e">DATA + a code mirror that both Macs execute from</text>
     <line x1="84" y1="720" x2="536" y2="720" stroke="#d97706" stroke-dasharray="3 3"/>
-    <text x="310" y="740" text-anchor="middle" font-size="11" fill="#78350f" font-weight="700">DATA (gitignored): STEMS/ · M4A/ · GIGS/ · SETLISTS/ · CATALOG.json</text>
+    <text x="310" y="740" text-anchor="middle" font-size="11" fill="#78350f" font-weight="700">DATA (gitignored): STEMS/ · GIGS/ · SETLISTS/ · CATALOG.json</text>
     <text x="310" y="756" text-anchor="middle" font-size="11" fill="#78350f" font-weight="700">RECENTS.json · INCOMING_WEBLOC/ · STEM_QUEUE/ · DRUM_MACHINE/</text>
     <text x="310" y="776" text-anchor="middle" font-size="11" fill="#92400e">CODE MIRROR: stem.sh · webloc_watch.sh · catalog.py · everything tracked</text>
     <text x="310" y="800" text-anchor="middle" font-size="10" fill="#7c2d12" font-style="italic">.git removed · refresh via sync_to_drive.sh from the GitHub clone</text>

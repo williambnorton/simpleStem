@@ -133,32 +133,28 @@
   </g>
   <line x1="700" y1="628" x2="700" y2="676" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
 
-  <!-- Storage: STEMS/ and M4A/ -->
+  <!-- Storage: STEMS/ + CATALOG.json (M4A mixdowns retired — only the 6 stems
+       are emitted; the portal mixes them client-side via Web Audio. Loops
+       are not generated either; a section-loop construction kit is a
+       future feature.) -->
   <g filter="url(#shadow)">
-    <rect x="140" y="760" width="380" height="86" rx="10" fill="url(#storage)" stroke="#059669" stroke-width="2"/>
-    <text x="330" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/</text>
-    <text x="330" y="806" text-anchor="middle" font-size="11" fill="#065f46">source.wav · vocals/drums/bass/guitar/piano/other.m4a</text>
-    <text x="330" y="822" text-anchor="middle" font-size="11" fill="#065f46">metadata.json · loops · sectionCandidates</text>
-    <text x="330" y="838" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~250 MB per song</text>
+    <rect x="220" y="760" width="540" height="100" rx="10" fill="url(#storage)" stroke="#059669" stroke-width="2"/>
+    <text x="490" y="788" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/</text>
+    <text x="490" y="810" text-anchor="middle" font-size="11" fill="#065f46">source.wav (48 kHz reference; kept for re-stemming without re-download)</text>
+    <text x="490" y="826" text-anchor="middle" font-size="11" fill="#065f46">vocals.m4a · drums.m4a · bass.m4a · guitar.m4a · piano.m4a · other.m4a</text>
+    <text x="490" y="842" text-anchor="middle" font-size="11" fill="#065f46">metadata.json · sectionCandidates · lyrics.txt</text>
+    <text x="490" y="856" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">portal mixes the six stems client-side · no pre-baked mixdowns</text>
   </g>
   <g filter="url(#shadow)">
-    <rect x="560" y="760" width="320" height="86" rx="10" fill="url(#storage)" stroke="#059669" stroke-width="2"/>
-    <text x="720" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">M4A/</text>
-    <text x="720" y="806" text-anchor="middle" font-size="11" fill="#065f46">&lt;Title&gt;_&lt;Artist&gt;_-V.m4a (no vocals)</text>
-    <text x="720" y="822" text-anchor="middle" font-size="11" fill="#065f46">_-V-G · _-V-G-B · _DO · FULL mixdowns</text>
-    <text x="720" y="838" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">~5 MB each</text>
-  </g>
-  <g filter="url(#shadow)">
-    <rect x="920" y="760" width="320" height="86" rx="10" fill="url(#index)" stroke="#2563eb" stroke-width="2"/>
-    <text x="1080" y="786" text-anchor="middle" font-size="14" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">CATALOG.json</text>
-    <text x="1080" y="806" text-anchor="middle" font-size="11" fill="#1e40af">written by catalog.py (hourly on Librarian)</text>
-    <text x="1080" y="822" text-anchor="middle" font-size="11" fill="#1e40af">mirrored to ~/.simpleStem-catalog/</text>
-    <text x="1080" y="838" text-anchor="middle" font-size="10" fill="#2563eb" font-style="italic">portal /api/library reads this</text>
+    <rect x="800" y="760" width="440" height="100" rx="10" fill="url(#index)" stroke="#2563eb" stroke-width="2"/>
+    <text x="1020" y="788" text-anchor="middle" font-size="14" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">CATALOG.json</text>
+    <text x="1020" y="810" text-anchor="middle" font-size="11" fill="#1e40af">written by catalog.py (hourly on Librarian)</text>
+    <text x="1020" y="828" text-anchor="middle" font-size="11" fill="#1e40af">one row per STEMS/&lt;slug&gt;/ — title, artist, BPM, key, singer, …</text>
+    <text x="1020" y="846" text-anchor="middle" font-size="11" fill="#1e40af">mirrored to ~/.simpleStem-catalog/ · portal /api/library reads it</text>
   </g>
 
   <!-- Arrows from queue_runner to outputs -->
-  <path d="M 620 732 L 400 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
-  <path d="M 720 732 L 720 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
-  <path d="M 800 732 L 1010 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="3 3"/>
-  <text x="900" y="748" font-size="10" fill="#64748b" font-style="italic">indexed by</text>
+  <path d="M 660 732 L 500 760" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 760 800 L 800 800" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="3 3"/>
+  <text x="780" y="795" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">indexed by</text>
 </svg>

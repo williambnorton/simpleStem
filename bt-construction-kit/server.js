@@ -142,7 +142,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 // SIMPLE_STEM_ROOT=/path if Drive is mounted somewhere non-default.
 const SIMPLE_STEM_ROOT = process.env.SIMPLE_STEM_ROOT || path.join(os.homedir(), 'ClaudeDrive', 'simpleStem');
 const STEMS_DIR = `${SIMPLE_STEM_ROOT}/STEMS`;
-const M4A_DIR = `${SIMPLE_STEM_ROOT}/M4A`;
+// M4A_DIR retired 2026-06-27 — six stems only, mixed client-side. The
+// constant resolves to a path that is intentionally never created; every
+// `fs.existsSync(M4A_DIR)` check downstream becomes false, every walk
+// finds nothing, every cleanup loop is empty. Leaving the const defined
+// (instead of deleting outright) keeps the remaining ten-or-so reference
+// sites compiling without a sweeping refactor.
+const M4A_DIR = `${SIMPLE_STEM_ROOT}/.M4A.retired-2026-06-27`;
 // Flat per-instrument loop folder. Filenames follow
 //   <inst>_<bpm-padded-3>_<song-slug>_<bars>bars.m4a
 // e.g. drums_120_mary_janes_last_dance_18bars.m4a
@@ -551,91 +557,10 @@ async function scanStems() {
 }
 
 /**
- * Scan the M4A directory and return list of backing tracks.
- * If a matching STEMS folder exists, inherits title/artist/bpm/key/duration
- * from its metadata.json (avoids re-running ffprobe and gives accurate data).
+ * scanM4a / M4A_DIR / variant suffixes RETIRED 2026-06-27.
+ * The portal now mixes the six stems client-side; pre-baked mixdowns and
+ * `M4A/` are no longer produced or read. See stem.sh + diagram 1.
  */
-async function scanM4a(stemsByKey) {
-  if (!fs.existsSync(M4A_DIR)) {
-    console.warn(`M4A directory not found: ${M4A_DIR}`);
-    return [];
-  }
-  // Async readdir with type filtering via Dirent — saves a per-file stat()
-  // round-trip on Drive, where every stat is expensive.
-  let dirents;
-  try {
-    dirents = await fsp.readdir(M4A_DIR, { withFileTypes: true });
-  } catch (e) {
-    console.warn(`[scan] could not read ${M4A_DIR}:`, e.message);
-    return [];
-  }
-  const files = dirents
-    .filter(d => d.isFile() && d.name.toLowerCase().endsWith('.m4a'))
-    .filter(d => !/ \(\d+\)\.m4a$/i.test(d.name))                      // skip ' (1)' duplicate downloads
-    .filter(d => !/[_ ]loop\d+[_ ]\d+bars\.m4a$/i.test(d.name))        // skip loop artifacts
-    .map(d => d.name);
-
-  // Known variant suffixes appended after artist (e.g. Foo_Artist_-V-G-B.m4a).
-  // Strip these BEFORE title/artist parsing, then label the variant.
-  const VARIANT_PATTERNS = [
-    { re: /_-V-G-B$/i,  code: '-V-G-B', label: 'No Vocals/Guitar/Bass' },
-    { re: /_-V-G$/i,    code: '-V-G',   label: 'No Vocals/Guitar' },
-    { re: /_-V-B$/i,    code: '-V-B',   label: 'No Vocals/Bass' },
-    { re: /_-V$/i,      code: '-V',     label: 'No Vocals' },
-    { re: /_DO$/i,      code: 'DO',     label: 'Drums Only' },
-  ];
-
-  return files.map(file => {
-    const baseName = file.replace(/\.m4a$/i, '');
-    let stripped = baseName;
-    let variantCode = 'FULL';
-    let variantLabel = 'Full Mix';
-    for (const v of VARIANT_PATTERNS) {
-      if (v.re.test(stripped)) {
-        stripped = stripped.replace(v.re, '');
-        variantCode = v.code;
-        variantLabel = v.label;
-        break;
-      }
-    }
-    // Try to inherit metadata from a sibling STEMS folder (same stripped name).
-    // E.g. Come_Together_Beatles_-V-G-B.m4a → STEMS/Come_Together_Beatles/metadata.json.
-    let title, artist, duration, practiceBpm, originalBpm, key, keySignature;
-    const sibling = stemsByKey && stemsByKey[stripped];
-    if (sibling) {
-      title = sibling.title;
-      artist = sibling.artist;
-      duration = sibling.duration;
-      practiceBpm = sibling.practiceBpm;
-      originalBpm = sibling.originalBpm;
-      key = sibling.key;
-      keySignature = sibling.keySignature;
-    } else {
-      const meta = parseSongMetadata(stripped, true);
-      title = meta.title;
-      artist = meta.artist;
-      practiceBpm = meta.practiceBpm;
-      originalBpm = meta.originalBpm;
-      key = meta.key;
-      duration = getAudioDuration(path.join(M4A_DIR, file));
-    }
-    return {
-      id: `m4a-${file}`,
-      type: 'm4a',
-      fileName: file,
-      title,
-      artist,
-      practiceBpm: practiceBpm || null,
-      originalBpm: originalBpm || null,
-      key,
-      keySignature: keySignature || null,
-      duration,
-      cached: isM4aCached(file),
-      variantCode,
-      variantLabel
-    };
-  });
-}
 
 // =====================================================================
 // LIBRARY CACHE
@@ -697,21 +622,19 @@ async function buildLibraryData() {
       s.loops = flatLoops;
     }
   }
-  const stemsByKey = {};
-  for (const s of stems) stemsByKey[s.folderName] = s;
-  const m4as = await scanM4a(stemsByKey);
-  const allSongs = [...stems, ...m4as];
+  // 2026-06-27: scanM4a + the m4a merge retired. allSongs is now stems only —
+  // the variant deduplication in pickUniqueSongs is now a no-op, but we
+  // leave it in place so future song-source kinds can plug in without a
+  // refactor.
+  const allSongs = stems;
 
-  // Stats are computed from unique songs (one entry per title+artist), not raw
-  // file entries — so "Eminence Front" doesn't show up 4 times (stems + 3 m4a
-  // variants) when counting "songs in F minor".
   const uniqueSongs = pickUniqueSongs(allSongs);
 
   const stats = {
-    totalSongs:  uniqueSongs.length,                   // unique songs (was raw file count)
-    totalFiles:  allSongs.length,                      // new: raw file count (stems + m4a entries)
+    totalSongs:  uniqueSongs.length,
+    totalFiles:  allSongs.length,
     totalStems:  stems.length,
-    totalM4as:   m4as.length,
+    totalM4as:   0,                                    // kept in payload for client back-compat
     artistCount: new Set(uniqueSongs.map(s => s.artist).filter(a => a && a !== 'Unknown Artist')).size,
     bpmDistribution: {
       slow:    uniqueSongs.filter(s => s.practiceBpm && s.practiceBpm < 90).length,
@@ -737,9 +660,8 @@ async function buildLibraryData() {
 // Returns mtimes (as ISO strings) of the source directories — used to detect
 // whether anything was added/removed since the last scan so we can short-circuit.
 function getSourceMtimes() {
-  const out = { stems: null, m4a: null };
+  const out = { stems: null };
   try { out.stems = fs.statSync(STEMS_DIR).mtime.toISOString(); } catch (e) {}
-  try { out.m4a   = fs.statSync(M4A_DIR).mtime.toISOString();   } catch (e) {}
   return out;
 }
 
@@ -1129,50 +1051,9 @@ app.get('/api/library-uncached', async (req, res) => {
   }
 });
 
-// (the original handler below is unreachable now; left for reference)
-app.get('/api/library__old', (req, res) => {
-  try {
-    const stems = scanStems();
-    const stemsByKey = {};
-    for (const s of stems) stemsByKey[s.folderName] = s;
-    const m4as = scanM4a(stemsByKey);
-    const allSongs = [...stems, ...m4as];
-
-    // Compute library statistics (Instrumentation)
-    const stats = {
-      totalSongs: allSongs.length,
-      totalStems: stems.length,
-      totalM4as: m4as.length,
-      artistCount: new Set(allSongs.map(s => s.artist).filter(a => a !== 'Unknown Artist')).size,
-      bpmDistribution: {
-        slow: allSongs.filter(s => s.practiceBpm && s.practiceBpm < 90).length,
-        medium: allSongs.filter(s => s.practiceBpm && s.practiceBpm >= 90 && s.practiceBpm <= 125).length,
-        fast: allSongs.filter(s => s.practiceBpm && s.practiceBpm > 125).length,
-        unknown: allSongs.filter(s => !s.practiceBpm).length
-      },
-      keyDistribution: allSongs.reduce((acc, s) => {
-        if (s.key) {
-          acc[s.key] = (acc[s.key] || 0) + 1;
-        }
-        return acc;
-      }, {}),
-      singerDistribution: allSongs.reduce((acc, s) => {
-        const who = (s.singer_lead || '').trim();
-        const k = who || '(unassigned)';
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-      }, {}),
-    };
-
-    res.json({
-      stats,
-      songs: allSongs
-    });
-  } catch (error) {
-    console.error('Error scanning library:', error);
-    res.status(500).json({ error: 'Failed to scan music library' });
-  }
-});
+// (legacy /api/library__old handler removed 2026-06-27 — it referenced
+// scanM4a, which retired along with the mixdown variants. The real
+// /api/library handler above is the only library endpoint now.)
 
 // =====================================================================
 // LOCAL DISK CACHE for audio files
@@ -1419,16 +1300,14 @@ app.get('/api/drum-loops', (req, res) => {
   res.json({ loops, count: loops.length });
 });
 
+// /api/audio/m4a/:file retired 2026-06-27 — see stem.sh + diagram 1.
+// If any old client code still hits this URL, fail loud with 410 so we
+// can grep the access log and find the caller.
 app.get('/api/audio/m4a/:file', (req, res) => {
-  const { file } = req.params;
-  if (file.includes('..')) return res.status(403).send('Forbidden');
-  const sourcePath = path.join(M4A_DIR, file);
-  // Mixdowns (-V, -V-G, -V-G-B, DO) stream directly from Drive. We rely on
-  // simpleStem's stem-mixer for live use; mixdowns are an offline backup
-  // (EZPerformer reads them from the EZ_*/ folders on Drive, not from here).
-  // No local cache — keeps ~/.bt-cache small and predictable.
-  if (!fs.existsSync(sourcePath)) return res.status(404).send('Audio file not found');
-  res.sendFile(sourcePath, { dotfiles: 'allow' });
+  res.status(410).type('text').send(
+    'Gone. M4A mixdowns retired 2026-06-27 — the portal mixes the six stems client-side. ' +
+    'Use /api/audio/stems/:song/:file instead.'
+  );
 });
 
 // ---------- DRUM MACHINE ---------------------------------------------------
