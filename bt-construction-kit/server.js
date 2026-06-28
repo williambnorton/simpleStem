@@ -182,6 +182,34 @@ app.get('/api/identity', (req, res) => {
   res.json({ machine: MACHINE_IDENTITY, hostname: os.hostname() });
 });
 
+// ─── KEEP-ALIVE BUSTER (2026-06-28) ───────────────────────────────────────
+// Bill hit a recurring "no stems responded after 3s" failure that the
+// diagnostic traced to Chrome's keep-alive connection pool. When an
+// audio fetch is aborted mid-stream (which happens whenever a user
+// clicks a new song before the previous one finishes loading), Node
+// reports EPIPE on the server side. The TCP connection enters a
+// half-closed state. Chrome doesn't realize this — it reuses the
+// socket for the next request, writes the request, then waits forever
+// for a response that's never coming.
+//
+// Net effect: one EPIPE'd fetch can wedge Chrome's per-origin pool of
+// 6 connections. Subsequent fetches (audio, heartbeat, prefetcher all)
+// queue behind dead sockets. From the user's POV the server "stops
+// responding" even though curl proves it's fine.
+//
+// Fix: send Connection: close on the routes that are vulnerable to
+// abort-during-stream (audio + the heartbeat that uses the same pool).
+// Each request gets a fresh TCP connection; no wedged-socket sharing.
+// Cost is ~1ms TCP handshake per request — irrelevant on localhost.
+app.use((req, res, next) => {
+  const p = req.path || '';
+  if (p.startsWith('/api/audio/') || p === '/api/health' ||
+      p === '/api/audio/xr18-status') {
+    res.setHeader('Connection', 'close');
+  }
+  next();
+});
+
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 
