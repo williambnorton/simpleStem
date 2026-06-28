@@ -5499,21 +5499,17 @@ function isSongFailed(base) { return !!base && failedSongBases.has(base); }
 // the buffering spinner content with a clear, dismissible error so the
 // operator can move on to the next song instead of staring at a hung wheel.
 function showSongLoadError(base, info) {
-  const box = document.getElementById('player-buffering-indicator');
-  if (!box) return;
-  const reason = (info && (info.message || info.code)) ? `(${escapeHtml(String(info.message || info.code))})` : '';
-  box.innerHTML = `
-    <div class="song-load-error">
-      <div class="song-load-error-icon">⚠</div>
-      <div class="song-load-error-body">
-        <div class="song-load-error-title">Song files missing</div>
-        <div>"<strong>${escapeHtml(base || 'unknown')}</strong>" can't play ${reason}. It's now greyed out in the library so you can delete it. Pick another song to keep going.</div>
-      </div>
-      <button type="button" class="buffering-skip"
-              onclick="window.__dismissFailedSong && window.__dismissFailedSong()">Dismiss</button>
-    </div>
-  `;
-  box.style.display = 'flex';
+  // Per Bill's three invariants — never a modal/dialog/spinner that
+  // sits on top of the visualizer. Use the non-blocking toast and
+  // auto-unload the song so the operator can immediately click another.
+  // The old in-place dialog covered the visualizer and required a
+  // "Dismiss" click; this is faster and never blocks the UI.
+  const reason = (info && (info.message || info.code))
+    ? ` (${String(info.message || info.code)})` : '';
+  try {
+    showToast(`"${base || 'song'}" failed to load${reason}. Pick another song.`, 4500);
+  } catch (e) {}
+  try { if (typeof window.__dismissFailedSong === 'function') window.__dismissFailedSong(); } catch (e) {}
 }
 
 // "Dismiss" on the Song Files Missing dialog must actually UNLOAD the
@@ -5562,7 +5558,13 @@ window.__dismissFailedSong = function () {
 // previous one's timers so a fast song-switch doesn't leak old captions
 // or fire stale callbacks.
 let _bufferWatchCancel = null;
-function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 8000, hardTimeoutMs = 15000 }) {
+// Buffering watchdog bounds. Pre-2026-06-28 these were 8s/15s — way over
+// Bill's 2-3 sec maximum-hang spec. New defaults: soft warn at 1.5s, hard
+// dismiss + onFailure at 3s. With the disk cache always populated and the
+// server's sendCachedAudio serving from ~/.bt-cache in milliseconds, a
+// healthy click completes in <500 ms. A click that's still buffering at
+// 3 seconds is by definition a failure — toast and move on.
+function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 1500, hardTimeoutMs = 3000 }) {
   if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
   // Zero-stem edge case: the song's stems object had no usable sources,
   // so there's literally nothing to wait for. Don't show the spinner —
@@ -5915,34 +5917,35 @@ function loadSong(song, opts) {
 
     document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'grid');
 
-    // CACHE-FIRST CONTRACT — never assign /api/audio/stems/ to an audio
-    // element directly. We point each <audio> at the pre-fetched in-memory
-    // Blob URL from stemCache. If the cache is cold, we toast + kick off
-    // a priority fetch + skip the load (the click is non-blocking — no
-    // spinner, no 15s freeze, no "Song files missing" false positive).
+    // CACHE-FIRST CONTRACT (revised 2026-06-28 per Bill's three invariants):
+    //   (1) ALL stems live on local disk in ~/.bt-cache. Server serves
+    //       from there in ms; healthy click is instant.
+    //   (2) If the in-memory Blob cache has this song, use it — that's
+    //       the wedge-server insurance path.
+    //   (3) Otherwise fall through to the server URL. The buffering
+    //       watchdog bounds the wait at 3 seconds; on timeout we toast
+    //       and unload, never freeze.
+    // Net effect: with the common-case healthy server, click is instant
+    // via either path. With a wedged server, cached songs still play
+    // (Blob URL is in-memory). Uncached + wedged surfaces a 3-second
+    // failure toast instead of a 15-second freeze.
     const folder = song.folderName;
     const cached = stemCache.get(folder);
-    if (!cached || cached.state !== STEM_CACHE_READY) {
-      // Kick off a priority fetch so the next click will land. The current
-      // click is intentionally a no-op for playback — toast tells the
-      // operator and the row's data-cache-state attr updates so the ⚪/✓
-      // badge transitions.
-      ensureSongStemsCached(folder, /* priority */ true);
-      const stateLabel =
-        !cached                              ? 'queued for caching' :
-        cached.state === STEM_CACHE_FETCHING ? 'still caching'      :
-        cached.state === STEM_CACHE_FAILED   ? 'failed last fetch — retrying' :
-                                               'not ready';
-      showToast(`"${song.title || folder}" — ${stateLabel}. Pick another song or try again.`, 4500);
-      // Bail out cleanly. We've already cleared the previous song's
-      // playback state via stopAudio() above; the UI sits in "no song
-      // loaded" rather than partially-loaded.
-      return;
-    }
+    // Background prefetch for next time, regardless of which path we take.
+    ensureSongStemsCached(folder, /* priority */ true);
     CHANNELS.forEach(chan => {
       const fileName = song.stems[chan];
-      // Use the in-memory Blob URL (no HTTP, no Drive, no server touch).
-      const src = fileName && cached.stems[chan] ? cached.stems[chan] : '';
+      let src = '';
+      if (fileName) {
+        if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]) {
+          // Best case: pure in-memory Blob URL. Zero server touch.
+          src = cached.stems[chan];
+        } else {
+          // Fall through to server URL. cache-first inside sendCachedAudio
+          // serves from ~/.bt-cache in ms. Watchdog bounds at 3 sec.
+          src = `/api/audio/stems/${folder}/${fileName}`;
+        }
+      }
       setAudioSrc(audioElements[chan], src);
       const strip = document.querySelector(`.${chan}-strip`);
       if (strip) strip.style.display = fileName ? 'flex' : 'none';
