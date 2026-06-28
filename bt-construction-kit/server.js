@@ -1984,6 +1984,350 @@ app.post('/api/cache/flash', (req, res) => {
 app.get('/api/cache/status', (req, res) => {
   res.json({ ok: true, state: cacheJobState });
 });
+
+// =====================================================================
+// OPERATIONS DASHBOARD
+// /dashboard renders a live workflow diagram with blocks colored by the
+// state returned here. Polled every 3-5s by the client. Bounded with
+// per-section timeouts so any one stalled probe (Drive in particular)
+// can't wedge the whole response.
+// =====================================================================
+async function probeDashboardState() {
+  const t0 = Date.now();
+  const state = {
+    when: new Date().toISOString(),
+    root: SIMPLE_STEM_ROOT,
+    drive: { accessible: false, latencyMs: null, error: null },
+    folders: {},
+    catalog: { exists: false, shape: null, songCount: null, scannedAt: null, ageSec: null },
+    cache: { totalSongs: null, cached: null, uncached: null, jobState: cacheJobState },
+    daemons: {},
+    xr18: null,
+    queue: { incoming: 0, queued: 0, processing: null, failedWeblocs: 0, failedRenders: 0 },
+  };
+
+  // Drive accessibility — bounded with a 1.5s timeout so a hung Drive
+  // can't block the entire dashboard refresh.
+  try {
+    const driveT0 = Date.now();
+    const st = await Promise.race([
+      fsp.stat(SIMPLE_STEM_ROOT),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    state.drive.accessible = !!(st && st.isDirectory());
+    state.drive.latencyMs = Date.now() - driveT0;
+  } catch (e) {
+    state.drive.accessible = false;
+    state.drive.error = (e && e.message) || String(e);
+  }
+
+  // Folder counts. Each wrapped so one missing folder doesn't sink the others.
+  const safeCount = (dir, filterFn) => {
+    try {
+      if (!fs.existsSync(dir)) return null;
+      const entries = fs.readdirSync(dir);
+      const filtered = filterFn ? entries.filter(filterFn) : entries;
+      let mtime = null;
+      try { mtime = fs.statSync(dir).mtime.toISOString(); } catch (e) {}
+      return { count: filtered.length, mtime };
+    } catch (e) { return { count: 0, error: e.message }; }
+  };
+  state.folders.INCOMING_WEBLOC = safeCount(INCOMING_DIR, f => f.endsWith('.webloc'));
+  state.folders.STEM_QUEUE      = safeCount(QUEUE_DIR, f => f.endsWith('.json') || (!f.startsWith('.') && !['_done','_failed'].includes(f)));
+  state.folders.STEMS           = safeCount(STEMS_DIR);
+  state.folders.GIGS            = safeCount(GIGS_DIR, f => f.endsWith('.json'));
+  state.folders.SETLISTS        = safeCount(SETLISTS_DIR, f => f.endsWith('.json'));
+  state.folders.CUSTOM_LOOPS    = safeCount(CUSTOM_LOOPS_DIR, f => f.endsWith('.m4a'));
+
+  // Catalog: shape + age + count.
+  try {
+    const catPath = path.join(SIMPLE_STEM_ROOT, 'CATALOG.json');
+    if (fs.existsSync(catPath)) {
+      state.catalog.exists = true;
+      const st = fs.statSync(catPath);
+      state.catalog.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
+      const j = JSON.parse(fs.readFileSync(catPath, 'utf8'));
+      if (j.data && Array.isArray(j.data.songs)) {
+        state.catalog.shape = 'canonical';
+        state.catalog.songCount = j.data.songs.length;
+        state.catalog.scannedAt = j.scannedAt || null;
+      } else if (Array.isArray(j.songs)) {
+        state.catalog.shape = 'legacy';
+        state.catalog.songCount = j.songs.length;
+        state.catalog.scannedAt = j.generated_at || null;
+      } else {
+        state.catalog.shape = 'unknown';
+      }
+    }
+  } catch (e) { state.catalog.error = e.message; }
+
+  // Cache contract.
+  try {
+    const libStats = libraryCache && libraryCache.data && libraryCache.data.stats;
+    if (libStats) {
+      state.cache.totalSongs = libStats.totalSongs || 0;
+      state.cache.cached = (typeof libStats.cachedSongs === 'number') ? libStats.cachedSongs : null;
+      state.cache.uncached = (typeof libStats.uncachedSongs === 'number') ? libStats.uncachedSongs : null;
+    }
+  } catch (e) {}
+
+  // Queue state — same data as /api/queue but inlined here so the
+  // dashboard doesn't need a second round-trip.
+  try {
+    if (fs.existsSync(INCOMING_DIR)) {
+      const entries = fs.readdirSync(INCOMING_DIR);
+      state.queue.incoming = entries.filter(f => f.endsWith('.webloc')).length;
+      state.queue.failedWeblocs = entries.filter(f => f.endsWith('.failed')).length;
+    }
+    if (fs.existsSync(QUEUE_DIR)) {
+      const entries = fs.readdirSync(QUEUE_DIR).filter(f => !f.startsWith('.') && !['_done','_failed'].includes(f));
+      state.queue.queued = entries.length;
+      const failedDir = path.join(QUEUE_DIR, '_failed');
+      if (fs.existsSync(failedDir)) {
+        state.queue.failedRenders = fs.readdirSync(failedDir).filter(f => f.endsWith('.json')).length;
+      }
+      const cur = path.join(QUEUE_DIR, '.current');
+      if (fs.existsSync(cur)) {
+        try { state.queue.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
+        catch (e) { state.queue.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
+      }
+    }
+  } catch (e) {}
+
+  // Daemons — read PID files from BOTH machines' .run/ directories so the
+  // dashboard reflects whichever side we're polling from. PID alive check
+  // is `process.kill(pid, 0)` which throws if dead. Names match the
+  // service identifiers in performer.sh + librarian.sh.
+  const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
+  const codeDotRun = path.join(__dirname, '..', '.run');
+  const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'lib-watcher',
+                     'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
+  for (const name of PID_NAMES) {
+    const pidPath1 = path.join(dotRun, `${name}.pid`);
+    const pidPath2 = path.join(codeDotRun, `${name}.pid`);
+    const pidPath = fs.existsSync(pidPath1) ? pidPath1 :
+                    fs.existsSync(pidPath2) ? pidPath2 : null;
+    if (!pidPath) {
+      state.daemons[name] = { running: false, pid: null, reason: 'no pid file' };
+      continue;
+    }
+    try {
+      const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
+      let alive = false;
+      try { process.kill(pid, 0); alive = true; } catch (e) {}
+      state.daemons[name] = { running: alive, pid, pidPath };
+    } catch (e) {
+      state.daemons[name] = { running: false, pid: null, reason: e.message };
+    }
+  }
+
+  // XR18 — reuse the cached probe written by /api/audio/xr18-status. The
+  // dashboard polling cadence (3-5s) is slower than the XR18 cache TTL
+  // (1.5s) so we should usually have fresh data without re-probing. If
+  // the cache is cold we still skip the inline probe — the dashboard
+  // will see xr18.unknown:true for one poll, then fresh data after the
+  // client also polls the XR18 endpoint.
+  state.xr18 = _xr18Cache || { unknown: true };
+
+  state.totalProbeMs = Date.now() - t0;
+  return state;
+}
+
+app.get('/api/dashboard/state', async (req, res) => {
+  try {
+    const state = await probeDashboardState();
+    res.json({ ok: true, state });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Static page lives at /dashboard.html in public/. Provide /dashboard as
+// a convenience alias.
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// =====================================================================
+// LIBRARIAN DASHBOARD — separate from the Performer-flavored /dashboard.
+// Bill: "I want the Librarian UI to be distinct from the simpleStem UI —
+// it shows the librarian activities with minimal overlap with Performer."
+// Focused on: ingest pipeline, catalog health + drift, MPB Sheet sync,
+// recent renders, Librarian-side daemons. No XR18, no mixer, no cache
+// contract (those are Performer concerns).
+// =====================================================================
+async function probeLibrarianState() {
+  const t0 = Date.now();
+  const state = {
+    when: new Date().toISOString(),
+    root: SIMPLE_STEM_ROOT,
+    drive: { accessible: false, latencyMs: null, error: null },
+    ingest: {
+      incoming:    [],   // list of .webloc filenames awaiting watcher
+      failed:      [],   // .failed files (yt-dlp couldn't process)
+      processing:  null, // current STEM_QUEUE/.current payload
+      queued:      [],   // pending render jobs
+      failedRenders: 0,  // STEM_QUEUE/_failed/*.json count
+      recentDone:  [],   // last 10 successful render jobs
+    },
+    catalog: {
+      exists: false, shape: null, songCount: null,
+      scannedAt: null, ageSec: null, drift: null,
+    },
+    mpbSync: {
+      reportExists: false, ageSec: null,
+      unmatched: 0, recentChanges: 0, runs: null,
+    },
+    recentRenders: [],   // last 10 STEMS/<dir>/ by mtime
+    librarianDaemons: {},
+    libraryStats: { songs: null, artistCount: null, withLyrics: null, missingMetadata: null },
+  };
+
+  // Drive access (timed).
+  try {
+    const driveT0 = Date.now();
+    const st = await Promise.race([
+      fsp.stat(SIMPLE_STEM_ROOT),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    state.drive.accessible = !!(st && st.isDirectory());
+    state.drive.latencyMs = Date.now() - driveT0;
+  } catch (e) {
+    state.drive.accessible = false;
+    state.drive.error = (e && e.message) || String(e);
+  }
+
+  // Ingest pipeline state.
+  try {
+    if (fs.existsSync(INCOMING_DIR)) {
+      const entries = fs.readdirSync(INCOMING_DIR);
+      state.ingest.incoming = entries.filter(f => f.endsWith('.webloc')).sort();
+      state.ingest.failed   = entries.filter(f => f.endsWith('.failed')).sort();
+    }
+    if (fs.existsSync(QUEUE_DIR)) {
+      const entries = fs.readdirSync(QUEUE_DIR).filter(f => !f.startsWith('.') && !['_done','_failed'].includes(f));
+      state.ingest.queued = entries.sort();
+      const cur = path.join(QUEUE_DIR, '.current');
+      if (fs.existsSync(cur)) {
+        try { state.ingest.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
+        catch (e) { state.ingest.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
+      }
+      const failedDir = path.join(QUEUE_DIR, '_failed');
+      if (fs.existsSync(failedDir)) {
+        state.ingest.failedRenders = fs.readdirSync(failedDir).filter(f => f.endsWith('.json')).length;
+      }
+      const doneDir = path.join(QUEUE_DIR, '_done');
+      if (fs.existsSync(doneDir)) {
+        const done = fs.readdirSync(doneDir).filter(f => f.endsWith('.json'))
+          .map(f => ({ name: f, mtime: (() => { try { return fs.statSync(path.join(doneDir, f)).mtime.toISOString(); } catch (e) { return null; } })() }))
+          .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))
+          .slice(0, 10);
+        state.ingest.recentDone = done;
+      }
+    }
+  } catch (e) { state.ingest.error = e.message; }
+
+  // Catalog: shape, count, age, drift report if present.
+  try {
+    const catPath = path.join(SIMPLE_STEM_ROOT, 'CATALOG.json');
+    if (fs.existsSync(catPath)) {
+      state.catalog.exists = true;
+      const st = fs.statSync(catPath);
+      state.catalog.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
+      const j = JSON.parse(fs.readFileSync(catPath, 'utf8'));
+      if (j.data && Array.isArray(j.data.songs)) {
+        state.catalog.shape = 'canonical';
+        state.catalog.songCount = j.data.songs.length;
+        state.catalog.scannedAt = j.scannedAt || null;
+        const songsWithMeta = j.data.songs.filter(s => s.title && s.artist);
+        state.libraryStats.songs = j.data.songs.length;
+        state.libraryStats.artistCount = new Set(j.data.songs.map(s => s.artist).filter(Boolean)).size;
+        state.libraryStats.withLyrics = j.data.songs.filter(s => s.lyrics && String(s.lyrics).trim()).length;
+        state.libraryStats.missingMetadata = j.data.songs.length - songsWithMeta.length;
+      } else if (Array.isArray(j.songs)) {
+        state.catalog.shape = 'legacy';
+        state.catalog.songCount = j.songs.length;
+        state.catalog.scannedAt = j.generated_at || null;
+      } else {
+        state.catalog.shape = 'unknown';
+      }
+    }
+  } catch (e) { state.catalog.error = e.message; }
+
+  // MPB Sync report — written by mpb_sync.py to LOGS/mpb_sync_report.json.
+  try {
+    const reportPath = path.join(SIMPLE_STEM_ROOT, 'LOGS', 'mpb_sync_report.json');
+    if (fs.existsSync(reportPath)) {
+      state.mpbSync.reportExists = true;
+      const st = fs.statSync(reportPath);
+      state.mpbSync.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
+      try {
+        const j = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+        state.mpbSync.unmatched = Array.isArray(j.unmatched) ? j.unmatched.length :
+                                  (typeof j.unmatched === 'number' ? j.unmatched : 0);
+        state.mpbSync.recentChanges = Array.isArray(j.changed) ? j.changed.length :
+                                      (typeof j.changed === 'number' ? j.changed : 0);
+        state.mpbSync.runs = j.runs || null;
+      } catch (e) { state.mpbSync.parseError = e.message; }
+    }
+  } catch (e) {}
+
+  // Recent renders — newest STEMS/ subfolders by mtime.
+  try {
+    if (fs.existsSync(STEMS_DIR)) {
+      const entries = fs.readdirSync(STEMS_DIR, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => {
+          try {
+            const st = fs.statSync(path.join(STEMS_DIR, d.name));
+            return { name: d.name, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs };
+          } catch (e) { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .slice(0, 10);
+      state.recentRenders = entries.map(({ name, mtime }) => ({ name, mtime }));
+    }
+  } catch (e) {}
+
+  // Librarian-only daemons — filter to lib-* pid files. Performer daemons
+  // (perf-*) are not surfaced here on purpose.
+  const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
+  const codeDotRun = path.join(__dirname, '..', '.run');
+  const LIB_DAEMONS = ['lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
+  for (const name of LIB_DAEMONS) {
+    const pidPath1 = path.join(dotRun, `${name}.pid`);
+    const pidPath2 = path.join(codeDotRun, `${name}.pid`);
+    const pidPath = fs.existsSync(pidPath1) ? pidPath1 :
+                    fs.existsSync(pidPath2) ? pidPath2 : null;
+    if (!pidPath) {
+      state.librarianDaemons[name] = { running: false, pid: null, reason: 'no pid file' };
+      continue;
+    }
+    try {
+      const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
+      let alive = false;
+      try { process.kill(pid, 0); alive = true; } catch (e) {}
+      state.librarianDaemons[name] = { running: alive, pid, pidPath };
+    } catch (e) {
+      state.librarianDaemons[name] = { running: false, pid: null, reason: e.message };
+    }
+  }
+
+  state.totalProbeMs = Date.now() - t0;
+  return state;
+}
+app.get('/api/librarian/state', async (req, res) => {
+  try {
+    const state = await probeLibrarianState();
+    res.json({ ok: true, state });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+app.get('/librarian', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'librarian.html'));
+});
 // Full-library stem precache is the DEFAULT now. The portal pulls every
 // m4a stem in STEMS/ into ~/.bt-cache/STEMS/ at boot and then again every
 // hour. Result: any song plays instantly with no Drive fetch. Total

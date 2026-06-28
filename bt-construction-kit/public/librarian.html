@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>simpleStem · Librarian</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Distinct visual identity from /dashboard. Warm cream + ink, library-
+       card aesthetic. No black background, no electric blue. The Librarian
+       is curatorial, not live. */
+    :root {
+      --paper:      #f7f1e3;
+      --paper-2:    #ece4cf;
+      --ink:        #1c1917;
+      --ink-2:      #292524;
+      --ink-dim:    #57534e;
+      --rule:       #d6cdb5;
+      --rule-soft:  #e8dfc9;
+
+      --c-good:     #166534;
+      --c-good-bg:  #d4f1de;
+      --c-warn:     #92400e;
+      --c-warn-bg:  #fde6c4;
+      --c-bad:      #991b1b;
+      --c-bad-bg:   #f8d4d4;
+      --c-info:     #1e40af;
+      --c-info-bg:  #d6e4f8;
+      --c-idle:     #78716c;
+      --c-idle-bg:  #ece4cf;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+      font-size: 15px;
+      min-height: 100vh;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(28, 25, 23, 0.04) 39px, rgba(28, 25, 23, 0.04) 40px);
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 20px 32px 14px;
+      border-bottom: 2px solid var(--ink);
+      background: var(--paper);
+    }
+    header h1 {
+      margin: 0;
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      font-variant: small-caps;
+    }
+    header h1 .sub {
+      font-size: 13px;
+      font-weight: normal;
+      font-style: italic;
+      color: var(--ink-dim);
+      margin-left: 12px;
+      letter-spacing: 0;
+      font-variant: normal;
+    }
+    header .meta {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      color: var(--ink-dim);
+    }
+    header .meta .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 3px;
+      background: var(--ink);
+      color: var(--paper);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    header .meta .pill.stale {
+      background: var(--c-bad);
+    }
+
+    main { padding: 24px 32px 80px; max-width: 1300px; margin: 0 auto; }
+
+    .section {
+      margin-bottom: 32px;
+      page-break-inside: avoid;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 14px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    .section-head .blurb {
+      font-size: 12px;
+      font-style: italic;
+      color: var(--ink-dim);
+    }
+
+    /* Library-card block. State color carried by a left rule + soft tint. */
+    .card {
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-left: 5px solid var(--c-idle);
+      padding: 12px 14px;
+      border-radius: 2px;
+      box-shadow: 1px 1px 0 var(--rule-soft);
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    .card .c-title {
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-variant: small-caps;
+      letter-spacing: 0.05em;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-dim);
+      margin-bottom: 4px;
+    }
+    .card .c-main {
+      font-size: 21px;
+      font-weight: 800;
+      line-height: 1.2;
+      color: var(--ink);
+    }
+    .card .c-sub {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+      margin-top: 4px;
+    }
+    .card.state-good { background: var(--c-good-bg); border-left-color: var(--c-good); }
+    .card.state-good .c-title { color: var(--c-good); }
+    .card.state-warn { background: var(--c-warn-bg); border-left-color: var(--c-warn); }
+    .card.state-warn .c-title { color: var(--c-warn); }
+    .card.state-bad  { background: var(--c-bad-bg);  border-left-color: var(--c-bad);  }
+    .card.state-bad  .c-title { color: var(--c-bad); }
+    .card.state-info { background: var(--c-info-bg); border-left-color: var(--c-info); }
+    .card.state-info .c-title { color: var(--c-info); }
+    .card.state-idle { background: var(--c-idle-bg); border-left-color: var(--c-idle); }
+    .card.state-idle .c-title { color: var(--c-idle); }
+
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 980px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } .grid-3 { grid-template-columns: repeat(2, 1fr); } }
+
+    /* List of file entries — for recent ingests, queued jobs, etc. */
+    .listing {
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      padding: 8px 4px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow: auto;
+    }
+    .listing .row {
+      padding: 4px 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px dotted var(--rule-soft);
+    }
+    .listing .row:last-child { border-bottom: 0; }
+    .listing .row .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--ink);
+    }
+    .listing .row .when {
+      color: var(--ink-dim);
+      flex-shrink: 0;
+    }
+    .listing .empty {
+      padding: 12px;
+      font-style: italic;
+      color: var(--ink-dim);
+      text-align: center;
+    }
+
+    .daemons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 980px) { .daemons { grid-template-columns: repeat(2, 1fr); } }
+
+    .raw {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      padding: 10px 14px;
+      border-radius: 2px;
+      margin-top: 18px;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre;
+    }
+    .raw summary { cursor: pointer; user-select: none; font-style: italic; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>The Librarian
+      <span class="sub">curation desk for the simpleStem song library</span>
+    </h1>
+    <div class="meta">
+      <span id="hostname">…</span>
+      <span style="margin-left: 12px;">
+        <span id="last-update" class="pill">refreshing…</span>
+      </span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Drive -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Plumbing</h2>
+        <span class="blurb">Drive must be live for everything else.</span>
+      </div>
+      <div class="grid-3">
+        <div id="card-drive" class="card state-idle">
+          <div class="c-title">Google Drive</div>
+          <div class="c-main" id="drive-main">…</div>
+          <div class="c-sub" id="drive-sub">checking…</div>
+        </div>
+        <div id="card-catalog" class="card state-idle">
+          <div class="c-title">CATALOG.json</div>
+          <div class="c-main" id="catalog-main">…</div>
+          <div class="c-sub" id="catalog-sub">…</div>
+        </div>
+        <div id="card-mpbsync" class="card state-idle">
+          <div class="c-title">MPB Sheet Sync</div>
+          <div class="c-main" id="mpbsync-main">…</div>
+          <div class="c-sub" id="mpbsync-sub">…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ingest pipeline -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Ingest pipeline</h2>
+        <span class="blurb">YouTube URL → watcher → queue → demucs → STEMS/.</span>
+      </div>
+      <div class="grid-4">
+        <div id="card-incoming" class="card state-idle">
+          <div class="c-title">INCOMING_WEBLOC</div>
+          <div class="c-main" id="incoming-main">…</div>
+          <div class="c-sub" id="incoming-sub">awaiting drops</div>
+        </div>
+        <div id="card-queue" class="card state-idle">
+          <div class="c-title">STEM_QUEUE</div>
+          <div class="c-main" id="queue-main">…</div>
+          <div class="c-sub" id="queue-sub">awaiting jobs</div>
+        </div>
+        <div id="card-processing" class="card state-idle">
+          <div class="c-title">Currently processing</div>
+          <div class="c-main" id="processing-main">—</div>
+          <div class="c-sub" id="processing-sub">idle</div>
+        </div>
+        <div id="card-failed" class="card state-idle">
+          <div class="c-title">Render failures</div>
+          <div class="c-main" id="failed-main">—</div>
+          <div class="c-sub" id="failed-sub">none on record</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Listings: pending + recent -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Pending &amp; recent</h2>
+        <span class="blurb">What landed today, what's still cooking.</span>
+      </div>
+      <div class="grid-3">
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Pending weblocs</div>
+          <div id="incoming-list" class="listing"><div class="empty">empty</div></div>
+        </div>
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Queued render jobs</div>
+          <div id="queued-list" class="listing"><div class="empty">empty</div></div>
+        </div>
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Recently rendered (last 10)</div>
+          <div id="recent-list" class="listing"><div class="empty">none yet</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Catalog drift + library stats -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Library statistics</h2>
+        <span class="blurb">Computed from CATALOG.json.</span>
+      </div>
+      <div class="grid-4">
+        <div id="card-songs" class="card state-info">
+          <div class="c-title">Songs</div>
+          <div class="c-main" id="songs-main">…</div>
+          <div class="c-sub">in CATALOG.json</div>
+        </div>
+        <div id="card-artists" class="card state-info">
+          <div class="c-title">Artists</div>
+          <div class="c-main" id="artists-main">…</div>
+          <div class="c-sub">unique</div>
+        </div>
+        <div id="card-with-lyrics" class="card state-info">
+          <div class="c-title">With lyrics</div>
+          <div class="c-main" id="lyrics-main">…</div>
+          <div class="c-sub" id="lyrics-sub">lyrics.txt populated</div>
+        </div>
+        <div id="card-missing-meta" class="card state-info">
+          <div class="c-title">Missing metadata</div>
+          <div class="c-main" id="missing-main">…</div>
+          <div class="c-sub">title or artist blank</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Daemons -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Librarian daemons</h2>
+        <span class="blurb">Background processes that run on the Mac mini, 24/7.</span>
+      </div>
+      <div class="daemons" id="daemons-grid"></div>
+    </section>
+
+    <details class="raw">
+      <summary>Raw state JSON</summary>
+      <pre id="raw-json">loading…</pre>
+    </details>
+  </main>
+
+  <script>
+    const REFRESH_MS = 3000;
+    const STALE_AFTER_MS = 10000;
+    let lastSuccessAt = Date.now();
+
+    document.getElementById('hostname').textContent =
+      location.host + ' · ' + new Date().toLocaleString();
+
+    function setCard(id, stateClass, main, sub) {
+      const card = document.getElementById('card-' + id);
+      if (!card) return;
+      card.classList.remove('state-good', 'state-warn', 'state-bad', 'state-info', 'state-idle');
+      card.classList.add(stateClass);
+      const mEl = document.getElementById(id + '-main');
+      const sEl = document.getElementById(id + '-sub');
+      if (mEl && main != null) mEl.textContent = main;
+      if (sEl && sub != null)  sEl.textContent = sub;
+    }
+    function ageStr(ts) {
+      if (!ts) return '';
+      const dt = (Date.now() - new Date(ts).getTime()) / 1000;
+      if (dt < 60)    return Math.round(dt) + 's ago';
+      if (dt < 3600)  return Math.round(dt/60) + 'm ago';
+      if (dt < 86400) return Math.round(dt/3600) + 'h ago';
+      return Math.round(dt/86400) + 'd ago';
+    }
+    function ageStrFromSec(sec) {
+      if (sec == null) return '';
+      if (sec < 60)    return sec + 's ago';
+      if (sec < 3600)  return Math.round(sec/60) + 'm ago';
+      if (sec < 86400) return Math.round(sec/3600) + 'h ago';
+      return Math.round(sec/86400) + 'd ago';
+    }
+    function fillListing(elId, rows, fmt) {
+      const el = document.getElementById(elId);
+      if (!rows || !rows.length) {
+        el.innerHTML = '<div class="empty">empty</div>';
+        return;
+      }
+      el.innerHTML = rows.map(r => fmt(r)).join('');
+    }
+
+    function render(state) {
+      // Drive
+      if (state.drive.accessible) {
+        setCard('drive', 'state-good', 'Live',
+          `${state.drive.latencyMs} ms · ${state.root}`);
+      } else {
+        setCard('drive', 'state-bad', 'UNREACHABLE',
+          state.drive.error || 'no response');
+      }
+
+      // Catalog
+      const cat = state.catalog;
+      if (!cat.exists) {
+        setCard('catalog', 'state-bad', 'MISSING', 'run ./librarian.sh catalog');
+      } else if (cat.shape === 'canonical') {
+        setCard('catalog', 'state-good',
+          `${cat.songCount} rows`,
+          `canonical · scanned ${ageStrFromSec(cat.ageSec)}`);
+      } else if (cat.shape === 'legacy') {
+        setCard('catalog', 'state-warn',
+          `${cat.songCount} rows · legacy shape`,
+          'rerun catalog.py to migrate');
+      } else {
+        setCard('catalog', 'state-bad', 'UNKNOWN SHAPE', cat.error || 'parse failed');
+      }
+
+      // MPB Sync
+      const mpb = state.mpbSync;
+      if (!mpb.reportExists) {
+        setCard('mpbsync', 'state-idle', 'no report yet',
+          'run ./librarian.sh sheet to populate');
+      } else {
+        const ageHrs = mpb.ageSec ? mpb.ageSec / 3600 : 99;
+        let cls = 'state-good';
+        if (ageHrs > 48) cls = 'state-warn';
+        if (mpb.unmatched > 0) cls = 'state-warn';
+        setCard('mpbsync', cls,
+          mpb.unmatched > 0 ? `${mpb.unmatched} unmatched` : 'fully matched',
+          `last run ${ageStrFromSec(mpb.ageSec)}${mpb.recentChanges ? ' · ' + mpb.recentChanges + ' changed' : ''}`);
+      }
+
+      // Ingest pipeline
+      const ing = state.ingest;
+      // INCOMING
+      if (ing.incoming.length > 0) {
+        setCard('incoming', 'state-warn', `${ing.incoming.length} pending`,
+          'webloc files waiting for the watcher');
+      } else if (ing.failed.length > 0) {
+        setCard('incoming', 'state-bad', `${ing.failed.length} failed`,
+          'yt-dlp errors — see INCOMING_WEBLOC/*.failed');
+      } else {
+        setCard('incoming', 'state-idle', '0', 'idle');
+      }
+      // STEM_QUEUE
+      if (ing.queued.length > 0) {
+        setCard('queue', 'state-warn', `${ing.queued.length} queued`,
+          'waiting for queue_runner.sh');
+      } else {
+        setCard('queue', 'state-idle', '0', 'idle');
+      }
+      // Processing
+      if (ing.processing) {
+        const sn = (ing.processing.song || ing.processing.job || '?');
+        const ph = ing.processing.phase || '';
+        setCard('processing', 'state-warn', sn.slice(0, 60), ph || 'rendering');
+      } else {
+        setCard('processing', 'state-idle', '—', 'idle');
+      }
+      // Failed renders
+      if (ing.failedRenders > 0) {
+        setCard('failed', 'state-bad', String(ing.failedRenders),
+          'STEM_QUEUE/_failed/ — move JSONs back up to retry');
+      } else {
+        setCard('failed', 'state-idle', '0', 'none on record');
+      }
+
+      // Listings
+      fillListing('incoming-list', ing.incoming,
+        r => `<div class="row"><span class="name">${r}</span></div>`);
+      fillListing('queued-list', ing.queued,
+        r => `<div class="row"><span class="name">${r}</span></div>`);
+      fillListing('recent-list', state.recentRenders,
+        r => `<div class="row"><span class="name">${r.name}</span><span class="when">${ageStr(r.mtime)}</span></div>`);
+
+      // Library stats
+      const ls = state.libraryStats;
+      const songsMain = document.getElementById('songs-main');
+      const artistsMain = document.getElementById('artists-main');
+      const lyricsMain  = document.getElementById('lyrics-main');
+      const lyricsSub   = document.getElementById('lyrics-sub');
+      const missingMain = document.getElementById('missing-main');
+      if (songsMain)   songsMain.textContent   = (ls.songs != null) ? ls.songs : '—';
+      if (artistsMain) artistsMain.textContent = (ls.artistCount != null) ? ls.artistCount : '—';
+      if (lyricsMain)  lyricsMain.textContent  = (ls.withLyrics != null) ? ls.withLyrics : '—';
+      if (lyricsSub && ls.withLyrics != null && ls.songs) {
+        lyricsSub.textContent = `${Math.round((ls.withLyrics / ls.songs) * 100)}% of library`;
+      }
+      if (missingMain) missingMain.textContent = (ls.missingMetadata != null) ? ls.missingMetadata : '—';
+      if (ls.missingMetadata > 0) {
+        document.getElementById('card-missing-meta').classList.remove('state-info');
+        document.getElementById('card-missing-meta').classList.add('state-warn');
+      }
+
+      // Daemons grid — Librarian-only.
+      const grid = document.getElementById('daemons-grid');
+      grid.innerHTML = '';
+      const friendly = {
+        'lib-watcher':      'Watcher · webloc_watch.sh',
+        'lib-cataloger':    'Cataloger · catalog.py loop',
+        'lib-catalogwatch': 'Catalogwatch · fswatch trigger',
+        'lib-mpbsync':      'MPB Sync · Sheet → metadata',
+      };
+      Object.keys(friendly).forEach(name => {
+        const d = state.librarianDaemons[name];
+        const div = document.createElement('div');
+        const cls = d && d.running ? 'state-good' : 'state-bad';
+        div.className = 'card ' + cls;
+        const main = d && d.running ? 'running' : 'stopped';
+        const sub = d && d.running ? `pid ${d.pid}` : (d && d.reason ? d.reason : 'no pid file');
+        div.innerHTML =
+          '<div class="c-title">' + friendly[name] + '</div>' +
+          '<div class="c-main">' + main + '</div>' +
+          '<div class="c-sub">' + sub + '</div>';
+        grid.appendChild(div);
+      });
+
+      // Last-update pill
+      const pill = document.getElementById('last-update');
+      const stale = (Date.now() - lastSuccessAt) > STALE_AFTER_MS;
+      pill.classList.toggle('stale', stale);
+      pill.textContent = stale
+        ? 'STALE · last good ' + ageStr(new Date(lastSuccessAt).toISOString())
+        : new Date().toLocaleTimeString();
+
+      document.getElementById('raw-json').textContent = JSON.stringify(state, null, 2);
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch('/api/librarian/state', { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (j && j.ok && j.state) {
+          lastSuccessAt = Date.now();
+          render(j.state);
+        }
+      } catch (e) {
+        const pill = document.getElementById('last-update');
+        pill.classList.add('stale');
+        pill.textContent = 'SERVER NOT RESPONDING · ' + e.message;
+      }
+    }
+    poll();
+    setInterval(poll, REFRESH_MS);
+  </script>
+</body>
+</html>
