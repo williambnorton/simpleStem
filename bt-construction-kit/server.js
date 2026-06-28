@@ -1173,45 +1173,94 @@ async function ensureCachedAsync(sourcePath, cachePath) {
 // the multi-second "spinning disc" the user saw on first play of any song
 // in a cold cache: 6 stems would previously serialize through a blocking
 // fs.copyFileSync each ~2s = 12s before the audio could even start.
-function sendCachedAudio(req, res, sourcePath, cachePath) {
-  if (!fs.existsSync(sourcePath)) {
-    console.warn('[audio 404] source missing:', sourcePath);
+// CACHE-FIRST audio serving. Pre-2026-06-27 this called
+// fs.existsSync(sourcePath) and fs.statSync(sourcePath) on every request
+// to decide whether a cached copy was valid (by size match). Those are
+// synchronous Drive reads, and macOS's CloudStorage layer can block them
+// for 30+ seconds when offline — which wedges Node's WHOLE event loop
+// (no parallelism: every other request, including the heartbeat poll,
+// stalls behind it). The "SERVER NOT RESPONDING" yellow banner Bill saw
+// during the offline test was the heartbeat poll losing this race.
+//
+// New rule: if the cache file exists with non-zero size, serve it
+// IMMEDIATELY without touching Drive. The size-equality check is
+// abandoned — once a stem is written to cache by ensureCachedAsync it's
+// the same byte-for-byte content forever (stems are immutable; we don't
+// re-render and overwrite in place). On cold cache, we still need to
+// touch Drive, but with an async stat + a 3-second timeout so the
+// event loop never wedges.
+async function sendCachedAudio(req, res, sourcePath, cachePath) {
+  // 1) Cache hit — local FS only, no Drive interaction.
+  if (cachePath) {
+    try {
+      const cs = fs.statSync(cachePath);
+      if (cs.isFile() && cs.size > 0) {
+        return res.sendFile(cachePath, { dotfiles: 'allow' }, (err) => {
+          if (err) console.warn('[audio sendFile err - cache]', cachePath, err.message);
+        });
+      }
+    } catch (e) { /* cache miss — fall through to Drive */ }
+  }
+
+  // 2) Cold cache. Probe Drive but bound the wait so a wedged Drive
+  //    layer can't block the event loop. Fail fast with 503 if Drive
+  //    isn't responsive — the client greys out the song and the
+  //    operator can pick a different one instead of staring at a spinner.
+  let sourceStat = null;
+  try {
+    sourceStat = await Promise.race([
+      fsp.stat(sourcePath),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 3000)),
+    ]);
+  } catch (e) {
+    if (e && e.message === 'drive-stall') {
+      console.warn('[audio 503] drive stalled (>3s) for', sourcePath);
+      return res.status(503).type('text')
+        .send('Drive read timed out — audio not in local cache and Drive is unreachable.');
+    }
+    if (e && e.code === 'ENOENT') {
+      return res.status(404).send('Audio file not found');
+    }
+    console.warn('[audio 500] stat error:', sourcePath, e.message);
+    return res.status(500).send('Audio stat failed');
+  }
+  if (!sourceStat || !sourceStat.isFile()) {
     return res.status(404).send('Audio file not found');
   }
-  let served = sourcePath;
-  try {
-    if (fs.existsSync(cachePath)) {
-      const csz = fs.statSync(cachePath).size;
-      const ssz = fs.statSync(sourcePath).size;
-      if (csz === ssz && csz > 0) served = cachePath;
-    }
-  } catch (e) {}
-  // dotfiles: 'allow' is required because our cache lives under ~/.bt-cache
-  // and 'send' otherwise refuses any path with a dot-prefixed segment.
-  res.sendFile(served, { dotfiles: 'allow' }, (err) => {
-    if (err) console.warn('[audio sendFile err]', served, err.message);
+  res.sendFile(sourcePath, { dotfiles: 'allow' }, (err) => {
+    if (err) console.warn('[audio sendFile err - source]', sourcePath, err.message);
   });
-  // Cold-cache path → schedule background copy. setImmediate yields so the
-  // sendFile response goes first. ensureCachedAsync handles dedup + errors.
-  if (served === sourcePath && cachePath) {
+  // Schedule background cache copy so NEXT play is hot.
+  if (cachePath) {
     setImmediate(() => {
       ensureCachedAsync(sourcePath, cachePath).catch(() => {});
     });
   }
 }
 
-app.get('/api/audio/stems/:song/:file', (req, res) => {
+app.get('/api/audio/stems/:song/:file', async (req, res) => {
   const { song, file } = req.params;
   if (song.includes('..') || file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(STEMS_DIR, song, file);
-  // Cache policy: m4a stems only. WAVs are 6× larger and the mixer prefers
-  // m4a anyway. WAV requests stream directly from Drive — no local copy.
+  // WAV requests are not cached — stems are always served as m4a in the
+  // browser-side mixer. The legacy WAV path was kept for one-off debugging
+  // only. Bounded with the same 3-second Drive probe so an offline gig
+  // doesn't wedge the event loop here either.
   if (/\.wav$/i.test(file)) {
-    if (!fs.existsSync(sourcePath)) return res.status(404).send('Audio file not found');
+    try {
+      const st = await Promise.race([
+        fsp.stat(sourcePath),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 3000)),
+      ]);
+      if (!st.isFile()) return res.status(404).send('Audio file not found');
+    } catch (e) {
+      if (e && e.message === 'drive-stall') return res.status(503).send('Drive read timed out');
+      return res.status(404).send('Audio file not found');
+    }
     return res.sendFile(sourcePath, { dotfiles: 'allow' });
   }
   const cachePath = path.join(AUDIO_CACHE_STEMS, song, file);
-  sendCachedAudio(req, res, sourcePath, cachePath);
+  return sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
 // Loops catalog — surfaces every loop file the portal can play, drawn from

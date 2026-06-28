@@ -4336,7 +4336,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const swsys = document.getElementById('btn-switch-sysout');
   if (swsys) swsys.addEventListener('click', () => switchOsOutputAndReload('MacBook Pro Speakers', swsys));
   const snap = document.getElementById('btn-snapshot-state');
-  if (snap) snap.addEventListener('click', () => captureStateSnapshot('manual'));
+  if (snap) snap.addEventListener('click', async () => {
+    // Visual feedback BEFORE the async work — pressed state is immediate so
+    // the operator knows the click registered even when the server is hung
+    // and the snapshot itself is taking a long time to round-trip.
+    snap.classList.add('is-snapshotting');
+    snap.disabled = true;
+    try {
+      await captureStateSnapshot('manual');
+    } finally {
+      snap.classList.remove('is-snapshotting');
+      snap.disabled = false;
+    }
+  });
   // ── XR18 connection-state badge ───────────────────────────────────
   // Asks the server (which runs system_profiler) every 2 seconds whether
   // the XR18 is physically connected AND is macOS's default output
@@ -4580,10 +4592,21 @@ async function captureStateSnapshot(label) {
   } catch (e) {
     snap.captureError = String(e && e.message || e);
   }
+  // Hard 1.5-second cap on the XR18 probe — when the server is wedged
+  // (the gig-time hang scenario we're hunting), we still want the snapshot
+  // to land + the button to un-press promptly. Server-side log will tell
+  // us the real probe result; the snapshot's job is to capture state, not
+  // wait for it.
   try {
-    const r = await fetch('/api/audio/xr18-status', { cache: 'no-store' });
-    if (r.ok) snap.xr18Probe = await r.json();
-  } catch (e) { snap.xr18Probe = { error: String(e && e.message || e) }; }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1500);
+    try {
+      const r = await fetch('/api/audio/xr18-status', { cache: 'no-store', signal: ctrl.signal });
+      if (r.ok) snap.xr18Probe = await r.json();
+    } finally { clearTimeout(t); }
+  } catch (e) {
+    snap.xr18Probe = { error: String(e && e.message || e), timedOut: true };
+  }
   // Derive the orphan flag here so the log line shows it without us
   // having to cross-reference fields by eye later.
   try {
@@ -4594,22 +4617,33 @@ async function captureStateSnapshot(label) {
       probeCh >= 6 && chromeMaxCh > 0 && chromeMaxCh < probeCh
     );
   } catch (e) {}
+  // Same 1.5-second cap on the POST so a wedged server can't keep the
+  // snapshot button stuck in its pressed state. The snapshot still ends
+  // up in localStorage and the console.log even if the POST never lands.
   try {
-    await fetch('/api/debug/snapshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(snap),
-    });
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1500);
+    try {
+      await fetch('/api/debug/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snap),
+        signal: ctrl.signal,
+      });
+    } finally { clearTimeout(t); }
     console.log('[snapshot]', label, snap);
   } catch (e) {
-    console.warn('[snapshot] POST failed:', e);
-  }
-  // Brief visual confirmation on the snapshot button.
-  const btn = document.getElementById('btn-snapshot-state');
-  if (btn) {
-    const orig = btn.style.background;
-    btn.style.background = 'rgba(110, 170, 235, 0.85)';
-    setTimeout(() => { btn.style.background = orig; }, 400);
+    console.warn('[snapshot] POST failed (server may be wedged):', e);
+    // Stash the snapshot locally so we can recover it from DevTools
+    // even when the server-side log never received it.
+    try {
+      const buf = JSON.parse(localStorage.getItem('simpleStem.unsentSnapshots') || '[]');
+      buf.push(snap);
+      // Cap at 50 to bound storage.
+      while (buf.length > 50) buf.shift();
+      localStorage.setItem('simpleStem.unsentSnapshots', JSON.stringify(buf));
+      console.warn('[snapshot] stashed locally — unsent count:', buf.length);
+    } catch (er) {}
   }
   return snap;
 }
