@@ -5,8 +5,9 @@ Write metadata.json into a song folder.
 Combines:
   - Known facts (title, artist, source URL, processing date)
   - Detected facts (BPM, key, key signature, version flag)
-  - External lookups (MusicBrainz release date)
   - Useful search links (Google lyrics, Ultimate Guitar chords)
+  - (MusicBrainz release-date lookup retired 2026-06-28 — Bill uses
+    the Performer's lyrics dialog + manual Google searches instead.)
 
 Usage:
     metadata.py --dir SONG_DIR --title TITLE --artist ARTIST [--url URL]
@@ -99,39 +100,6 @@ def classify_version(title):
     return 'studio'  # default assumption when nothing else matches
 
 
-def musicbrainz_release_date(artist, title):
-    """Earliest release date for this artist+title via MusicBrainz, or None.
-
-    Searches top 25 recordings (not just 1) because the top hit is often
-    a re-release or bootleg with no release date attached; the original
-    is usually a few rows down. Collects every date — both the recording's
-    `first-release-date` and each release's `date` — and returns the
-    minimum (earliest). ISO date strings sort lexicographically so this
-    works even with mixed precisions ("1971", "1971-09", "1971-09-23").
-    """
-    q = f'artist:"{artist}" AND recording:"{title}"'
-    url = ("https://musicbrainz.org/ws/2/recording/"
-           f"?query={urllib.parse.quote(q)}&limit=25&fmt=json")
-    req = urllib.request.Request(url, headers={
-        # MB requires a meaningful User-Agent string.
-        'User-Agent': 'simpleStem/1.0 (band tool, https://local/simpleStem)',
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.load(r)
-    except Exception as e:
-        print(f"   musicbrainz lookup failed: {e}", file=sys.stderr)
-        return None
-    dates = []
-    for rec in data.get('recordings') or []:
-        if frd := rec.get('first-release-date'):
-            dates.append(frd)
-        for rel in rec.get('releases') or []:
-            if d := rel.get('date'):
-                dates.append(d)
-    return min(dates) if dates else None
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, type=Path,
@@ -193,8 +161,10 @@ def main():
     print(">> Classifying version (live/studio/official/cover/karaoke)…")
     version = classify_version(yt_title)
 
-    print(">> Looking up MusicBrainz release date…")
-    release_date = musicbrainz_release_date(args.artist, args.title)
+    # release_date is left null on new ingests — the MusicBrainz lookup was
+    # retired 2026-06-28. Existing songs keep whatever release_date they
+    # already had in metadata.json.
+    release_date = None
 
     lyrics_url = ("https://www.google.com/search?q=" +
                   urllib.parse.quote(f'{args.artist} {args.title} lyrics'))

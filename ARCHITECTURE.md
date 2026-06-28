@@ -660,12 +660,12 @@ librosa; explicit for clarity).
 | File | Role |
 |---|---|
 | `webloc_watch.sh` | fswatch loop on `INCOMING_WEBLOC/`. Classifies single video vs playlist vs chaptered album; writes job JSON to `STEM_QUEUE/` and `source.wav` to `STEMS/<slug>/`. Librarian only. |
-| `metadata.py` | Per-song BPM (librosa beat tracking), key (Krumhansl-Schmuckler), version detection (live/studio/cover/karaoke from YouTube title), MusicBrainz release date, lyric/chord search URLs, clip windows for album chapters. Idempotent. |
+| `metadata.py` | Per-song BPM (librosa beat tracking), key (Krumhansl-Schmuckler), version detection (live/studio/cover/karaoke from YouTube title), lyric/chord search URLs, clip windows for album chapters. Idempotent. (MusicBrainz release-date lookup retired 2026-06-28.) |
 | `queue_runner.sh` | Consumes `STEM_QUEUE/`. One at a time; holds `STEM_QUEUE/.runner.lock`. For album chapters: downloads the full video, slices the clip window, then stems. Publishes current job + phase to `STEM_QUEUE/.current` for the portal. Moves finished → `_done/`, failed → `_failed/`. Performer only. |
 | `stem.sh` | The heavy worker. Source acquisition → 48 kHz `source.wav` → Demucs `htdemucs_6s` → ffmpeg m4a mixdowns → loop detection. Idempotent at every step. |
 | `loop_detect.py` | Beat-synced agglomerative segmentation of `source.wav`; tiles the most-repeated sections of each rhythm stem to song length at bar boundaries. |
 | `post_process.py` | Optional LSQ gain match between stems and source. Not auto-invoked; run by hand for stem rebalancing. |
-| `catalog.py` | Daily Librarian pass: rebuild `CATALOG.json` from `STEMS/` and `M4A/`; fill metadata gaps via MusicBrainz; compute missing BPM/key locally; flag (don't overwrite) drift between dirs and `metadata.json` files. |
+| `catalog.py` | Daily Librarian pass: rebuild `CATALOG.json` from `STEMS/`; compute missing BPM/key locally (librosa); flag (don't overwrite) drift between dirs and `metadata.json` files. (M4A/ scan + MusicBrainz fill-gaps both retired 2026-06-27/28.) |
 | `section_detect.py` | Multi-stem novelty function: detects section boundaries in each song and writes `sectionCandidates` into `metadata.json`. Called at end of `stem.sh`; backfilled across the library via `backfill_section_detect.sh`. |
 | `mpb_sync.py` | Mitchell Park Band Google Sheet sync. Pulls the master songlist + per-gig tabs daily; writes singer/band/drum-pattern/readiness fields into matched `STEMS/<slug>/metadata.json` and produces `GIGS/<gig>.json` files. Replaces the retired `mpbbatch.bash` path. |
 | `backfill_section_detect.sh`, `backfill_m4a_stems.sh`, `migrate_per_folder_loops.sh` | One-shot Librarian maintenance scripts: backfill section candidates, encode m4a siblings for the WAV-only legacy library, and consolidate legacy per-folder loops into the canonical flat `LOOPS/` layout. All idempotent; default dry-run with `--go` to commit. |

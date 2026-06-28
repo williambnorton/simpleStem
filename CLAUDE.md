@@ -138,8 +138,10 @@ Pipeline (acquisition machine):
   video → a setlist staged in `/tmp/PENDING/<setlist>/` then moved whole into
   `STEM_QUEUE/<setlist>/`.
 - `metadata.py` — per song: BPM + key (librosa), version (live/studio/…),
-  MusicBrainz year, lyric/chord search URLs, `clip_start/end` (album chapters),
-  and a `processing` block (48 kHz, Demucs htdemucs_6s, the m4a mixdowns).
+  lyric/chord search URLs, `clip_start/end` (album chapters), and a
+  `processing` block (48 kHz, Demucs htdemucs_6s). MusicBrainz year
+  lookup retired 2026-06-28 — operator pastes lyrics + facts via the
+  Performer's lyrics dialog (Google / UG / AZLyrics) or manual Google.
   Flags: `--clip-start`, `--duration`, `--info-json`, `--url`, `--force`.
 - `queue_runner.sh` — consumes `STEM_QUEUE`, runs `stem.sh` per job (album
   chapters: download whole video, slice the clip window, then stem). Publishes

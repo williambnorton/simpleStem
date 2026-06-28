@@ -146,8 +146,13 @@ app.use(express.json());
 const MACHINE_IDENTITY = (() => {
   if (process.env.SIMPLESTEM_IDENTITY) return process.env.SIMPLESTEM_IDENTITY.toLowerCase();
   const hn = os.hostname().toLowerCase();
-  if (hn.includes('librarian')) return 'librarian';
-  if (hn.includes('performer')) return 'performer';
+  // Fuzzy substring matches so casing, misspellings, hostnames like
+  // "MyLibrarian-Mini" or "Bill's-Performer.local" all resolve cleanly.
+  // "brari" disambiguates librarian; "erform" disambiguates performer.
+  // Bill 2026-06-28: "the hostname matching should be fuzzy — contains
+  // 'erform' vs 'brari'."
+  if (hn.includes('brari'))  return 'librarian';
+  if (hn.includes('erform')) return 'performer';
   // Fall back to performer — historically the laptop has been the only
   // machine running this server, and dropping a librarian onto an
   // unknown host would be more confusing than dropping a performer.

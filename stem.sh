@@ -273,9 +273,9 @@ fi
 ensure_48k "$SRC"
 
 # 1b) Write metadata.json (BPM, key, version, lyrics+chords search URLs,
-#     MusicBrainz release date, yt-dlp's true title/uploader/upload date).
-#     Runs before Demucs so the metadata is captured even if separation
-#     fails. Idempotent — metadata.py skips if metadata.json already exists.
+#     yt-dlp's true title/uploader/upload date). Runs before Demucs so the
+#     metadata is captured even if separation fails. Idempotent —
+#     metadata.py skips if metadata.json already exists.
 META_SCRIPT="$SCRIPT_DIR/metadata.py"
 if [[ -f "$META_SCRIPT" ]]; then
   YT_INFO="$OUT_DIR/source.info.json"

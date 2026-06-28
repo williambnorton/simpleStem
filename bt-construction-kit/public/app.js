@@ -4560,9 +4560,17 @@ document.addEventListener('DOMContentLoaded', () => {
   //       interval can dispatch a fresh one.
   let lastHealthAt = Date.now();
   let _heartbeatInFlight = false;
-  const HEARTBEAT_INTERVAL_MS = 3000;
-  const STALE_THRESHOLD_MS = 5000;
-  const HEARTBEAT_TIMEOUT_MS = 4000;
+  // Bill 2026-06-28: "Maybe the heartbeat could be 15 or 60 seconds?"
+  // Longer interval doesn't FIX Chrome's intensive-throttling (the
+  // throttle caps any interval at "once per minute" regardless of the
+  // value here), but it does make the app a lighter background-tab
+  // citizen and reduces the rate of false-positive "stale" flicker.
+  // 10s interval + 25s stale threshold (= 2.5 intervals) is the new
+  // balance. visibilitychange + focus listeners (below) handle the
+  // resume-from-background case directly, which IS the actual fix.
+  const HEARTBEAT_INTERVAL_MS = 10000;
+  const STALE_THRESHOLD_MS    = 25000;
+  const HEARTBEAT_TIMEOUT_MS  = 8000;
   async function pollHeartbeat() {
     if (_heartbeatInFlight) return;
     _heartbeatInFlight = true;

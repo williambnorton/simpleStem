@@ -11,8 +11,8 @@ What it does, in order:
      actually exist (6 stems? which m4a mixdowns?) with pointers to the files.
   2. Read each song's metadata.json for title/artist/bpm/key/etc.
   3. (--fill, default) Fill GAPS ONLY — never overwrite good data:
-       - missing release_date  -> MusicBrainz lookup
        - missing bpm / key     -> compute locally with librosa from source.wav
+       (release_date / MusicBrainz lookup retired 2026-06-28.)
   4. Write CATALOG.json at the repo root.
   5. Report drift: STEMS dirs with no metadata.json, metadata with no stems,
      m4a files with no STEMS dir, songs missing expected renditions.
@@ -37,13 +37,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # metadata.py (and its heavy deps numpy/librosa/soundfile) is imported LAZILY,
-# only when --fill actually needs to compute bpm/key or hit MusicBrainz. That
-# keeps plain index builds (and --no-fill) dependency-free, so they run anywhere
+# only when --fill actually needs to compute bpm/key. That keeps plain index
+# builds (and --no-fill) dependency-free, so they run anywhere
 # — including a machine without librosa installed.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 EXPECTED_STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
 M4A_SUFFIXES = ['-V', '-V-G', '-V-G-B', 'DO']
+
+# MusicBrainz lookup + circuit breaker retired 2026-06-28 — Bill uses the
+# Performer's lyrics dialog (Google / Ultimate Guitar / AZLyrics) and
+# manual Google searches for any external data. No more rate-limit noise,
+# no more 110-line 503 dumps in the log.
 
 # Mirror of the JS VARIANT_PATTERNS in scanM4a (server.js). First match wins.
 VARIANT_PATTERNS = [
@@ -179,15 +184,10 @@ def fill_gaps(base, stem_dir, meta):
         except Exception as e:
             print(f"   !! {base}: bpm/key detection failed ({e})", file=sys.stderr)
 
-    if not meta.get('release_date') and meta.get('title') and meta.get('artist'):
-        try:
-            rd = md.musicbrainz_release_date(meta['artist'], meta['title'])
-            if rd:
-                meta['release_date'] = rd
-                changed = True
-                print(f"   + {base}: filled release_date {rd} (MusicBrainz)")
-        except Exception as e:
-            print(f"   !! {base}: musicbrainz lookup failed ({e})", file=sys.stderr)
+    # release_date fill via MusicBrainz retired 2026-06-28. fill_gaps now
+    # only touches bpm/key (locally via librosa). Anything else the
+    # operator wants comes through the Performer's lyrics dialog or
+    # manual Google.
 
     if changed:
         meta['catalog_filled_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
