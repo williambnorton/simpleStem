@@ -31,7 +31,7 @@ INCOMING="$DATA/INCOMING_WEBLOC"
 STEMS="$DATA/STEMS"
 CATALOG_INTERVAL="${CATALOG_INTERVAL:-3600}"   # seconds between catalog passes (hourly)
 MPB_SYNC_INTERVAL="${MPB_SYNC_INTERVAL:-86400}" # seconds between MPB Sheet syncs (daily)
-SERVICES="watcher cataloger catalogwatch mpbsync"
+SERVICES="watcher cataloger catalogwatch mpbsync portal"
 mkdir -p "$RUN"
 
 pidfile() { echo "$RUN/lib-$1.pid"; }
@@ -79,6 +79,13 @@ start_cmd() {
                # GIGS/<slug>.json from the gig tabs. Idempotent; safe to re-run.
                local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
                echo "while true; do '$py' '$BASE/mpb_sync.py' || true; sleep $MPB_SYNC_INTERVAL; done" ;;
+    portal)    # bt-construction-kit Express server. Same server.js the
+               # Performer uses; the hostname-based identity detection
+               # (server.js) will see "librarian" in the host and serve
+               # librarian.html as the default page. Audio-serving routes
+               # work too — both machines read the same Drive folder —
+               # but the Librarian is curatorial, not the live App.
+               echo "exec node '$BASE/bt-construction-kit/server.js'" ;;
   esac
 }
 
@@ -97,6 +104,10 @@ preflight() {
   command -v fswatch >/dev/null 2>&1 || echo "  ! fswatch not found — 'brew install fswatch'" >&2
   command -v yt-dlp  >/dev/null 2>&1 || echo "  ! yt-dlp not found — 'brew install yt-dlp'" >&2
   command -v ffmpeg  >/dev/null 2>&1 || echo "  ! ffmpeg not found — 'brew install ffmpeg'" >&2
+  command -v node    >/dev/null 2>&1 || echo "  ! node not found — needed for the librarian portal · 'brew install node'" >&2
+  if [[ -f "$BASE/bt-construction-kit/server.js" && ! -d "$BASE/bt-construction-kit/node_modules" ]]; then
+    echo "  ! bt-construction-kit/node_modules missing — run: (cd $BASE/bt-construction-kit && npm install)" >&2
+  fi
   [[ -n "$(find_py)" ]] || echo "  ! no python with librosa+soundfile — 'pip3 install librosa soundfile'" >&2
 }
 
@@ -104,6 +115,19 @@ start_one() {
   local name="$1"
   if is_running "$name"; then
     echo "  $name already running (pid $(cat "$(pidfile "$name")"))"; return
+  fi
+  # Port-3000 squatter sweep for the portal service. If a previous node
+  # process is still bound (stale, orphaned, or started outside our
+  # pidfile), node will fail to bind silently. Same defensive sweep
+  # performer.sh uses. Mirrors the 2026-06-26 "stale node" bug.
+  if [[ "$name" == "portal" ]]; then
+    local squatters
+    squatters=$(lsof -nP -iTCP:3000 -sTCP:LISTEN -t 2>/dev/null || true)
+    if [[ -n "$squatters" ]]; then
+      echo "  killing port-3000 squatter(s): $squatters"
+      kill -9 $squatters 2>/dev/null || true
+      sleep 1
+    fi
   fi
   bash -c "$(start_cmd "$name")" >"$(logfile "$name")" 2>&1 &
   local pid=$!
@@ -145,7 +169,13 @@ print_state() {
   [[ -d "$QUEUE" ]] && nq="$(find "$QUEUE" -mindepth 1 -maxdepth 2 -name '*.json' \
         -not -path "$QUEUE/_done/*" -not -path "$QUEUE/_failed/*" 2>/dev/null | wc -l | tr -d ' ')"
   [[ -d "$STEMS" ]] && nstems="$(find "$STEMS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-  [[ -f "$BASE/CATALOG.json" ]] && ncat="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("count","?"))' "$BASE/CATALOG.json" 2>/dev/null || echo '?')"
+  [[ -f "$BASE/CATALOG.json" ]] && ncat="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+n=d.get("count")
+if n is None:
+    try: n=len(d["data"]["songs"])
+    except Exception: n="?"
+print(n)' "$BASE/CATALOG.json" 2>/dev/null || echo '?')"
   echo "  incoming: $nin webloc · queue: $nq awaiting render · cached songs: $nstems · catalog: $ncat"
 }
 
