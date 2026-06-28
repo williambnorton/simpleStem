@@ -707,6 +707,27 @@ function refreshLibraryCache(reason, force) {
                 fromCatalog.data.stats.singerDistribution = dist;
               }
             } catch (e) { console.warn('[lib] singerDistribution augment failed:', e.message); }
+            // Augment the catalog stats with the cache contract count
+            // (catalog.py doesn't know what's in ~/.bt-cache; only the
+            // Performer can answer that). Recomputes the per-row `cached`
+            // flag on the catalog rows so the banner reflects the actual
+            // local cache state.
+            try {
+              if (fromCatalog.data && fromCatalog.data.songs) {
+                let cachedN = 0, total = 0;
+                for (const s of fromCatalog.data.songs) {
+                  if (s.type !== 'stems') continue;
+                  total++;
+                  if (s.folderName) {
+                    s.cached = isStemsFolderCached(s.folderName);
+                    if (s.cached) cachedN++;
+                  }
+                }
+                fromCatalog.data.stats = fromCatalog.data.stats || {};
+                fromCatalog.data.stats.cachedSongs = cachedN;
+                fromCatalog.data.stats.uncachedSongs = total - cachedN;
+              }
+            } catch (e) { console.warn('[lib] cachedSongs augment failed:', e.message); }
             libraryCache = {
               scannedAt: fromCatalog.scannedAt || new Date().toISOString(),
               checkedAt: new Date().toISOString(),
