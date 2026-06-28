@@ -1050,7 +1050,15 @@ async function persistActiveGig() {
   }
 }
 
+// Generation counter for renderGigSidebar's deferred chunk callbacks.
+// requestIdleCallback can fire AFTER a subsequent call has already
+// cleared the container, causing the deferred callback to append a stale
+// second copy of setlists 2..N (Bill's 2026-06-28 bug: Set 1 then 2-3-4
+// then 2-3-4 again). Each call bumps the generation; deferred callbacks
+// check their generation before touching the DOM and bail if it's stale.
+let _renderGigSidebarGen = 0;
 function renderGigSidebar() {
+  const __myGen = ++_renderGigSidebarGen;
   // Profiling: regression Q1a flagged this as a freeze candidate. Logs the
   // wall-clock cost so we can see if a particular gig is slow. Look in
   // DevTools console for [perf] renderGigSidebar Xms — if it's >100 ms we
@@ -1121,6 +1129,11 @@ function renderGigSidebar() {
     i = 1;
     const renderRest = () => {
       yieldFn(() => {
+        // Stale-callback guard: another renderGigSidebar() ran before
+        // this idle slot fired. The container has already been cleared +
+        // re-populated by the newer render; appending now would duplicate
+        // setlists. Bail silently.
+        if (__myGen !== _renderGigSidebarGen) return;
         for (; i < slCount; i++) {
           setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[i], i));
         }
@@ -4337,6 +4350,32 @@ document.addEventListener('DOMContentLoaded', () => {
   if (swsys) swsys.addEventListener('click', () => switchOsOutputAndReload('MacBook Pro Speakers', swsys));
   const flash = document.getElementById('btn-flash-cache');
   if (flash) flash.addEventListener('click', (e) => runFlashCache(!!e.shiftKey, flash));
+  // Scroll-to-top escape hatch. Watches main-content's scrollTop; reveals
+  // the floating button after 220px of scroll so the operator always has a
+  // way back to the visualizer even when an inner element traps wheel events.
+  const scrollBtn = document.getElementById('scroll-to-top-btn');
+  const mainContent = document.querySelector('.main-content');
+  if (scrollBtn && mainContent) {
+    const SHOW_AT = 220;
+    const onScroll = () => {
+      scrollBtn.classList.toggle('visible', mainContent.scrollTop > SHOW_AT);
+    };
+    mainContent.addEventListener('scroll', onScroll, { passive: true });
+    scrollBtn.addEventListener('click', () => {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    // Cmd+ArrowUp / Ctrl+ArrowUp = same. Avoids stealing the bare ArrowUp
+    // key, which the visualizer + automation lane already use.
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowUp') {
+        const tag = (e.target && e.target.tagName) || '';
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (e.target && e.target.isContentEditable)) return;
+        e.preventDefault();
+        mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+    onScroll();
+  }
   const snap = document.getElementById('btn-snapshot-state');
   if (snap) snap.addEventListener('click', async () => {
     // Visual feedback BEFORE the async work — pressed state is immediate so

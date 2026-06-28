@@ -630,11 +630,22 @@ async function buildLibraryData() {
 
   const uniqueSongs = pickUniqueSongs(allSongs);
 
+  // Cache contract: count how many songs are fully cached + how many are
+  // missing. The library banner surfaces uncached songs so the operator
+  // can hit Flash Cache before a gig. Policy: every song in /api/library
+  // MUST be cached — see CLAUDE.md "All songs' m4a stems must be in
+  // ~/.bt-cache at all times".
+  let cachedSongs = 0;
+  for (const s of uniqueSongs) {
+    if (s.cached) cachedSongs++;
+  }
   const stats = {
     totalSongs:  uniqueSongs.length,
     totalFiles:  allSongs.length,
     totalStems:  stems.length,
     totalM4as:   0,                                    // kept in payload for client back-compat
+    cachedSongs,
+    uncachedSongs: uniqueSongs.length - cachedSongs,
     artistCount: new Set(uniqueSongs.map(s => s.artist).filter(a => a && a !== 'Unknown Artist')).size,
     bpmDistribution: {
       slow:    uniqueSongs.filter(s => s.practiceBpm && s.practiceBpm < 90).length,
