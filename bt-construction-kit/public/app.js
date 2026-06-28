@@ -61,6 +61,181 @@ const audioElements = {
 };
 
 const CHANNELS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
+
+// ─── TOAST (non-blocking transient UI message) ────────────────────────────
+// Bill's contract: cache-first means failures CAN'T be modals or spinners
+// or freezes. They show a brief toast at the bottom of the screen, then
+// fade. No buttons, no interaction required, no risk of blocking the
+// click thread.
+function showToast(message, durationMs) {
+  durationMs = durationMs || 3500;
+  let container = document.getElementById('simpleStem-toasts');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'simpleStem-toasts';
+    container.className = 'sst-toast-container';
+    document.body.appendChild(container);
+  }
+  const el = document.createElement('div');
+  el.className = 'sst-toast';
+  el.textContent = message;
+  container.appendChild(el);
+  // Fade in
+  requestAnimationFrame(() => el.classList.add('sst-toast-visible'));
+  setTimeout(() => {
+    el.classList.remove('sst-toast-visible');
+    setTimeout(() => { try { container.removeChild(el); } catch (e) {} }, 350);
+  }, durationMs);
+  return el;
+}
+
+// ─── CACHE-FIRST PLAYBACK CONTRACT (2026-06-28) ───────────────────────────
+// Bill: "the Performer click path is a pure cache read — it never awaits
+// the drive or the server." The click hangs we kept chasing all traced
+// back to the same root cause: setting an audio element's src to
+// /api/audio/stems/... causes Chrome to dispatch an HTTP fetch and the
+// page then awaits oncanplaythrough. If anything between Chrome and the
+// stems wedges (server, Drive, network), the click freezes for 15s and
+// surfaces a false "Song files missing" dialog.
+//
+// New contract: a song isn't playable until its stems are pre-fetched
+// into Blob URLs that live in browser memory. Click only ever sets src
+// to those Blob URLs, which are pure in-memory references — no HTTP, no
+// awaits, instant. Background workers pull from the server and populate
+// the cache; their failures emit toasts, never freezes.
+//
+// stemCache: songBase → {
+//   state: 'pending' | 'fetching' | 'ready' | 'failed',
+//   stems: { vocals: blobUrl, drums: blobUrl, ... },
+//   error: string | null,
+//   blobs: { vocals: Blob, ... },     // kept so we can revoke URLs
+//   promise: Promise (during fetching),
+// }
+const stemCache = new Map();
+const STEM_CACHE_PENDING  = 'pending';
+const STEM_CACHE_FETCHING = 'fetching';
+const STEM_CACHE_READY    = 'ready';
+const STEM_CACHE_FAILED   = 'failed';
+// How many songs can be fetching simultaneously. Each fetch is up to ~30 MB
+// total (6 stems × ~5 MB); 2 in parallel keeps the network busy without
+// hogging Chrome's per-origin connection pool of 6.
+const STEM_PREFETCH_CONCURRENCY = 2;
+let _stemPrefetchInFlight = 0;
+const _stemPrefetchQueue = [];
+
+function _stemCacheNotify(songBase) {
+  // Update any UI affordances that reflect cache state (ready badges in
+  // library rows, "caching N songs" toast counter, etc.).
+  try {
+    document.querySelectorAll(`.song-row[data-song-base="${songBase}"]`).forEach(row => {
+      const entry = stemCache.get(songBase);
+      row.dataset.cacheState = entry ? entry.state : 'pending';
+    });
+  } catch (e) {}
+  try { window.dispatchEvent(new CustomEvent('stemcache-changed', { detail: { songBase } })); } catch (e) {}
+}
+function _stemCacheDrainQueue() {
+  while (_stemPrefetchInFlight < STEM_PREFETCH_CONCURRENCY && _stemPrefetchQueue.length) {
+    const songBase = _stemPrefetchQueue.shift();
+    _stemPrefetchInFlight++;
+    _fetchSongStems(songBase).finally(() => {
+      _stemPrefetchInFlight--;
+      _stemCacheDrainQueue();
+    });
+  }
+}
+async function _fetchSongStems(songBase) {
+  const entry = stemCache.get(songBase);
+  if (!entry || entry.state === STEM_CACHE_READY) return entry;
+  entry.state = STEM_CACHE_FETCHING;
+  _stemCacheNotify(songBase);
+  try {
+    const folder = encodeURIComponent(songBase);
+    const stems = {};
+    const blobs = {};
+    // Fetch all six in parallel — each request is independent; if any one
+    // 503s we mark the whole song failed (we need all six to play).
+    const results = await Promise.all(CHANNELS.map(async (ch) => {
+      const ctrl = new AbortController();
+      const tmo = setTimeout(() => ctrl.abort(), 12000); // 12s per stem max
+      try {
+        const r = await fetch(`/api/audio/stems/${folder}/${ch}.m4a`, {
+          cache: 'force-cache',
+          signal: ctrl.signal,
+        });
+        if (!r.ok) throw new Error(`${ch} HTTP ${r.status}`);
+        const blob = await r.blob();
+        return { ch, blob };
+      } finally { clearTimeout(tmo); }
+    }));
+    for (const { ch, blob } of results) {
+      blobs[ch] = blob;
+      stems[ch] = URL.createObjectURL(blob);
+    }
+    entry.stems = stems;
+    entry.blobs = blobs;
+    entry.state = STEM_CACHE_READY;
+    entry.error = null;
+  } catch (e) {
+    entry.state = STEM_CACHE_FAILED;
+    entry.error = (e && e.message) || String(e);
+    console.warn('[stem-cache]', songBase, 'failed:', entry.error);
+  }
+  _stemCacheNotify(songBase);
+  return entry;
+}
+function ensureSongStemsCached(songBase, priority) {
+  if (!songBase) return null;
+  let entry = stemCache.get(songBase);
+  if (!entry) {
+    entry = { state: STEM_CACHE_PENDING, stems: {}, blobs: {}, error: null };
+    stemCache.set(songBase, entry);
+  }
+  if (entry.state === STEM_CACHE_READY || entry.state === STEM_CACHE_FETCHING) return entry;
+  if (entry.state === STEM_CACHE_FAILED) {
+    // Allow retry — reset to pending.
+    entry.state = STEM_CACHE_PENDING;
+    entry.error = null;
+  }
+  // Priority requests jump the queue; background prefetch appends.
+  if (priority) {
+    const idx = _stemPrefetchQueue.indexOf(songBase);
+    if (idx >= 0) _stemPrefetchQueue.splice(idx, 1);
+    _stemPrefetchQueue.unshift(songBase);
+  } else if (!_stemPrefetchQueue.includes(songBase)) {
+    _stemPrefetchQueue.push(songBase);
+  }
+  _stemCacheDrainQueue();
+  return entry;
+}
+function evictSongStems(songBase) {
+  const entry = stemCache.get(songBase);
+  if (!entry) return;
+  try {
+    for (const ch of CHANNELS) {
+      if (entry.stems[ch]) URL.revokeObjectURL(entry.stems[ch]);
+    }
+  } catch (e) {}
+  stemCache.delete(songBase);
+  _stemCacheNotify(songBase);
+}
+// Reset the entire cache. Called on backend restart + as a manual recovery
+// gesture. Revokes every blob URL to free RAM.
+function resetStemCache() {
+  for (const songBase of [...stemCache.keys()]) evictSongStems(songBase);
+  _stemPrefetchQueue.length = 0;
+  _stemPrefetchInFlight = 0;
+}
+
+// Queue every song in the active setlist for background prefetch.
+// Called on gig load + setlist change. Non-blocking, fire-and-forget.
+function prefetchSetlistStems(songBases) {
+  if (!Array.isArray(songBases)) return;
+  for (const sb of songBases) {
+    if (sb) ensureSongStemsCached(sb, false);
+  }
+}
+
 const LOOP_CAPABLE_CHANNELS = ['drums', 'bass', 'guitar', 'piano'];
 
 // Helpers — setting audio.src='' does NOT actually clear the element; the
@@ -749,9 +924,10 @@ async function loadActiveGig(slug) {
       openSetlistIdxs = new Set([activeSetlistIdx]);
       try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
       renderGigSidebar();
-      if (document.body.classList.contains('gig-mode')) {
-        precacheActiveGig();
-      }
+      // Cache-first contract: kick off the stem prefetcher on EVERY gig
+      // load (not just gig-mode). The fast no-op path inside ensureSongStemsCached
+      // makes this cheap if a song is already cached.
+      precacheActiveGig();
     } catch (e) {
       console.warn('[synthetic-gig] failed to build', slug, e);
       activeGig = null;
@@ -798,10 +974,27 @@ async function loadActiveGig(slug) {
 }
 
 function precacheActiveGig() {
-  if (!activeGig || !activeGig.slug) return;
-  // Synthetic pseudo-gigs (YouTube Sync, Manual Setlists) don't have a
-  // corresponding GIGS/<slug>.json file — the gig-precache endpoint 404s
-  // for them. Fall back to per-setlist precache instead.
+  if (!activeGig) return;
+  // CLIENT-SIDE prefetch: walk every song in every setlist and queue its
+  // stems into stemCache. This is the cache-first contract — by the time
+  // the operator clicks a song, the Blob URLs are already in memory.
+  // Non-blocking; queue concurrency = 2 (see STEM_PREFETCH_CONCURRENCY).
+  try {
+    const songBases = [];
+    for (const sl of activeGig.setlists || []) {
+      for (const song of sl.songs || []) {
+        const base = song.folderName || song.base || (song.variants && song.variants[0] && song.variants[0].folderName);
+        if (base && !songBases.includes(base)) songBases.push(base);
+      }
+    }
+    if (songBases.length) {
+      showToast(`Caching ${songBases.length} song${songBases.length === 1 ? '' : 's'} for "${activeGig.title || activeGig.slug}"…`, 2500);
+      prefetchSetlistStems(songBases);
+    }
+  } catch (e) { console.warn('[client prefetch] gig walk failed:', e); }
+  // Server-side precache (writes stems into ~/.bt-cache so future browser
+  // sessions also have them). Synthetic gigs fall back to per-setlist.
+  if (!activeGig.slug) return;
   if (activeGig.synthetic) {
     for (const sl of activeGig.setlists || []) {
       if (sl.slug) {
@@ -4590,6 +4783,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const stale = (Date.now() - lastHealthAt) > STALE_THRESHOLD_MS;
     document.body.classList.toggle('server-stale', stale);
   }, 500);
+  // The SERVER NOT RESPONDING banner is now the restart target.
+  // Bug fix per Bill: arrow "TRY THE RESTART BUTTON →" pointed at empty
+  // space. Make the banner itself click-to-restart. The handler is wired
+  // at the document level (body-class controls visibility) and we only
+  // act if the click hit the pseudo-element region (top-right of the
+  // hero-section), which is the only place the body.server-stale ::after
+  // appears with pointer-events:auto.
+  document.addEventListener('click', (e) => {
+    if (!document.body.classList.contains('server-stale')) return;
+    const hero = document.querySelector('.player-hero-section, .player-active');
+    if (!hero) return;
+    const r = hero.getBoundingClientRect();
+    const x = e.clientX, y = e.clientY;
+    // Pseudo-element sits in the top-right corner of the hero block.
+    // Use an envelope generous enough to catch any click on the chip.
+    const insideHero = (x >= r.right - 360 && x <= r.right && y >= r.top && y <= r.top + 32);
+    if (!insideHero) return;
+    e.preventDefault();
+    e.stopPropagation();
+    restartBackend();
+  }, true);
   // Tab regains focus / visibility → immediate fresh heartbeat. This is
   // the recovery path for "I was on another tab for a minute and now the
   // banner is yellow." A single 4s heartbeat clears stale immediately
@@ -5698,14 +5912,38 @@ function loadSong(song, opts) {
     els.trackType.textContent = 'STEMS';
     els.trackType.className = 'badge';
     els.mixerContainer.style.display = 'block';
-    
+
     document.querySelectorAll('.channel-strip').forEach(c => c.style.display = 'grid');
-    
-    // Setup sources
+
+    // CACHE-FIRST CONTRACT — never assign /api/audio/stems/ to an audio
+    // element directly. We point each <audio> at the pre-fetched in-memory
+    // Blob URL from stemCache. If the cache is cold, we toast + kick off
+    // a priority fetch + skip the load (the click is non-blocking — no
+    // spinner, no 15s freeze, no "Song files missing" false positive).
     const folder = song.folderName;
+    const cached = stemCache.get(folder);
+    if (!cached || cached.state !== STEM_CACHE_READY) {
+      // Kick off a priority fetch so the next click will land. The current
+      // click is intentionally a no-op for playback — toast tells the
+      // operator and the row's data-cache-state attr updates so the ⚪/✓
+      // badge transitions.
+      ensureSongStemsCached(folder, /* priority */ true);
+      const stateLabel =
+        !cached                              ? 'queued for caching' :
+        cached.state === STEM_CACHE_FETCHING ? 'still caching'      :
+        cached.state === STEM_CACHE_FAILED   ? 'failed last fetch — retrying' :
+                                               'not ready';
+      showToast(`"${song.title || folder}" — ${stateLabel}. Pick another song or try again.`, 4500);
+      // Bail out cleanly. We've already cleared the previous song's
+      // playback state via stopAudio() above; the UI sits in "no song
+      // loaded" rather than partially-loaded.
+      return;
+    }
     CHANNELS.forEach(chan => {
       const fileName = song.stems[chan];
-      setAudioSrc(audioElements[chan], fileName ? `/api/audio/stems/${folder}/${fileName}` : '');
+      // Use the in-memory Blob URL (no HTTP, no Drive, no server touch).
+      const src = fileName && cached.stems[chan] ? cached.stems[chan] : '';
+      setAudioSrc(audioElements[chan], src);
       const strip = document.querySelector(`.${chan}-strip`);
       if (strip) strip.style.display = fileName ? 'flex' : 'none';
     });
@@ -7937,6 +8175,15 @@ function setupVersionWatch() {
 async function restartBackend() {
   if (!confirm('Restart the backend (performer.sh restart)? Playback will stop briefly.')) return;
   if (els.btnRestart) { els.btnRestart.disabled = true; els.btnRestart.classList.add('is-restarting'); els.btnRestart.title = 'Restarting…'; }
+  // Per Bill's bug report: "Restart didn't unstick it — it likely just
+  // re-pings the dead server." The fix is to ALSO tear down the local
+  // worker state, so when the new server comes up the prefetcher rebuilds
+  // from a clean slate instead of carrying stale blob URLs / in-flight
+  // promises that point at the dead process. Stop any in-flight playback
+  // so the next song-click can't re-use a half-loaded element.
+  try { stopAudio(); } catch (e) {}
+  try { resetStemCache(); } catch (e) {}
+  showToast('Restarting backend… cache reset, worker respawning.', 4000);
   try { await fetch('/api/restart', { method: 'POST' }); }
   catch (e) { /* server is dying — expected */ }
   let tries = 0;

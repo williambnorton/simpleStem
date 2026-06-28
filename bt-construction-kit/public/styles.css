@@ -4237,7 +4237,7 @@ body.server-stale .player-active {
 }
 body.server-stale .player-hero-section::after,
 body.server-stale .player-active::after {
-  content: 'SERVER NOT RESPONDING — try the restart button →';
+  content: 'SERVER NOT RESPONDING — CLICK HERE TO RESTART';
   position: absolute; top: 6px; right: 12px;
   font-size: 11px; font-weight: 800; color: #2a1f00;
   background: #f4c430;
@@ -4245,8 +4245,72 @@ body.server-stale .player-active::after {
   border-radius: 4px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;   /* the banner is now the restart target */
   z-index: 200;
+  box-shadow: 0 2px 6px rgba(244, 196, 48, 0.40);
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+body.server-stale .player-hero-section:hover::after,
+body.server-stale .player-active:hover::after {
+  background: #ffd84d;
+  transform: scale(1.02);
+}
+/* Bug fix — the old arrow pointed at empty space. The banner IS the
+   button now, so we let pointer-events through and react on click via
+   the body-level handler wired in app.js. */
+
+/* ── Toast (non-blocking transient messages) ─────────────────────────── */
+.sst-toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 9500;
+  pointer-events: none;
+}
+.sst-toast {
+  background: rgba(15, 23, 42, 0.95);
+  color: #fff;
+  border: 1px solid rgba(110, 170, 235, 0.55);
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  max-width: 560px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.sst-toast.sst-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Cache-ready badge in library rows ───────────────────────────────── */
+.song-row .cache-ready-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  background: #475569;            /* idle / pending: muted gray */
+  transition: background 0.2s ease;
+}
+.song-row[data-cache-state="fetching"] .cache-ready-dot { background: #eab308; animation: cache-pulse 1.2s ease-in-out infinite; }
+.song-row[data-cache-state="ready"]    .cache-ready-dot { background: #22c55e; }
+.song-row[data-cache-state="failed"]   .cache-ready-dot { background: #ef4444; }
+@keyframes cache-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
 }
 
 /* Spinner caption — small italic text under any of the loading spinners.
