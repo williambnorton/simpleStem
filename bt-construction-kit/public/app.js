@@ -2682,8 +2682,33 @@ function mergeByTitleArtist(rawSongs) {
   return merged;
 }
 
+// Update the library cache contract banner. Visible only when the library
+// has at least one uncached song. Shows the cached/total ratio + a
+// one-click Flash Cache action. The button reuses runFlashCache, which
+// already handles progress polling.
+function updateLibraryCacheBanner(stats) {
+  const banner = document.getElementById('library-cache-banner');
+  const textEl = document.getElementById('library-cache-banner-text');
+  const btnEl  = document.getElementById('library-cache-banner-action');
+  if (!banner || !textEl || !btnEl) return;
+  const total = stats && (stats.totalSongs || 0);
+  const cached = stats && (typeof stats.cachedSongs === 'number' ? stats.cachedSongs : null);
+  const uncached = stats && (typeof stats.uncachedSongs === 'number' ? stats.uncachedSongs : null);
+  // Server didn't include the stats yet (older payload) — hide the banner.
+  if (cached == null || uncached == null) { banner.style.display = 'none'; return; }
+  if (uncached <= 0) { banner.style.display = 'none'; return; }
+  textEl.innerHTML = `<strong>${cached} of ${total}</strong> songs cached — ` +
+                     `<strong>${uncached}</strong> need caching before the next gig.`;
+  banner.style.display = 'flex';
+  if (!btnEl._wired) {
+    btnEl._wired = true;
+    btnEl.addEventListener('click', (e) => runFlashCache(!!e.shiftKey, btnEl));
+  }
+}
+
 // Render library stats
 function renderStats(stats) {
+  updateLibraryCacheBanner(stats);
   els.statSongs.textContent = stats.totalSongs;
   els.statStems.textContent = stats.totalStems;
   els.statM4as.textContent = stats.totalM4as;

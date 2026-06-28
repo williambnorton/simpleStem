@@ -679,6 +679,14 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
         <!-- Library tab — full-width song table -->
         <section class="tab-pane tab-pane-active" data-tab-pane="library">
         <section class="library-section glass">
+          <!-- Cache contract banner. Visible only when the library has uncached
+               songs. Inline action button kicks off the flash-cache job; the
+               banner re-evaluates from the next library refresh. -->
+          <div id="library-cache-banner" class="library-cache-banner" style="display:none;" role="status">
+            <span class="library-cache-banner-icon" aria-hidden="true">⚠</span>
+            <span class="library-cache-banner-text" id="library-cache-banner-text">…</span>
+            <button type="button" id="library-cache-banner-action" class="library-cache-banner-action">Flash Cache</button>
+          </div>
           <div class="library-header">
             <div class="title-area">
               <h2>Song Library</h2>

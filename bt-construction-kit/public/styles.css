@@ -1706,6 +1706,54 @@ select {
   opacity: 1;
 }
 
+/* Library cache contract banner. Lives at the top of the Library tab when
+   the cache is incomplete. Salmon-amber, eye-catching, single action button. */
+.library-cache-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  margin: 0 0 14px 0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff4cc 0%, #fde68a 100%);
+  border: 1px solid #c2992f;
+  color: #5a4400;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 2px 6px rgba(194, 153, 47, 0.20);
+}
+.library-cache-banner-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.library-cache-banner-text {
+  flex: 1;
+  line-height: 1.35;
+}
+.library-cache-banner-text strong { color: #3b2900; }
+.library-cache-banner-action {
+  flex-shrink: 0;
+  background: #c2992f;
+  color: #fff;
+  border: 1px solid #8a6c1a;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease-out;
+}
+.library-cache-banner-action:hover { background: #d2a93c; }
+.library-cache-banner-action:active { transform: scale(0.96); }
+.library-cache-banner-action:disabled { opacity: 0.6; cursor: wait; }
+.library-cache-banner-action .flash-progress-text {
+  margin-left: 8px;
+  font-weight: 600;
+  opacity: 0.95;
+}
+
 /* Main Content Area */
 .main-content {
   display: flex;
