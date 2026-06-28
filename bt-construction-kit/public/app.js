@@ -2432,8 +2432,25 @@ function renderQueue(q) {
   for (const j of (q.queued || [])) {
     chips.push(`<span class="queue-chip">▦ ${j.name}${j.type === 'setlist' ? ` (${j.songs})` : ''}</span>`);
   }
-  const failed = (q.failed || []).length;
-  if (failed) chips.push(`<span class="queue-chip queue-err">✕ ${failed} failed</span>`);
+  // Webloc-stage failures (yt-dlp couldn't fetch / metadata couldn't be
+  // built). Hover tells the operator what to do.
+  const failedWeblocs = (q.failed || []).length;
+  if (failedWeblocs) {
+    chips.push(
+      `<span class="queue-chip queue-err" ` +
+      `title="${failedWeblocs} .webloc file(s) in INCOMING_WEBLOC/ couldn't be processed — usually yt-dlp got a 403 / video deleted / age-restricted. Open ~/ClaudeDrive/simpleStem/INCOMING_WEBLOC/ in Finder and delete the .failed files, or fix the URL and re-drop.">` +
+      `✕ ${failedWeblocs} webloc failed</span>`
+    );
+  }
+  // Render-stage failures (demucs crashed / OOM / source.wav corrupt).
+  const failedRenders = q.failedRenders || 0;
+  if (failedRenders) {
+    chips.push(
+      `<span class="queue-chip queue-err" ` +
+      `title="${failedRenders} song(s) crashed during Demucs render. The job files are quarantined in STEM_QUEUE/_failed/. Most often a memory error or a malformed source.wav. To retry: move the JSON files back up one level (out of _failed/) — the queue runner will pick them up. To dismiss: delete them.">` +
+      `✕ ${failedRenders} render(s) failed</span>`
+    );
+  }
   el.innerHTML = chips.length ? chips.join(' ') : '<span class="queue-idle">Queue empty</span>';
 
   renderStemProgress(q);
@@ -4435,6 +4452,21 @@ document.addEventListener('DOMContentLoaded', () => {
         _lastXr18Check = Date.now();
         if (!d.ok) throw new Error(d.error || 'probe failed');
         if (d.present && d.isDefaultOutput) {
+          // The probe tells us — server-side, without any user gesture —
+          // how many channels the XR18 has. Pre-AudioContext, this is the
+          // ONLY source of truth: `audioCtx.destination.maxChannelCount`
+          // won't return the real count until the user has clicked
+          // something. Pushing the probe count into `outputChannelCount`
+          // here means the per-strip routing buttons (V/D/B/G/P/O, plus
+          // the channel-grid 3-18) light up the moment the badge turns
+          // green — Bill's "buttons greyed until I press play" complaint.
+          try {
+            const probeChCount = d.channels || 0;
+            if (probeChCount > 0 && outputChannelCount !== probeChCount) {
+              outputChannelCount = probeChCount;
+              if (typeof renderRoutingGrids === 'function') renderRoutingGrids();
+            }
+          } catch (e) {}
           // Cross-check the server probe against what Chrome's AudioContext
           // is actually bound to. If the server says XR18 is the default
           // and reports 18 channels, but Chrome's destination only sees 2,
@@ -10400,6 +10432,50 @@ async function fireAutomationEvent(e) {
   }
 }
 
+// Stem ducking — drops every channel strip's gain to 50% of its current
+// value during clip playback so the clip sits clearly on top of the
+// backing track. Reference-counted (multiple clips overlapping all
+// share the ducked state) and snapshot-based so the original values
+// restore cleanly even if the operator nudges a fader during a clip.
+let _activeClipCount = 0;
+let _duckedSnapshot = null;
+const STEM_DUCK_FACTOR = 0.5;
+const STEM_DUCK_RAMP_SEC = 0.12;
+function startStemDucking() {
+  if (_activeClipCount === 0 && audioCtx && stripNodes) {
+    _duckedSnapshot = {};
+    const now = audioCtx.currentTime;
+    Object.keys(stripNodes).forEach(stem => {
+      const s = stripNodes[stem];
+      if (!s || !s.stripGain || !s.stripGain.gain) return;
+      try {
+        const v = s.stripGain.gain.value;
+        _duckedSnapshot[stem] = v;
+        s.stripGain.gain.cancelScheduledValues(now);
+        s.stripGain.gain.setValueAtTime(v, now);
+        s.stripGain.gain.linearRampToValueAtTime(v * STEM_DUCK_FACTOR, now + STEM_DUCK_RAMP_SEC);
+      } catch (er) { /* gain.value may be unsupported on some nodes; ignore */ }
+    });
+  }
+  _activeClipCount++;
+}
+function endStemDucking() {
+  _activeClipCount = Math.max(0, _activeClipCount - 1);
+  if (_activeClipCount === 0 && audioCtx && stripNodes && _duckedSnapshot) {
+    const now = audioCtx.currentTime;
+    Object.keys(_duckedSnapshot).forEach(stem => {
+      const s = stripNodes[stem];
+      if (!s || !s.stripGain || !s.stripGain.gain) return;
+      try {
+        s.stripGain.gain.cancelScheduledValues(now);
+        s.stripGain.gain.setValueAtTime(s.stripGain.gain.value, now);
+        s.stripGain.gain.linearRampToValueAtTime(_duckedSnapshot[stem], now + STEM_DUCK_RAMP_SEC);
+      } catch (er) {}
+    });
+    _duckedSnapshot = null;
+  }
+}
+
 // Play a CUSTOM_LOOPS sample in parallel with the backing track. Each
 // firing gets its own Audio element wired into the master gain bus so
 // it inherits the master volume + obeys master mute. We don't loop
@@ -10435,10 +10511,21 @@ function firePlayClip(e) {
         console.warn('[play-clip] createMediaElementSource failed:', er);
       }
     }
-    a.addEventListener('ended', () => {
+    let endedFired = false;
+    const onEnded = () => {
+      if (endedFired) return;
+      endedFired = true;
+      endStemDucking();
       try { a.removeAttribute('src'); a.load(); } catch (er) {}
+    };
+    a.addEventListener('ended', onEnded);
+    a.addEventListener('error', onEnded);
+    startStemDucking();
+    a.play().catch(er => {
+      console.warn('[play-clip] play failed:', er);
+      // Play failed → release the ducking slot we just took.
+      onEnded();
     });
-    a.play().catch(er => console.warn('[play-clip] play failed:', er));
   } catch (er) { console.warn('[play-clip] fire failed:', er); }
 }
 

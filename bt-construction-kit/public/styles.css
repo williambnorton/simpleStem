@@ -1760,6 +1760,36 @@ select {
   flex-direction: column;
   height: 100vh;
   overflow-y: auto;
+  /* Always-visible scrollbar so the operator can see scroll position at a
+     glance + drag to jump quickly. The default behavior (auto-hide on
+     macOS) leaves no visual indicator that more content exists below
+     the visible viewport. */
+  scrollbar-width: auto;        /* Firefox: full-width track */
+  scrollbar-gutter: stable;     /* reserve track width even when empty */
+}
+/* WebKit (Chrome / Safari): force the scrollbar to always render with a
+   high-contrast thumb. Default macOS behavior hides the bar until you
+   scroll, which is why Bill kept losing his place. */
+.main-content::-webkit-scrollbar {
+  width: 12px;
+  background: transparent;
+}
+.main-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+.main-content::-webkit-scrollbar-thumb {
+  background: rgba(110, 170, 235, 0.45);
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0);
+  background-clip: padding-box;
+}
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(110, 170, 235, 0.75);
+  background-clip: padding-box;
+}
+
+.main-content {
   /* Tighter LEFT padding so the sidebar feels close to the main content.
      Original 24px on all sides ate space; left dropped to 12px so the gap
      between sidebar (now wider) and the player is half what it was. */

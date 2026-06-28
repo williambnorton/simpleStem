@@ -2181,12 +2181,28 @@ app.get('/api/queue', (req, res) => {
     }
     if (fs.existsSync(QUEUE_DIR)) {
       for (const entry of fs.readdirSync(QUEUE_DIR)) {
-        if (entry.startsWith('.') || entry === '_done') continue;
+        // Skip the housekeeping subfolders. `_done` is render-success
+        // archive; `_failed` is render-failure archive — neither belongs
+        // in the queued list. Pre-fix the `_failed/` subfolder was being
+        // rendered as if it were a queued setlist named `_failed (N)`
+        // which terrified the operator.
+        if (entry.startsWith('.') || entry === '_done' || entry === '_failed') continue;
         const p = path.join(QUEUE_DIR, entry);
         const st = fs.statSync(p);
         if (st.isDirectory()) out.queued.push({ name: entry, type: 'setlist', songs: countJson(p) });
         else if (entry.endsWith('.json')) out.queued.push({ name: entry, type: 'single', songs: 1 });
       }
+      // Surface the failed-renders count as a separate field so the
+      // client can show it with proper "what is this" framing instead
+      // of pretending it's a queued setlist.
+      try {
+        const failedDir = path.join(QUEUE_DIR, '_failed');
+        if (fs.existsSync(failedDir)) {
+          out.failedRenders = countJson(failedDir);
+        } else {
+          out.failedRenders = 0;
+        }
+      } catch (e) { out.failedRenders = 0; }
       const cur = path.join(QUEUE_DIR, '.current');
       if (fs.existsSync(cur)) {
         try { out.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
