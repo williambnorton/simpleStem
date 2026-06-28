@@ -59,8 +59,126 @@ const audioElements = {
   piano: new Audio(),
   other: new Audio()
 };
+// Wire instrumentation immediately so every state transition lands in
+// SS_DEBUG from the first src assignment onward. (The forever-on
+// listeners coexist with the watchdog's one-shot oncanplay assignment.)
+// Deferred to first call after SS_DEBUG / installAudioInstrumentation
+// are defined (they're below in source order; setTimeout 0 hoists the
+// wire-up to after module init).
+setTimeout(() => {
+  try {
+    for (const ch of Object.keys(audioElements)) {
+      installAudioInstrumentation(ch, audioElements[ch]);
+    }
+    SS_DEBUG.log('init', 'audio instrumentation installed', { channels: Object.keys(audioElements) });
+  } catch (e) { console.warn('audio instrumentation failed:', e); }
+}, 0);
 
 const CHANNELS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
+
+// ─── INSTRUMENTATION (2026-06-28) ────────────────────────────────────────
+// Bill's directive: "install instrumentation and walk me through an
+// experiment path to find the bug." Every interesting client-side event
+// is logged with a wall-clock timestamp and a perf.now() offset; the
+// recent buffer is queryable from DevTools console via the globals
+// installed below. Disable in production by setting SS_DEBUG.enabled=false.
+const SS_DEBUG = {
+  events: [],
+  enabled: true,
+  cap: 800,
+  log(category, message, data) {
+    if (!this.enabled) return;
+    const e = {
+      t:  performance.now(),
+      ts: new Date().toISOString().slice(11, 23),
+      category, message,
+      data: data == null ? null : data,
+    };
+    this.events.push(e);
+    if (this.events.length > this.cap) this.events.shift();
+    // Console echo so the operator can watch live without dumping.
+    try {
+      console.log(`[${e.ts}] [${category}] ${message}`, data || '');
+    } catch (er) {}
+  },
+  dumpRecent(seconds) {
+    seconds = seconds || 15;
+    const cutoff = performance.now() - seconds * 1000;
+    const recent = this.events.filter(e => e.t >= cutoff);
+    console.group(`SS_DEBUG events (last ${seconds}s, ${recent.length} entries)`);
+    for (const e of recent) {
+      console.log(`${e.ts}  ${e.category.padEnd(12)}  ${e.message}`, e.data || '');
+    }
+    console.groupEnd();
+    return recent;
+  },
+  clear() { this.events.length = 0; console.log('SS_DEBUG cleared'); },
+};
+window.__simpleStemDebug = SS_DEBUG;
+
+// One-shot snapshot of every audio element + cache + prefetcher state.
+// Call from console when something looks wrong: __simpleStemDiag()
+window.__simpleStemDiag = function () {
+  const lines = [];
+  lines.push(`time: ${new Date().toISOString()}`);
+  lines.push(`audioCtx.state: ${typeof audioCtx !== 'undefined' && audioCtx ? audioCtx.state : '(none)'}`);
+  lines.push(`audioCtx.destination.maxChannelCount: ${typeof audioCtx !== 'undefined' && audioCtx ? audioCtx.destination.maxChannelCount : '?'}`);
+  lines.push(`outputChannelCount: ${typeof outputChannelCount !== 'undefined' ? outputChannelCount : '?'}`);
+  lines.push(`_clickInProgress: ${typeof _clickInProgress !== 'undefined' ? _clickInProgress : '?'}`);
+  lines.push(`stemCache.size: ${stemCache ? stemCache.size : 0}`);
+  lines.push(`_stemPrefetchInFlight: ${typeof _stemPrefetchInFlight !== 'undefined' ? _stemPrefetchInFlight : '?'}`);
+  lines.push(`_stemPrefetchQueue.length: ${typeof _stemPrefetchQueue !== 'undefined' ? _stemPrefetchQueue.length : '?'}`);
+  lines.push(`server-stale class: ${document.body.classList.contains('server-stale')}`);
+  lines.push(`currentSong: ${currentSong ? (currentSong.folderName || currentSong.title) : '(none)'}`);
+  lines.push('');
+  lines.push('audio elements:');
+  const RS_NAMES = ['HAVE_NOTHING','HAVE_METADATA','HAVE_CURRENT_DATA','HAVE_FUTURE_DATA','HAVE_ENOUGH_DATA'];
+  const NS_NAMES = ['NETWORK_EMPTY','NETWORK_IDLE','NETWORK_LOADING','NETWORK_NO_SOURCE'];
+  for (const ch of CHANNELS) {
+    const ae = audioElements && audioElements[ch];
+    if (!ae) { lines.push(`  ${ch}: (no element)`); continue; }
+    const src = ae.src ? (ae.src.startsWith('blob:') ? 'blob:…' : ae.src.split('/').slice(-3).join('/')) : '(empty)';
+    lines.push(`  ${ch}:`);
+    lines.push(`    src=${src}`);
+    lines.push(`    readyState=${ae.readyState} (${RS_NAMES[ae.readyState] || '?'})`);
+    lines.push(`    networkState=${ae.networkState} (${NS_NAMES[ae.networkState] || '?'})`);
+    lines.push(`    paused=${ae.paused}  currentTime=${ae.currentTime.toFixed(2)}  duration=${isNaN(ae.duration) ? 'NaN' : ae.duration.toFixed(2)}`);
+    lines.push(`    buffered=${ae.buffered.length} ranges  error=${ae.error ? ae.error.code : 'null'}`);
+  }
+  const out = lines.join('\n');
+  console.log(out);
+  return out;
+};
+
+// Attach event listeners to each audio element ONCE so we capture every
+// HTMLMediaElement event throughout its lifetime. These survive src
+// changes because they're set with addEventListener, not the oncanplay
+// property (the watchdog uses the property assignment for its one-shot
+// listener; this is a parallel forever-on listener).
+const _AUDIO_EVENTS_TO_LOG = [
+  'loadstart', 'progress', 'suspend', 'abort', 'error', 'emptied', 'stalled',
+  'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough',
+  'playing', 'waiting', 'pause', 'ended',
+];
+function installAudioInstrumentation(channel, audioEl) {
+  if (!audioEl || audioEl._ssInstrumented) return;
+  audioEl._ssInstrumented = true;
+  for (const evt of _AUDIO_EVENTS_TO_LOG) {
+    audioEl.addEventListener(evt, () => {
+      const info = {
+        ch: channel,
+        rs: audioEl.readyState,
+        ns: audioEl.networkState,
+        src: audioEl.src ? (audioEl.src.startsWith('blob:') ? 'blob' : audioEl.src.split('/').slice(-2).join('/')) : '',
+      };
+      if (audioEl.error) info.errCode = audioEl.error.code;
+      if (evt === 'progress' && audioEl.buffered.length) {
+        info.bufferedEnd = audioEl.buffered.end(audioEl.buffered.length - 1).toFixed(2);
+      }
+      SS_DEBUG.log('audio', `${channel}.${evt}`, info);
+    });
+  }
+}
 
 // ─── TOAST (non-blocking transient UI message) ────────────────────────────
 // Bill's contract: cache-first means failures CAN'T be modals or spinners
@@ -151,12 +269,17 @@ function _stemCacheDrainQueue() {
   // Yield to active user clicks. While _clickInProgress is true the
   // queue holds — we resume drainage as soon as the click's buffering
   // watchdog reports ready / failed / cancel.
-  if (_clickInProgress) return;
+  if (_clickInProgress) {
+    try { SS_DEBUG.log('prefetch', 'drain-yield (click in progress)', { queueLen: _stemPrefetchQueue.length, inFlight: _stemPrefetchInFlight }); } catch (e) {}
+    return;
+  }
   while (_stemPrefetchInFlight < STEM_PREFETCH_CONCURRENCY && _stemPrefetchQueue.length) {
     const songBase = _stemPrefetchQueue.shift();
     _stemPrefetchInFlight++;
+    try { SS_DEBUG.log('prefetch', 'fetch-start', { songBase, inFlight: _stemPrefetchInFlight, queueRemaining: _stemPrefetchQueue.length }); } catch (e) {}
     _fetchSongStems(songBase).finally(() => {
       _stemPrefetchInFlight--;
+      try { SS_DEBUG.log('prefetch', 'fetch-done', { songBase, inFlight: _stemPrefetchInFlight }); } catch (e) {}
       _stemCacheDrainQueue();
     });
   }
@@ -5582,6 +5705,7 @@ let _bufferWatchCancel = null;
 // healthy click completes in <500 ms. A click that's still buffering at
 // 3 seconds is by definition a failure — toast and move on.
 function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 1500, hardTimeoutMs = 3000 }) {
+  try { SS_DEBUG.log('watchdog', 'enter', { channels, softWarnMs, hardTimeoutMs, activeCount: activeElements && activeElements.length }); } catch (e) {}
   if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
   // Zero-stem edge case: the song's stems object had no usable sources,
   // so there's literally nothing to wait for. Don't show the spinner —
@@ -5699,9 +5823,19 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
   const hardTimer = setTimeout(() => {
     if (!finished) {
       const missing = channels.filter(c => !loaded.has(c));
+      try {
+        SS_DEBUG.log('watchdog', 'hard-timeout', {
+          loadedCount: loaded.size, totalCount: activeElements.length,
+          loaded: [...loaded], missing,
+          perElementState: activeElements.map((ae, i) => ({
+            ch: channels[i],
+            rs: ae.readyState, ns: ae.networkState,
+            err: ae.error ? ae.error.code : null,
+            src: ae.src ? ae.src.slice(-50) : '(empty)',
+          })),
+        });
+      } catch (e) {}
       if (!loaded.size) {
-        // Nothing loaded at all — this is a failure, not a slow load.
-        // Don't blast through into playback with zero stems.
         console.warn('[buffering] hard timeout with zero loaded stems — failing.');
         fail({ code: 'timeout', message: `no stems responded after ${hardTimeoutMs/1000}s` });
       } else {
@@ -5719,6 +5853,18 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
 
 function loadSong(song, opts) {
   opts = opts || {};
+  // Instrumentation marker — every loadSong call is tagged with the song
+  // identity so the SS_DEBUG timeline shows the trigger point for each
+  // chain of audio events that follows.
+  try {
+    SS_DEBUG.log('loadSong', 'entry', {
+      folderName: song && song.folderName,
+      title: song && song.title,
+      type: song && song.type,
+      autoplay: !!opts.autoplay,
+      _clickInProgress_before: _clickInProgress,
+    });
+  } catch (e) {}
   // CLICK GATE — claim the connection pool so the prefetcher yields. The
   // gate is released when the buffering watchdog completes (ready, fail,
   // or cancel) — see finish() / fail() / cancel() inside watchBuffering.
@@ -5976,21 +6122,32 @@ function loadSong(song, opts) {
     // failure toast instead of a 15-second freeze.
     const folder = song.folderName;
     const cached = stemCache.get(folder);
+    try {
+      SS_DEBUG.log('loadSong', 'stem-branch', {
+        folder,
+        cacheState: cached ? cached.state : 'none',
+        stemsInSong: Object.keys(song.stems || {}),
+      });
+    } catch (e) {}
     // Background prefetch for next time, regardless of which path we take.
     ensureSongStemsCached(folder, /* priority */ true);
     CHANNELS.forEach(chan => {
       const fileName = song.stems[chan];
       let src = '';
+      let srcKind = 'none';
       if (fileName) {
         if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]) {
           // Best case: pure in-memory Blob URL. Zero server touch.
           src = cached.stems[chan];
+          srcKind = 'blob';
         } else {
           // Fall through to server URL. cache-first inside sendCachedAudio
           // serves from ~/.bt-cache in ms. Watchdog bounds at 3 sec.
           src = `/api/audio/stems/${folder}/${fileName}`;
+          srcKind = 'server';
         }
       }
+      try { SS_DEBUG.log('src', `${chan} ← ${srcKind}`, { chan, fileName, srcKind }); } catch (e) {}
       setAudioSrc(audioElements[chan], src);
       const strip = document.querySelector(`.${chan}-strip`);
       if (strip) strip.style.display = fileName ? 'flex' : 'none';
