@@ -1146,15 +1146,18 @@ function ensureCached(sourcePath, cachePath) {
 // in from Google Drive in parallel. Uses fs.promises (async I/O) and
 // awaits each file so we yield to incoming requests between copies.
 const fsp = fs.promises;
-async function ensureCachedAsync(sourcePath, cachePath) {
+async function ensureCachedAsync(sourcePath, cachePath, opts) {
+  const force = !!(opts && opts.force);
   try {
-    try {
-      const [csz, ssz] = await Promise.all([
-        fsp.stat(cachePath).then(s => s.size).catch(() => -1),
-        fsp.stat(sourcePath).then(s => s.size).catch(() => -2)
-      ]);
-      if (csz > 0 && csz === ssz) return cachePath; // good cache hit
-    } catch (e) {}
+    if (!force) {
+      try {
+        const [csz, ssz] = await Promise.all([
+          fsp.stat(cachePath).then(s => s.size).catch(() => -1),
+          fsp.stat(sourcePath).then(s => s.size).catch(() => -2)
+        ]);
+        if (csz > 0 && csz === ssz) return cachePath; // good cache hit
+      } catch (e) {}
+    }
     await fsp.mkdir(path.dirname(cachePath), { recursive: true });
     await fsp.copyFile(sourcePath, cachePath);
     return cachePath;
@@ -1850,15 +1853,44 @@ if (process.env.SIMPLE_STEM_PRECACHE_ALL === '1') {
 // playback-ready m4a copies for the portal. A .cached sentinel is written
 // per folder so the UI can mark rows ready and Gig Mode can hide uncached
 // rows accurately.
-async function precacheAllStemsM4a() {
-  if (!fs.existsSync(STEMS_DIR)) return;
+// Module-level state for the flash-cache UI button. Exposed via
+// /api/cache/status so the client can poll progress. Reset on each
+// fresh run (boot, hourly tick, or button press).
+let cacheJobState = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  total: 0,
+  done: 0,
+  copied: 0,
+  skipped: 0,
+  failed: 0,
+  trigger: null,    // 'boot' | 'hourly' | 'manual' | 'manual-force'
+  forceMode: false, // when true, overwrite cached files (bytes don't change but mtime refreshes)
+};
+
+async function precacheAllStemsM4a(opts) {
+  const force = !!(opts && opts.force);
+  const trigger = (opts && opts.trigger) || 'auto';
+  if (cacheJobState.running) {
+    console.log(`[stem precache] already running — ignoring ${trigger} request`);
+    return cacheJobState;
+  }
+  if (!fs.existsSync(STEMS_DIR)) return cacheJobState;
+  cacheJobState = {
+    running: true,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    total: 0, done: 0, copied: 0, skipped: 0, failed: 0,
+    trigger, forceMode: force,
+  };
   const t0 = Date.now();
-  let folders = 0, copied = 0, skipped = 0, failed = 0;
   try {
     const songFolders = (await fsp.readdir(STEMS_DIR, { withFileTypes: true }))
       .filter(d => d.isDirectory())
       .map(d => d.name);
-    console.log(`[stem precache] starting — ${songFolders.length} song folders (4 in parallel)`);
+    cacheJobState.total = songFolders.length;
+    console.log(`[stem precache] starting (${trigger}${force ? ', FORCE' : ''}) — ${songFolders.length} song folders (4 in parallel)`);
     await runWithConcurrency(songFolders, 4, async (song) => {
       try {
         const src = path.join(STEMS_DIR, song);
@@ -1868,32 +1900,58 @@ async function precacheAllStemsM4a() {
         let localCopied = 0;
         for (const f of files) {
           const cachePath = path.join(dst, f);
-          if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
-            skipped++; continue;
+          if (!force && fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
+            cacheJobState.skipped++;
+            continue;
           }
           try {
-            await ensureCachedAsync(path.join(src, f), cachePath);
-            copied++; localCopied++;
-          } catch (e) { failed++; }
+            await ensureCachedAsync(path.join(src, f), cachePath, { force });
+            cacheJobState.copied++;
+            localCopied++;
+          } catch (e) { cacheJobState.failed++; }
         }
-        // Per-folder sentinel — flips the UI's READY chip.
         try {
           await fsp.writeFile(
             path.join(dst, '.cached'),
             JSON.stringify({ at: new Date().toISOString(), files: localCopied })
           );
-        } catch (e) { /* sentinel best-effort */ }
-        folders++;
-        if (folders % 25 === 0) {
-          console.log(`[stem precache] progress: ${folders}/${songFolders.length} folders`);
+        } catch (e) {}
+        cacheJobState.done++;
+        if (cacheJobState.done % 25 === 0) {
+          console.log(`[stem precache] progress: ${cacheJobState.done}/${cacheJobState.total} folders`);
         }
-      } catch (e) { failed++; }
+      } catch (e) { cacheJobState.failed++; }
     });
-    console.log(`[stem precache] done — ${folders} folders, copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+    console.log(`[stem precache] done — ${cacheJobState.done} folders, copied ${cacheJobState.copied}, skipped ${cacheJobState.skipped}, failed ${cacheJobState.failed} (${Math.round((Date.now()-t0)/1000)}s)`);
   } catch (e) {
     console.warn('[stem precache] failed:', e.message);
+  } finally {
+    cacheJobState.running = false;
+    cacheJobState.finishedAt = new Date().toISOString();
   }
+  return cacheJobState;
 }
+
+// Manual Flash Cache trigger — the operator-facing "make sure every song
+// is offline-ready" button. Idempotent; returns immediately with the
+// current state. Client polls /api/cache/status to track progress.
+// Memory: "all songs' m4a stems must be in the cache always" (CLAUDE.md).
+app.post('/api/cache/flash', (req, res) => {
+  const force = !!(req.body && req.body.force);
+  if (cacheJobState.running) {
+    return res.json({ ok: true, alreadyRunning: true, state: cacheJobState });
+  }
+  // Fire and don't await — endpoint returns immediately, work happens in
+  // background. Client polls /status.
+  setImmediate(() => precacheAllStemsM4a({
+    force,
+    trigger: force ? 'manual-force' : 'manual',
+  }));
+  res.json({ ok: true, started: true, force });
+});
+app.get('/api/cache/status', (req, res) => {
+  res.json({ ok: true, state: cacheJobState });
+});
 // Full-library stem precache is the DEFAULT now. The portal pulls every
 // m4a stem in STEMS/ into ~/.bt-cache/STEMS/ at boot and then again every
 // hour. Result: any song plays instantly with no Drive fetch. Total
@@ -1903,8 +1961,8 @@ async function precacheAllStemsM4a() {
 // starts answering requests immediately and the cache fills in the
 // background. The hourly tick picks up any newly-added songs and skips
 // already-cached files cheaply (mtime+size check).
-setImmediate(precacheAllStemsM4a);
-setInterval(precacheAllStemsM4a, 60 * 60 * 1000);
+setImmediate(() => precacheAllStemsM4a({ trigger: 'boot' }));
+setInterval(() => precacheAllStemsM4a({ trigger: 'hourly' }), 60 * 60 * 1000);
 
 // Walk every CUSTOM_LOOPS/*.m4a into ~/.bt-cache/CUSTOM_LOOPS/ so play-clip
 // actions fire instantly during a gig with no Drive latency. Clips are

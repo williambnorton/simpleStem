@@ -4335,6 +4335,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (swxr) swxr.addEventListener('click', () => switchOsOutputAndReload('XR18', swxr));
   const swsys = document.getElementById('btn-switch-sysout');
   if (swsys) swsys.addEventListener('click', () => switchOsOutputAndReload('MacBook Pro Speakers', swsys));
+  const flash = document.getElementById('btn-flash-cache');
+  if (flash) flash.addEventListener('click', (e) => runFlashCache(!!e.shiftKey, flash));
   const snap = document.getElementById('btn-snapshot-state');
   if (snap) snap.addEventListener('click', async () => {
     // Visual feedback BEFORE the async work — pressed state is immediate so
@@ -4496,6 +4498,92 @@ async function playXr18TestTone() {
   } finally {
     testToneInProgress = false;
     if (btn) { btn.disabled = false; btn.classList.remove('is-testing'); }
+  }
+}
+
+// "Flash cache" — force every song's six m4a stems into ~/.bt-cache so every
+// song in the library plays end-to-end with NO wifi. Press before leaving
+// for a gig. The button stays in a "running" state with live progress text
+// until the server's precache job finishes. Shift+click forces overwrite
+// of existing cache files (use when you suspect cache corruption).
+//
+// Why a dedicated button: simpleStem's contract is "every song in the
+// library plays offline". There is no warming phase. This button is the
+// operator's manual confirmation that the rig is gig-ready.
+let flashCachePolling = false;
+async function runFlashCache(force, btn) {
+  if (flashCachePolling) return;
+  flashCachePolling = true;
+  const origTitle = btn ? btn.title : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('is-flashing');
+    btn.title = 'Flash cache in progress…';
+  }
+  const ensureLabel = () => {
+    if (!btn) return;
+    if (!btn.querySelector('.flash-progress-text')) {
+      const span = document.createElement('span');
+      span.className = 'flash-progress-text';
+      btn.appendChild(span);
+    }
+  };
+  const setProgress = (txt) => {
+    ensureLabel();
+    const el = btn && btn.querySelector('.flash-progress-text');
+    if (el) el.textContent = txt;
+  };
+  try {
+    const start = await fetch('/api/cache/flash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: !!force }),
+    });
+    if (!start.ok) {
+      alert(`Flash-cache start failed: HTTP ${start.status}`);
+      return;
+    }
+    setProgress('starting…');
+    // Poll until the job finishes. Server-side mtime+size check makes
+    // already-cached files cheap; even a 350-song library finishes in
+    // a few seconds when most stems are already on disk.
+    while (true) {
+      await new Promise(r => setTimeout(r, 1000));
+      let state;
+      try {
+        const r = await fetch('/api/cache/status', { cache: 'no-store' });
+        if (!r.ok) throw new Error(`status HTTP ${r.status}`);
+        const j = await r.json();
+        state = j.state;
+      } catch (e) {
+        setProgress('status check failed');
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      if (!state) continue;
+      const pct = state.total ? Math.round((state.done / state.total) * 100) : 0;
+      setProgress(`${state.done}/${state.total} (${pct}%)`);
+      if (!state.running) {
+        const summary = `flash cache ${force ? '(FORCE) ' : ''}done — ` +
+          `${state.done} folders · copied ${state.copied} · skipped ${state.skipped} · failed ${state.failed}`;
+        console.log('[flash-cache]', summary);
+        setProgress(state.failed ? `done · ${state.failed} failed` : 'done ✓');
+        setTimeout(() => {
+          const el = btn && btn.querySelector('.flash-progress-text');
+          if (el) el.remove();
+        }, 4000);
+        break;
+      }
+    }
+  } catch (e) {
+    alert(`Flash-cache failed: ${e.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('is-flashing');
+      btn.title = origTitle;
+    }
+    flashCachePolling = false;
   }
 }
 
@@ -5051,11 +5139,38 @@ function showSongLoadError(base, info) {
         <div>"<strong>${escapeHtml(base || 'unknown')}</strong>" can't play ${reason}. It's now greyed out in the library so you can delete it. Pick another song to keep going.</div>
       </div>
       <button type="button" class="buffering-skip"
-              onclick="document.getElementById('player-buffering-indicator').style.display='none'">Dismiss</button>
+              onclick="window.__dismissFailedSong && window.__dismissFailedSong()">Dismiss</button>
     </div>
   `;
   box.style.display = 'flex';
 }
+
+// "Dismiss" on the Song Files Missing dialog must actually UNLOAD the
+// song — not just hide the dialog. Otherwise the failed song stays
+// "selected" in the UI (title still shown, currentSong still set), the
+// next +Lyric / Section keypress lands on the broken row, and the
+// operator has to manually click another song to escape. Real unload:
+//   1. stopAudio() tears down every audio element's src + aborts fetches
+//   2. currentSong = null clears the playhead-saver target
+//   3. hide the dialog
+//   4. hide the player-active strip so the operator sees "no song loaded"
+//      rather than a half-loaded title bar
+window.__dismissFailedSong = function () {
+  try { stopAudio(); } catch (e) {}
+  try { currentSong = null; } catch (e) {}
+  try {
+    const box = document.getElementById('player-buffering-indicator');
+    if (box) box.style.display = 'none';
+  } catch (e) {}
+  try {
+    const active = document.getElementById('player-active');
+    if (active) active.style.display = 'none';
+  } catch (e) {}
+  try {
+    const collapsed = document.getElementById('player-collapsed');
+    if (collapsed) collapsed.style.display = '';
+  } catch (e) {}
+};
 
 // ── Buffering watchdog ────────────────────────────────────────────────────
 // Replaces the bare-inline "wait for every stem's oncanplaythrough" pattern

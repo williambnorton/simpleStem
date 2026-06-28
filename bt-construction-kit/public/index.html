@@ -490,6 +490,9 @@
                 <button id="btn-snapshot-state" class="restart-circle" title="Snapshot the full audio state (XR18 probe, AudioContext, routing matrix, mixer state, per-strip gain) to the debug log so Claude can read it later. Click before AND after each diagnostic step so the log captures the transition." aria-label="Snapshot state">
                   <i data-lucide="clipboard-list"></i>
                 </button>
+                <button id="btn-flash-cache" class="restart-circle" title="FLASH CACHE — copy every song's six m4a stems from Drive into ~/.bt-cache so every song in the library plays end-to-end with NO wifi. Press this before leaving for a gig. Progress shows on the button itself; safe to repeat. Shift-click forces overwrite of existing cache files." aria-label="Flash-cache all songs">
+                  <i data-lucide="hard-drive-download"></i>
+                </button>
                 <button id="btn-test-tone-mixer" class="restart-circle" title="Round-the-horn channel check. Speaks 'Left, Right, One, Two, Three, Four, Five, Six' onto XR18 outputs 1, 2, 11, 12, 13, 14, 15, 16 in turn. If everything lands on the same speaker, the XR18's USB Sends/Returns map is sending all USB channels to Main LR — open X-Air → Setup → Routing → USB Sends/Returns and map USB 11-16 to six channel strips of your choice." aria-label="Round-the-horn sound check">
                   <i data-lucide="bell"></i>
                 </button>

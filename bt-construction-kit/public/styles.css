@@ -3939,6 +3939,37 @@ input:checked + .slider-round:before {
   transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
+/* Flash-cache button — while running, the button stays in a steady
+   "working" state with a live progress label rendered next to (or under)
+   the icon. */
+#btn-flash-cache.is-flashing {
+  background: rgba(110, 170, 235, 0.85) !important;
+  cursor: progress;
+  animation: flash-cache-pulse 1.4s ease-in-out infinite;
+}
+@keyframes flash-cache-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(110, 170, 235, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(110, 170, 235, 0.30); }
+}
+/* Progress label rendered into the button while a flash is running.
+   Positioned just below the button so we don't break the circle layout. */
+#btn-flash-cache .flash-progress-text {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 6px);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 50;
+}
+#btn-flash-cache { position: relative; }
+
 /* User hid the STEMS variant badge + Gig Mode toggle (06/2026). Elements
    stay in the DOM so JS that toggles their text/state doesn't crash; CSS
    removes them visually. Undo by deleting these two rules. */

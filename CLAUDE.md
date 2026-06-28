@@ -373,6 +373,28 @@ field. This is NOT YET WIRED — see the roadmap.
 
 ## Conventions
 
+- **All songs' m4a stems must be in `~/.bt-cache` at all times — there is NO
+  warming phase.** simpleStem's offline-gig contract is absolute: if a song
+  appears in `/api/library`, its six m4a stems live in `~/.bt-cache/STEMS/<base>/`
+  and are ready for end-to-end playback with no wifi. Bill plays venues with
+  no internet — a "Song failed to load" dialog at downbeat is a show-stopper.
+
+  **What this means in practice:**
+  - Any code path that touches Drive in the audio-serving hot path is a bug.
+    `sendCachedAudio` must serve from `~/.bt-cache` without `existsSync`/`statSync`
+    on the Drive `sourcePath` (synchronous Drive reads wedge Node's event loop
+    when offline; macOS CloudStorage can block 30+ seconds).
+  - The boot-time `precacheAllStemsM4a` is not optional. The Flash Cache
+    button (mixer header, hard-drive-download icon) lets the operator force a
+    full re-precache before leaving for a gig. Shift-click = force overwrite.
+  - `POST /api/cache/flash` triggers it programmatically; `GET /api/cache/status`
+    returns live progress so the UI can show `done/total · copied/skipped/failed`.
+  - A failed `precacheAllStemsM4a` is loud — error banner, not silent fall-through.
+  - The expected library size on disk is library_count × 6 stems × ~5 MB ≈ a few GB
+    for a few hundred songs. Well under the 50 GB `BT_CACHE_CAP_GB` default.
+  - Test the contract: at home, play a song. Disable wifi. Reopen the app.
+    EVERY song in the library must play end-to-end. Any failure is a policy violation.
+
 - **File format policy: m4a only.** The only audio file format simpleStem
   uses going forward is **`.m4a`** (AAC in MPEG-4 container). The single
   exception is **`source.wav`** in each `STEMS/<slug>/` folder — the raw
