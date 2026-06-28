@@ -121,8 +121,9 @@ const els = {
   trackArtist: document.getElementById('active-track-artist'),
   btnLyricAdd: document.getElementById('midi-btn-add-lyric'),
   lyricsModal: document.getElementById('lyrics-modal'),
-  lyricsModalFetch: document.getElementById('lyrics-modal-fetch'),
-  lyricsModalFetching: document.getElementById('lyrics-modal-fetching'),
+  // Genius fetch retired 2026-06-27 — paste-only workflow. The els
+  // entries + handler were removed entirely 2026-06-28 (Bill: "use the
+  // dialog for this now"); no need to keep stubs.
   lyricsModalSave: document.getElementById('lyrics-modal-save'),
   lyricsModalPaste: document.getElementById('lyrics-modal-paste'),
   lyricsModalStatus: document.getElementById('lyrics-modal-status'),
@@ -4358,6 +4359,23 @@ async function kickCoreaudiod() {
 // Same handlers as the legacy top-of-app buttons — only the location
 // changed. Bill: now they sit with the XR18 connection state badge.
 document.addEventListener('DOMContentLoaded', () => {
+  // Performer / Librarian role toggle in the brand chip. The currently-
+  // active role is non-clickable; clicking the inactive role navigates
+  // to its dashboard. We pass ?view=<role> so the server-side default
+  // (based on hostname) gets overridden — useful for inspecting Librarian
+  // state from the Performer machine and vice versa.
+  document.querySelectorAll('#brand-role-toggle .brand-role').forEach(el => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('brand-role-active')) return;
+      const role = el.dataset.role;
+      if (role === 'librarian') {
+        location.href = '/librarian';
+      } else {
+        location.href = '/?view=performer';
+      }
+    });
+  });
+
   const fa = document.getElementById('btn-kick-coreaudio-mixer');
   if (fa) fa.addEventListener('click', kickCoreaudiod);
   const rs = document.getElementById('btn-restart-mixer');
@@ -7217,7 +7235,6 @@ function setupLyrics() {
   if (els.lyricsModal) {
     els.lyricsModal.querySelectorAll('[data-close-lyrics-modal]').forEach(b =>
       b.addEventListener('click', closeLyricsModal));
-    if (els.lyricsModalFetch) els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
     if (els.lyricsModalSave)  els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
     if (els.lyricsModalPaste) els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
     const sh = document.getElementById('lyrics-strip-headers');
@@ -7626,11 +7643,7 @@ function _ensureLyricsModal() {
             <div class="lyrics-modal-section-label" style="margin-top:14px;">lyrics.txt on disk</div>
             <button type="button" id="lyrics-open-txt"        class="lyrics-search-btn lyrics-search-txt"      title="Create STEMS/<song>/lyrics.txt (empty if needed) and open it in TextEdit. Paste lyrics there, save, then click Reload from disk.">📝 Open lyrics.txt</button>
             <button type="button" id="lyrics-reload-txt"      class="lyrics-search-btn lyrics-search-reload"   title="Re-read lyrics.txt from disk into the textarea on the right.">Reload from disk</button>
-            <!-- "Fetch from Genius" button retired 2026-06-27 — paste-only workflow.
-                 The DOM element is kept (display:none) so the existing handler
-                 wiring doesn't error if it's still looking for the id. -->
-            <button type="button" id="lyrics-modal-fetch" style="display:none;" aria-hidden="true">Fetch from Genius (retired)</button>
-            <span id="lyrics-modal-fetching" style="display:none; opacity:0.7; font-size:11px;">fetching…</span>
+            <!-- "Fetch from Genius" retired 2026-06-27 + DOM stub deleted 2026-06-28. -->
             <span id="lyrics-txt-status" style="opacity:0.7; font-size:11px;"></span>
           </div>
           <!-- RIGHT COLUMN: the textarea + counter + strip helpers. -->
@@ -7656,15 +7669,12 @@ function _ensureLyricsModal() {
   els.lyricsModal         = m;
   els.lyricsModalPaste    = m.querySelector('#lyrics-modal-paste');
   els.lyricsModalStatus   = m.querySelector('#lyrics-modal-status');
-  els.lyricsModalFetch    = m.querySelector('#lyrics-modal-fetch');
-  els.lyricsModalFetching = m.querySelector('#lyrics-modal-fetching');
   els.lyricsModalSave     = m.querySelector('#lyrics-modal-save');
   // Wire handlers — idempotent dataset guard so re-injection doesn't
   // double-bind. The handlers reference the (now valid) els references.
   // Re-injected every open, so wire fresh every time. Re-injection guard
   // not needed.
   m.querySelectorAll('[data-close-lyrics-modal]').forEach(b => b.addEventListener('click', closeLyricsModal));
-  els.lyricsModalFetch.addEventListener('click', onLyricsModalFetch);
   els.lyricsModalSave.addEventListener('click', onLyricsModalSave);
   els.lyricsModalPaste.addEventListener('input', _refreshLyricsLineCount);
   m.querySelector('#lyrics-strip-headers').addEventListener('click', stripLyricsHeaders);
@@ -7823,27 +7833,11 @@ async function onLyricsReloadTxt() {
   }
 }
 
-async function onLyricsModalFetch() {
-  const base = currentSong && currentSong.folderName;
-  if (!base) return;
-  els.lyricsModalFetching.style.display = '';
-  els.lyricsModalFetch.disabled = true;
-  try {
-    const r = await fetch(`/api/song/${encodeURIComponent(base)}/fetch-lyrics`, { method: 'POST' });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.lyrics) {
-      els.lyricsModalStatus.textContent = `Genius miss: ${data.error || r.statusText}. Paste lyrics from another source.`;
-      return;
-    }
-    els.lyricsModalPaste.value = data.lyrics;
-    els.lyricsModalStatus.textContent = `Fetched from Genius — review and Save to use them.`;
-  } catch (e) {
-    els.lyricsModalStatus.textContent = `Fetch failed: ${e.message}. Paste manually.`;
-  } finally {
-    els.lyricsModalFetching.style.display = 'none';
-    els.lyricsModalFetch.disabled = false;
-  }
-}
+// onLyricsModalFetch and its server endpoint /api/song/:base/fetch-lyrics
+// were retired 2026-06-27 (lyrics auto-fetch off) and the DOM stub
+// deleted 2026-06-28. Paste workflow is the only path now — left/middle
+// search buttons open new windows, user pastes the result into the
+// textarea, Save persists it to lyrics.txt + metadata.json.lyrics.
 async function onLyricsModalSave() {
   const base = currentSong && currentSong.folderName;
   if (!base) return;
@@ -7932,9 +7926,21 @@ async function checkVersion() {
     const stamp = String(v.running || '');
     const stampAvail = String(v.available || '');
     els.versionRunning.textContent = stamp;
-    document.title = `simpleStem ${stamp}`;
     const brandV = document.getElementById('brand-version');
     if (brandV) brandV.textContent = stamp;
+    // Identity-aware title: "simpleStem Performer V1.MMDDHHMM" so a tab
+    // switcher can tell at a glance which machine each tab is talking to.
+    // We learn the machine from /api/identity (set on the server by
+    // hostname detection); fall back to "Performer" since this page is
+    // index.html, which is the Performer's default view.
+    try {
+      const r = await fetch('/api/identity', { cache: 'no-store' });
+      const j = r.ok ? await r.json() : { machine: 'performer' };
+      const role = (j.machine === 'librarian') ? 'Librarian' : 'Performer';
+      document.title = `simpleStem ${role} ${stamp}`;
+    } catch (e) {
+      document.title = `simpleStem Performer ${stamp}`;
+    }
     if (els.btnUpdate) {
       if (v.updateAvailable) {
         els.btnUpdate.style.display = 'inline-flex';

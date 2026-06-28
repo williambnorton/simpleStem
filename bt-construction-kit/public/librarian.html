@@ -81,6 +81,53 @@
     header .meta .pill.stale {
       background: var(--c-bad);
     }
+    /* Performer · Librarian toggle. Matches the look on index.html in
+       function but uses the Librarian's serif/cream typography. The
+       active role is non-clickable; the inactive role navigates. */
+    .role-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 14px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+    .role-toggle .role {
+      cursor: pointer;
+      padding: 3px 9px;
+      border-radius: 2px;
+      color: var(--ink-dim);
+      border: 1px solid transparent;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .role-toggle .role:hover {
+      background: var(--rule-soft);
+      color: var(--ink);
+    }
+    .role-toggle .role-active {
+      cursor: default;
+      background: var(--ink);
+      color: var(--paper);
+      border-color: var(--ink-2);
+    }
+    .role-toggle .role-active:hover {
+      background: var(--ink);
+      color: var(--paper);
+    }
+    .role-toggle .role-sep { color: var(--rule); font-weight: normal; }
+    .brand-version-inline {
+      margin-left: 12px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      font-weight: normal;
+      letter-spacing: 0;
+      color: var(--ink-dim);
+      vertical-align: middle;
+    }
 
     main { padding: 24px 32px 80px; max-width: 1300px; margin: 0 auto; }
 
@@ -218,8 +265,17 @@
 </head>
 <body>
   <header>
-    <h1>The Librarian
-      <span class="sub">curation desk for the simpleStem song library</span>
+    <h1>simpleStem
+      <!-- Role toggle. Lives in the brand row on every page so the operator
+           can switch views from anywhere. Clicking the inactive role
+           navigates; the active role is a no-op. -->
+      <span class="role-toggle">
+        <span class="role" data-role="performer" title="Switch to Performer view (live mixer + gigs)">Performer</span>
+        <span class="role-sep">·</span>
+        <span class="role role-active" data-role="librarian" title="Currently showing Librarian view">Librarian</span>
+      </span>
+      <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
+      <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library</span>
     </h1>
     <div class="meta">
       <span id="hostname">…</span>
@@ -359,6 +415,40 @@
 
     document.getElementById('hostname').textContent =
       location.host + ' · ' + new Date().toLocaleString();
+
+    // Role toggle — click "Performer" to navigate back to the main app.
+    // The active role on this page is "Librarian" and is non-clickable.
+    document.querySelectorAll('.role-toggle .role').forEach(el => {
+      el.addEventListener('click', () => {
+        if (el.classList.contains('role-active')) return;
+        const role = el.dataset.role;
+        if (role === 'performer') location.href = '/?view=performer';
+        else if (role === 'librarian') location.href = '/?view=librarian';
+      });
+    });
+
+    // Build stamp + machine identity for the page title.
+    (async () => {
+      try {
+        const [vRes, iRes] = await Promise.all([
+          fetch('/api/version', { cache: 'no-store' }),
+          fetch('/api/identity', { cache: 'no-store' }),
+        ]);
+        const v = vRes.ok ? await vRes.json() : null;
+        const i = iRes.ok ? await iRes.json() : null;
+        const stamp = (v && v.running) || '';
+        const bv = document.getElementById('brand-version');
+        if (bv) bv.textContent = stamp;
+        document.title = `simpleStem Librarian ${stamp}`.trim();
+        // If the server says we're not on a Librarian machine, leave a
+        // hint in the host pill so the operator knows the data is being
+        // viewed from the wrong side (data still real — just remote).
+        if (i && i.machine && i.machine !== 'librarian') {
+          const hn = document.getElementById('hostname');
+          if (hn) hn.textContent += `  (viewed from ${i.machine})`;
+        }
+      } catch (e) { /* network / endpoint missing; harmless */ }
+    })();
 
     function setCard(id, stateClass, main, sub) {
       const card = document.getElementById('card-' + id);

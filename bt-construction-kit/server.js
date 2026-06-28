@@ -133,6 +133,50 @@ function getAudioDuration(filePath) {
 app.use(cors());
 app.use(express.json());
 
+// Identity — am I running on the Performer or the Librarian? The two
+// machines run different daemons + have different operator workflows,
+// so visiting `/` should default to the right dashboard:
+//   - Performer (laptop, 36GB, drives XR18): main simpleStem app (mixer,
+//     library, gigs) — i.e. index.html.
+//   - Librarian (mini, 8GB, 24/7 ingest+catalog): the Librarian view —
+//     librarian.html.
+// The operator can still toggle to the other view by clicking the brand
+// chip's [Performer | Librarian] words. Override via SIMPLESTEM_IDENTITY
+// env var for testing / dual-role machines.
+const MACHINE_IDENTITY = (() => {
+  if (process.env.SIMPLESTEM_IDENTITY) return process.env.SIMPLESTEM_IDENTITY.toLowerCase();
+  const hn = os.hostname().toLowerCase();
+  if (hn.includes('librarian')) return 'librarian';
+  if (hn.includes('performer')) return 'performer';
+  // Fall back to performer — historically the laptop has been the only
+  // machine running this server, and dropping a librarian onto an
+  // unknown host would be more confusing than dropping a performer.
+  return 'performer';
+})();
+console.log(`[identity] machine = ${MACHINE_IDENTITY} (hostname: ${os.hostname()})`);
+
+// Identity-aware root — MUST be registered before express.static, which
+// would otherwise serve index.html for every `/` regardless of machine.
+// The toggle widget in either page (?view=librarian / ?view=performer)
+// short-circuits this default when the operator wants the other view.
+app.get('/', (req, res, next) => {
+  const wantView = (req.query.view || '').toLowerCase();
+  const target = (wantView === 'librarian' || wantView === 'performer')
+    ? wantView
+    : MACHINE_IDENTITY;
+  if (target === 'librarian') {
+    return res.sendFile(path.join(__dirname, 'public', 'librarian.html'));
+  }
+  // 'performer' or anything else → main app.
+  return next();   // let express.static pick up /index.html
+});
+
+// Small endpoint the client uses to learn which machine it's talking to,
+// so the brand chip can light up the correct half of the toggle.
+app.get('/api/identity', (req, res) => {
+  res.json({ machine: MACHINE_IDENTITY, hostname: os.hostname() });
+});
+
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 

@@ -320,6 +320,46 @@ select {
 .brand-logo span { color: var(--text-main) !important; -webkit-text-fill-color: var(--text-main) !important; background: none !important; }
 .brand-badge { background: #7c4dff !important; color: #fff !important; }
 
+/* Performer / Librarian role toggle inside the brand row. The active role
+   is the one currently rendered. Click the inactive role to switch views.
+   Lives inline with the "simpleStem" word so the whole line reads
+   "simpleStem  Performer · Librarian  V1.MMDDHHMM" at a glance. */
+.brand-role-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.brand-role {
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.brand-role:hover { background: rgba(124, 77, 255, 0.18); color: #fff; }
+.brand-role-active {
+  cursor: default;
+  background: #7c4dff;
+  color: #fff;
+  border-color: #5b21b6;
+}
+.brand-role-active:hover {
+  background: #7c4dff;
+  color: #fff;
+}
+.brand-role-sep {
+  color: #475569;
+  font-weight: 400;
+}
+
 /* Track title in player — strong dark, no neon gradient that disappears on white */
 .track-title { color: var(--text-main) !important; -webkit-text-fill-color: var(--text-main) !important; background: none !important; }
 .track-artist { color: var(--text-muted) !important; }

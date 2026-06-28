@@ -33,6 +33,13 @@
         <div class="brand-logo">
           <i data-lucide="waves" class="logo-icon glow-purple"></i>
           <span>simpleStem</span>
+          <!-- View toggle. On this page (index.html) "Performer" is the
+               current view. Click "Librarian" to navigate to /librarian. -->
+          <span class="brand-role-toggle" id="brand-role-toggle">
+            <span class="brand-role brand-role-active" data-role="performer" title="Currently showing Performer view (live mixer + gigs)">Performer</span>
+            <span class="brand-role-sep">·</span>
+            <span class="brand-role" data-role="librarian" title="Switch to Librarian view (ingest + catalog + sheet sync)">Librarian</span>
+          </span>
         </div>
         <span id="brand-version" class="brand-version" title="Performer version (V1.MMDDHHMM)"></span>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
