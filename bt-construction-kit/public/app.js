@@ -116,12 +116,25 @@ const STEM_CACHE_PENDING  = 'pending';
 const STEM_CACHE_FETCHING = 'fetching';
 const STEM_CACHE_READY    = 'ready';
 const STEM_CACHE_FAILED   = 'failed';
-// How many songs can be fetching simultaneously. Each fetch is up to ~30 MB
-// total (6 stems × ~5 MB); 2 in parallel keeps the network busy without
-// hogging Chrome's per-origin connection pool of 6.
-const STEM_PREFETCH_CONCURRENCY = 2;
+// Chrome's per-origin HTTP/1.1 connection pool maxes at 6 simultaneous
+// requests. The user's click on a song row fires 6 audio-element fetches
+// (one per stem); if the prefetcher is ALSO mid-fetch on its own batch,
+// the click's requests get queued. That's what caused the EPIPE bug
+// 2026-06-28 — Bill's "no stems responded after 3s" toast was the click
+// timing out behind a prefetcher batch.
+//
+// Two mitigations:
+//   1) Background concurrency is 1 (was 2). Leaves 5 connections free
+//      for any user-initiated request.
+//   2) A "click in progress" gate (set when loadSong starts, cleared
+//      when buffering watchdog finishes or fails). While set, the
+//      prefetcher drainage loop won't dispatch new fetches — already-
+//      in-flight ones run to completion, but no new ones start. The
+//      user's click owns the connection pool.
+const STEM_PREFETCH_CONCURRENCY = 1;
 let _stemPrefetchInFlight = 0;
 const _stemPrefetchQueue = [];
+let _clickInProgress = false;
 
 function _stemCacheNotify(songBase) {
   // Update any UI affordances that reflect cache state (ready badges in
@@ -135,6 +148,10 @@ function _stemCacheNotify(songBase) {
   try { window.dispatchEvent(new CustomEvent('stemcache-changed', { detail: { songBase } })); } catch (e) {}
 }
 function _stemCacheDrainQueue() {
+  // Yield to active user clicks. While _clickInProgress is true the
+  // queue holds — we resume drainage as soon as the click's buffering
+  // watchdog reports ready / failed / cancel.
+  if (_clickInProgress) return;
   while (_stemPrefetchInFlight < STEM_PREFETCH_CONCURRENCY && _stemPrefetchQueue.length) {
     const songBase = _stemPrefetchQueue.shift();
     _stemPrefetchInFlight++;
@@ -5610,10 +5627,14 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
     clearInterval(refreshTimer);
     els.buffering.style.display = 'none';
     activeElements.forEach(ae => {
+      try { ae.oncanplay = null; } catch (e) {}
       try { ae.oncanplaythrough = null; } catch (e) {}
       try { ae.onerror = null; } catch (e) {}
     });
     if (_bufferWatchCancel === cancel) _bufferWatchCancel = null;
+    // Release the click gate so the prefetcher can resume.
+    _clickInProgress = false;
+    try { _stemCacheDrainQueue(); } catch (e) {}
     try { onReady && onReady(reason); } catch (e) { console.warn('[buffering] onReady failed:', e); }
   };
   const fail = (info) => {
@@ -5623,21 +5644,41 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
     clearTimeout(hardTimer);
     clearInterval(refreshTimer);
     activeElements.forEach(ae => {
+      try { ae.oncanplay = null; } catch (e) {}
       try { ae.oncanplaythrough = null; } catch (e) {}
       try { ae.onerror = null; } catch (e) {}
     });
     if (_bufferWatchCancel === cancel) _bufferWatchCancel = null;
+    // Release the click gate so the prefetcher can resume.
+    _clickInProgress = false;
+    try { _stemCacheDrainQueue(); } catch (e) {}
     // We DON'T hide the buffering box — the failure UI lives in the same
     // box. Caller's onFailure should call showSongLoadError() to replace
     // the spinner content with a clear error message.
     try { onFailure && onFailure(info); } catch (e) { console.warn('[buffering] onFailure failed:', e); }
   };
-  const cancel = () => { if (!finished) { finished = true; clearTimeout(softTimer); clearTimeout(hardTimer); clearInterval(refreshTimer); } };
+  const cancel = () => {
+    if (!finished) {
+      finished = true;
+      clearTimeout(softTimer); clearTimeout(hardTimer); clearInterval(refreshTimer);
+      _clickInProgress = false;
+      try { _stemCacheDrainQueue(); } catch (e) {}
+    }
+  };
 
   channels.forEach((chan, i) => {
     const ae = activeElements[i];
     try { ae.load(); } catch (e) {}
-    ae.oncanplaythrough = () => {
+    // Switched canplaythrough → canplay 2026-06-28. canplaythrough waits
+    // for Chrome to be CONFIDENT it can play the whole file without
+    // re-buffering, which for a 4-minute song competing with prefetcher
+    // requests on the same origin can take seconds. canplay fires the
+    // moment we have enough data to start playback — which for a
+    // disk-cache-served stem is ~50–200 ms, well under the 3-sec budget.
+    // For local cached audio "can start playing" effectively means "is
+    // fully loaded" — HTML5 media buffers ahead automatically.
+    ae.oncanplay = () => {
+      ae.oncanplay = null;
       ae.oncanplaythrough = null;
       loaded.add(chan);
       renderCaption();
@@ -5678,6 +5719,10 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
 
 function loadSong(song, opts) {
   opts = opts || {};
+  // CLICK GATE — claim the connection pool so the prefetcher yields. The
+  // gate is released when the buffering watchdog completes (ready, fail,
+  // or cancel) — see finish() / fail() / cancel() inside watchBuffering.
+  _clickInProgress = true;
   // Defer AudioContext creation until the FIRST user gesture has actually
   // happened. Browsers freeze destination.maxChannelCount at ctx-creation
   // time, AND they only see the true device channel count after a user
