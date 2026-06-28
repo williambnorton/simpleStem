@@ -4545,19 +4545,54 @@ document.addEventListener('DOMContentLoaded', () => {
   // Polls /api/health every 3s. If we don't get a successful response
   // for >5s, add body.server-stale so the player-hero-section turns
   // yellow until the next successful ping.
+  //
+  // CHROME THROTTLING: when this tab is backgrounded for ≥5 min Chrome
+  // moves it into "intensive throttling" — setInterval fires once per
+  // minute regardless of HEARTBEAT_INTERVAL_MS. The first poll after
+  // returning to the tab is often the LAST scheduled one which was
+  // already stuck waiting for the throttle slot. That single stuck
+  // request can trigger the stale banner even though the server has
+  // been responsive the whole time. We address this two ways:
+  //   (1) An explicit visibilitychange + focus handler fires an
+  //       immediate fresh heartbeat the moment the tab becomes visible.
+  //   (2) Every heartbeat is now AbortController-bounded at 4 seconds.
+  //       A stuck request can't sit in the queue indefinitely; the next
+  //       interval can dispatch a fresh one.
   let lastHealthAt = Date.now();
+  let _heartbeatInFlight = false;
   const HEARTBEAT_INTERVAL_MS = 3000;
   const STALE_THRESHOLD_MS = 5000;
-  setInterval(async () => {
+  const HEARTBEAT_TIMEOUT_MS = 4000;
+  async function pollHeartbeat() {
+    if (_heartbeatInFlight) return;
+    _heartbeatInFlight = true;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), HEARTBEAT_TIMEOUT_MS);
     try {
-      const r = await fetch('/api/health', { cache: 'no-store' });
+      const r = await fetch('/api/health', { cache: 'no-store', signal: ctrl.signal });
       if (r.ok) lastHealthAt = Date.now();
-    } catch (e) { /* timeout / no-network */ }
-  }, HEARTBEAT_INTERVAL_MS);
+    } catch (e) { /* timeout / aborted / no-network */ }
+    finally {
+      clearTimeout(t);
+      _heartbeatInFlight = false;
+    }
+  }
+  setInterval(pollHeartbeat, HEARTBEAT_INTERVAL_MS);
   setInterval(() => {
     const stale = (Date.now() - lastHealthAt) > STALE_THRESHOLD_MS;
     document.body.classList.toggle('server-stale', stale);
   }, 500);
+  // Tab regains focus / visibility → immediate fresh heartbeat. This is
+  // the recovery path for "I was on another tab for a minute and now the
+  // banner is yellow." A single 4s heartbeat clears stale immediately
+  // even though Chrome's throttled-interval is still on its slow tick.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      lastHealthAt = Date.now() - (STALE_THRESHOLD_MS - 1000);
+      pollHeartbeat();
+    }
+  });
+  window.addEventListener('focus', pollHeartbeat);
 });
 
 // Ground-truth XR18-alive check. Plays a short tone on the current default
