@@ -103,7 +103,10 @@ for scope in "${SCOPE_ARGS[@]}"; do
     else
       fast=$((fast+1))
     fi
-  done < <(find "$scope_dir" -name '*.m4a' -type f -not -name '*.tmp.m4a' -print)
+  done < <(find "$scope_dir" -name '*.m4a' -type f \
+                              -not -name '*.tmp.m4a' \
+                              -not -path '*/.retired/*' \
+                              -print)
 done
 
 echo
