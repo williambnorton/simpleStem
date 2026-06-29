@@ -415,16 +415,25 @@ field. This is NOT YET WIRED — see the roadmap.
   `sendCachedAudio` (cache-first, 3s bounded Drive fallback) — never a
   bare `fs.existsSync`.
 
-- **File format policy: m4a only.** The only audio file format simpleStem
-  uses going forward is **`.m4a`** (AAC in MPEG-4 container). The single
-  exception is **`source.wav`** in each `STEMS/<slug>/` folder — the raw
-  48 kHz ingest we keep so we can re-stem without re-downloading from
-  YouTube. Everything else — the 6 separated stems and the drum-machine
-  patterns — lives as m4a on disk and is served as m4a by the portal.
-  Per-stem `.wav` files written by older versions of `stem.sh` should be
-  cleaned up; see `cleanup_stems_wav.py` at the simpleStem root.
-  **Producers** (`stem.sh` plus any future ingest paths) must emit m4a
-  — never new `.wav` outside of `source.wav`. **Consumers**
+- **File format policy: m4a only — AND moov-first (fast-start).** The only
+  audio file format simpleStem uses going forward is **`.m4a`** (AAC in
+  MPEG-4 container) with the `moov` atom written at the FRONT of the file
+  (`ffmpeg -movflags +faststart`). Without `+faststart`, ffmpeg places
+  `moov` at the END of the file, and Chrome's `<audio>` decoder cannot
+  start playback until the entire file has been downloaded — for a 7-8 MB
+  stem this stalls the media element with `networkState=2, readyState=0`
+  for several seconds even on localhost. That is exactly what wedged
+  Bill's gig on 2026-06-28 and showed up as "no stems responded after 3s"
+  in the portal toast. **Mandatory in every producer:**
+  `ffmpeg -i in.wav -c:a aac -b:a 256k -movflags +faststart out.m4a`.
+  `faststart_m4a.sh` at the simpleStem root rewrites existing files in
+  place. The single exception to the m4a-only rule is **`source.wav`**
+  in each `STEMS/<slug>/` folder — the raw 48 kHz ingest we keep so we
+  can re-stem without re-downloading from YouTube. Per-stem `.wav` files
+  written by older versions of `stem.sh` should be cleaned up; see
+  `cleanup_stems_wav.py` at the simpleStem root. **Producers**
+  (`stem.sh` plus any future ingest paths) must emit fast-start m4a —
+  never new `.wav` outside of `source.wav`. **Consumers**
   (`bt-construction-kit/server.js`, `catalog.py`, the portal) read m4a only.
 
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code

@@ -501,6 +501,117 @@
       font-size: 10px;
       color: var(--ink-dim);
     }
+
+    /* ===================================================================
+       Active Tasks panel — every scheduled background job listed with a
+       countdown bar that ticks down once per second. When a task fires
+       the bar flashes and the row briefly highlights so the operator can
+       SEE the system working.
+       =================================================================== */
+    .tasks-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 980px) { .tasks-grid { grid-template-columns: repeat(2, 1fr); } }
+    .task-card {
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-left: 4px solid var(--c-idle);
+      border-radius: 2px;
+      padding: 10px 12px;
+      position: relative;
+      transition: background 0.35s ease, border-color 0.35s ease;
+    }
+    .task-card.firing {
+      background: var(--c-good-bg);
+      border-left-color: var(--c-good);
+      animation: task-fired 1.6s ease-out 1;
+    }
+    @keyframes task-fired {
+      0%   { box-shadow: 0 0 0 0 rgba(22, 101, 52, 0.75); }
+      50%  { box-shadow: 0 0 16px 4px rgba(22, 101, 52, 0.45); }
+      100% { box-shadow: 0 0 0 0 rgba(22, 101, 52, 0); }
+    }
+    .task-name {
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-variant: small-caps;
+      letter-spacing: 0.05em;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-dim);
+      margin-bottom: 2px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .task-name .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--c-good);
+      display: inline-block;
+      margin-right: 4px;
+      animation: ambient-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes ambient-pulse {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 1; }
+    }
+    .task-countdown {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: 0.02em;
+    }
+    .task-meta {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+      margin-top: 2px;
+    }
+    .task-bar-wrap {
+      height: 6px;
+      background: var(--rule-soft);
+      border-radius: 3px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .task-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #a8b88a 0%, #1e40af 100%);
+      border-radius: 3px;
+      transition: width 0.9s linear;
+    }
+    .task-card.firing .task-bar { background: var(--c-good); }
+
+    /* Per-folder countdown badge — sits in the lower-right of each folder
+       in the SVG, mirroring the file-count badge for time-driven tasks. */
+    .pipeline-svg .folder-timer {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      fill: var(--ink-dim);
+      text-anchor: end;
+      opacity: 0.85;
+    }
+    .pipeline-svg .folder-timer.firing { fill: var(--c-good); opacity: 1; animation: timer-flash 1.6s ease-out 1; }
+    @keyframes timer-flash {
+      0%   { font-size: 9px; }
+      30%  { font-size: 13px; }
+      100% { font-size: 9px; }
+    }
+    /* Ambient micro-motion: file glyphs gently floating inside folders
+       that hold files. Purely decorative; reinforces "this is live". */
+    .pipeline-svg .ambient-doc {
+      pointer-events: none;
+      animation: doc-float 5s ease-in-out infinite;
+    }
+    @keyframes doc-float {
+      0%, 100% { transform: translate(0, 0); }
+      50%      { transform: translate(0, -3px); }
+    }
   </style>
 </head>
 <body>
@@ -585,6 +696,7 @@
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">INCOMING</text>
             <text class="folder-count empty" x="50" y="118" data-count="incoming">0</text>
+            <text class="folder-timer" x="98" y="92" data-timer="incoming"></text>
           </g>
           <g class="folder" data-key="queued" transform="translate(295, 50)">
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
@@ -592,6 +704,7 @@
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">STEM_QUEUE</text>
             <text class="folder-count empty" x="50" y="118" data-count="queued">0</text>
+            <text class="folder-timer" x="98" y="92" data-timer="queued"></text>
           </g>
           <g class="folder" data-key="stems" transform="translate(515, 50)">
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
@@ -599,6 +712,7 @@
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">STEMS</text>
             <text class="folder-count empty" x="50" y="118" data-count="stems">0</text>
+            <text class="folder-timer" x="98" y="92" data-timer="stems"></text>
           </g>
           <g class="folder" data-key="drums" transform="translate(735, 50)">
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
@@ -606,6 +720,7 @@
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">DRUM_MACHINE</text>
             <text class="folder-count empty" x="50" y="118" data-count="drums">0</text>
+            <text class="folder-timer" x="98" y="92" data-timer="drums"></text>
           </g>
           <g class="folder" data-key="clips" transform="translate(955, 50)">
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
@@ -613,6 +728,7 @@
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">CUSTOM_LOOPS</text>
             <text class="folder-count empty" x="50" y="118" data-count="clips">0</text>
+            <text class="folder-timer" x="98" y="92" data-timer="clips"></text>
           </g>
 
           <!-- Health-check checkmark — flashes when /api/librarian/events
@@ -712,6 +828,19 @@
           <div class="c-main" id="missing-main">…</div>
           <div class="c-sub">title or artist blank</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Active tasks — every scheduled background job listed with a
+         countdown bar that ticks down once per second. Flashes when the
+         job fires; the timer in the corresponding folder badge flashes too. -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Active tasks</h2>
+        <span class="blurb">Every background job, with countdown to next run. Flashes when a task fires.</span>
+      </div>
+      <div class="tasks-grid" id="tasks-grid">
+        <div style="grid-column: 1 / -1; padding: 12px; font-style: italic; color: var(--ink-dim); text-align: center;">loading…</div>
       </div>
     </section>
 
@@ -1308,6 +1437,200 @@
     // Refresh the library table periodically so renders that complete
     // while the page is open show up without a manual reload.
     setInterval(loadLibrary, 30000);
+
+    // =================================================================
+    // ACTIVE TASKS — countdown cards + folder-corner timer badges.
+    // The server's task table is fetched periodically; the 1Hz
+    // 'timer-tick' SSE event drives the countdown animation between
+    // refreshes (no extra HTTP traffic).
+    // =================================================================
+    let taskTable = {};         // name -> task object
+    let serverNowOffsetMs = 0;  // serverNow - clientNow, applied to nextRunAt
+
+    async function loadTimers() {
+      try {
+        const r = await fetch('/api/librarian/timers', { cache: 'no-store' });
+        const j = await r.json();
+        if (j.ok) {
+          taskTable = j.tasks || {};
+          serverNowOffsetMs = (j.now || Date.now()) - Date.now();
+          renderTasks();
+        }
+      } catch (e) { /* harmless; will retry */ }
+    }
+
+    function fmtCountdown(ms) {
+      if (ms == null) return '--:--';
+      if (ms < 0) ms = 0;
+      const s = Math.floor(ms / 1000);
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      if (m >= 60) {
+        const h = Math.floor(m / 60);
+        const mm = m % 60;
+        return `${h}h ${mm.toString().padStart(2,'0')}m`;
+      }
+      return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+    }
+    function fmtAgo(ms) {
+      if (ms == null) return 'never';
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      const h = Math.floor(m / 60);
+      return h + 'h ago';
+    }
+
+    function renderTasks() {
+      const names = Object.keys(taskTable);
+      const grid = document.getElementById('tasks-grid');
+      if (!names.length) {
+        grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 12px; font-style: italic; color: var(--ink-dim); text-align: center;">no tracked tasks (yet)</div>`;
+        return;
+      }
+      grid.innerHTML = names.map(name => {
+        const t = taskTable[name];
+        return `<div class="task-card" data-task="${name}">
+          <div class="task-name"><span><span class="live-dot"></span>${escapeHtml(t.label || name)}</span></div>
+          <div class="task-countdown" data-cd="${name}">--:--</div>
+          <div class="task-bar-wrap"><div class="task-bar" data-bar="${name}" style="width: 0%"></div></div>
+          <div class="task-meta" data-meta="${name}">
+            interval ${fmtCountdown(t.intervalMs)} · last run: ${t.lastRunAt ? fmtAgo(Date.now() - t.lastRunAt) : 'never'}${t.lastRunMs != null ? ' (' + t.lastRunMs + 'ms)' : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function updateCountdowns() {
+      const nowAdj = Date.now() + serverNowOffsetMs;
+      for (const name of Object.keys(taskTable)) {
+        const t = taskTable[name];
+        if (!t) continue;
+        const remaining = (t.nextRunAt || 0) - nowAdj;
+        const pct = t.intervalMs
+          ? Math.max(0, Math.min(100, 100 * (1 - remaining / t.intervalMs)))
+          : 0;
+        const cd = document.querySelector(`[data-cd="${name}"]`);
+        if (cd) cd.textContent = fmtCountdown(remaining);
+        const bar = document.querySelector(`[data-bar="${name}"]`);
+        if (bar) bar.style.width = pct.toFixed(1) + '%';
+        // Mirror countdown into the folder badge if the task is bound
+        // to a folder (drum/stems/clips).
+        if (t.folder) {
+          const ft = document.querySelector(`.pipeline-svg [data-timer="${t.folder}"]`);
+          if (ft) ft.textContent = fmtCountdown(remaining);
+        }
+      }
+    }
+    // Local 1Hz tick — doesn't depend on SSE, so the countdown keeps
+    // ticking smoothly even if the SSE channel temporarily drops.
+    setInterval(updateCountdowns, 1000);
+
+    function flashTask(name) {
+      const card = document.querySelector(`.task-card[data-task="${name}"]`);
+      if (card) {
+        card.classList.remove('firing');
+        void card.getBoundingClientRect();
+        card.classList.add('firing');
+        setTimeout(() => card.classList.remove('firing'), 1700);
+      }
+      const t = taskTable[name];
+      if (t && t.folder) {
+        const ft = document.querySelector(`.pipeline-svg [data-timer="${t.folder}"]`);
+        if (ft) {
+          ft.classList.remove('firing');
+          void ft.getBoundingClientRect();
+          ft.classList.add('firing');
+          setTimeout(() => ft.classList.remove('firing'), 1700);
+        }
+      }
+    }
+
+    // Hook into the existing SSE channel — extend startLibrarianSSE's
+    // handlers via the EventSource exposed implicitly. Add listeners to
+    // a fresh EventSource since the original is captured inside its
+    // function scope; both can coexist (browser de-dupes connections).
+    {
+      const es2 = new EventSource('/api/librarian/events');
+      es2.addEventListener('task-fired', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          if (taskTable[j.name]) {
+            taskTable[j.name].lastRunAt = j.at;
+            taskTable[j.name].lastRunOk = j.ok;
+            taskTable[j.name].lastRunMs = j.durationMs;
+            taskTable[j.name].nextRunAt = j.nextRunAt;
+            taskTable[j.name].runCount = (taskTable[j.name].runCount || 0) + 1;
+            // Refresh the meta line with new "last run" stamp.
+            const meta = document.querySelector(`[data-meta="${j.name}"]`);
+            if (meta) meta.textContent =
+              `interval ${fmtCountdown(taskTable[j.name].intervalMs)} · last run: just now (${j.durationMs}ms)`;
+          }
+          flashTask(j.name);
+        } catch (e) {}
+      });
+      es2.addEventListener('timer-tick', (ev) => {
+        try { serverNowOffsetMs = (JSON.parse(ev.data).now || Date.now()) - Date.now(); } catch (e) {}
+      });
+    }
+
+    loadTimers();
+    setInterval(loadTimers, 30 * 1000);
+
+    // =================================================================
+    // AMBIENT DESKTOP MOTION — when a folder has files, draw 1-2 tiny
+    // floating document glyphs inside it so the panel feels alive even
+    // between events. Redraw on every snapshot/added/removed event.
+    // =================================================================
+    function refreshAmbient() {
+      const NS = 'http://www.w3.org/2000/svg';
+      for (const key of Object.keys(folderEls)) {
+        const g = folderEls[key];
+        if (!g) continue;
+        // Drop any previous ambient docs.
+        g.querySelectorAll('.ambient-doc').forEach(n => n.remove());
+        const n = folderCount[key] || 0;
+        if (n <= 0) continue;
+        // 1 doc up to ~3 (scaled log) — purely decorative.
+        const count = Math.min(3, Math.max(1, Math.ceil(Math.log10(n + 1)) + 1));
+        for (let i = 0; i < count; i++) {
+          const doc = document.createElementNS(NS, 'g');
+          doc.setAttribute('class', 'ambient-doc');
+          // Random-ish positions inside the open folder area.
+          const cx = 20 + i * 22 + (i % 2 ? 4 : 0);
+          const cy = 32 + (i % 2 ? -2 : 2);
+          doc.setAttribute('transform', `translate(${cx}, ${cy})`);
+          doc.style.animationDelay = (i * 0.7) + 's';
+          const r = document.createElementNS(NS, 'rect');
+          r.setAttribute('x', '-5'); r.setAttribute('y', '-7');
+          r.setAttribute('width', '10'); r.setAttribute('height', '14');
+          r.setAttribute('fill', '#fffdf6');
+          r.setAttribute('stroke', '#1c1917');
+          r.setAttribute('stroke-width', '1');
+          r.setAttribute('rx', '1');
+          doc.appendChild(r);
+          // Decorative ruled lines on the doc.
+          for (let k = 0; k < 2; k++) {
+            const l = document.createElementNS(NS, 'line');
+            l.setAttribute('x1', '-3'); l.setAttribute('x2', '3');
+            l.setAttribute('y1', -3 + k * 3); l.setAttribute('y2', -3 + k * 3);
+            l.setAttribute('stroke', '#92400e');
+            l.setAttribute('stroke-width', '0.6');
+            doc.appendChild(l);
+          }
+          g.appendChild(doc);
+        }
+      }
+    }
+    // Call refreshAmbient any time a folder count changes. We wrap
+    // setFolderCount so any caller (snapshot, file-added, file-removed)
+    // triggers it.
+    const _origSetFolderCount = setFolderCount;
+    setFolderCount = function(key, n) {
+      _origSetFolderCount(key, n);
+      refreshAmbient();
+    };
   </script>
 </body>
 </html>
