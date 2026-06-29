@@ -2470,53 +2470,89 @@ function librarianBroadcast(eventName, payload) {
 
 // Per-folder snapshot of filenames. fs.watch tells us SOMETHING changed
 // but not what — we diff the new readdir against this snapshot to detect
-// add/remove events. Drive readdirs are fine here because they run on a
-// timer (debounced), not on every request.
+// add/remove events.
+//
+// IMPORTANT — all folder probes use ASYNC fs (fsp.readdir) with a 1.5s
+// Promise.race timeout, NEVER synchronous fs. These folders sit on Drive
+// and a sync readdirSync wedges Node's event loop when Drive is slow,
+// which freezes EVERY request including stems audio. This is the same
+// rule documented in CLAUDE.md "no synchronous Drive reads in any hot
+// endpoint" — reconcile counts as hot because it runs every 5s and on
+// every fs.watch event. (Self-inflicted bug 2026-06-29 — caught before
+// it reached a gig but the cost would have been silent dropouts.)
 const librarianFolderSnapshot = {};
-function snapshotFolder(folder) {
+async function snapshotFolder(folder) {
   if (!folder || !folder.dir) return [];
   try {
-    if (!fs.existsSync(folder.dir)) return [];
-    const entries = fs.readdirSync(folder.dir, { withFileTypes: true });
+    const entries = await Promise.race([
+      fsp.readdir(folder.dir, { withFileTypes: true }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
     return entries
       .filter(d => folder.isDir ? d.isDirectory() : d.isFile())
       .map(d => d.name)
       .filter(folder.match);
-  } catch (e) { return []; }
-}
-
-// Reconciliation tick + initial seed. Compares current readdir against
-// the saved snapshot and emits file-added / file-removed events for any
-// difference. Also rebroadcasts a full state snapshot for clients that
-// just connected mid-stream.
-function reconcileLibrarianFolders() {
-  for (const folder of LIB_WATCH_FOLDERS) {
-    const cur = snapshotFolder(folder);
-    const prev = librarianFolderSnapshot[folder.key] || [];
-    const prevSet = new Set(prev);
-    const curSet  = new Set(cur);
-    for (const name of cur)  if (!prevSet.has(name)) librarianBroadcast('file-added',   { folder: folder.key, name, at: Date.now() });
-    for (const name of prev) if (!curSet.has(name))  librarianBroadcast('file-removed', { folder: folder.key, name, at: Date.now() });
-    librarianFolderSnapshot[folder.key] = cur;
+  } catch (e) {
+    // ENOENT (folder missing) AND drive-stall both fall through to
+    // "treat as empty for this tick". The next reconcile heals if the
+    // folder reappears.
+    return [];
   }
 }
 
-// Seed snapshots so the first reconcile doesn't fire a flood of "added".
-for (const folder of LIB_WATCH_FOLDERS) librarianFolderSnapshot[folder.key] = snapshotFolder(folder);
+// Reconciliation tick. Reads every watched folder IN PARALLEL with a
+// per-folder 1.5s budget, then diffs against the saved snapshot and
+// emits add/remove events. A slow Drive on one folder can't block the
+// others (parallel) and can't wedge the server (bounded timeout).
+let _reconcileInFlight = false;
+async function reconcileLibrarianFolders() {
+  if (_reconcileInFlight) return;     // skip overlapping ticks
+  _reconcileInFlight = true;
+  try {
+    const results = await Promise.all(LIB_WATCH_FOLDERS.map(folder =>
+      snapshotFolder(folder).then(cur => ({ folder, cur }))
+    ));
+    for (const { folder, cur } of results) {
+      const prev = librarianFolderSnapshot[folder.key] || [];
+      const prevSet = new Set(prev);
+      const curSet  = new Set(cur);
+      for (const name of cur)  if (!prevSet.has(name)) librarianBroadcast('file-added',   { folder: folder.key, name, at: Date.now() });
+      for (const name of prev) if (!curSet.has(name))  librarianBroadcast('file-removed', { folder: folder.key, name, at: Date.now() });
+      librarianFolderSnapshot[folder.key] = cur;
+    }
+    // Also push a snapshot event so newly-connected SSE clients see
+    // the full table without waiting for individual deltas.
+    librarianBroadcast('snapshot', { folders: librarianFolderSnapshot, at: Date.now() });
+  } catch (e) {
+    /* per-folder timeouts already caught inside snapshotFolder; this
+       is just a safety net for Promise.all weirdness. */
+  } finally {
+    _reconcileInFlight = false;
+  }
+}
+
+// Seed snapshots ASYNCHRONOUSLY so boot is never blocked by Drive.
+// Fire-and-forget; clients connecting before this finishes get an
+// empty snapshot followed by per-folder updates as data arrives.
+setImmediate(() => { reconcileLibrarianFolders().catch(() => {}); });
 
 // fs.watch on each folder; debounce a quick reconcile after any event
-// (Drive sync can fire many events for one logical change).
+// (Drive sync can fire many events for one logical change). fs.watch
+// itself is async (callback-based) — only the readdir inside reconcile
+// could have been the offender, and that's async now too.
 let _libReconcileTimer = null;
 function scheduleReconcile(delay = 250) {
   if (_libReconcileTimer) return;
   _libReconcileTimer = setTimeout(() => {
     _libReconcileTimer = null;
-    try { reconcileLibrarianFolders(); } catch (e) {}
+    reconcileLibrarianFolders().catch(() => {});
   }, delay);
 }
 for (const folder of LIB_WATCH_FOLDERS) {
   try {
-    if (!fs.existsSync(folder.dir)) { try { fs.mkdirSync(folder.dir, { recursive: true }); } catch (e) {} }
+    // mkdirSync is OK here — runs once at boot for missing folders,
+    // typically a local path (Drive folders already exist).
+    try { fs.mkdirSync(folder.dir, { recursive: true }); } catch (e) {}
     fs.watch(folder.dir, { persistent: false }, () => scheduleReconcile());
   } catch (e) {
     console.warn(`[librarian-watch] could not watch ${folder.dir}:`, e.message);
@@ -2529,15 +2565,25 @@ for (const folder of LIB_WATCH_FOLDERS) {
 //     to tick a visible checkmark animation. Bill: "show a check mark
 //     once a minute as it is being checked."
 //   * Phase poll every 2s for STEM_QUEUE/.current (the active render).
-setInterval(reconcileLibrarianFolders, 5000);
+setInterval(() => { reconcileLibrarianFolders().catch(() => {}); }, 5000);
 let _lastQueuePhase = '';
-setInterval(() => {
+let _phasePollInFlight = false;
+setInterval(async () => {
+  if (_phasePollInFlight) return;
+  _phasePollInFlight = true;
   try {
     const cur = path.join(QUEUE_DIR, '.current');
+    // Bounded async read — STEM_QUEUE sits on Drive. NEVER sync here.
+    let raw = null;
+    try {
+      raw = await Promise.race([
+        fsp.readFile(cur, 'utf8'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+      ]);
+    } catch (e) { /* ENOENT or stall — treat as no current job */ }
     let payload = null;
-    if (fs.existsSync(cur)) {
-      const raw = fs.readFileSync(cur, 'utf8');
-      try { payload = JSON.parse(raw); } catch (e) { payload = { song: raw.trim() }; }
+    if (raw != null) {
+      try { payload = JSON.parse(raw); } catch (e) { payload = { song: String(raw).trim() }; }
     }
     const key = payload ? JSON.stringify(payload) : '';
     if (key !== _lastQueuePhase) {
@@ -2545,8 +2591,58 @@ setInterval(() => {
       librarianBroadcast('phase', { current: payload, at: Date.now() });
     }
   } catch (e) {}
+  finally { _phasePollInFlight = false; }
 }, 2000);
-setInterval(async () => {
+
+// =====================================================================
+// SCHEDULED-TASK TRACKER — every time-driven background job registers
+// itself here so the Librarian's living document can show countdown
+// timers ("next drum precache in 47:12") and animate runs as they fire.
+// The /api/librarian/timers endpoint returns the full table; SSE
+// broadcasts 'task-fired' on each completion + 'timer-tick' once a
+// second so countdowns animate smoothly client-side.
+// =====================================================================
+const scheduledTasks = {};
+function registerTrackedInterval(name, intervalMs, fn, opts) {
+  opts = opts || {};
+  scheduledTasks[name] = {
+    name,
+    label: opts.label || name,
+    folder: opts.folder || null,    // pipeline folder this task affects (for badge placement)
+    intervalMs,
+    lastRunAt: null,
+    lastRunOk: null,
+    lastRunMs: null,
+    runCount: 0,
+    nextRunAt: Date.now() + intervalMs,
+    running: false,
+  };
+  const tick = async () => {
+    const t = scheduledTasks[name];
+    if (!t || t.running) return;
+    t.running = true;
+    const t0 = Date.now();
+    let ok = true;
+    try { await fn(); }
+    catch (e) { ok = false; }
+    const ms = Date.now() - t0;
+    t.lastRunAt = Date.now();
+    t.lastRunOk = ok;
+    t.lastRunMs = ms;
+    t.runCount += 1;
+    t.nextRunAt = Date.now() + intervalMs;
+    t.running = false;
+    librarianBroadcast('task-fired', { name, ok, durationMs: ms, at: t.lastRunAt, nextRunAt: t.nextRunAt });
+  };
+  setInterval(tick, intervalMs);
+  // Fire once shortly after boot so the countdown starts from a real
+  // baseline instead of "never run yet".
+  setTimeout(tick, (opts.initialDelayMs == null ? 1000 : opts.initialDelayMs));
+}
+
+// Drive health probe — bounded 1.5s stat, every 60s. Broadcasts both a
+// 'health' event (the checkmark) and 'task-fired' via the tracker.
+registerTrackedInterval('drive-health', 60 * 1000, async () => {
   const t0 = Date.now();
   let ok = false, latencyMs = null, error = null;
   try {
@@ -2558,7 +2654,19 @@ setInterval(async () => {
     latencyMs = Date.now() - t0;
   } catch (e) { error = (e && e.message) || String(e); }
   librarianBroadcast('health', { check: 'drive', ok, latencyMs, error, at: Date.now() });
-}, 60 * 1000);
+  if (!ok) throw new Error(error || 'drive-stall');
+}, { label: 'Drive availability', folder: null, initialDelayMs: 800 });
+
+// 1Hz tick broadcaster so client countdowns animate. Light payload —
+// only the current Date.now() — clients use their cached task table
+// (refreshed via /api/librarian/timers) to draw bars + mm:ss labels.
+setInterval(() => {
+  librarianBroadcast('timer-tick', { now: Date.now() });
+}, 1000);
+
+app.get('/api/librarian/timers', (req, res) => {
+  res.json({ ok: true, now: Date.now(), tasks: scheduledTasks });
+});
 
 app.get('/api/librarian/events', (req, res) => {
   res.set({
@@ -2592,43 +2700,97 @@ app.get('/api/librarian/events', (req, res) => {
 // The Library view in /librarian renders this list with a Stems Health
 // column so Bill can spot incomplete renders.
 const EXPECTED_STEMS = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
-app.get('/api/librarian/stems-health', (req, res) => {
+// Cached stems-health snapshot. Refreshed in the background by
+// recomputeStemsHealth() — never on the request hot path. ~350 songs
+// × 7 stat calls = ~2500 Drive ops; doing that synchronously inside
+// the request handler would wedge the event loop for several seconds
+// when Drive is slow and break every concurrent stems audio fetch.
+let _stemsHealthCache = { rows: [], computedAt: 0 };
+let _stemsHealthInFlight = false;
+
+async function recomputeStemsHealth() {
+  if (_stemsHealthInFlight) return;
+  _stemsHealthInFlight = true;
+  const t0 = Date.now();
   const rows = [];
   try {
-    if (!fs.existsSync(STEMS_DIR)) return res.json({ ok: true, rows: [] });
-    const dirs = fs.readdirSync(STEMS_DIR, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'));
-    for (const d of dirs) {
-      const dir = path.join(STEMS_DIR, d.name);
-      let present = 0;
-      const missing = [];
-      let totalSize = 0;
-      for (const s of EXPECTED_STEMS) {
+    let dirents;
+    try {
+      dirents = await Promise.race([
+        fsp.readdir(STEMS_DIR, { withFileTypes: true }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 3000)),
+      ]);
+    } catch (e) { _stemsHealthInFlight = false; return; }
+    const dirs = dirents.filter(d => d.isDirectory() && !d.name.startsWith('.'));
+    // Walk songs in parallel batches so one slow folder doesn't gate
+    // the whole list. 8-way concurrency is gentle on Drive.
+    const queue = dirs.slice();
+    async function worker() {
+      while (queue.length) {
+        const d = queue.shift();
+        if (!d) break;
+        const dir = path.join(STEMS_DIR, d.name);
+        let present = 0;
+        const missing = [];
+        let totalSize = 0;
+        await Promise.all(EXPECTED_STEMS.map(async s => {
+          try {
+            const st = await Promise.race([
+              fsp.stat(path.join(dir, s)),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+            ]);
+            if (st.isFile() && st.size > 1024) { present++; totalSize += st.size; }
+            else missing.push(s);
+          } catch (e) { missing.push(s); }
+        }));
+        let title = '', artist = '', bpm = null, key = '', singer = '';
         try {
-          const st = fs.statSync(path.join(dir, s));
-          if (st.isFile() && st.size > 1024) { present++; totalSize += st.size; }
-          else missing.push(s);
-        } catch (e) { missing.push(s); }
+          const raw = await Promise.race([
+            fsp.readFile(path.join(dir, 'metadata.json'), 'utf8'),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+          ]);
+          const meta = JSON.parse(raw);
+          title  = meta.title  || '';
+          artist = meta.artist || '';
+          bpm    = meta.bpm    || null;
+          key    = meta.key    || '';
+          singer = meta.singer_lead || '';
+        } catch (e) {}
+        rows.push({
+          base: d.name, title, artist, bpm, key, singer,
+          stemsPresent: present, stemsTotal: EXPECTED_STEMS.length,
+          missing, sizeBytes: totalSize,
+        });
       }
-      let title = '', artist = '', bpm = null, key = '', singer = '';
-      try {
-        const meta = JSON.parse(fs.readFileSync(path.join(dir, 'metadata.json'), 'utf8'));
-        title  = meta.title  || '';
-        artist = meta.artist || '';
-        bpm    = meta.bpm    || null;
-        key    = meta.key    || '';
-        singer = meta.singer_lead || '';
-      } catch (e) {}
-      rows.push({
-        base: d.name, title, artist, bpm, key, singer,
-        stemsPresent: present, stemsTotal: EXPECTED_STEMS.length,
-        missing, sizeBytes: totalSize,
-      });
     }
+    await Promise.all(Array.from({ length: 8 }, () => worker()));
+    rows.sort((a, b) => (a.title || a.base).localeCompare(b.title || b.base));
+    _stemsHealthCache = { rows, computedAt: Date.now(), durationMs: Date.now() - t0 };
+    console.log(`[stems-health] recomputed ${rows.length} rows in ${_stemsHealthCache.durationMs}ms`);
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message });
+    console.warn('[stems-health] recompute failed:', e.message);
+  } finally {
+    _stemsHealthInFlight = false;
   }
-  res.json({ ok: true, rows });
+}
+// Compute at boot (delayed so audio precaches go first), then every
+// 5 minutes. The Library view refreshes from the cache every 30s
+// client-side; the cache itself refreshes every 5 min server-side.
+setTimeout(() => { recomputeStemsHealth().catch(() => {}); }, 8000);
+setInterval(() => { recomputeStemsHealth().catch(() => {}); }, 5 * 60 * 1000);
+
+app.get('/api/librarian/stems-health', (req, res) => {
+  // Cache-first read — never touches Drive on the request path. If
+  // ?force=1 the operator can trigger a background recompute.
+  if (req.query.force === '1') {
+    setImmediate(() => { recomputeStemsHealth().catch(() => {}); });
+  }
+  res.json({
+    ok: true,
+    rows: _stemsHealthCache.rows,
+    computedAt: _stemsHealthCache.computedAt,
+    stale: Date.now() - _stemsHealthCache.computedAt > 10 * 60 * 1000,
+  });
 });
 
 // Librarian-side URL drop. Writes a .webloc file into INCOMING_WEBLOC,
@@ -2665,8 +2827,12 @@ app.post('/api/librarian/enqueue-url', express.json(), (req, res) => {
 // starts answering requests immediately and the cache fills in the
 // background. The hourly tick picks up any newly-added songs and skips
 // already-cached files cheaply (mtime+size check).
+// Boot run fires immediately; the tracker handles the hourly cadence
+// AND records lastRunAt/durationMs for the Librarian countdown badge.
 setImmediate(() => precacheAllStemsM4a({ trigger: 'boot' }));
-setInterval(() => precacheAllStemsM4a({ trigger: 'hourly' }), 60 * 60 * 1000);
+registerTrackedInterval('stem-precache', 60 * 60 * 1000,
+  () => precacheAllStemsM4a({ trigger: 'hourly' }),
+  { label: 'Stem precache', folder: 'stems', initialDelayMs: 60 * 60 * 1000 });
 
 // Walk every CUSTOM_LOOPS/*.m4a into ~/.bt-cache/CUSTOM_LOOPS/ so play-clip
 // actions fire instantly during a gig with no Drive latency. Clips are
@@ -2697,7 +2863,9 @@ async function precacheAllCustomLoops() {
   }
 }
 setImmediate(precacheAllCustomLoops);
-setInterval(precacheAllCustomLoops, 60 * 60 * 1000);
+registerTrackedInterval('clip-precache', 60 * 60 * 1000,
+  precacheAllCustomLoops,
+  { label: 'Clip precache', folder: 'clips', initialDelayMs: 60 * 60 * 1000 });
 
 // Walk every DRUM_MACHINE/*.m4a into ~/.bt-cache/DRUM_MACHINE/ so
 // /api/drum-machine/pick + /api/audio/drum-machine/:file fire instantly
@@ -2731,7 +2899,9 @@ async function precacheAllDrumPatterns() {
   }
 }
 setImmediate(precacheAllDrumPatterns);
-setInterval(precacheAllDrumPatterns, 60 * 60 * 1000);
+registerTrackedInterval('drum-precache', 60 * 60 * 1000,
+  precacheAllDrumPatterns,
+  { label: 'Drum precache', folder: 'drums', initialDelayMs: 60 * 60 * 1000 });
 
 // Manual trigger — POST /api/precache/library forces all four passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;
