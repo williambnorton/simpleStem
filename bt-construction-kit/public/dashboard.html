@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>simpleStem Operations Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg-page:        #0f172a;
+      --bg-card:        #1e293b;
+      --bg-card-2:      #273449;
+      --border-subtle:  #334155;
+      --text-main:      #e2e8f0;
+      --text-dim:       #94a3b8;
+      --text-muted:     #64748b;
+
+      --c-green:   #22c55e;
+      --c-green-bg:#0a3b22;
+      --c-yellow:  #eab308;
+      --c-yellow-bg:#3b2a02;
+      --c-red:     #ef4444;
+      --c-red-bg:  #3b0a0a;
+      --c-blue:    #3b82f6;
+      --c-blue-bg: #0a1f3b;
+      --c-gray:    #64748b;
+      --c-gray-bg: #1e293b;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg-page);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky; top: 0;
+      z-index: 10;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    header .meta {
+      display: flex; align-items: center; gap: 20px;
+      font-size: 12px; color: var(--text-dim);
+    }
+    header .pill {
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      font-weight: 700;
+    }
+    header .pill.stale { background: var(--c-red-bg); border-color: var(--c-red); color: #fecaca; }
+
+    main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
+
+    section { margin-bottom: 32px; }
+    section .section-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    /* Block — the core dashboard cell. State colors via .state-{ok, warn, err, idle}. */
+    .block {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 14px 16px;
+      position: relative;
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    .block .b-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .block .b-main {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+    .block .b-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    }
+    .block .b-icon {
+      position: absolute;
+      top: 12px; right: 14px;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .block.state-ok    { background: linear-gradient(180deg, var(--c-green-bg) 0%, var(--bg-card) 100%); border-color: var(--c-green); }
+    .block.state-ok    .b-title { color: #86efac; }
+    .block.state-ok    .b-icon  { color: var(--c-green); }
+    .block.state-warn  { background: linear-gradient(180deg, var(--c-yellow-bg) 0%, var(--bg-card) 100%); border-color: var(--c-yellow); }
+    .block.state-warn  .b-title { color: #fde047; }
+    .block.state-warn  .b-icon  { color: var(--c-yellow); }
+    .block.state-err   { background: linear-gradient(180deg, var(--c-red-bg) 0%, var(--bg-card) 100%); border-color: var(--c-red); }
+    .block.state-err   .b-title { color: #fca5a5; }
+    .block.state-err   .b-icon  { color: var(--c-red); }
+    .block.state-info  { background: linear-gradient(180deg, var(--c-blue-bg) 0%, var(--bg-card) 100%); border-color: var(--c-blue); }
+    .block.state-info  .b-title { color: #93c5fd; }
+    .block.state-info  .b-icon  { color: var(--c-blue); }
+    .block.state-idle  { background: var(--bg-card); border-color: var(--border-subtle); }
+    .block.state-idle  .b-title { color: var(--text-muted); }
+    .block.state-idle  .b-icon  { color: var(--text-muted); }
+    .block.state-err  { animation: pulse-err 1.6s ease-in-out infinite; }
+    @keyframes pulse-err {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.0); }
+      50%      { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.40); }
+    }
+
+    /* Top status row: 4 wide. */
+    .top-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 1000px) { .top-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Workflow row — boxes connected by arrows. */
+    .workflow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      align-items: center;
+      gap: 14px;
+    }
+    .arrow {
+      font-size: 22px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+    .workflow .block { min-height: 120px; display: flex; flex-direction: column; justify-content: center; }
+    @media (max-width: 1000px) { .workflow { grid-template-columns: 1fr; } .arrow { display: none; } }
+
+    /* Daemons + folders grid */
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    @media (max-width: 1000px) { .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Daemon row variant — denser, one-line status. */
+    .daemon-block { padding: 10px 14px; }
+    .daemon-block .b-main { font-size: 14px; }
+    .daemon-block .b-sub { font-size: 10px; margin-top: 2px; }
+
+    .raw {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+      max-height: 200px;
+      overflow: auto;
+      white-space: pre;
+    }
+    .raw summary { cursor: pointer; user-select: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>simpleStem · Operations Dashboard</h1>
+    <div class="meta">
+      <span id="hostname">…</span>
+      <span id="last-update" class="pill">refreshing…</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Top-level health row -->
+    <section>
+      <div class="section-title">System health</div>
+      <div class="top-grid">
+        <div id="block-drive" class="block state-idle">
+          <div class="b-icon" id="drive-icon">●</div>
+          <div class="b-title">Google Drive</div>
+          <div class="b-main" id="drive-main">…</div>
+          <div class="b-sub" id="drive-sub">checking…</div>
+        </div>
+        <div id="block-xr18" class="block state-idle">
+          <div class="b-icon" id="xr18-icon">●</div>
+          <div class="b-title">XR18</div>
+          <div class="b-main" id="xr18-main">…</div>
+          <div class="b-sub" id="xr18-sub">awaiting probe</div>
+        </div>
+        <div id="block-cache" class="block state-idle">
+          <div class="b-icon" id="cache-icon">●</div>
+          <div class="b-title">Cache contract</div>
+          <div class="b-main" id="cache-main">…</div>
+          <div class="b-sub" id="cache-sub">all songs ready offline</div>
+        </div>
+        <div id="block-catalog" class="block state-idle">
+          <div class="b-icon" id="catalog-icon">●</div>
+          <div class="b-title">CATALOG.json</div>
+          <div class="b-main" id="catalog-main">…</div>
+          <div class="b-sub" id="catalog-sub">…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ingest workflow -->
+    <section>
+      <div class="section-title">Ingest workflow · YouTube URL → 6 stems</div>
+      <div class="workflow">
+        <div id="block-incoming" class="block state-idle">
+          <div class="b-icon">📥</div>
+          <div class="b-title">INCOMING_WEBLOC</div>
+          <div class="b-main" id="incoming-main">…</div>
+          <div class="b-sub" id="incoming-sub">awaiting drops</div>
+        </div>
+        <div class="arrow">→</div>
+        <div id="block-watcher" class="block state-idle">
+          <div class="b-icon" id="watcher-icon">●</div>
+          <div class="b-title">webloc_watch.sh</div>
+          <div class="b-main" id="watcher-main">…</div>
+          <div class="b-sub" id="watcher-sub">librarian daemon</div>
+        </div>
+        <div class="arrow">→</div>
+        <div id="block-queue" class="block state-idle">
+          <div class="b-icon">⏳</div>
+          <div class="b-title">STEM_QUEUE</div>
+          <div class="b-main" id="queue-main">…</div>
+          <div class="b-sub" id="queue-sub">…</div>
+        </div>
+      </div>
+      <div class="workflow" style="margin-top: 14px;">
+        <div></div>
+        <div></div>
+        <div id="block-runner" class="block state-idle">
+          <div class="b-icon" id="runner-icon">●</div>
+          <div class="b-title">queue_runner.sh + stem.sh</div>
+          <div class="b-main" id="runner-main">…</div>
+          <div class="b-sub" id="runner-sub">Demucs htdemucs_6s</div>
+        </div>
+        <div class="arrow">→</div>
+        <div id="block-stems" class="block state-idle">
+          <div class="b-icon">🎵</div>
+          <div class="b-title">STEMS/</div>
+          <div class="b-main" id="stems-main">…</div>
+          <div class="b-sub" id="stems-sub">song folders</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Daemons -->
+    <section>
+      <div class="section-title">Daemons · PID + alive</div>
+      <div class="grid-4" id="daemon-grid"></div>
+    </section>
+
+    <!-- Other folders -->
+    <section>
+      <div class="section-title">Live-use folders</div>
+      <div class="grid-3">
+        <div id="block-gigs" class="block state-idle">
+          <div class="b-icon">📂</div>
+          <div class="b-title">GIGS/</div>
+          <div class="b-main" id="gigs-main">…</div>
+          <div class="b-sub">gigs on disk</div>
+        </div>
+        <div id="block-setlists" class="block state-idle">
+          <div class="b-icon">📂</div>
+          <div class="b-title">SETLISTS/</div>
+          <div class="b-main" id="setlists-main">…</div>
+          <div class="b-sub">standalone setlists</div>
+        </div>
+        <div id="block-customloops" class="block state-idle">
+          <div class="b-icon">🎚</div>
+          <div class="b-title">CUSTOM_LOOPS/</div>
+          <div class="b-main" id="customloops-main">…</div>
+          <div class="b-sub">clips on disk</div>
+        </div>
+      </div>
+    </section>
+
+    <details class="raw">
+      <summary>Raw state JSON (debug)</summary>
+      <pre id="raw-json">loading…</pre>
+    </details>
+  </main>
+
+  <script>
+    // Refresh every 3 seconds. Stale flag if the request itself fails for
+    // more than 10 seconds. Updates DOM in place — no flicker.
+    const REFRESH_MS = 3000;
+    const STALE_AFTER_MS = 10000;
+    let lastSuccessAt = Date.now();
+
+    document.getElementById('hostname').textContent =
+      location.host + ' · ' + new Date().toLocaleString();
+
+    function setBlock(id, stateClass, main, sub, icon) {
+      const block = document.getElementById('block-' + id);
+      if (!block) return;
+      block.classList.remove('state-ok', 'state-warn', 'state-err', 'state-info', 'state-idle');
+      block.classList.add(stateClass);
+      const mEl = document.getElementById(id + '-main');
+      const sEl = document.getElementById(id + '-sub');
+      const iEl = document.getElementById(id + '-icon');
+      if (mEl && main != null) mEl.textContent = main;
+      if (sEl && sub != null)  sEl.textContent = sub;
+      if (iEl && icon != null) iEl.textContent = icon;
+    }
+
+    function ageStr(ts) {
+      if (!ts) return '';
+      const dt = (Date.now() - new Date(ts).getTime()) / 1000;
+      if (dt < 60)    return Math.round(dt) + 's ago';
+      if (dt < 3600)  return Math.round(dt/60) + 'm ago';
+      if (dt < 86400) return Math.round(dt/3600) + 'h ago';
+      return Math.round(dt/86400) + 'd ago';
+    }
+
+    function render(state) {
+      // Drive
+      if (state.drive.accessible) {
+        setBlock('drive', 'state-ok', 'Accessible', `${state.drive.latencyMs}ms · ${state.root}`, '●');
+      } else {
+        setBlock('drive', 'state-err', 'UNREACHABLE',
+          state.drive.error || 'no response in 1.5s', '✕');
+      }
+
+      // XR18
+      if (state.xr18 && state.xr18.unknown) {
+        setBlock('xr18', 'state-idle', '…', 'awaiting probe (load the portal once)', '?');
+      } else if (state.xr18 && state.xr18.present && state.xr18.isDefaultOutput) {
+        setBlock('xr18', 'state-ok', 'ACTIVE',
+          `${state.xr18.channels || '?'} ch out · ${state.xr18.deviceName || 'XR18'}`, '●');
+      } else if (state.xr18 && state.xr18.present) {
+        setBlock('xr18', 'state-warn', 'NOT DEFAULT',
+          `connected; default is "${state.xr18.defaultOutputName || '?'}"`, '!');
+      } else {
+        setBlock('xr18', 'state-err', 'NOT DETECTED',
+          'unplugged / driver dead', '✕');
+      }
+
+      // Cache contract
+      const c = state.cache;
+      if (c.cached == null) {
+        setBlock('cache', 'state-idle', '…', 'library not loaded yet', '?');
+      } else if (c.uncached === 0) {
+        setBlock('cache', 'state-ok', `${c.cached} / ${c.totalSongs}`, 'every song ready offline', '✓');
+      } else {
+        setBlock('cache', 'state-warn',
+          `${c.cached} / ${c.totalSongs}`,
+          `${c.uncached} need caching · hit Flash Cache`, '!');
+      }
+
+      // Catalog
+      const cat = state.catalog;
+      if (!cat.exists) {
+        setBlock('catalog', 'state-err', 'MISSING', 'run ./librarian.sh catalog', '✕');
+      } else if (cat.shape === 'canonical') {
+        setBlock('catalog', 'state-ok',
+          `${cat.songCount} songs`,
+          `canonical shape · ${ageStr(cat.scannedAt || cat.ageSec ? new Date(Date.now() - cat.ageSec*1000).toISOString() : null)}`,
+          '✓');
+      } else if (cat.shape === 'legacy') {
+        setBlock('catalog', 'state-warn',
+          `${cat.songCount} songs`,
+          'legacy shape — rerun catalog.py', '!');
+      } else {
+        setBlock('catalog', 'state-err', 'UNKNOWN SHAPE',
+          cat.error || 'parse failed', '✕');
+      }
+
+      // INCOMING_WEBLOC
+      const inc = state.queue;
+      if (inc.incoming > 0) {
+        setBlock('incoming', 'state-warn', `${inc.incoming} pending`,
+          'webloc files waiting for the watcher', '⏳');
+      } else if (inc.failedWeblocs > 0) {
+        setBlock('incoming', 'state-err', `${inc.failedWeblocs} failed`,
+          'yt-dlp couldn\'t fetch — delete .failed files in INCOMING_WEBLOC/', '✕');
+      } else {
+        setBlock('incoming', 'state-idle', '0', 'idle — drop a .webloc to ingest', '○');
+      }
+
+      // watcher
+      const w = state.daemons['lib-watcher'];
+      if (w && w.running) {
+        setBlock('watcher', 'state-ok', '● running', `pid ${w.pid}`, '●');
+      } else {
+        setBlock('watcher', 'state-err', '○ STOPPED',
+          'start with ./librarian.sh start (on the Librarian)', '✕');
+      }
+
+      // STEM_QUEUE
+      if (inc.processing) {
+        const sn = (inc.processing.song || inc.processing.job || '?').slice(0, 40);
+        const ph = inc.processing.phase ? ` · ${inc.processing.phase}` : '';
+        setBlock('queue', 'state-warn', `processing`, sn + ph, '⚙');
+      } else if (inc.queued > 0) {
+        setBlock('queue', 'state-warn', `${inc.queued} queued`,
+          `waiting for queue_runner${inc.failedRenders ? ` · ${inc.failedRenders} render(s) failed` : ''}`, '⏳');
+      } else if (inc.failedRenders > 0) {
+        setBlock('queue', 'state-err', `${inc.failedRenders} failed`,
+          'see STEM_QUEUE/_failed/ — move JSONs back up to retry', '✕');
+      } else {
+        setBlock('queue', 'state-idle', '0', 'queue empty', '○');
+      }
+
+      // queue_runner
+      const r = state.daemons['perf-runner'];
+      if (r && r.running) {
+        setBlock('runner', 'state-ok', '● running', `pid ${r.pid}`, '●');
+      } else {
+        setBlock('runner', 'state-err', '○ STOPPED',
+          'start with ./performer.sh start', '✕');
+      }
+
+      // STEMS folder
+      if (state.folders.STEMS) {
+        setBlock('stems', 'state-info', `${state.folders.STEMS.count}`,
+          state.folders.STEMS.mtime ? `last change ${ageStr(state.folders.STEMS.mtime)}` : '', 'i');
+      }
+
+      // Other folders
+      const f = state.folders;
+      if (f.GIGS)         setBlock('gigs',        'state-info', f.GIGS.count,        f.GIGS.mtime ? ageStr(f.GIGS.mtime) : '', 'i');
+      if (f.SETLISTS)     setBlock('setlists',    'state-info', f.SETLISTS.count,    f.SETLISTS.mtime ? ageStr(f.SETLISTS.mtime) : '', 'i');
+      if (f.CUSTOM_LOOPS) setBlock('customloops', 'state-info', f.CUSTOM_LOOPS.count, f.CUSTOM_LOOPS.mtime ? ageStr(f.CUSTOM_LOOPS.mtime) : '', 'i');
+
+      // Daemons grid — rebuild every refresh, it's small.
+      const grid = document.getElementById('daemon-grid');
+      grid.innerHTML = '';
+      const friendly = {
+        'lib-watcher':     'Librarian · watcher',
+        'lib-cataloger':   'Librarian · cataloger',
+        'lib-catalogwatch':'Librarian · catalogwatch',
+        'lib-mpbsync':     'Librarian · mpbsync (Sheet)',
+        'perf-runner':     'Performer · queue_runner',
+        'perf-server':     'Performer · portal :3000',
+        'perf-midi':       'Performer · midi sidecar',
+      };
+      Object.keys(friendly).forEach(name => {
+        const d = state.daemons[name];
+        const div = document.createElement('div');
+        div.className = 'block daemon-block ' + (d && d.running ? 'state-ok' : 'state-err');
+        const icon = d && d.running ? '●' : '○';
+        const main = d && d.running ? '● running' : '○ stopped';
+        const sub = d && d.running ? `pid ${d.pid}` : (d && d.reason ? d.reason : 'no pid file');
+        div.innerHTML =
+          '<div class="b-icon">' + icon + '</div>' +
+          '<div class="b-title">' + friendly[name] + '</div>' +
+          '<div class="b-main">' + main + '</div>' +
+          '<div class="b-sub">' + sub + '</div>';
+        grid.appendChild(div);
+      });
+
+      // Last-update pill
+      const pill = document.getElementById('last-update');
+      const stale = (Date.now() - lastSuccessAt) > STALE_AFTER_MS;
+      pill.classList.toggle('stale', stale);
+      pill.textContent = stale
+        ? 'STALE · last good ' + ageStr(new Date(lastSuccessAt).toISOString())
+        : 'updated ' + new Date().toLocaleTimeString();
+
+      // Raw json for debugging
+      document.getElementById('raw-json').textContent = JSON.stringify(state, null, 2);
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch('/api/dashboard/state', { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (j && j.ok && j.state) {
+          lastSuccessAt = Date.now();
+          render(j.state);
+        }
+      } catch (e) {
+        const pill = document.getElementById('last-update');
+        pill.classList.add('stale');
+        pill.textContent = 'SERVER NOT RESPONDING · ' + e.message;
+      }
+    }
+    poll();
+    setInterval(poll, REFRESH_MS);
+  </script>
+</body>
+</html>

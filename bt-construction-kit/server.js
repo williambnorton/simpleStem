@@ -1484,11 +1484,29 @@ app.get('/api/audio/m4a/:file', (req, res) => {
 const AUDIO_CACHE_DRUM = path.join(AUDIO_CACHE_DIR, 'DRUM_MACHINE');
 try { fs.mkdirSync(AUDIO_CACHE_DRUM, { recursive: true }); } catch (e) {}
 
+// In-memory mirror of every drum pattern filename. Populated by
+// precacheAllDrumPatterns() at boot + hourly + Flash Cache; the audio
+// endpoints read THIS, never Drive. Offline-gig contract: Drive is never
+// in the audio request path. If the cache hasn't been warmed yet at boot
+// (cold start, fresh machine), the array starts empty and the first
+// precache cycle fills it. Audio requests during that gap fall through
+// sendCachedAudio's bounded 3s Drive probe and either serve or 503.
+let drumPatternList = [];
+function refreshDrumPatternListFromCache() {
+  try {
+    drumPatternList = fs.readdirSync(AUDIO_CACHE_DRUM)
+      .filter(f => f.toLowerCase().endsWith('.m4a'))
+      .sort();
+  } catch (e) { drumPatternList = []; }
+}
+refreshDrumPatternListFromCache();
+
 function listDrumPatterns() {
-  if (!fs.existsSync(DRUM_MACHINE_DIR)) return [];
-  return fs.readdirSync(DRUM_MACHINE_DIR)
-    .filter(f => f.toLowerCase().endsWith('.m4a'))
-    .sort();
+  // Local-cache only. NEVER touch DRUM_MACHINE_DIR (Drive) here — this
+  // is called by /api/drum-machine/pick on every song load, and a single
+  // sync Drive read with no wifi wedges Node's event loop and freezes
+  // ALL audio (including stems). 2026-06-28 gig postmortem.
+  return drumPatternList;
 }
 
 // Parse <bpm>@<pattern>.m4a -> { bpm, pattern }. Returns null on shape miss.
@@ -1623,7 +1641,9 @@ app.get('/api/audio/drum-machine/:file', (req, res) => {
   if (file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(DRUM_MACHINE_DIR, file);
   const cachePath  = path.join(AUDIO_CACHE_DRUM, file);
-  if (!fs.existsSync(sourcePath)) return res.status(404).send('Drum pattern not found');
+  // NO sync existsSync on sourcePath — that path is Drive, and a probe
+  // wedges the event loop offline. sendCachedAudio serves from local
+  // cache, and only falls back to Drive behind a bounded 3s timeout.
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
@@ -1726,13 +1746,16 @@ function sanitizeName(s) {
 // the simpleStem root). The App keeps only the read endpoints below.
 
 app.get('/api/custom-loops/list', (req, res) => {
+  // Read from local cache, NOT Drive. CUSTOM_LOOPS_DIR sits on Drive and
+  // a sync readdirSync there freezes the event loop when offline.
+  // precacheAllCustomLoops keeps AUDIO_CACHE_CUSTOM_LOOPS in sync.
   let files = [];
   try {
-    files = fs.readdirSync(CUSTOM_LOOPS_DIR)
+    files = fs.readdirSync(AUDIO_CACHE_CUSTOM_LOOPS)
       .filter(f => f.toLowerCase().endsWith('.m4a'))
       .map(f => {
         let size = 0; let mtime = 0;
-        try { const st = fs.statSync(path.join(CUSTOM_LOOPS_DIR, f));
+        try { const st = fs.statSync(path.join(AUDIO_CACHE_CUSTOM_LOOPS, f));
               size = st.size; mtime = st.mtimeMs; } catch (e) {}
         return {
           file: f,
@@ -1760,7 +1783,7 @@ app.get('/api/audio/custom-loop/:file', (req, res) => {
   if (file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(CUSTOM_LOOPS_DIR, file);
   const cachePath  = path.join(AUDIO_CACHE_CUSTOM_LOOPS, file);
-  if (!fs.existsSync(sourcePath)) return res.status(404).send('Custom loop not found');
+  // No sync Drive probe — same reasoning as drum-machine endpoint.
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
@@ -1793,7 +1816,7 @@ app.post('/api/precache/loop/:file', (req, res) => {
   if (file.includes('..')) return res.status(403).send('Forbidden');
   const sourcePath = path.join(LOOPS_DIR, file);
   const cachePath  = path.join(AUDIO_CACHE_LOOPS, file);
-  if (!fs.existsSync(sourcePath)) return res.status(404).json({ ok: false, error: 'not found' });
+  // Local cache only on the sync path — never probe Drive here.
   if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
     return res.json({ ok: true, cached: true, alreadyCached: true });
   }
@@ -2051,11 +2074,15 @@ app.post('/api/cache/flash', (req, res) => {
     return res.json({ ok: true, alreadyRunning: true, state: cacheJobState });
   }
   // Fire and don't await — endpoint returns immediately, work happens in
-  // background. Client polls /status.
+  // background. Client polls /status. Flash fires the stems pass (the
+  // big one) plus drum patterns and custom loops so a "prep for gig"
+  // click warms EVERYTHING that's on the audio request path.
   setImmediate(() => precacheAllStemsM4a({
     force,
     trigger: force ? 'manual-force' : 'manual',
   }));
+  setImmediate(precacheAllDrumPatterns);
+  setImmediate(precacheAllCustomLoops);
   res.json({ ok: true, started: true, force });
 });
 app.get('/api/cache/status', (req, res) => {
@@ -2448,14 +2475,49 @@ async function precacheAllCustomLoops() {
 setImmediate(precacheAllCustomLoops);
 setInterval(precacheAllCustomLoops, 60 * 60 * 1000);
 
-// Manual trigger — POST /api/precache/library forces all three passes immediately
+// Walk every DRUM_MACHINE/*.m4a into ~/.bt-cache/DRUM_MACHINE/ so
+// /api/drum-machine/pick + /api/audio/drum-machine/:file fire instantly
+// with NO Drive interaction. Same shape as precacheAllCustomLoops above.
+// Without this, every song-load would trigger a sync readdir on Drive
+// inside listDrumPatterns(), wedging the event loop offline and breaking
+// stems for every song. (2026-06-28 gig postmortem.)
+async function precacheAllDrumPatterns() {
+  if (!fs.existsSync(DRUM_MACHINE_DIR)) return;
+  const t0 = Date.now();
+  let copied = 0, skipped = 0, failed = 0;
+  try {
+    const files = (await fsp.readdir(DRUM_MACHINE_DIR))
+      .filter(f => /\.m4a$/i.test(f));
+    if (files.length === 0) {
+      console.log('[drum precache] nothing in DRUM_MACHINE/');
+      return;
+    }
+    console.log(`[drum precache] starting — ${files.length} pattern(s)`);
+    await runWithConcurrency(files, 4, async (f) => {
+      const src = path.join(DRUM_MACHINE_DIR, f);
+      const dst = path.join(AUDIO_CACHE_DRUM, f);
+      if (fs.existsSync(dst) && fs.statSync(dst).size > 0) { skipped++; return; }
+      try { await ensureCachedAsync(src, dst); copied++; }
+      catch (e) { failed++; }
+    });
+    refreshDrumPatternListFromCache();
+    console.log(`[drum precache] done — copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s, ${drumPatternList.length} cached)`);
+  } catch (e) {
+    console.warn('[drum precache] failed:', e.message);
+  }
+}
+setImmediate(precacheAllDrumPatterns);
+setInterval(precacheAllDrumPatterns, 60 * 60 * 1000);
+
+// Manual trigger — POST /api/precache/library forces all four passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;
 // the work runs in the background and progress is in the server log.
 app.post('/api/precache/library', (req, res) => {
-  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background' });
+  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background', drums: 'background' });
   setImmediate(precacheAllM4as);
   setImmediate(precacheAllStemsM4a);
   setImmediate(precacheAllCustomLoops);
+  setImmediate(precacheAllDrumPatterns);
 });
 // Clip-only trigger documented in clip_librarian/README.md.
 app.post('/api/precache/custom-loops', (req, res) => {

@@ -397,6 +397,24 @@ field. This is NOT YET WIRED — see the roadmap.
   - Test the contract: at home, play a song. Disable wifi. Reopen the app.
     EVERY song in the library must play end-to-end. Any failure is a policy violation.
 
+- **No synchronous Drive reads in ANY hot endpoint.** Node's event loop is
+  single-threaded — one `fs.existsSync()` / `fs.statSync()` / `fs.readdirSync()`
+  against a Drive path will block ALL other requests until the call returns.
+  When wifi is off, macOS CloudStorage Drive reads can hang for tens of
+  seconds, which means a single drum-machine probe can freeze stem audio
+  for every song. **Gig postmortem (2026-06-28):** Bill's laptop wedged
+  mid-set because `listDrumPatterns()` did a sync `readdirSync` on the
+  Drive `DRUM_MACHINE/` folder, called on every song-load. Stems were in
+  cache and would have played fine — but the event loop was stuck behind
+  the drum probe. Tethering to phone restored wifi, Drive responded,
+  queue drained, audio resumed. Fix: precache every drum pattern into
+  `~/.bt-cache/DRUM_MACHINE/` at boot + hourly + Flash Cache, and have
+  `listDrumPatterns()` read the in-memory mirror, never Drive. Same
+  applies to CUSTOM_LOOPS, LOOPS, and any future Drive-backed audio
+  collection. Hot endpoints that touch a Drive path must go through
+  `sendCachedAudio` (cache-first, 3s bounded Drive fallback) — never a
+  bare `fs.existsSync`.
+
 - **File format policy: m4a only.** The only audio file format simpleStem
   uses going forward is **`.m4a`** (AAC in MPEG-4 container). The single
   exception is **`source.wav`** in each `STEMS/<slug>/` folder — the raw
