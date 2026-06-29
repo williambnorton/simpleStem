@@ -261,6 +261,246 @@
       white-space: pre;
     }
     .raw summary { cursor: pointer; user-select: none; font-style: italic; }
+
+    /* ===================================================================
+       Living Pipeline — animated SVG showing folders, arrows, files moving.
+       The folders OPEN when they contain files and CLOSE when empty. Files
+       slide along arrows from one folder to the next. Health checks pulse
+       a green checkmark once a minute (driven by SSE 'health' events).
+       =================================================================== */
+    .pipeline-stage {
+      position: relative;
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 16px 8px 8px;
+      overflow: hidden;
+    }
+    .pipeline-svg {
+      width: 100%;
+      height: 220px;
+      display: block;
+    }
+    .pipeline-svg .arrow-path {
+      fill: none;
+      stroke: var(--ink-dim);
+      stroke-width: 2;
+      stroke-dasharray: 4 4;
+      opacity: 0.55;
+    }
+    .pipeline-svg .arrow-path.active {
+      stroke: #d97706;
+      stroke-width: 2.5;
+      opacity: 1;
+      animation: arrow-march 0.8s linear infinite;
+    }
+    @keyframes arrow-march {
+      to { stroke-dashoffset: -16; }
+    }
+    .pipeline-svg .arrow-head {
+      fill: var(--ink-dim);
+      opacity: 0.55;
+    }
+    .pipeline-svg .arrow-head.active {
+      fill: #d97706;
+      opacity: 1;
+    }
+    .pipeline-svg .folder {
+      cursor: default;
+      transition: transform 0.3s ease;
+    }
+    .pipeline-svg .folder-body { fill: #d6cdb5; stroke: var(--ink); stroke-width: 1.6; }
+    .pipeline-svg .folder-tab  { fill: #b8a06f; stroke: var(--ink); stroke-width: 1.6; }
+    .pipeline-svg .folder-flap { fill: #ece4cf; stroke: var(--ink); stroke-width: 1.4;
+                                 transform-origin: 0 100%; transition: transform 0.45s ease; }
+    .pipeline-svg .folder.has-files .folder-flap { transform: rotateX(58deg); }
+    .pipeline-svg .folder.has-files .folder-body { fill: #c9be9e; }
+    .pipeline-svg .folder.active .folder-body { fill: #f9d8a5; animation: folder-glow 1.2s ease-in-out infinite; }
+    @keyframes folder-glow {
+      0%, 100% { filter: drop-shadow(0 0 0 rgba(217, 119, 6, 0)); }
+      50%      { filter: drop-shadow(0 0 6px rgba(217, 119, 6, 0.75)); }
+    }
+    .pipeline-svg .folder-label {
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-size: 10px;
+      font-weight: 700;
+      fill: var(--ink);
+      text-anchor: middle;
+      letter-spacing: 0.04em;
+    }
+    .pipeline-svg .folder-count {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 14px;
+      font-weight: 800;
+      text-anchor: middle;
+    }
+    .pipeline-svg .folder-count.empty { fill: var(--ink-dim); }
+    .pipeline-svg .folder-count.has   { fill: #166534; }
+    /* File-in-flight icon. Plain CSS animation along an SVG <animateMotion>
+       isn't necessary — we generate one per movement event and animate it
+       along a hand-rolled translate path with a 1.6s CSS animation.
+       'flight' keyframes are set up per arrow with a CSS variable for the
+       end translate so a single class handles all four arrows. */
+    .pipeline-svg .flight {
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .pipeline-svg .health-tick {
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .pipeline-svg .health-tick.tick-ok   { fill: #166534; }
+    .pipeline-svg .health-tick.tick-bad  { fill: #991b1b; }
+    .pipeline-svg .health-mark {
+      fill: #166534;
+      opacity: 0;
+    }
+    .pipeline-svg .health-mark.flash {
+      animation: health-tick 1.8s ease-out 1;
+    }
+    @keyframes health-tick {
+      0%   { opacity: 0; transform: scale(0.3); }
+      30%  { opacity: 1; transform: scale(1.4); }
+      55%  { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1); }
+    }
+
+    .pipeline-legend {
+      display: flex;
+      gap: 18px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+      padding: 4px 12px 0;
+    }
+    .pipeline-legend .lg {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pipeline-legend .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      border: 1px solid var(--ink);
+    }
+    .pipeline-legend .swatch.closed { background: #d6cdb5; }
+    .pipeline-legend .swatch.open   { background: #c9be9e; }
+    .pipeline-legend .swatch.active { background: #f9d8a5; }
+
+    /* ===================================================================
+       Library view — searchable table with Stems Health column. URL-drop
+       area at the top of the section for librarian-side enqueue.
+       =================================================================== */
+    .lib-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .lib-bar input[type="text"], .lib-bar input[type="url"] {
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      padding: 7px 10px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 12px;
+      color: var(--ink);
+      flex: 1;
+    }
+    .lib-bar input[type="text"] { max-width: 340px; }
+    .lib-bar button {
+      background: var(--ink);
+      color: var(--paper);
+      border: 0;
+      padding: 7px 14px;
+      border-radius: 2px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .lib-bar button:hover { background: #4b3f23; }
+    .lib-summary {
+      font-size: 11px;
+      color: var(--ink-dim);
+      margin-left: auto;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    }
+    .lib-summary .bad  { color: var(--c-bad);  font-weight: 700; }
+    .lib-summary .warn { color: var(--c-warn); font-weight: 700; }
+    .lib-summary .good { color: var(--c-good); font-weight: 700; }
+
+    .lib-table-wrap {
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      max-height: 520px;
+      overflow: auto;
+      scrollbar-width: thin;
+    }
+    .lib-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .lib-table th {
+      position: sticky;
+      top: 0;
+      background: var(--paper-2);
+      text-align: left;
+      padding: 8px 10px;
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-variant: small-caps;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+      color: var(--ink-2);
+      border-bottom: 1.5px solid var(--ink);
+      cursor: pointer;
+      user-select: none;
+    }
+    .lib-table th:hover { background: var(--rule-soft); }
+    .lib-table td {
+      padding: 6px 10px;
+      border-bottom: 1px dotted var(--rule-soft);
+      vertical-align: top;
+    }
+    .lib-table tr:nth-child(even) td { background: rgba(0,0,0,0.012); }
+    .lib-table tr:hover td { background: var(--rule-soft); }
+    .lib-table .col-title  { font-weight: 700; min-width: 180px; }
+    .lib-table .col-artist { color: var(--ink-2); }
+    .lib-table .col-bpm,
+    .lib-table .col-key,
+    .lib-table .col-singer { font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--ink-dim); }
+    .lib-table .stems-health {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 2px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .lib-table .stems-health.full    { background: var(--c-good-bg); color: var(--c-good); }
+    .lib-table .stems-health.partial { background: var(--c-warn-bg); color: var(--c-warn); }
+    .lib-table .stems-health.none    { background: var(--c-bad-bg);  color: var(--c-bad);  }
+    .lib-table .stems-health .miss-list {
+      font-weight: normal;
+      letter-spacing: 0;
+      font-size: 10px;
+      margin-left: 4px;
+    }
+    .lib-table .col-base {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      color: var(--ink-dim);
+    }
   </style>
 </head>
 <body>
@@ -307,6 +547,88 @@
           <div class="c-title">MPB Sheet Sync</div>
           <div class="c-main" id="mpbsync-main">…</div>
           <div class="c-sub" id="mpbsync-sub">…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Living pipeline — animated. Folders open/close based on contents,
+         files animate moving between folders, health checks tick visibly.
+         Driven by SSE /api/librarian/events. -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Living pipeline</h2>
+        <span class="blurb">Folders open when they hold files. Arrows pulse when a file moves. Drive health ticks once a minute.</span>
+      </div>
+      <div class="pipeline-stage">
+        <svg id="pipeline-svg" class="pipeline-svg" viewBox="0 0 1100 220" preserveAspectRatio="xMidYMid meet">
+          <!-- Arrows. Each defines a path the file-flight animation follows. -->
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" class="arrow-head" />
+            </marker>
+            <marker id="ah-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" class="arrow-head active" />
+            </marker>
+          </defs>
+          <!-- 5 folders at y=110. Spacing: 120, 320, 540, 760, 980 -->
+          <path id="arrow-1" class="arrow-path" d="M170,110 L290,110" marker-end="url(#ah)" data-from="incoming" data-to="queued" />
+          <path id="arrow-2" class="arrow-path" d="M390,110 L510,110" marker-end="url(#ah)" data-from="queued"   data-to="stems"  />
+          <path id="arrow-3" class="arrow-path" d="M610,110 L730,110" marker-end="url(#ah)" data-from="stems"    data-to="drums"  />
+          <path id="arrow-4" class="arrow-path" d="M830,110 L950,110" marker-end="url(#ah)" data-from="drums"    data-to="clips"  />
+
+          <!-- Folders. Each is an SVG group with body, tab, flap (the opening
+               lid), label, and a count badge. The .has-files class toggles
+               the open animation; .active pulses the body. -->
+          <g class="folder" data-key="incoming" transform="translate(75, 50)">
+            <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
+            <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
+            <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
+            <text class="folder-label" x="50" y="78">INCOMING</text>
+            <text class="folder-count empty" x="50" y="118" data-count="incoming">0</text>
+          </g>
+          <g class="folder" data-key="queued" transform="translate(295, 50)">
+            <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
+            <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
+            <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
+            <text class="folder-label" x="50" y="78">STEM_QUEUE</text>
+            <text class="folder-count empty" x="50" y="118" data-count="queued">0</text>
+          </g>
+          <g class="folder" data-key="stems" transform="translate(515, 50)">
+            <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
+            <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
+            <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
+            <text class="folder-label" x="50" y="78">STEMS</text>
+            <text class="folder-count empty" x="50" y="118" data-count="stems">0</text>
+          </g>
+          <g class="folder" data-key="drums" transform="translate(735, 50)">
+            <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
+            <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
+            <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
+            <text class="folder-label" x="50" y="78">DRUM_MACHINE</text>
+            <text class="folder-count empty" x="50" y="118" data-count="drums">0</text>
+          </g>
+          <g class="folder" data-key="clips" transform="translate(955, 50)">
+            <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
+            <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
+            <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
+            <text class="folder-label" x="50" y="78">CUSTOM_LOOPS</text>
+            <text class="folder-count empty" x="50" y="118" data-count="clips">0</text>
+          </g>
+
+          <!-- Health-check checkmark — flashes when /api/librarian/events
+               'health' event fires (every 60s). -->
+          <g transform="translate(540, 200)">
+            <text id="health-tick" class="health-tick tick-ok" text-anchor="middle">DRIVE OK · checking…</text>
+            <text id="health-mark" class="health-mark" text-anchor="middle" x="0" y="-14" font-size="22">✓</text>
+          </g>
+
+          <!-- File-flight icons get appended here at runtime per move event. -->
+          <g id="flight-layer"></g>
+        </svg>
+        <div class="pipeline-legend">
+          <span class="lg"><span class="swatch closed"></span>folder empty</span>
+          <span class="lg"><span class="swatch open"></span>folder has files</span>
+          <span class="lg"><span class="swatch active"></span>folder being worked on (active phase)</span>
         </div>
       </div>
     </section>
@@ -390,6 +712,41 @@
           <div class="c-main" id="missing-main">…</div>
           <div class="c-sub">title or artist blank</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Library view — searchable table of every STEMS/<song>/ with a
+         Stems Health column so the librarian can spot incomplete renders.
+         URL drop area at the top lets the Librarian enqueue a song without
+         leaving the page. -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Library</h2>
+        <span class="blurb">Every song on disk, with stem completeness. Drop a URL to enqueue.</span>
+      </div>
+      <div class="lib-bar">
+        <input id="lib-search" type="text" placeholder="Search title / artist / singer / base…" autocomplete="off" />
+        <input id="lib-url" type="url" placeholder="Paste a YouTube URL to enqueue…" />
+        <button id="lib-enqueue">Enqueue</button>
+        <div class="lib-summary" id="lib-summary">…</div>
+      </div>
+      <div class="lib-table-wrap">
+        <table class="lib-table" id="lib-table">
+          <thead>
+            <tr>
+              <th data-sort="title">Title</th>
+              <th data-sort="artist">Artist</th>
+              <th data-sort="bpm">BPM</th>
+              <th data-sort="key">Key</th>
+              <th data-sort="singer">Singer</th>
+              <th data-sort="stems">Stems</th>
+              <th data-sort="base">Folder</th>
+            </tr>
+          </thead>
+          <tbody id="lib-tbody">
+            <tr><td colspan="7" style="text-align:center; padding: 20px; color: var(--ink-dim); font-style: italic;">loading…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -638,6 +995,319 @@
     }
     poll();
     setInterval(poll, REFRESH_MS);
+
+    // =================================================================
+    // LIVING PIPELINE — SSE-driven folder open/close, arrow pulse,
+    // file-flight animation, periodic health checkmark.
+    // =================================================================
+    // Folder x-centers in the SVG viewBox (matches the transform translates
+    // above + 50 for folder center). Folders sit at y=110 (center).
+    const FOLDER_CENTER_X = {
+      incoming: 125, queued: 345, stems: 565, drums: 785, clips: 1005,
+    };
+    const FOLDER_CENTER_Y = 110;
+    // Move flow: which folder's "add" event corresponds to which arrow.
+    // INCOMING add → no flight; INCOMING remove → fly from incoming center
+    // to queued. We trigger flight on REMOVAL (the file just left A);
+    // on the corresponding ADD we light up the destination folder.
+    const NEXT_FOLDER = {
+      incoming: 'queued',
+      queued:   'stems',    // semantic: render done → STEMS/<slug>/ appears
+    };
+    // Files that "appear" elsewhere (drums / clips) animate as a flight
+    // from off-screen (they were dropped by the Clip Librarian, not by
+    // the upstream pipeline). For now: just flash the folder.
+    const folderCount = { incoming: 0, queued: 0, stems: 0, drums: 0, clips: 0 };
+    // Map folder key → flap+body for has-files toggling.
+    const folderEls = {};
+    document.querySelectorAll('.pipeline-svg .folder').forEach(g => {
+      folderEls[g.dataset.key] = g;
+    });
+    const arrowEls = {};
+    document.querySelectorAll('.pipeline-svg .arrow-path').forEach(p => {
+      arrowEls[p.dataset.from + '->' + p.dataset.to] = p;
+    });
+    function setArrowActive(from, to, durationMs) {
+      const path = arrowEls[from + '->' + to];
+      if (!path) return;
+      path.classList.add('active');
+      path.setAttribute('marker-end', 'url(#ah-active)');
+      setTimeout(() => {
+        path.classList.remove('active');
+        path.setAttribute('marker-end', 'url(#ah)');
+      }, durationMs || 1800);
+    }
+    function setFolderCount(key, n) {
+      folderCount[key] = n;
+      const g = folderEls[key];
+      if (!g) return;
+      const txt = g.querySelector('text.folder-count');
+      if (txt) {
+        txt.textContent = String(n);
+        txt.classList.toggle('empty', n === 0);
+        txt.classList.toggle('has',   n > 0);
+      }
+      g.classList.toggle('has-files', n > 0);
+    }
+    function setFolderActive(key, durationMs) {
+      const g = folderEls[key];
+      if (!g) return;
+      g.classList.add('active');
+      setTimeout(() => g.classList.remove('active'), durationMs || 2200);
+    }
+    // Animate a small file glyph along an arrow path. Uses SVG
+    // <animateMotion> bound to the path id so the icon follows the
+    // exact arrow curve (straight lines today, but future-proof for
+    // curved paths).
+    function flightAlongArrow(fromKey, toKey, name) {
+      const path = arrowEls[fromKey + '->' + toKey];
+      if (!path) return;
+      const layer = document.getElementById('flight-layer');
+      if (!layer) return;
+      const NS = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'flight');
+      // Paper sheet icon (rect with corner fold)
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', '-7'); rect.setAttribute('y', '-9');
+      rect.setAttribute('width', '14'); rect.setAttribute('height', '18');
+      rect.setAttribute('fill', '#fffdf6');
+      rect.setAttribute('stroke', '#1c1917');
+      rect.setAttribute('stroke-width', '1.2');
+      rect.setAttribute('rx', '1');
+      g.appendChild(rect);
+      const fold = document.createElementNS(NS, 'polygon');
+      fold.setAttribute('points', '2,-9 7,-9 7,-4');
+      fold.setAttribute('fill', '#d6cdb5');
+      fold.setAttribute('stroke', '#1c1917');
+      fold.setAttribute('stroke-width', '0.8');
+      g.appendChild(fold);
+      const motion = document.createElementNS(NS, 'animateMotion');
+      motion.setAttribute('dur', '1.6s');
+      motion.setAttribute('repeatCount', '1');
+      motion.setAttribute('fill', 'freeze');
+      const mp = document.createElementNS(NS, 'mpath');
+      mp.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#' + path.id);
+      motion.appendChild(mp);
+      g.appendChild(motion);
+      layer.appendChild(g);
+      // Remove the flight glyph when its animation ends so the SVG stays clean.
+      setTimeout(() => { try { layer.removeChild(g); } catch (e) {} }, 1900);
+    }
+
+    function flashHealth(ok, latencyMs, error) {
+      const tick = document.getElementById('health-tick');
+      const mark = document.getElementById('health-mark');
+      if (tick) {
+        tick.classList.toggle('tick-ok',  !!ok);
+        tick.classList.toggle('tick-bad', !ok);
+        tick.textContent = ok
+          ? `DRIVE OK · ${latencyMs != null ? latencyMs + 'ms' : ''} · ${new Date().toLocaleTimeString()}`
+          : `DRIVE UNREACHABLE · ${(error || '').slice(0, 40)}`;
+      }
+      if (mark) {
+        // Restart the animation by removing and re-adding the class.
+        mark.classList.remove('flash');
+        void mark.getBoundingClientRect();
+        mark.classList.add('flash');
+      }
+    }
+
+    // Live in-flight tracking — counts that the snapshot sets and the
+    // file-added / file-removed events increment/decrement. Both paths
+    // must agree; the 5s reconciliation tick from the server will heal
+    // any drift either way.
+    function bumpFolder(key, delta) {
+      setFolderCount(key, Math.max(0, (folderCount[key] || 0) + delta));
+    }
+
+    function startLibrarianSSE() {
+      const es = new EventSource('/api/librarian/events');
+      es.addEventListener('hello', () => {});
+      es.addEventListener('snapshot', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          for (const k of Object.keys(j.folders || {})) {
+            const list = j.folders[k] || [];
+            setFolderCount(k, list.length);
+          }
+        } catch (e) {}
+      });
+      es.addEventListener('file-added', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          bumpFolder(j.folder, +1);
+          setFolderActive(j.folder, 2000);
+        } catch (e) {}
+      });
+      es.addEventListener('file-removed', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          bumpFolder(j.folder, -1);
+          // File left this folder. Light up the arrow to the next folder
+          // and launch a flight glyph along it.
+          const next = NEXT_FOLDER[j.folder];
+          if (next) {
+            setArrowActive(j.folder, next, 1800);
+            flightAlongArrow(j.folder, next, j.name);
+            setFolderActive(next, 2400);
+          }
+        } catch (e) {}
+      });
+      es.addEventListener('phase', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          // While a song is being rendered, mark STEM_QUEUE and STEMS
+          // both as active (queued → processing → stems).
+          if (j.current) {
+            setFolderActive('queued', 4000);
+            setFolderActive('stems',  4000);
+            setArrowActive('queued', 'stems', 4000);
+          }
+        } catch (e) {}
+      });
+      es.addEventListener('health', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          flashHealth(!!j.ok, j.latencyMs, j.error);
+        } catch (e) {}
+      });
+      es.onerror = () => {
+        // EventSource auto-reconnects with backoff. Nothing to do.
+      };
+    }
+    startLibrarianSSE();
+
+    // =================================================================
+    // LIBRARY VIEW — table of every STEMS/<song>/, with stem-health
+    // chip, search, URL-drop enqueue.
+    // =================================================================
+    let libRows = [];
+    let libSort = { col: 'title', dir: 1 };
+
+    async function loadLibrary() {
+      try {
+        const r = await fetch('/api/librarian/stems-health', { cache: 'no-store' });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'load failed');
+        libRows = j.rows || [];
+        renderLibrary();
+      } catch (e) {
+        document.getElementById('lib-tbody').innerHTML =
+          `<tr><td colspan="7" style="text-align:center; padding:20px; color: var(--c-bad);">load failed: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderLibrary() {
+      const q = document.getElementById('lib-search').value.trim().toLowerCase();
+      const rows = libRows
+        .filter(r => {
+          if (!q) return true;
+          return (r.title  || '').toLowerCase().includes(q)
+              || (r.artist || '').toLowerCase().includes(q)
+              || (r.singer || '').toLowerCase().includes(q)
+              || (r.base   || '').toLowerCase().includes(q);
+        })
+        .sort((a, b) => {
+          const k = libSort.col;
+          let av = a[k], bv = b[k];
+          if (k === 'stems') { av = a.stemsPresent; bv = b.stemsPresent; }
+          if (k === 'bpm')   { av = a.bpm || 0; bv = b.bpm || 0; }
+          if (typeof av === 'string') av = av.toLowerCase();
+          if (typeof bv === 'string') bv = bv.toLowerCase();
+          if (av < bv) return -1 * libSort.dir;
+          if (av > bv) return  1 * libSort.dir;
+          return 0;
+        });
+      const tbody = document.getElementById('lib-tbody');
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color: var(--ink-dim); font-style: italic;">no songs match</td></tr>`;
+      } else {
+        tbody.innerHTML = rows.map(r => {
+          const cls = r.stemsPresent === 6 ? 'full'
+                    : r.stemsPresent === 0 ? 'none' : 'partial';
+          const missLabel = r.missing && r.missing.length
+            ? `<span class="miss-list">missing: ${r.missing.map(m => m.replace('.m4a','')).join(', ')}</span>`
+            : '';
+          return `<tr>
+            <td class="col-title">${escapeHtml(r.title || r.base || '(untitled)')}</td>
+            <td class="col-artist">${escapeHtml(r.artist || '')}</td>
+            <td class="col-bpm">${r.bpm ? Math.round(r.bpm) : ''}</td>
+            <td class="col-key">${escapeHtml(r.key || '')}</td>
+            <td class="col-singer">${escapeHtml(r.singer || '')}</td>
+            <td><span class="stems-health ${cls}">${r.stemsPresent}/6 ${missLabel}</span></td>
+            <td class="col-base">${escapeHtml(r.base)}</td>
+          </tr>`;
+        }).join('');
+      }
+      // Summary line: N total · M full · K partial · J empty.
+      const total   = libRows.length;
+      const full    = libRows.filter(r => r.stemsPresent === 6).length;
+      const partial = libRows.filter(r => r.stemsPresent > 0 && r.stemsPresent < 6).length;
+      const none    = libRows.filter(r => r.stemsPresent === 0).length;
+      document.getElementById('lib-summary').innerHTML =
+        `${total} song${total === 1 ? '' : 's'} · ` +
+        `<span class="good">${full} complete</span> · ` +
+        `<span class="warn">${partial} partial</span> · ` +
+        `<span class="bad">${none} empty</span>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    document.getElementById('lib-search').addEventListener('input', renderLibrary);
+    document.querySelectorAll('.lib-table th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        if (libSort.col === col) libSort.dir *= -1;
+        else                     libSort = { col, dir: 1 };
+        renderLibrary();
+      });
+    });
+
+    async function enqueueUrl() {
+      const inp = document.getElementById('lib-url');
+      const url = inp.value.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        alert('Paste a YouTube URL (must start with http(s)://).');
+        return;
+      }
+      const btn = document.getElementById('lib-enqueue');
+      const orig = btn.textContent;
+      btn.textContent = 'Queueing…';
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/librarian/enqueue-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'enqueue failed');
+        btn.textContent = 'Queued ✓';
+        inp.value = '';
+        setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+        // SSE will pick up the new INCOMING_WEBLOC file automatically.
+      } catch (e) {
+        btn.textContent = 'Failed';
+        alert('Enqueue failed: ' + e.message);
+        setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+      }
+    }
+    document.getElementById('lib-enqueue').addEventListener('click', enqueueUrl);
+    document.getElementById('lib-url').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') enqueueUrl();
+    });
+
+    loadLibrary();
+    // Refresh the library table periodically so renders that complete
+    // while the page is open show up without a manual reload.
+    setInterval(loadLibrary, 30000);
   </script>
 </body>
 </html>

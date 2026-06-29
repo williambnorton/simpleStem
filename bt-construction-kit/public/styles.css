@@ -918,9 +918,11 @@ select {
 .url-loop-edit:hover { color: var(--color-yellow); }
 .url-loop-edit i { width: 14px; height: 14px; }
 
-/* Drum Machine pill — always visible button. Active state pulses orange
-   when the drum loop is playing; click toggles between drum and backing
-   track. Right-click pops the alternates picker (.drum-machine-menu). */
+/* Drum Machine pill — always visible button. Active state shows a
+   bright green border and flashes on every beat (CSS animation duration
+   driven by --drum-beat, set in engageDrumMachine() from the song BPM).
+   Click toggles between drum and backing track. Right-click pops the
+   alternates picker (.drum-machine-menu). */
 .drum-machine-btn {
   cursor: pointer;
   transition: background 120ms, border-color 120ms, box-shadow 120ms;
@@ -928,22 +930,24 @@ select {
 .drum-machine-btn:hover {
   background: rgba(255, 152, 0, 0.10);
 }
-/* Active drum machine — slow orange pulse so you can spot it across the
-   room while playing. Also bump the label to bold + orange. */
+/* Active drum machine — bright green border, beat-synced flash. */
 .drum-machine-btn.active {
-  background: rgba(255, 152, 0, 0.28);
-  border: 2px solid rgba(255, 152, 0, 0.95);
-  animation: drumPulse 1.2s ease-in-out infinite;
+  background: rgba(0, 230, 80, 0.18);
+  border: 3px solid #00e650;
+  /* --drum-beat is set by JS from the song BPM (60/BPM seconds). */
+  animation: drumBeat var(--drum-beat, 0.5s) ease-out infinite;
 }
 .drum-machine-btn.active .stat-val,
 .drum-machine-btn.active .stat-lbl {
-  color: #ff9800 !important;
+  color: #00e650 !important;
   font-weight: 800 !important;
+  text-shadow: 0 0 6px rgba(0, 230, 80, 0.45);
 }
-@keyframes drumPulse {
-  0%   { box-shadow: 0 0 0 0   rgba(255, 152, 0, 0.55); }
-  60%  { box-shadow: 0 0 0 14px rgba(255, 152, 0, 0); }
-  100% { box-shadow: 0 0 0 0   rgba(255, 152, 0, 0); }
+@keyframes drumBeat {
+  0%   { box-shadow: 0 0 0 0  rgba(0, 230, 80, 0.85), inset 0 0 12px rgba(0, 230, 80, 0.55); transform: scale(1); }
+  20%  { box-shadow: 0 0 22px 8px rgba(0, 230, 80, 0.55), inset 0 0 22px rgba(0, 230, 80, 0.85); transform: scale(1.04); }
+  60%  { box-shadow: 0 0 0 0  rgba(0, 230, 80, 0); inset 0 0 6px rgba(0, 230, 80, 0.2); transform: scale(1); }
+  100% { box-shadow: 0 0 0 0  rgba(0, 230, 80, 0); transform: scale(1); }
 }
 
 /* Heads-up text strip that appears under the title row while the drum

@@ -3907,6 +3907,9 @@ function applyPitchToShifter() {
       ae.playbackRate = rate;
     } catch (e) {}
   }
+  // Drum machine inherits the same rate (combined with playbackSpeed) so
+  // SEMI/FINE knobs change the drum loop tempo too.
+  try { applyRateToDrumMachine(); } catch (e) {}
 }
 
 // Visualizer mode toggle — flips the waveform between SUM (single combined
@@ -6916,8 +6919,28 @@ function wireDrumMachineIntoMaster() {
   if (!audioCtx || !masterGainNode || !drumMachineEl || drumMachineSrc) return;
   try {
     drumMachineSrc = audioCtx.createMediaElementSource(drumMachineEl);
-    drumMachineSrc.connect(masterGainNode);
+    // Route THROUGH the analyser so the visualizer reads the drum signal.
+    // Previously this went straight to masterGainNode, bypassing the
+    // analyser, which is why the canvas stayed flat while drums played.
+    // analyserNode → masterGainNode is already wired in initAudioCtx.
+    if (analyserNode) drumMachineSrc.connect(analyserNode);
+    else              drumMachineSrc.connect(masterGainNode);
   } catch (e) { console.warn('[drum-machine] wireToMaster failed:', e); }
+}
+
+// Combined rate (master speed × pitch knobs) applied to the drum machine
+// so SEMI/FINE/speed work on the drum loop the same way they work on
+// stems. Called from setPlaybackSpeed AND applyPitchToShifter.
+function applyRateToDrumMachine() {
+  if (!drumMachineEl) return;
+  try {
+    const pitchRate = Math.pow(2, ((pitchSemis || 0) + (pitchCents || 0)/100) / 12);
+    const rate = (playbackSpeed || 1) * pitchRate;
+    drumMachineEl.preservesPitch = false;
+    drumMachineEl.mozPreservesPitch = false;
+    drumMachineEl.webkitPreservesPitch = false;
+    drumMachineEl.playbackRate = rate;
+  } catch (e) {}
 }
 
 async function refreshDrumMachinePick(drumPattern, bpm) {
@@ -6980,8 +7003,19 @@ function engageDrumMachine() {
   el.currentTime = 0;
   el.play().catch(e => console.warn('[drum-machine] play failed:', e));
   drumMachineActive = true;
+  // Sync rate to current pitch/speed knobs immediately so the drum loop
+  // doesn't start at 1.0x and then jump when the next knob change fires.
+  try { applyRateToDrumMachine(); } catch (e) {}
+  // BPM-driven flash. The button gets a CSS var that the keyframes use
+  // for animation-duration so the green pulse lands on every beat.
+  // Fallback to 120 BPM when the song has no analyzed tempo.
   const pill = document.getElementById('active-meta-drum');
-  if (pill) pill.classList.add('active');
+  if (pill) {
+    const bpm = (currentSong && Number(currentSong.bpm)) || 120;
+    const beat = Math.max(0.18, Math.min(1.5, 60 / bpm));
+    pill.style.setProperty('--drum-beat', beat.toFixed(3) + 's');
+    pill.classList.add('active');
+  }
   const banner = document.getElementById('drum-machine-banner');
   if (banner) banner.classList.add('show');
   if (window.lucide) lucide.createIcons();
@@ -7511,6 +7545,8 @@ function setPlaybackSpeed(speed) {
   Object.values(audioElements).forEach(ae => {
     ae.playbackRate = speed;
   });
+  // Drum machine follows the same speed so tempo adjustments apply to it.
+  try { applyRateToDrumMachine(); } catch (e) {}
 }
 
 // Loop mode toggle

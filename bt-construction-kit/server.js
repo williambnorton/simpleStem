@@ -2432,6 +2432,230 @@ app.get('/api/librarian/state', async (req, res) => {
 app.get('/librarian', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'librarian.html'));
 });
+
+// ---------- LIVING LIBRARIAN — SSE FEED + AUX ENDPOINTS ------------------
+// The /librarian page renders as a "living document": folders open/close
+// based on contents, files animate moving between folders, health checks
+// tick visibly. Backed by:
+//   * GET /api/librarian/events  — Server-Sent Events; emits 'file-added',
+//     'file-removed', 'snapshot' (every 5s), 'health' (drive probe every
+//     60s), 'phase' (when STEM_QUEUE/.current changes).
+//   * GET /api/librarian/stems-health — per-song stem completeness (6/6,
+//     5/6, missing[]) so the Library view can flag incomplete renders.
+//   * POST /api/librarian/enqueue-url — Librarian-side URL drop, writes a
+//     .webloc into INCOMING_WEBLOC just like dragging a Chrome tab.
+//
+// fs.watch on Drive paths is known-flaky under heavy sync, so we ALSO
+// send a full snapshot every 5s as a reconciliation safety net. Missed
+// events get healed on the next snapshot tick.
+
+const LIB_WATCH_FOLDERS = [
+  { key: 'incoming',  dir: INCOMING_DIR,                                  match: f => f.endsWith('.webloc') },
+  { key: 'queued',    dir: QUEUE_DIR,                                     match: f => f.endsWith('.json') && !f.startsWith('.') },
+  { key: 'done',      dir: path.join(QUEUE_DIR, '_done'),                 match: f => f.endsWith('.json') },
+  { key: 'failed',    dir: path.join(QUEUE_DIR, '_failed'),               match: f => f.endsWith('.json') },
+  { key: 'stems',     dir: STEMS_DIR,                                     match: f => !f.startsWith('.'), isDir: true },
+  { key: 'drums',     dir: DRUM_MACHINE_DIR,                              match: f => /\.m4a$/i.test(f) },
+  { key: 'clips',     dir: CUSTOM_LOOPS_DIR,                              match: f => /\.m4a$/i.test(f) },
+];
+
+// SSE subscriber list. Each entry is the Express res object.
+const librarianClients = new Set();
+function librarianBroadcast(eventName, payload) {
+  const line = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const res of librarianClients) {
+    try { res.write(line); } catch (e) { /* socket closed; cleanup on next write */ }
+  }
+}
+
+// Per-folder snapshot of filenames. fs.watch tells us SOMETHING changed
+// but not what — we diff the new readdir against this snapshot to detect
+// add/remove events. Drive readdirs are fine here because they run on a
+// timer (debounced), not on every request.
+const librarianFolderSnapshot = {};
+function snapshotFolder(folder) {
+  if (!folder || !folder.dir) return [];
+  try {
+    if (!fs.existsSync(folder.dir)) return [];
+    const entries = fs.readdirSync(folder.dir, { withFileTypes: true });
+    return entries
+      .filter(d => folder.isDir ? d.isDirectory() : d.isFile())
+      .map(d => d.name)
+      .filter(folder.match);
+  } catch (e) { return []; }
+}
+
+// Reconciliation tick + initial seed. Compares current readdir against
+// the saved snapshot and emits file-added / file-removed events for any
+// difference. Also rebroadcasts a full state snapshot for clients that
+// just connected mid-stream.
+function reconcileLibrarianFolders() {
+  for (const folder of LIB_WATCH_FOLDERS) {
+    const cur = snapshotFolder(folder);
+    const prev = librarianFolderSnapshot[folder.key] || [];
+    const prevSet = new Set(prev);
+    const curSet  = new Set(cur);
+    for (const name of cur)  if (!prevSet.has(name)) librarianBroadcast('file-added',   { folder: folder.key, name, at: Date.now() });
+    for (const name of prev) if (!curSet.has(name))  librarianBroadcast('file-removed', { folder: folder.key, name, at: Date.now() });
+    librarianFolderSnapshot[folder.key] = cur;
+  }
+}
+
+// Seed snapshots so the first reconcile doesn't fire a flood of "added".
+for (const folder of LIB_WATCH_FOLDERS) librarianFolderSnapshot[folder.key] = snapshotFolder(folder);
+
+// fs.watch on each folder; debounce a quick reconcile after any event
+// (Drive sync can fire many events for one logical change).
+let _libReconcileTimer = null;
+function scheduleReconcile(delay = 250) {
+  if (_libReconcileTimer) return;
+  _libReconcileTimer = setTimeout(() => {
+    _libReconcileTimer = null;
+    try { reconcileLibrarianFolders(); } catch (e) {}
+  }, delay);
+}
+for (const folder of LIB_WATCH_FOLDERS) {
+  try {
+    if (!fs.existsSync(folder.dir)) { try { fs.mkdirSync(folder.dir, { recursive: true }); } catch (e) {} }
+    fs.watch(folder.dir, { persistent: false }, () => scheduleReconcile());
+  } catch (e) {
+    console.warn(`[librarian-watch] could not watch ${folder.dir}:`, e.message);
+  }
+}
+
+// Background ticks:
+//   * Reconcile every 5s as a safety net for missed fs.watch events on Drive.
+//   * Drive health probe every 60s — emits a 'health' event the page uses
+//     to tick a visible checkmark animation. Bill: "show a check mark
+//     once a minute as it is being checked."
+//   * Phase poll every 2s for STEM_QUEUE/.current (the active render).
+setInterval(reconcileLibrarianFolders, 5000);
+let _lastQueuePhase = '';
+setInterval(() => {
+  try {
+    const cur = path.join(QUEUE_DIR, '.current');
+    let payload = null;
+    if (fs.existsSync(cur)) {
+      const raw = fs.readFileSync(cur, 'utf8');
+      try { payload = JSON.parse(raw); } catch (e) { payload = { song: raw.trim() }; }
+    }
+    const key = payload ? JSON.stringify(payload) : '';
+    if (key !== _lastQueuePhase) {
+      _lastQueuePhase = key;
+      librarianBroadcast('phase', { current: payload, at: Date.now() });
+    }
+  } catch (e) {}
+}, 2000);
+setInterval(async () => {
+  const t0 = Date.now();
+  let ok = false, latencyMs = null, error = null;
+  try {
+    const st = await Promise.race([
+      fsp.stat(SIMPLE_STEM_ROOT),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    ok = !!(st && st.isDirectory());
+    latencyMs = Date.now() - t0;
+  } catch (e) { error = (e && e.message) || String(e); }
+  librarianBroadcast('health', { check: 'drive', ok, latencyMs, error, at: Date.now() });
+}, 60 * 1000);
+
+app.get('/api/librarian/events', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders && res.flushHeaders();
+  // Initial snapshot so the page can render full state without waiting
+  // for the next reconciliation tick.
+  res.write(`event: hello\ndata: ${JSON.stringify({ at: Date.now() })}\n\n`);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({
+    folders: librarianFolderSnapshot,
+    at: Date.now(),
+  })}\n\n`);
+  librarianClients.add(res);
+  const keepalive = setInterval(() => {
+    try { res.write(`: keepalive ${Date.now()}\n\n`); } catch (e) {}
+  }, 25000);
+  req.on('close', () => {
+    clearInterval(keepalive);
+    librarianClients.delete(res);
+  });
+});
+
+// Per-song stem health. Walks STEMS/<base>/ counting which of the six
+// expected stem files exist and are non-empty. Returns rows shaped:
+//   { base, title, artist, bpm, key, stemsPresent, stemsTotal: 6,
+//     missing: ['piano.m4a', ...], sizeBytes }
+// The Library view in /librarian renders this list with a Stems Health
+// column so Bill can spot incomplete renders.
+const EXPECTED_STEMS = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
+app.get('/api/librarian/stems-health', (req, res) => {
+  const rows = [];
+  try {
+    if (!fs.existsSync(STEMS_DIR)) return res.json({ ok: true, rows: [] });
+    const dirs = fs.readdirSync(STEMS_DIR, { withFileTypes: true })
+      .filter(d => d.isDirectory() && !d.name.startsWith('.'));
+    for (const d of dirs) {
+      const dir = path.join(STEMS_DIR, d.name);
+      let present = 0;
+      const missing = [];
+      let totalSize = 0;
+      for (const s of EXPECTED_STEMS) {
+        try {
+          const st = fs.statSync(path.join(dir, s));
+          if (st.isFile() && st.size > 1024) { present++; totalSize += st.size; }
+          else missing.push(s);
+        } catch (e) { missing.push(s); }
+      }
+      let title = '', artist = '', bpm = null, key = '', singer = '';
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(dir, 'metadata.json'), 'utf8'));
+        title  = meta.title  || '';
+        artist = meta.artist || '';
+        bpm    = meta.bpm    || null;
+        key    = meta.key    || '';
+        singer = meta.singer_lead || '';
+      } catch (e) {}
+      rows.push({
+        base: d.name, title, artist, bpm, key, singer,
+        stemsPresent: present, stemsTotal: EXPECTED_STEMS.length,
+        missing, sizeBytes: totalSize,
+      });
+    }
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+  res.json({ ok: true, rows });
+});
+
+// Librarian-side URL drop. Writes a .webloc file into INCOMING_WEBLOC,
+// which the watcher picks up the same as a Chrome drop.
+app.post('/api/librarian/enqueue-url', express.json(), (req, res) => {
+  const url = (req.body && req.body.url || '').toString().trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ ok: false, error: 'url must start with http(s)://' });
+  }
+  try { fs.mkdirSync(INCOMING_DIR, { recursive: true }); } catch (e) {}
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const name = `librarian_${stamp}.webloc`;
+  const file = path.join(INCOMING_DIR, name);
+  // Minimal .webloc (Apple binary plist would be nicer; the watcher's
+  // parser accepts a simple text fallback containing the URL).
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>URL</key><string>${url.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</string></dict></plist>
+`;
+  try {
+    fs.writeFileSync(file, body, 'utf8');
+    res.json({ ok: true, file: name, queuedAt: Date.now() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Full-library stem precache is the DEFAULT now. The portal pulls every
 // m4a stem in STEMS/ into ~/.bt-cache/STEMS/ at boot and then again every
 // hour. Result: any song plays instantly with no Drive fetch. Total
