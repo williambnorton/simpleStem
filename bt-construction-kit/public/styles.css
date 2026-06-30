@@ -6810,6 +6810,74 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* Keyboard shortcut cheat-sheet overlay — opened by '?', dismissed by
+   '?' again or by clicking the dark backdrop. Used heavily for the
+   Keyboard Maestro automation workflow. */
+#simpleStem-shortcut-overlay {
+  position: fixed; inset: 0;
+  background: rgba(10, 14, 28, 0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100000;
+}
+.ss-shortcut-panel {
+  background: #fffdf6;
+  color: #1c1917;
+  border: 2px solid #1c1917;
+  border-radius: 6px;
+  padding: 22px 28px;
+  max-width: 620px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: auto;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.ss-shortcut-title {
+  font-family: 'Iowan Old Style', Georgia, serif;
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  border-bottom: 1.5px solid #1c1917;
+  padding-bottom: 6px;
+}
+.ss-shortcut-hint {
+  font-size: 11px;
+  font-weight: normal;
+  font-style: italic;
+  color: #57534e;
+  margin-left: 8px;
+}
+.ss-shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ss-shortcut-table td {
+  padding: 7px 8px;
+  border-bottom: 1px dotted #d6cdb5;
+}
+.ss-shortcut-table td:first-child {
+  width: 220px;
+  white-space: nowrap;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.ss-shortcut-table kbd {
+  background: #1c1917;
+  color: #fffdf6;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  margin: 0 2px;
+}
+.ss-shortcut-foot {
+  margin-top: 12px;
+  font-size: 11px;
+  font-style: italic;
+  color: #57534e;
+}
 /* Sortable headers: hand cursor, active indicator + arrow */
 .song-table-header [data-sort] {
   cursor: pointer;

@@ -577,6 +577,7 @@ async function scanStems() {
         var favorited_at_meta = mj.favorited_at || null;
         var play_count_meta = mj.play_count | 0;
         var last_played_at_meta = mj.last_played_at || null;
+        var drum_machine_default_meta = !!mj.drum_machine_default;
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -620,6 +621,10 @@ async function scanStems() {
       // Play count — incremented via POST /api/song/:base/play.
       play_count: (typeof play_count_meta !== 'undefined') ? play_count_meta : 0,
       last_played_at: (typeof last_played_at_meta !== 'undefined') ? last_played_at_meta : null,
+      // Drum machine as default playback mode — set via PUT
+      // /api/song/:base/drum-default. Client auto-engages drum machine
+      // on song-load when this is true.
+      drum_machine_default: (typeof drum_machine_default_meta !== 'undefined') ? drum_machine_default_meta : false,
       // Source URL + extracted videoId — used by the ingest tracker to
       // recognize when a submitted URL has finished rendering.
       source_url: sourceUrl,
@@ -4584,6 +4589,32 @@ app.post('/api/song/:base/play', (req, res) => {
       }
     } catch (e) {}
     res.json({ ok: true, play_count: meta.play_count, last_played_at: meta.last_played_at });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Drum-machine-as-default-per-song. Some songs the band plays without the
+// backing track — drum machine only. PUT this endpoint to remember that
+// choice. On next song-load the client checks metadata.drum_machine_default
+// and auto-engages the drum machine if true. Body: { drumDefault: bool }.
+app.put('/api/song/:base/drum-default', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const flag = !!(req.body && req.body.drumDefault);
+    meta.drum_machine_default = flag;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    // Patch libraryCache so the next /api/library call reflects the flag.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.drum_machine_default = flag;
+      }
+    } catch (e) {}
+    res.json({ ok: true, drum_machine_default: flag });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

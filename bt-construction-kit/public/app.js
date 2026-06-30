@@ -689,6 +689,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupPitchKnobs();
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
   try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
+  try { setupGlobalKeyboardShortcuts(); } catch (e) { console.warn('[shortcuts] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
@@ -6194,8 +6195,18 @@ function loadSong(song, opts) {
   if (drumPillEl && drumValEl) {
     drumPillEl.style.display = '';
     drumValEl.textContent = drumPattern || (song.practiceBpm ? `≈${song.practiceBpm}` : '--');
-    refreshDrumMachinePick(drumPattern, song.practiceBpm).catch(e =>
-      console.warn('[drum-machine] pick failed:', e));
+    refreshDrumMachinePick(drumPattern, song.practiceBpm).then(() => {
+      // Auto-engage drum machine if this song was last saved with the
+      // drum-machine-as-default flag. Stems still load (so they're ready
+      // if the operator toggles back), but the drum loop is what's
+      // routed to the master bus. The toggleDrumMachine call persists
+      // the same flag, so flipping it OFF removes the auto-engage.
+      try {
+        if ((song.drum_machine_default || (currentSong && currentSong.drum_machine_default)) && !drumMachineActive) {
+          engageDrumMachine();
+        }
+      } catch (e) { console.warn('[drum-default] auto-engage failed:', e); }
+    }).catch(e => console.warn('[drum-machine] pick failed:', e));
   }
   
   // Set all tracks to non-loop browser-wise to prevent wrap stutter
@@ -7176,6 +7187,42 @@ function disengageDrumMachine() {
 function toggleDrumMachine() {
   if (drumMachineActive) disengageDrumMachine();
   else engageDrumMachine();
+  // Remember the choice as the song's default — so the next time this
+  // song loads, the drum machine engages automatically. Bill: "some songs
+  // we use drum machine instead of backing tracks; remember that."
+  // The state we just transitioned TO is what we persist.
+  persistDrumDefault(drumMachineActive);
+}
+
+// PUT /api/song/:base/drum-default { drumDefault } and patch the in-memory
+// library variant so a subsequent loadSong sees the new flag without a
+// page reload.
+function persistDrumDefault(flag) {
+  try {
+    if (typeof currentSong === 'undefined' || !currentSong) return;
+    const base = currentSong.folderName || currentSong.base;
+    if (!base) return;
+    fetch(`/api/song/${encodeURIComponent(base)}/drum-default`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drumDefault: !!flag }),
+    }).then(r => r.json()).then(j => {
+      if (j && j.ok) {
+        currentSong.drum_machine_default = j.drum_machine_default;
+        try {
+          const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
+            const sv = x.variants && x.variants.find(v => v.type === 'stems');
+            return sv && sv.folderName === base;
+          });
+          if (m) {
+            m.drum_machine_default = j.drum_machine_default;
+            const sv = m.variants && m.variants.find(v => v.type === 'stems');
+            if (sv) sv.drum_machine_default = j.drum_machine_default;
+          }
+        } catch (e) {}
+      }
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 // Right-click context menu: list nearby 110@<bpm> alternates so the
@@ -10891,6 +10938,177 @@ function setupStemHotkeys() {
       if (timeEl) timeEl.value = currentPlayheadSec().toFixed(2);
     }
   });
+}
+
+// ───────────────────────────────────────────────────────────────────
+// GLOBAL KEYBOARD SHORTCUTS — for Keyboard Maestro / offline testing.
+// Every shortcut documented in the cheat-sheet overlay (press '?').
+// Conventions:
+//   - All use Cmd (Mac) / Ctrl (Win-Linux) so KM can bind them
+//     directly without conflicting with browser-native shortcuts.
+//   - Shortcuts that move FOCUS to an input then let the operator
+//     keep typing — no Enter required to "commit" the focus jump.
+//   - Shortcuts that mutate state (add to setlist, toggle drum)
+//     work on the currently-loaded song.
+// ───────────────────────────────────────────────────────────────────
+function setupGlobalKeyboardShortcuts() {
+  // Helper: focus an element by id, scroll into view, select existing text.
+  const focusEl = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    try { el.focus(); if (el.select) el.select(); } catch (e) {}
+    return true;
+  };
+
+  const SHORTCUTS = [
+    { keys: ['cmd+s'],       label: 'Focus search bar',                         action: () => focusEl('song-search') },
+    { keys: ['cmd+g'],       label: 'Focus gig picker',                         action: () => focusEl('gig-picker') },
+    { keys: ['cmd+shift+='], label: 'Add current song to active setlist',       action: () => addCurrentSongToActiveSetlist() },
+    { keys: ['cmd+shift+-'], label: 'Remove current song from active setlist', action: () => removeCurrentSongFromActiveSetlist() },
+    { keys: ['cmd+.'],       label: 'Toggle drum machine (persists per song)', action: () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); } },
+    { keys: ['cmd+]'],       label: 'Next song in setlist',                     action: () => kbNextInSetlist() },
+    { keys: ['cmd+['],       label: 'Previous song in setlist',                 action: () => kbPrevInSetlist() },
+    { keys: ['cmd+l'],       label: 'Focus YouTube URL paste (ingest)',         action: () => focusEl('yt-url') },
+    { keys: ['cmd+shift+u'], label: 'Toggle Performer ↔ Librarian view',        action: () => { location.href = location.pathname.endsWith('/librarian') ? '/' : '/librarian'; } },
+    { keys: ['cmd+shift+f'], label: 'Toggle favorite star on current song',     action: () => kbToggleFavorite() },
+    { keys: ['cmd+shift+r'], label: 'Restart server',                           action: () => kbServerRestart() },
+    { keys: ['?'],           label: 'Show this shortcut cheat-sheet',           action: () => showShortcutOverlay() },
+  ];
+
+  // Build a lookup from canonical string ("cmd+shift+=") to action.
+  const lookup = {};
+  for (const sc of SHORTCUTS) {
+    for (const k of sc.keys) lookup[k.toLowerCase()] = sc;
+  }
+  window._simpleStemShortcuts = SHORTCUTS;
+
+  // Canonicalize a KeyboardEvent into "cmd+shift+key" with key lowercased.
+  function canon(e) {
+    const parts = [];
+    if (e.metaKey || e.ctrlKey) parts.push('cmd');
+    if (e.shiftKey) parts.push('shift');
+    if (e.altKey)   parts.push('alt');
+    // For modifier+symbol combos (cmd+shift+=, cmd+shift+-), use e.key
+    // because e.code reports physical "Equal" / "Minus" which Bill's
+    // Keyboard Maestro macros wouldn't match.
+    let k = (e.key || '').toLowerCase();
+    if (k === ' ') k = 'space';
+    parts.push(k);
+    return parts.join('+');
+  }
+
+  window.addEventListener('keydown', (e) => {
+    const key = canon(e);
+    const sc = lookup[key];
+    if (!sc) return;
+    // '?' should fire from anywhere (even input focus), but the modifier
+    // shortcuts should fire even from inputs since Cmd+S etc are explicit.
+    e.preventDefault();
+    e.stopPropagation();
+    try { sc.action(); } catch (err) { console.warn('[shortcut] action failed:', sc.label, err); }
+  }, true);
+
+  console.log('[shortcuts] installed — press ? for cheat sheet');
+}
+
+// === Action helpers — keep small + self-contained so each shortcut is
+// safe to call from anywhere (even before the library has loaded).
+
+function addCurrentSongToActiveSetlist() {
+  try {
+    if (typeof currentSong === 'undefined' || !currentSong) {
+      showToast('No song loaded'); return;
+    }
+    const base = currentSong.folderName || currentSong.base;
+    if (!base) return;
+    if (!activeGig || !Array.isArray(activeGig.setlists)) {
+      showToast('No active gig'); return;
+    }
+    const sl = activeGig.setlists[activeSetlistIdx || 0];
+    if (!sl) { showToast('No active setlist'); return; }
+    sl.songs = sl.songs || [];
+    if (sl.songs.some(s => s.song_base === base)) {
+      showToast('Already in setlist'); return;
+    }
+    sl.songs.push({ song_base: base });
+    if (typeof renderGigSidebar === 'function') renderGigSidebar();
+    if (typeof scheduleGigSave === 'function') scheduleGigSave();
+    showToast(`Added "${currentSong.title}" to ${sl.title || 'setlist'}`);
+  } catch (e) { console.warn(e); }
+}
+
+function removeCurrentSongFromActiveSetlist() {
+  try {
+    if (typeof currentSong === 'undefined' || !currentSong) return;
+    const base = currentSong.folderName || currentSong.base;
+    if (!base || !activeGig) return;
+    const sl = activeGig.setlists && activeGig.setlists[activeSetlistIdx || 0];
+    if (!sl || !sl.songs) return;
+    const before = sl.songs.length;
+    sl.songs = sl.songs.filter(s => s.song_base !== base);
+    if (sl.songs.length === before) { showToast('Song was not in setlist'); return; }
+    if (typeof renderGigSidebar === 'function') renderGigSidebar();
+    if (typeof scheduleGigSave === 'function') scheduleGigSave();
+    showToast(`Removed "${currentSong.title}"`);
+  } catch (e) { console.warn(e); }
+}
+
+function kbNextInSetlist() {
+  try {
+    if (typeof gigSetlistJump === 'function' && activeGig) gigSetlistJump(activeSetlistIdx || 0, +1);
+    else if (typeof playNextInSetlist === 'function') playNextInSetlist();
+  } catch (e) {}
+}
+function kbPrevInSetlist() {
+  try {
+    if (typeof gigSetlistPrev === 'function' && activeGig) gigSetlistPrev(activeSetlistIdx || 0);
+  } catch (e) {}
+}
+function kbToggleFavorite() {
+  try {
+    if (typeof currentSong === 'undefined' || !currentSong) return;
+    const base = currentSong.folderName || currentSong.base;
+    const next = !currentSong.favorite;
+    fetch(`/api/song/${encodeURIComponent(base)}/favorite`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorite: next }),
+    }).then(r => r.json()).then(j => {
+      if (j && j.ok) {
+        currentSong.favorite = j.favorite;
+        currentSong.favorited_at = j.favorited_at;
+        if (typeof renderLibrary === 'function') renderLibrary();
+        showToast(j.favorite ? '★ Starred' : '☆ Unstarred');
+      }
+    });
+  } catch (e) {}
+}
+function kbServerRestart() {
+  if (confirm('Restart the simpleStem server? Audio will cut out for ~2 seconds.')) {
+    fetch('/api/restart', { method: 'POST' }).catch(() => {});
+  }
+}
+
+// Cheat-sheet overlay — appended to body the first time '?' fires; toggled
+// on subsequent presses. Click anywhere outside the panel to dismiss.
+function showShortcutOverlay() {
+  let overlay = document.getElementById('simpleStem-shortcut-overlay');
+  if (overlay) { overlay.remove(); return; }
+  overlay = document.createElement('div');
+  overlay.id = 'simpleStem-shortcut-overlay';
+  overlay.innerHTML = `
+    <div class="ss-shortcut-panel">
+      <div class="ss-shortcut-title">Keyboard Shortcuts <span class="ss-shortcut-hint">(press <kbd>?</kbd> to close)</span></div>
+      <table class="ss-shortcut-table">
+        ${(window._simpleStemShortcuts || []).map(sc =>
+          `<tr><td>${sc.keys.map(k => '<kbd>' + k.replace(/\+/g,'</kbd> + <kbd>') + '</kbd>').join('  or  ')}</td><td>${sc.label}</td></tr>`
+        ).join('')}
+      </table>
+      <div class="ss-shortcut-foot">Tip: many of these are bindable in Keyboard Maestro for fully-automated regression flows.</div>
+    </div>
+  `;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 // Open the picker popup near `anchor` to change section `idx`'s color/label.
