@@ -278,7 +278,7 @@
     }
     .pipeline-svg {
       width: 100%;
-      height: 220px;
+      height: 260px;
       display: block;
     }
     .pipeline-svg .arrow-path {
@@ -328,14 +328,25 @@
       text-anchor: middle;
       letter-spacing: 0.04em;
     }
+    /* Count chip — a real rect behind the number so the digit is
+       visually centered inside a labeled box, not floating below
+       the folder. */
+    .pipeline-svg .folder-count-chip {
+      fill: #fffdf6;
+      stroke: var(--ink);
+      stroke-width: 1.2;
+      rx: 3;
+    }
+    .pipeline-svg .folder-count-chip.has { fill: #d4f1de; stroke: var(--c-good); }
     .pipeline-svg .folder-count {
       font-family: ui-monospace, 'SF Mono', Menlo, monospace;
       font-size: 14px;
       font-weight: 800;
       text-anchor: middle;
+      dominant-baseline: middle;          /* vertical center within the chip */
     }
     .pipeline-svg .folder-count.empty { fill: var(--ink-dim); }
-    .pipeline-svg .folder-count.has   { fill: #166534; }
+    .pipeline-svg .folder-count.has   { fill: var(--c-good); }
     /* File-in-flight icon. Plain CSS animation along an SVG <animateMotion>
        isn't necessary — we generate one per movement event and animate it
        along a hand-rolled translate path with a 1.6s CSS animation.
@@ -593,7 +604,7 @@
       font-size: 9px;
       font-weight: 700;
       fill: var(--ink-dim);
-      text-anchor: end;
+      text-anchor: middle;                /* centered under the count chip */
       opacity: 0.85;
     }
     .pipeline-svg .folder-timer.firing { fill: var(--c-good); opacity: 1; animation: timer-flash 1.6s ease-out 1; }
@@ -671,7 +682,7 @@
         <span class="blurb">Folders open when they hold files. Arrows pulse when a file moves. Drive health ticks once a minute.</span>
       </div>
       <div class="pipeline-stage">
-        <svg id="pipeline-svg" class="pipeline-svg" viewBox="0 0 1100 220" preserveAspectRatio="xMidYMid meet">
+        <svg id="pipeline-svg" class="pipeline-svg" viewBox="0 0 1100 260" preserveAspectRatio="xMidYMid meet">
           <!-- Arrows. Each defines a path the file-flight animation follows. -->
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -695,8 +706,9 @@
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
             <text class="folder-label" x="50" y="78">INCOMING</text>
+            <rect class="folder-count-chip" data-count-chip="incoming" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="incoming">0</text>
-            <text class="folder-timer" x="98" y="92" data-timer="incoming"></text>
+            <text class="folder-timer" x="50" y="145" data-timer="incoming"></text>
           </g>
           <g class="folder" data-key="queued" transform="translate(295, 50)">
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
@@ -733,7 +745,7 @@
 
           <!-- Health-check checkmark — flashes when /api/librarian/events
                'health' event fires (every 60s). -->
-          <g transform="translate(540, 200)">
+          <g transform="translate(540, 240)">
             <text id="health-tick" class="health-tick tick-ok" text-anchor="middle">DRIVE OK · checking…</text>
             <text id="health-mark" class="health-mark" text-anchor="middle" x="0" y="-14" font-size="22">✓</text>
           </g>
@@ -1176,6 +1188,8 @@
         txt.classList.toggle('empty', n === 0);
         txt.classList.toggle('has',   n > 0);
       }
+      const chip = g.querySelector('rect.folder-count-chip');
+      if (chip) chip.classList.toggle('has', n > 0);
       g.classList.toggle('has-files', n > 0);
     }
     function setFolderActive(key, durationMs) {
@@ -1516,10 +1530,11 @@
         const bar = document.querySelector(`[data-bar="${name}"]`);
         if (bar) bar.style.width = pct.toFixed(1) + '%';
         // Mirror countdown into the folder badge if the task is bound
-        // to a folder (drum/stems/clips).
+        // to a folder (drum/stems/clips). Prefix "next check:" so the
+        // user knows what the number means — Bill's feedback.
         if (t.folder) {
           const ft = document.querySelector(`.pipeline-svg [data-timer="${t.folder}"]`);
-          if (ft) ft.textContent = fmtCountdown(remaining);
+          if (ft) ft.textContent = `next check: ${fmtCountdown(remaining)}`;
         }
       }
     }
@@ -1584,44 +1599,14 @@
     // between events. Redraw on every snapshot/added/removed event.
     // =================================================================
     function refreshAmbient() {
-      const NS = 'http://www.w3.org/2000/svg';
-      for (const key of Object.keys(folderEls)) {
-        const g = folderEls[key];
-        if (!g) continue;
-        // Drop any previous ambient docs.
-        g.querySelectorAll('.ambient-doc').forEach(n => n.remove());
-        const n = folderCount[key] || 0;
-        if (n <= 0) continue;
-        // 1 doc up to ~3 (scaled log) — purely decorative.
-        const count = Math.min(3, Math.max(1, Math.ceil(Math.log10(n + 1)) + 1));
-        for (let i = 0; i < count; i++) {
-          const doc = document.createElementNS(NS, 'g');
-          doc.setAttribute('class', 'ambient-doc');
-          // Random-ish positions inside the open folder area.
-          const cx = 20 + i * 22 + (i % 2 ? 4 : 0);
-          const cy = 32 + (i % 2 ? -2 : 2);
-          doc.setAttribute('transform', `translate(${cx}, ${cy})`);
-          doc.style.animationDelay = (i * 0.7) + 's';
-          const r = document.createElementNS(NS, 'rect');
-          r.setAttribute('x', '-5'); r.setAttribute('y', '-7');
-          r.setAttribute('width', '10'); r.setAttribute('height', '14');
-          r.setAttribute('fill', '#fffdf6');
-          r.setAttribute('stroke', '#1c1917');
-          r.setAttribute('stroke-width', '1');
-          r.setAttribute('rx', '1');
-          doc.appendChild(r);
-          // Decorative ruled lines on the doc.
-          for (let k = 0; k < 2; k++) {
-            const l = document.createElementNS(NS, 'line');
-            l.setAttribute('x1', '-3'); l.setAttribute('x2', '3');
-            l.setAttribute('y1', -3 + k * 3); l.setAttribute('y2', -3 + k * 3);
-            l.setAttribute('stroke', '#92400e');
-            l.setAttribute('stroke-width', '0.6');
-            doc.appendChild(l);
-          }
-          g.appendChild(doc);
-        }
-      }
+      // Ambient floating docs were visual clutter — Bill's feedback
+      // 2026-06-30. The folder's open-flap state + count chip already
+      // convey "has files"; the floating glyphs were poking out of the
+      // top of each folder and reading as broken. Animations should
+      // happen only on REAL file movements between folders, not as
+      // ambient background noise. Kept as a no-op so the existing
+      // refreshAmbient() call sites don't crash.
+      return;
     }
     // Call refreshAmbient any time a folder count changes. We wrap
     // setFolderCount so any caller (snapshot, file-added, file-removed)
