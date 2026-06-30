@@ -4597,6 +4597,72 @@ app.post('/api/song/:base/play', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Global tag registry. The library cell pulldown shows checkboxes for
+// every registered tag, plus an "Add tag…" item that appends to this
+// list and persists it across server restarts. Stored at the simpleStem
+// root as TAGS.json so it syncs with the rest of the library.
+const TAGS_REGISTRY_PATH = path.join(SIMPLE_STEM_ROOT, 'TAGS.json');
+const DEFAULT_TAGS = ['Protest', 'Bill&Matt'];
+function loadTagRegistry() {
+  try {
+    if (fs.existsSync(TAGS_REGISTRY_PATH)) {
+      const j = JSON.parse(fs.readFileSync(TAGS_REGISTRY_PATH, 'utf8'));
+      if (Array.isArray(j.tags)) return j.tags.map(t => String(t).trim()).filter(Boolean);
+    }
+  } catch (e) { console.warn('[tags] registry read failed:', e.message); }
+  return DEFAULT_TAGS.slice();
+}
+function saveTagRegistry(tags) {
+  try {
+    fs.writeFileSync(TAGS_REGISTRY_PATH, JSON.stringify({ tags }, null, 2) + '\n');
+  } catch (e) { console.warn('[tags] registry write failed:', e.message); }
+}
+// Boot: ensure the file exists with the default tags so first call to
+// GET /api/tags is never blank.
+if (!fs.existsSync(TAGS_REGISTRY_PATH)) saveTagRegistry(DEFAULT_TAGS.slice());
+
+app.get('/api/tags', (req, res) => {
+  res.json({ ok: true, tags: loadTagRegistry() });
+});
+// Add a tag to the global registry. De-duped case-insensitive.
+app.post('/api/tags', express.json(), (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!name) return res.status(400).json({ ok: false, error: 'name required' });
+  const tags = loadTagRegistry();
+  if (tags.some(t => t.toLowerCase() === name.toLowerCase())) {
+    return res.json({ ok: true, tags, alreadyExists: true });
+  }
+  tags.push(name);
+  saveTagRegistry(tags);
+  res.json({ ok: true, tags });
+});
+
+// Readiness — radio group "InTheBag" / "Rehearsal" / "TBD".
+// Persisted to metadata.readiness alongside the existing MPB-synced
+// values. Bill's per-row spec 2026-06-30.
+const READINESS_VALUES = new Set(['InTheBag', 'Rehearsal', 'TBD']);
+app.put('/api/song/:base/readiness', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const v = String((req.body && req.body.readiness) || '').trim();
+  if (!READINESS_VALUES.has(v)) return res.status(400).json({ error: 'bad readiness value' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.readiness = v;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.readiness = v;
+      }
+    } catch (e) {}
+    res.json({ ok: true, readiness: v });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Per-song tags. Free-form labels the operator attaches in-portal so
 // dynamic templates ("Protest Songs", "Slow Jams", "Singalongs") can
 // pull a query-based list. Body: { tags: ['protest', 'sing-along'] }

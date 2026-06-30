@@ -3130,7 +3130,7 @@ select {
 
 .song-table-header {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 50px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 110px 50px 55px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-dim);
@@ -3164,7 +3164,7 @@ select {
 
 .song-row {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 50px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 110px 50px 55px;
   align-items: center;
   padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -6830,6 +6830,96 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   color: var(--text-muted);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Per-row tags pulldown — Bill's spec 2026-06-30. Click the cell's
+   button, get a card with: checkbox per registered tag + Add tag…
+   button + radio group for readiness (InTheBag / Rehearsal / TBD). */
+.song-tags-cell {
+  display: flex;
+  align-items: center;
+  justify-content: stretch;
+}
+.tags-pulldown-btn {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.tags-pulldown-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-active);
+  color: var(--text-main);
+}
+.tags-menu {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-active);
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.35);
+  padding: 8px 0;
+  min-width: 220px;
+  max-height: 360px;
+  overflow: auto;
+}
+.tags-menu-section {
+  padding: 4px 0;
+}
+.tags-menu-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 4px 14px 6px;
+}
+.tags-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+.tags-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.tags-menu-row:hover {
+  background: var(--bg-card-hover);
+}
+.tags-menu-row input {
+  margin: 0;
+  accent-color: #2980b9;
+}
+.tags-menu-add {
+  background: transparent;
+  border: 0;
+  color: var(--color-blue);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.tags-menu-add:hover {
+  background: var(--bg-card-hover);
+}
+.tags-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
 }
 
 /* Gig template picker — opened by clicking the + Gig button.

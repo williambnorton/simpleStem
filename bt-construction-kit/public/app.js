@@ -3679,6 +3679,33 @@ function renderLibrary() {
     drumCell.textContent = drumPattern || '—';
     if (drumPattern) drumCell.title = `Drum pattern: ${drumPattern}`;
 
+    // Tags cell — pulldown of checkboxes (Protest, Bill&Matt, user-added)
+    // plus an "Add tag…" item and a radio group for readiness
+    // (InTheBag / Rehearsal / TBD). Bill's spec 2026-06-30.
+    const tagsCell = document.createElement('div');
+    tagsCell.className = 'song-tags-cell';
+    const stemsForTags = merged.variants.find(v => v.type === 'stems');
+    const songBaseForTags = stemsForTags && stemsForTags.folderName;
+    const tagsBtn = document.createElement('button');
+    tagsBtn.type = 'button';
+    tagsBtn.className = 'tags-pulldown-btn';
+    function renderTagsBtn() {
+      const tags = (stemsForTags && stemsForTags.tags) || [];
+      const readiness = (stemsForTags && stemsForTags.readiness) || '';
+      const parts = [];
+      if (tags.length) parts.push(tags.join(', '));
+      if (readiness) parts.push(`• ${readiness}`);
+      tagsBtn.textContent = parts.length ? parts.join(' ') : '+ tag';
+      tagsBtn.title = parts.length ? parts.join('  ') : 'Click to tag this song';
+    }
+    renderTagsBtn();
+    tagsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!songBaseForTags) return;
+      openTagsMenu(songBaseForTags, stemsForTags, tagsBtn, renderTagsBtn);
+    });
+    tagsCell.appendChild(tagsBtn);
+
     // Play count cell — incremented by the server every time a stem fires
     // 'playing' (debounced to one per song-load). Click counts are honest
     // because they require the audio decoder to actually produce output,
@@ -3700,6 +3727,7 @@ function renderLibrary() {
     row.appendChild(keyCell);
     row.appendChild(singerCell);
     row.appendChild(drumCell);
+    row.appendChild(tagsCell);
     row.appendChild(playsCell);
     row.appendChild(actionCell);
 
@@ -11352,6 +11380,119 @@ function kbTransportPlay() {
   // click happened.
   if (typeof togglePlayPause === 'function') togglePlayPause();
   else { const btn = document.getElementById('btn-play'); if (btn) btn.click(); }
+}
+
+// ─── Tag/readiness pulldown ───────────────────────────────────────
+// Per-song dropdown invoked from the Tags cell in the library row.
+// Renders: checkbox per registered tag · radio group for readiness ·
+// "Add tag…" item. Persists via PUT /api/song/:base/tags and PUT
+// /api/song/:base/readiness; new tags POST /api/tags. The dropdown
+// positions itself relative to the anchor button and dismisses on
+// outside click.
+let _tagsMenuEl = null;
+async function openTagsMenu(songBase, songData, anchorBtn, refresh) {
+  closeTagsMenu();
+  let registry = ['Protest', 'Bill&Matt'];
+  try {
+    const r = await fetch('/api/tags');
+    if (r.ok) registry = (await r.json()).tags || registry;
+  } catch (e) {}
+  const currentTags = (songData && songData.tags) || [];
+  const currentReadiness = (songData && songData.readiness) || '';
+  const READINESS = ['InTheBag', 'Rehearsal', 'TBD'];
+
+  const menu = document.createElement('div');
+  menu.className = 'tags-menu';
+  menu.innerHTML = `
+    <div class="tags-menu-section">
+      <div class="tags-menu-title">Tags</div>
+      <div class="tags-menu-list">
+        ${registry.map(t => `
+          <label class="tags-menu-row">
+            <input type="checkbox" data-tag="${t.toLowerCase()}" ${currentTags.includes(t.toLowerCase()) ? 'checked' : ''}>
+            <span>${escapeHtml(t)}</span>
+          </label>
+        `).join('')}
+        <button type="button" class="tags-menu-add">+ Add tag…</button>
+      </div>
+    </div>
+    <div class="tags-menu-divider"></div>
+    <div class="tags-menu-section">
+      <div class="tags-menu-title">Readiness</div>
+      <div class="tags-menu-list">
+        ${READINESS.map(r => `
+          <label class="tags-menu-row tags-menu-radio">
+            <input type="radio" name="rd-${songBase}" data-rd="${r}" ${currentReadiness === r ? 'checked' : ''}>
+            <span>${r}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(menu);
+  _tagsMenuEl = menu;
+
+  // Position near the anchor.
+  const r = anchorBtn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.zIndex = '99998';
+  menu.style.top  = `${Math.min(window.innerHeight - 320, r.bottom + 4)}px`;
+  menu.style.left = `${Math.min(window.innerWidth  - 240, r.left)}px`;
+
+  // PUT current tags state to server.
+  const persistTags = () => {
+    const checks = menu.querySelectorAll('input[type="checkbox"][data-tag]:checked');
+    const tags = Array.from(checks).map(c => c.dataset.tag);
+    fetch(`/api/song/${encodeURIComponent(songBase)}/tags`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags }),
+    }).then(rr => rr.json()).then(j => {
+      if (j && j.ok) {
+        if (songData) songData.tags = j.tags;
+        if (typeof refresh === 'function') refresh();
+      }
+    });
+  };
+  menu.querySelectorAll('input[type="checkbox"][data-tag]').forEach(cb => {
+    cb.addEventListener('change', persistTags);
+  });
+  menu.querySelectorAll('input[type="radio"][data-rd]').forEach(rad => {
+    rad.addEventListener('change', () => {
+      fetch(`/api/song/${encodeURIComponent(songBase)}/readiness`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readiness: rad.dataset.rd }),
+      }).then(rr => rr.json()).then(j => {
+        if (j && j.ok) {
+          if (songData) songData.readiness = j.readiness;
+          if (typeof refresh === 'function') refresh();
+        }
+      });
+    });
+  });
+  menu.querySelector('.tags-menu-add').addEventListener('click', async () => {
+    const name = prompt('New tag name:');
+    if (!name || !name.trim()) return;
+    const r2 = await fetch('/api/tags', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    }).then(rr => rr.json()).catch(() => ({}));
+    if (r2 && r2.ok) {
+      closeTagsMenu();
+      openTagsMenu(songBase, songData, anchorBtn, refresh);
+    }
+  });
+
+  // Dismiss on outside click.
+  setTimeout(() => {
+    document.addEventListener('click', _tagsMenuOutsideListener);
+  }, 50);
+}
+function _tagsMenuOutsideListener(e) {
+  if (_tagsMenuEl && !_tagsMenuEl.contains(e.target)) closeTagsMenu();
+}
+function closeTagsMenu() {
+  if (_tagsMenuEl) { _tagsMenuEl.remove(); _tagsMenuEl = null; }
+  document.removeEventListener('click', _tagsMenuOutsideListener);
 }
 
 // === META combo runner ===
