@@ -8,16 +8,23 @@
    =========================================================== */
 body.test-mode {
   background: #fff8c5 !important;
-  padding-top: 28px !important;   /* room for the fixed banner */
+}
+/* The app's main grid is .app-container with height:100vh (line 1304),
+   so adding padding to body does NOTHING — body is overflow:hidden and
+   .app-container claims the whole viewport. We have to shrink the grid
+   itself by the banner height, and shift it down by the same amount. */
+body.test-mode .app-container {
+  height: calc(100vh - 28px) !important;
+  margin-top: 28px !important;
 }
 body.test-mode::before {
   content: "🧪  TEST MODE — ?test=1  ·  AudioContext pre-initialized  ·  do NOT use at a gig";
   display: block;
-  position: fixed;                /* fixed (not sticky) so it doesn't break body's scrolling context */
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 26px;
+  height: 28px;
   z-index: 99999;
   background: #fbbf24;
   color: #422006;
@@ -26,10 +33,10 @@ body.test-mode::before {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-align: center;
-  padding: 6px 12px;
+  padding: 7px 12px;
   border-bottom: 2px solid #b45309;
   text-transform: uppercase;
-  pointer-events: none;           /* never intercept clicks */
+  pointer-events: none;
 }
 body.test-mode .brand-version,
 body.test-mode .meta .pill {

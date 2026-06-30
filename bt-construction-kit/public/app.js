@@ -178,6 +178,23 @@ function installAudioInstrumentation(channel, audioEl) {
       SS_DEBUG.log('audio', `${channel}.${evt}`, info);
     });
   }
+  // The 'playing' event fires when audio is ACTUALLY producing output.
+  // If we get here for ANY stem, the song is healthy — clear any sticky
+  // failed marker that a prior load timeout left behind. This catches
+  // the case where the user hits Play after a transient failure
+  // (gesture, network blip, etc.) and the row was still showing as grey.
+  audioEl.addEventListener('playing', () => {
+    try {
+      if (typeof currentSong !== 'undefined' && currentSong) {
+        const base = currentSong.folderName || currentSong.base;
+        if (base && typeof isSongFailed === 'function' && isSongFailed(base)) {
+          clearSongFailed(base);
+          if (typeof renderLibrary === 'function') renderLibrary();
+          if (typeof renderGigSidebar === 'function') renderGigSidebar();
+        }
+      }
+    } catch (e) {}
+  });
 }
 
 // ─── TOAST (non-blocking transient UI message) ────────────────────────────
