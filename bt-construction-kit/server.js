@@ -197,14 +197,20 @@ app.get('/api/identity', (req, res) => {
 // queue behind dead sockets. From the user's POV the server "stops
 // responding" even though curl proves it's fine.
 //
-// Fix: send Connection: close on the routes that are vulnerable to
-// abort-during-stream (audio + the heartbeat that uses the same pool).
-// Each request gets a fresh TCP connection; no wedged-socket sharing.
-// Cost is ~1ms TCP handshake per request — irrelevant on localhost.
+// Connection: close is HARMFUL on /api/audio/* paths. Chrome's <audio>
+// element issues a Range request, gets the response, and then internally
+// tries to reuse the socket for streaming buffer reads. With
+// Connection: close the socket closes immediately and Chrome's media
+// element stalls at networkState=2/readyState=0 for >3s — the exact
+// 2026-06-28 gig failure mode. Verified 2026-06-29: fetch() reads the
+// full 6.5MB in 27ms with Connection: close set, but <audio> stalls.
+//
+// We keep Connection: close ONLY on /api/health (where it's harmless;
+// the heartbeat is short fetches) so wedged-socket recovery on that
+// path remains, but the audio path stays default keep-alive.
 app.use((req, res, next) => {
   const p = req.path || '';
-  if (p.startsWith('/api/audio/') || p === '/api/health' ||
-      p === '/api/audio/xr18-status') {
+  if (p === '/api/health') {
     res.setHeader('Connection', 'close');
   }
   next();
