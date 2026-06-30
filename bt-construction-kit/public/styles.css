@@ -5056,7 +5056,28 @@ body.server-stale .player-active:hover::after {
 .gig-setlist-toggle.remove:hover:not(:disabled) { background: #c0392b; }
 .gig-setlist-toggle i { width: 12px; height: 12px; }
 
-.gig-setlist-songs { display: flex; flex-direction: column; gap: 3px; min-height: 4px; }
+/* The setlist songs list inside a gig collapse panel. Long sets (Bill
+   Songs, 40 entries; Sunday June28 Set 1, 30 entries; etc.) overflowed
+   the sidebar invisibly with no scrollbar. Cap to a sensible height
+   and let the user scroll within. Bill's request 2026-06-30. The
+   wrapper (.gig-setlist) handles flex layout, so we just clamp height
+   + overflow here. */
+.gig-setlist-songs {
+  display: flex; flex-direction: column; gap: 3px; min-height: 4px;
+  max-height: 380px;
+  overflow-y: auto;
+  /* Subtle scrollbar so the operator can SEE there's more below. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+.gig-setlist-songs::-webkit-scrollbar { width: 8px; }
+.gig-setlist-songs::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 4px;
+}
+.gig-setlist-songs::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
 .gig-setlist-songs:empty::after {
   content: 'Drop a song here, or load one and hit +';
   display: block;
@@ -6809,6 +6830,85 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   color: var(--text-muted);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Gig template picker — opened by clicking the + Gig button.
+   Bill: "+ Gig should show template picker, not a name prompt." */
+#simpleStem-gig-template-picker {
+  position: fixed; inset: 0;
+  background: rgba(10, 14, 28, 0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100000;
+}
+.ss-gig-picker-panel {
+  background: #fffdf6;
+  color: #1c1917;
+  border: 2px solid #1c1917;
+  border-radius: 6px;
+  padding: 22px 24px 18px;
+  max-width: 480px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: auto;
+  box-shadow: 0 14px 44px rgba(0,0,0,0.5);
+}
+.ss-gig-picker-title {
+  font-family: 'Iowan Old Style', Georgia, serif;
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.ss-gig-picker-sub {
+  font-size: 12px;
+  font-style: italic;
+  color: #57534e;
+  margin-bottom: 16px;
+}
+.ss-gig-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ss-gig-picker-row {
+  background: #f7f1e3;
+  border: 1px solid #d6cdb5;
+  border-radius: 4px;
+  padding: 10px 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ss-gig-picker-row:hover {
+  background: #ece4cf;
+  border-color: #1c1917;
+}
+.ss-gig-picker-label {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.ss-gig-picker-hint {
+  font-size: 11px;
+  color: #57534e;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.ss-gig-picker-foot {
+  text-align: right;
+}
+.ss-gig-picker-cancel {
+  background: transparent;
+  border: 1px solid #1c1917;
+  color: #1c1917;
+  padding: 6px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* Keyboard shortcut cheat-sheet overlay — opened by '?', dismissed by

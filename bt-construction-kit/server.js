@@ -578,6 +578,7 @@ async function scanStems() {
         var play_count_meta = mj.play_count | 0;
         var last_played_at_meta = mj.last_played_at || null;
         var drum_machine_default_meta = !!mj.drum_machine_default;
+        var tags_meta = Array.isArray(mj.tags) ? mj.tags.map(t => String(t).trim().toLowerCase()).filter(Boolean) : [];
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -625,6 +626,10 @@ async function scanStems() {
       // /api/song/:base/drum-default. Client auto-engages drum machine
       // on song-load when this is true.
       drum_machine_default: (typeof drum_machine_default_meta !== 'undefined') ? drum_machine_default_meta : false,
+      // Free-form tags — set via PUT /api/song/:base/tags. Used by
+      // dynamic-template pseudo-gigs (__protest_songs__, __sing_along__, …)
+      // to derive their song lists at runtime.
+      tags: (typeof tags_meta !== 'undefined') ? tags_meta : [],
       // Source URL + extracted videoId — used by the ingest tracker to
       // recognize when a submitted URL has finished rendering.
       source_url: sourceUrl,
@@ -4589,6 +4594,35 @@ app.post('/api/song/:base/play', (req, res) => {
       }
     } catch (e) {}
     res.json({ ok: true, play_count: meta.play_count, last_played_at: meta.last_played_at });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Per-song tags. Free-form labels the operator attaches in-portal so
+// dynamic templates ("Protest Songs", "Slow Jams", "Singalongs") can
+// pull a query-based list. Body: { tags: ['protest', 'sing-along'] }
+// — array of strings, lowercased + trimmed on write. Empty array allowed.
+app.put('/api/song/:base/tags', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  let tags = (req.body && req.body.tags) || [];
+  if (!Array.isArray(tags)) tags = [];
+  tags = tags.map(t => String(t || '').trim().toLowerCase()).filter(Boolean);
+  // De-dupe while preserving order.
+  tags = [...new Set(tags)];
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.tags = tags;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.tags = tags;
+      }
+    } catch (e) {}
+    res.json({ ok: true, tags });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

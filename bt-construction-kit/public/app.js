@@ -784,7 +784,7 @@ const ACTIVE_SETLIST_IDX_KEY  = 'simpleStem.activeSetlistIdx';
 const LAST_SONG_BASE_KEY      = 'simpleStem.lastSongBase';
 
 function setupGigSidebar() {
-  document.getElementById('gig-new-btn').addEventListener('click', onGigNew);
+  document.getElementById('gig-new-btn').addEventListener('click', openGigTemplatePicker);
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
   document.getElementById('gig-picker').addEventListener('change', e => {
@@ -830,6 +830,7 @@ const MATT_GIG_SLUG  = '__matt_songs__';
 const DAN_GIG_SLUG   = '__dan_songs__';
 const JD_GIG_SLUG    = '__jd_songs__';
 const ROUND_ROBIN_GIG_SLUG = '__round_robin__';
+const PROTEST_GIG_SLUG     = '__protest_songs__';   // tag = 'protest'
 const SINGER_GIG_MAP = {
   [BILL_GIG_SLUG]: 'Bill',
   [MATT_GIG_SLUG]: 'Matt',
@@ -846,6 +847,7 @@ const SYNTHETIC_GIG_SLUGS = new Set([
   DAN_GIG_SLUG,
   JD_GIG_SLUG,
   ROUND_ROBIN_GIG_SLUG,
+  PROTEST_GIG_SLUG,
 ]);
 
 // localStorage warm-cache keys. We paint the sidebar from these before the
@@ -1122,6 +1124,26 @@ async function loadFavoritesGig() {
   };
 }
 
+// Tag-based pseudo-gig — filter mergedLibrary by the named tag.
+// Bill: "Protest Songs" template needs this. Adding any new tag-based
+// template only requires registering a new slug + calling loadTagGig
+// with the tag name in loadActiveGig's else-if chain.
+function loadTagGig(slug, tagName, title) {
+  const tagLower = String(tagName || '').toLowerCase();
+  const matches = (mergedLibrary || []).filter(m => {
+    const sv = m.variants && m.variants.find(v => v.type === 'stems');
+    return sv && Array.isArray(sv.tags) && sv.tags.includes(tagLower);
+  }).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  const songs = matches.map(m => {
+    const sv = m.variants && m.variants.find(v => v.type === 'stems');
+    return { song_base: sv && sv.folderName, title: m.title || '', artist: m.artist || '' };
+  });
+  return {
+    slug, title, readOnly: true, synthetic: true, syntheticKind: 'tag',
+    setlists: [{ title, songs, origin: 'tag:' + tagLower }],
+  };
+}
+
 async function loadActiveGig(slug) {
   if (!slug) { activeGig = null; renderGigSidebar(); return; }
   // Synthetic gigs (YouTube Sync, Manual Setlists) — built client-side from
@@ -1140,6 +1162,8 @@ async function loadActiveGig(slug) {
         activeGig = loadSingerGig(slug, SINGER_GIG_MAP[slug]);
       } else if (slug === ROUND_ROBIN_GIG_SLUG) {
         activeGig = loadRoundRobinGig();
+      } else if (slug === PROTEST_GIG_SLUG) {
+        activeGig = loadTagGig(PROTEST_GIG_SLUG, 'protest', 'Protest Songs');
       }
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
         const placeholderTitle =
@@ -1149,6 +1173,7 @@ async function loadActiveGig(slug) {
           slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
           (slug in SINGER_GIG_MAP)          ? `(no ${SINGER_GIG_MAP[slug]} songs yet — set Singer in the library row)` :
           slug === ROUND_ROBIN_GIG_SLUG     ? '(no singer-tagged songs yet — set Singer in the library rows)' :
+          slug === PROTEST_GIG_SLUG         ? '(no songs tagged "protest" yet — set tags via ⋯ menu on a library row)' :
                                               '(empty)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
@@ -1374,6 +1399,64 @@ function stopGigSetlistPlayback() {
   gigPlayingSongIdx = null;
   stopAudio();
   renderGigSidebar();
+}
+
+// + Gig button now opens a template picker instead of prompting for
+// a name. Bill: "I want giglists to be dynamic and minimal — pick from
+// templates instead of authoring static lists." Each template is a
+// pseudo-gig slug; selecting one loads it as the active gig view.
+function openGigTemplatePicker() {
+  // Tear down any existing dialog so re-clicking just re-opens.
+  const existing = document.getElementById('simpleStem-gig-template-picker');
+  if (existing) { existing.remove(); return; }
+
+  const TEMPLATES = [
+    { slug: FAVORITES_GIG_SLUG, label: '★ Favorites',          hint: 'every song with favorite = true (★ on the library row)' },
+    { slug: BILL_GIG_SLUG,      label: 'Bill Songs',            hint: 'singer_lead = Bill' },
+    { slug: MATT_GIG_SLUG,      label: 'Matt Songs',            hint: 'singer_lead = Matt' },
+    { slug: DAN_GIG_SLUG,       label: 'Dan Songs',             hint: 'singer_lead = Dan' },
+    { slug: JD_GIG_SLUG,        label: 'JD Songs',              hint: 'singer_lead = JD' },
+    { slug: ROUND_ROBIN_GIG_SLUG, label: '🎙 Round Robin',     hint: 'singers alternate so nobody bears the whole set' },
+    { slug: PROTEST_GIG_SLUG,   label: '✊ Protest Songs',     hint: 'tag = "protest" (set via ⋯ menu on library rows)' },
+    { slug: RECENTS_GIG_SLUG,   label: '🕒 Recents',             hint: 'last 50 songs you played' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'simpleStem-gig-template-picker';
+  overlay.innerHTML = `
+    <div class="ss-gig-picker-panel">
+      <div class="ss-gig-picker-title">Pick a gig template</div>
+      <div class="ss-gig-picker-sub">Templates are dynamic — they re-derive their song list from the library on every load. No static editing.</div>
+      <div class="ss-gig-picker-list">
+        ${TEMPLATES.map(t => `
+          <button class="ss-gig-picker-row" data-slug="${t.slug}">
+            <div class="ss-gig-picker-label">${t.label}</div>
+            <div class="ss-gig-picker-hint">${t.hint}</div>
+          </button>
+        `).join('')}
+      </div>
+      <div class="ss-gig-picker-foot">
+        <button class="ss-gig-picker-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('.ss-gig-picker-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelectorAll('.ss-gig-picker-row').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slug = btn.dataset.slug;
+      overlay.remove();
+      // Switch the picker dropdown to this template + load.
+      const picker = document.getElementById('gig-picker');
+      if (picker) {
+        picker.value = slug;
+        picker.dispatchEvent(new Event('change'));
+      }
+      loadActiveGig(slug);
+    });
+  });
 }
 
 async function onGigNew() {
@@ -1749,7 +1832,19 @@ function renderOneGigSetlist(sl, idx) {
     });
     row.addEventListener('click', e => {
       if (e.target.closest('.sls-del') || e.target.closest('.sls-grip')) return;
-      if (!merged) return;
+      // Re-resolve at click time, not closure time. If the sidebar
+      // rendered before mergedLibrary populated (e.g. on first load
+      // or after a slow library refresh during a wifi-off window),
+      // the captured `merged` would be null and the click was a
+      // silent no-op. Look it up again now — by then the library
+      // has had every chance to fill in. Bill's bug 2026-06-30:
+      // "with wifi off I could not select a song from the gig list."
+      const liveMerged = (s.song_base && findMergedForBase(s.song_base)) || merged;
+      if (e.target.closest('.sls-del') || e.target.closest('.sls-grip')) return;
+      if (!liveMerged) {
+        if (typeof showToast === 'function') showToast('Song not in library yet — try again in a moment');
+        return;
+      }
       // Click a setlist row → start playing the setlist FROM that song.
       // The auto-advance handler picks up from here, walking through the
       // rest of the setlist in order until ⏹ or end-of-setlist.
