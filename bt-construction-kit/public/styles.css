@@ -8,14 +8,17 @@
    =========================================================== */
 body.test-mode {
   background: #fff8c5 !important;
+  padding-top: 28px !important;   /* room for the fixed banner */
 }
 body.test-mode::before {
   content: "🧪  TEST MODE — ?test=1  ·  AudioContext pre-initialized  ·  do NOT use at a gig";
   display: block;
-  position: sticky;
+  position: fixed;                /* fixed (not sticky) so it doesn't break body's scrolling context */
   top: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
   z-index: 99999;
-  width: 100%;
   background: #fbbf24;
   color: #422006;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
@@ -26,6 +29,7 @@ body.test-mode::before {
   padding: 6px 12px;
   border-bottom: 2px solid #b45309;
   text-transform: uppercase;
+  pointer-events: none;           /* never intercept clicks */
 }
 body.test-mode .brand-version,
 body.test-mode .meta .pill {
