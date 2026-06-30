@@ -575,6 +575,8 @@ async function scanStems() {
         // aggregate them.
         var favorite_meta = !!mj.favorite;
         var favorited_at_meta = mj.favorited_at || null;
+        var play_count_meta = mj.play_count | 0;
+        var last_played_at_meta = mj.last_played_at || null;
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -615,6 +617,9 @@ async function scanStems() {
       // Favorite — set via PUT /api/song/:base/favorite.
       favorite: (typeof favorite_meta !== 'undefined') ? favorite_meta : false,
       favorited_at: (typeof favorited_at_meta !== 'undefined') ? favorited_at_meta : null,
+      // Play count — incremented via POST /api/song/:base/play.
+      play_count: (typeof play_count_meta !== 'undefined') ? play_count_meta : 0,
+      last_played_at: (typeof last_played_at_meta !== 'undefined') ? last_played_at_meta : null,
       // Source URL + extracted videoId — used by the ingest tracker to
       // recognize when a submitted URL has finished rendering.
       source_url: sourceUrl,
@@ -3090,6 +3095,9 @@ app.post('/api/failed-renders/retry/:file', (req, res) => {
     fs.renameSync(src, dst);
     res.json({ ok: true, file: f });
   } catch (e) {
+    // ENOENT = the failed job was already cleared by another tab/admin;
+    // return 404 so the UI can resync instead of showing "Failed: ENOENT"
+    if (e.code === 'ENOENT') return res.status(404).json({ ok: false, error: 'not found' });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -3102,6 +3110,7 @@ app.delete('/api/failed-renders/:file', (req, res) => {
     fs.unlinkSync(p);
     res.json({ ok: true, file: f });
   } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ ok: false, error: 'not found' });
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -4521,6 +4530,60 @@ app.put('/api/song/:base/favorite', (req, res) => {
       }
     } catch (e) { console.warn('[favorite] cache patch failed:', e.message); }
     res.json({ ok: true, favorite: flag, favorited_at: at });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Playback-state recorder for offline-test verification. The client
+// POSTs current playback state on every transition so an external bash
+// script can read it via GET and assert "the second song is now playing".
+// State lives in memory only — a fresh server restart wipes it. The
+// script reads it via a curl one-liner that needs no JSON parsing if
+// the body fields are stable. Bill's offline test scenarios depend on
+// this for verifying playback through a wifi-off window.
+const _playbackState = { base: null, isPlaying: false, paused: true, currentTime: 0, duration: 0, at: 0 };
+app.post('/api/debug/playback-state', express.json(), (req, res) => {
+  try {
+    const b = req.body || {};
+    _playbackState.base       = b.base || null;
+    _playbackState.isPlaying  = !!b.isPlaying;
+    _playbackState.paused     = !!b.paused;
+    _playbackState.currentTime = Number(b.currentTime) || 0;
+    _playbackState.duration   = Number(b.duration) || 0;
+    _playbackState.at         = Date.now();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/debug/playback-state', (req, res) => {
+  res.json({ ok: true, state: _playbackState, ageMs: _playbackState.at ? Date.now() - _playbackState.at : null });
+});
+
+// Play-count tracker. POST /api/song/:base/play increments the count
+// and updates last_played_at. Client calls this on the FIRST 'playing'
+// event per song-load (debounced — six stems firing 'playing' must not
+// produce six increments). Returns the new count.
+app.post('/api/song/:base/play', (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.play_count = (meta.play_count | 0) + 1;
+    meta.last_played_at = new Date().toISOString();
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    // Patch libraryCache so /api/library reflects the new count without
+    // waiting for the next CATALOG.json rebuild.
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) {
+          row.play_count = meta.play_count;
+          row.last_played_at = meta.last_played_at;
+        }
+      }
+    } catch (e) {}
+    res.json({ ok: true, play_count: meta.play_count, last_played_at: meta.last_played_at });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

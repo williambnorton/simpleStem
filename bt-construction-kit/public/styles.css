@@ -3130,7 +3130,7 @@ select {
 
 .song-table-header {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 50px 55px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-dim);
@@ -3164,7 +3164,7 @@ select {
 
 .song-row {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 55px 70px 52px 85px 75px 50px 55px;
   align-items: center;
   padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -5142,6 +5142,18 @@ body.server-stale .player-active:hover::after {
   width: 3px; height: 0;
   border-top: 1px dashed rgba(127, 137, 153, 0.4);
 }
+/* Singer-coded backgrounds. Bill's spec 2026-06-30:
+     Bill → light yellow ·  Matt → light green ·  Dan → light purple
+   Other / unknown stays the default sidebar background.
+   These overlay the base row color; .playing and .song-failed take
+   precedence via their later !important rules. */
+.sls-row.sls-singer-bill { background: #fff7c0; }   /* light yellow */
+.sls-row.sls-singer-matt { background: #d8f1d8; }   /* light green */
+.sls-row.sls-singer-dan  { background: #ead7f5; }   /* light purple */
+/* Keep contrast strong on hover so the operator sees the focus state. */
+.sls-row.sls-singer-bill:hover { background: #fff0a0; }
+.sls-row.sls-singer-matt:hover { background: #c2e7c2; }
+.sls-row.sls-singer-dan:hover  { background: #ddc0ef; }
 
 /* The "active" setlist — the one that is ready to play (where the ghost
    preview row lives and where new song-adds land). Distinct from .playing:
@@ -6789,6 +6801,14 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .col-drum {
   cursor: pointer;
   user-select: none;
+}
+.song-plays-cell {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 /* Sortable headers: hand cursor, active indicator + arrow */
 .song-table-header [data-sort] {

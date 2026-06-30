@@ -178,12 +178,33 @@ function installAudioInstrumentation(channel, audioEl) {
       SS_DEBUG.log('audio', `${channel}.${evt}`, info);
     });
   }
+  // Push playback state to /api/debug/playback-state on every meaningful
+  // transition. The offline_test_*.sh scripts read this to verify "the
+  // second song is now playing" without having to drive Chrome.
+  const pushState = () => {
+    try {
+      const base = (typeof currentSong !== 'undefined' && currentSong) ? (currentSong.folderName || currentSong.base) : null;
+      navigator.sendBeacon('/api/debug/playback-state', JSON.stringify({
+        base,
+        isPlaying: !!(typeof isPlaying !== 'undefined' && isPlaying),
+        paused: audioEl.paused,
+        currentTime: audioEl.currentTime || 0,
+        duration: audioEl.duration || 0,
+      }));
+    } catch (e) {}
+  };
+  audioEl.addEventListener('play',    pushState);
+  audioEl.addEventListener('pause',   pushState);
+  audioEl.addEventListener('ended',   pushState);
   // The 'playing' event fires when audio is ACTUALLY producing output.
   // If we get here for ANY stem, the song is healthy — clear any sticky
   // failed marker that a prior load timeout left behind. This catches
   // the case where the user hits Play after a transient failure
   // (gesture, network blip, etc.) and the row was still showing as grey.
+  // Also — debounced per song-load — bump the server-side play_count
+  // so the library "Plays" column reflects what actually got listened to.
   audioEl.addEventListener('playing', () => {
+    pushState();
     try {
       if (typeof currentSong !== 'undefined' && currentSong) {
         const base = currentSong.folderName || currentSong.base;
@@ -191,6 +212,30 @@ function installAudioInstrumentation(channel, audioEl) {
           clearSongFailed(base);
           if (typeof renderLibrary === 'function') renderLibrary();
           if (typeof renderGigSidebar === 'function') renderGigSidebar();
+        }
+        // Per-song debounce — 6 stems all firing 'playing' on one
+        // load must produce ONE increment. _playCountedFor tracks the
+        // last base we counted; it resets when the song changes.
+        if (base && window._playCountedFor !== base) {
+          window._playCountedFor = base;
+          fetch(`/api/song/${encodeURIComponent(base)}/play`, { method: 'POST' })
+            .then(r => r.json())
+            .then(j => {
+              if (j && j.ok && typeof currentSong !== 'undefined' && currentSong) {
+                currentSong.play_count = j.play_count;
+                currentSong.last_played_at = j.last_played_at;
+                // Patch mergedLibrary so the column updates on next render.
+                try {
+                  const mm = (window.mergedLibrary || []).find(x => {
+                    const sv = x.variants && x.variants.find(v => v.type === 'stems');
+                    return sv && sv.folderName === base;
+                  });
+                  if (mm) mm.play_count = j.play_count;
+                } catch (e) {}
+                if (typeof renderLibrary === 'function') renderLibrary();
+              }
+            })
+            .catch(() => {});
         }
       }
     } catch (e) {}
@@ -1671,6 +1716,17 @@ function renderOneGigSetlist(sl, idx) {
     // Grey out failed songs so the operator can SEE which setlist entries
     // would hang the player if clicked. Matches the library row treatment.
     if (s.song_base && isSongFailed(s.song_base)) row.classList.add('song-failed');
+    // Color the row background by lead singer. Bill's request 2026-06-30:
+    //   Bill → light yellow · Matt → light green · Dan → light purple
+    //   everyone else → white (no class). singer_lead comes from the
+    //   stems variant (MPB Sheet sync) or per-row override; folded down
+    //   to first-name token to match the canonical bucket.
+    const stemsForSinger = merged && merged.variants && merged.variants.find(v => v.type === 'stems');
+    const singerLead = (stemsForSinger && stemsForSinger.singer_lead) || (merged && merged.singer_lead) || '';
+    const singerToken = singerLead.trim().split(/\s+/)[0].toLowerCase();
+    if      (singerToken === 'bill') row.classList.add('sls-singer-bill');
+    else if (singerToken === 'matt') row.classList.add('sls-singer-matt');
+    else if (singerToken === 'dan')  row.classList.add('sls-singer-dan');
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
@@ -3527,6 +3583,19 @@ function renderLibrary() {
     drumCell.textContent = drumPattern || '—';
     if (drumPattern) drumCell.title = `Drum pattern: ${drumPattern}`;
 
+    // Play count cell — incremented by the server every time a stem fires
+    // 'playing' (debounced to one per song-load). Click counts are honest
+    // because they require the audio decoder to actually produce output,
+    // not just a row click that loaded but never played.
+    const playsCell = document.createElement('div');
+    playsCell.className = 'song-plays-cell';
+    const stemsForPlays = merged.variants.find(v => v.type === 'stems');
+    const pc = (stemsForPlays && stemsForPlays.play_count) || merged.play_count || 0;
+    playsCell.textContent = pc > 0 ? String(pc) : '—';
+    if (pc > 0 && stemsForPlays && stemsForPlays.last_played_at) {
+      playsCell.title = `Last played: ${new Date(stemsForPlays.last_played_at).toLocaleString()}`;
+    }
+
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
@@ -3535,6 +3604,7 @@ function renderLibrary() {
     row.appendChild(keyCell);
     row.appendChild(singerCell);
     row.appendChild(drumCell);
+    row.appendChild(playsCell);
     row.appendChild(actionCell);
 
     // Row click default: load the preferred variant (-V-G m4a usually) into
