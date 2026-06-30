@@ -10973,6 +10973,70 @@ function setupGlobalKeyboardShortcuts() {
     { keys: ['cmd+shift+u'], label: 'Toggle Performer ↔ Librarian view',        action: () => { location.href = location.pathname.endsWith('/librarian') ? '/' : '/librarian'; } },
     { keys: ['cmd+shift+f'], label: 'Toggle favorite star on current song',     action: () => kbToggleFavorite() },
     { keys: ['cmd+shift+r'], label: 'Restart server',                           action: () => kbServerRestart() },
+
+    // === Stem mixer shortcuts (added round 2) ===
+    { keys: ['cmd+1'],       label: 'Mute Vocals',                              action: () => kbToggleStem('vocals', 'mute') },
+    { keys: ['cmd+2'],       label: 'Mute Drums',                               action: () => kbToggleStem('drums',  'mute') },
+    { keys: ['cmd+3'],       label: 'Mute Bass',                                action: () => kbToggleStem('bass',   'mute') },
+    { keys: ['cmd+4'],       label: 'Mute Guitar',                              action: () => kbToggleStem('guitar', 'mute') },
+    { keys: ['cmd+5'],       label: 'Mute Piano',                               action: () => kbToggleStem('piano',  'mute') },
+    { keys: ['cmd+6'],       label: 'Mute Other',                               action: () => kbToggleStem('other',  'mute') },
+    { keys: ['cmd+shift+1'], label: 'Solo Vocals',                              action: () => kbToggleStem('vocals', 'solo') },
+    { keys: ['cmd+shift+2'], label: 'Solo Drums',                               action: () => kbToggleStem('drums',  'solo') },
+    { keys: ['cmd+shift+3'], label: 'Solo Bass',                                action: () => kbToggleStem('bass',   'solo') },
+    { keys: ['cmd+shift+4'], label: 'Solo Guitar',                              action: () => kbToggleStem('guitar', 'solo') },
+    { keys: ['cmd+shift+5'], label: 'Solo Piano',                               action: () => kbToggleStem('piano',  'solo') },
+    { keys: ['cmd+shift+6'], label: 'Solo Other',                               action: () => kbToggleStem('other',  'solo') },
+
+    // === Playhead navigation ===
+    { keys: ['cmd+arrowright'], label: 'Nudge playhead +5 s',                   action: () => kbNudgePlayhead(+5) },
+    { keys: ['cmd+arrowleft'],  label: 'Nudge playhead −5 s',                   action: () => kbNudgePlayhead(-5) },
+    { keys: ['cmd+j'],          label: 'Jump to next section',                  action: () => kbJumpSection(+1) },
+    { keys: ['cmd+shift+j'],    label: 'Jump to previous section',              action: () => kbJumpSection(-1) },
+
+    // === Tap-tempo + utility ===
+    { keys: ['cmd+t'],          label: 'Tap tempo (4+ taps to set BPM)',        action: () => kbTapTempo() },
+    { keys: ['cmd+shift+p'],    label: 'Flash cache (gig-prep precache)',       action: () => kbFlashCache() },
+    { keys: ['cmd+shift+;'],    label: 'Take a snapshot (debug)',               action: () => kbSnapshot() },
+    { keys: ['cmd+shift+/'],    label: 'Toggle lyrics overlay',                 action: () => kbToggleLyrics() },
+    { keys: ['/'],              label: 'Quick-search (vim-style /)',            action: () => focusEl('song-search') },
+
+    // === META combos — chain ordinary shortcuts with 1-second spacing
+    // so Keyboard Maestro can run them as one macro. The names are
+    // chosen to be memorable and OS-clash-free. Each calls runMeta()
+    // with an array of [delayMs, actionFn] pairs.
+    { keys: ['cmd+shift+m'], label: 'META: mute every stem (1 s spacing)',
+      action: () => runMeta([
+        [0,    () => kbToggleStem('vocals','mute')],
+        [800,  () => kbToggleStem('drums', 'mute')],
+        [1600, () => kbToggleStem('bass',  'mute')],
+        [2400, () => kbToggleStem('guitar','mute')],
+        [3200, () => kbToggleStem('piano', 'mute')],
+        [4000, () => kbToggleStem('other', 'mute')],
+      ]) },
+    { keys: ['cmd+shift+n'], label: 'META: next song + auto-play (1 s)',
+      action: () => runMeta([
+        [0,    () => kbNextInSetlist()],
+        [1000, () => kbTransportPlay()],
+      ]) },
+    { keys: ['cmd+shift+d'], label: 'META: toggle drum + play (1 s)',
+      action: () => runMeta([
+        [0,    () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); }],
+        [1000, () => kbTransportPlay()],
+      ]) },
+    { keys: ['cmd+shift+b'], label: 'META: bounce through 4 songs (3 s each)',
+      action: () => runMeta([
+        [0,    () => kbTransportPlay()],
+        [3000, () => kbNextInSetlist()],
+        [6000, () => kbNextInSetlist()],
+        [9000, () => kbNextInSetlist()],
+      ]) },
+    { keys: ['cmd+shift+a'], label: 'META: A/B test — drum, 2 s, stems',
+      action: () => runMeta([
+        [0,    () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); }],
+        [2000, () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); }],
+      ]) },
+
     { keys: ['?'],           label: 'Show this shortcut cheat-sheet',           action: () => showShortcutOverlay() },
   ];
 
@@ -11086,6 +11150,128 @@ function kbToggleFavorite() {
 function kbServerRestart() {
   if (confirm('Restart the simpleStem server? Audio will cut out for ~2 seconds.')) {
     fetch('/api/restart', { method: 'POST' }).catch(() => {});
+  }
+}
+
+// === STEM MIXER helpers ===
+
+// Toggle mute or solo on a single stem channel. Reuses the existing
+// click handlers on the on-screen M/S buttons so the visual state stays
+// in sync with the shortcut path (no separate code path to maintain).
+function kbToggleStem(channel, kind) {
+  const klass = kind === 'mute' ? 'mute-btn' : 'solo-btn';
+  const strip = document.querySelector(`.${channel}-strip`);
+  if (!strip) { showToast(`No strip for ${channel}`); return; }
+  const btn = strip.querySelector('.' + klass);
+  if (btn) btn.click();
+}
+
+// === PLAYHEAD ===
+
+function kbNudgePlayhead(deltaSec) {
+  try {
+    const els = Object.values(audioElements || {}).filter(a => a && a.src);
+    if (!els.length) return;
+    const base = els[0];
+    const t = Math.max(0, Math.min((base.duration || 0) - 0.1, (base.currentTime || 0) + deltaSec));
+    for (const a of els) { try { a.currentTime = t; } catch (e) {} }
+    if (typeof updatePlayheadDisplay === 'function') updatePlayheadDisplay();
+  } catch (e) {}
+}
+
+function kbJumpSection(dir) {
+  try {
+    if (!automationSections || !automationSections.length) {
+      showToast('No sections defined');
+      return;
+    }
+    const els = Object.values(audioElements || {}).filter(a => a && a.src);
+    if (!els.length) return;
+    const now = els[0].currentTime || 0;
+    const sorted = automationSections.map(s => Number(s.t) || 0).sort((a,b) => a-b);
+    let target = null;
+    if (dir > 0) target = sorted.find(t => t > now + 0.25);
+    else         target = [...sorted].reverse().find(t => t < now - 0.25);
+    if (target == null) { showToast(dir > 0 ? 'No next section' : 'No previous section'); return; }
+    for (const a of els) { try { a.currentTime = target; } catch (e) {} }
+    if (typeof updatePlayheadDisplay === 'function') updatePlayheadDisplay();
+  } catch (e) {}
+}
+
+// === TAP TEMPO ===
+// Press Cmd+T 4+ times in rhythm. After the 4th tap, average the
+// inter-tap intervals to compute BPM and apply it to the current song.
+// Idle for 2 s resets the buffer so a new sequence can start.
+let _tapTimes = [];
+let _tapResetTimer = null;
+function kbTapTempo() {
+  const now = performance.now();
+  if (_tapResetTimer) clearTimeout(_tapResetTimer);
+  // Drop taps older than 2 s — they belong to a previous attempt.
+  _tapTimes = _tapTimes.filter(t => now - t < 2000);
+  _tapTimes.push(now);
+  if (_tapTimes.length >= 4) {
+    const intervals = [];
+    for (let i = 1; i < _tapTimes.length; i++) intervals.push(_tapTimes[i] - _tapTimes[i-1]);
+    const avgMs = intervals.reduce((a,b) => a+b, 0) / intervals.length;
+    const bpm = Math.round(60000 / avgMs);
+    if (bpm >= 40 && bpm <= 240) {
+      showToast(`Tap tempo: ${bpm} BPM (${_tapTimes.length} taps)`);
+      // Drive the drum machine to this BPM if it's engaged.
+      if (drumMachineActive && typeof refreshDrumMachinePick === 'function') {
+        refreshDrumMachinePick(null, bpm).catch(() => {});
+      }
+      window._lastTapBpm = bpm;
+    } else {
+      showToast(`Tap tempo: ${bpm} BPM out of range`);
+    }
+  } else {
+    showToast(`Tap ${_tapTimes.length}/4 …`);
+  }
+  _tapResetTimer = setTimeout(() => { _tapTimes = []; }, 2500);
+}
+
+// === UTILITY shortcuts ===
+
+function kbFlashCache() {
+  fetch('/api/cache/flash', { method: 'POST' })
+    .then(r => r.json())
+    .then(j => showToast(j && j.started ? 'Flash cache started' : 'Flash already running'))
+    .catch(() => showToast('Flash cache failed'));
+}
+function kbSnapshot() {
+  fetch('/api/snapshot/create', { method: 'POST' })
+    .then(r => r.json())
+    .then(j => showToast(j && j.ok ? `Snapshot ${j.id}` : 'Snapshot failed'))
+    .catch(() => showToast('Snapshot failed'));
+}
+function kbToggleLyrics() {
+  // Reuse the lyrics-toggle button if present so we stay in sync with UI.
+  const btn = document.getElementById('btn-toggle-lyrics') || document.querySelector('[data-action="toggle-lyrics"]');
+  if (btn) btn.click();
+  else showToast('No lyrics for current song');
+}
+function kbTransportPlay() {
+  // Toggle play/pause via the on-screen Play button so existing logic
+  // (audio context resume, playhead saver, etc.) all runs as if a real
+  // click happened.
+  if (typeof togglePlayPause === 'function') togglePlayPause();
+  else { const btn = document.getElementById('btn-play'); if (btn) btn.click(); }
+}
+
+// === META combo runner ===
+// Bill's request: chain ordinary shortcuts with 1-second spacing so a
+// single Keyboard Maestro macro fires a multi-step workflow. Each item
+// is [delayMs, actionFn]. Delays are absolute from the start of the
+// meta — so [0, ...], [1000, ...], [2000, ...] runs three actions
+// 1 second apart. Returns immediately; uses setTimeout for scheduling
+// so the operator can interrupt with any other shortcut mid-stream.
+function runMeta(steps) {
+  if (!Array.isArray(steps)) return;
+  const startedAt = performance.now();
+  showToast(`META: ${steps.length} steps over ${Math.round((steps[steps.length-1][0])/1000)}s`);
+  for (const [delay, fn] of steps) {
+    setTimeout(() => { try { fn(); } catch (e) { console.warn('[meta] step failed:', e); } }, delay);
   }
 }
 
