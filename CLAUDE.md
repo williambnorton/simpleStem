@@ -436,6 +436,25 @@ field. This is NOT YET WIRED — see the roadmap.
   never new `.wav` outside of `source.wav`. **Consumers**
   (`bt-construction-kit/server.js`, `catalog.py`, the portal) read m4a only.
 
+- **Long-running scripts must emit timestamped progress with an ETA.**
+  Any script or program expected to run for more than a few minutes
+  (rewrites, batch precaches, large renders) MUST print a progress line
+  AT LEAST every 30 minutes — more often if it doesn't burn the
+  scrollback — and every line MUST include:
+    1. A full local timestamp with timezone (e.g. `Mon Jun 29 11:19:45 PDT 2026`).
+    2. Current `N/total` plus per-status counts (`ok`, `failed`, etc.).
+    3. An estimated time remaining at the current rate.
+    4. The name of the script so multiple tails can be disambiguated.
+  Canonical shape:
+  ```
+  Mon Jun 29 11:19:45 PDT 2026  faststart_m4a.py  progress: 1650/2179 (1650 ok, 0 failed) — ETA ~1h 23m remaining
+  ```
+  Why: Bill watches these jobs while doing other work, and an undated
+  `progress: 1650/2179` line gives him no way to tell whether the run
+  is still alive or is going to finish before a gig. Per-file `ok:`
+  lines are fine to keep at debug verbosity, but the periodic summary
+  with timestamp + ETA is the load-bearing signal.
+
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
   block, in any form, in any position.** No same-line trailing comments
   (`git push origin main # pushes the fix`), no leading comment lines

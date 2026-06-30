@@ -577,6 +577,38 @@ window.addEventListener('DOMContentLoaded', () => {
   // come from setWaveformStems() decoding the per-stem audio files.
   try { initVisualizer(null); } catch (e) { console.warn('[viz] eager init failed:', e); }
   try { setupSectionDividerKeyboard(); } catch (e) { console.warn('[section] kbd setup failed:', e); }
+
+  // TEST MODE — when the URL has ?test=1, the regression-test harness
+  // (Claude-in-Chrome MCP) can drive playback even though synthetic
+  // clicks don't count as Chrome user activation. Sets a window flag
+  // that loadSong/togglePlayPause check; the worst that can happen if
+  // it leaks into prod is that AudioContext gets created at boot
+  // instead of on first click. Bill answered Q4 yes — Test mode on. */
+  try {
+    if (new URLSearchParams(location.search).get('test') === '1') {
+      window.__simpleStemTestMode = true;
+      // Aggressively initialize AudioContext at boot instead of waiting
+      // for a user gesture. Browsers may keep it in "suspended" state
+      // until a real gesture; that's fine — the rest of the app code
+      // treats audioCtx as present once it exists.
+      try { initAudioCtx(); audioCtx && audioCtx.resume && audioCtx.resume().catch(()=>{}); } catch (e) {}
+      // Expose a high-leverage helper so tests can call
+      //   window.__testPlay('Heroes_Official_Video_HD_David_Bowie')
+      // to load + play a song without needing to dispatch real clicks.
+      window.__testPlay = async function (base) {
+        const m = (window.mergedLibrary || []).find(x => {
+          const sv = x.variants && x.variants.find(v => v.type === 'stems');
+          return sv && sv.folderName === base;
+        });
+        if (!m) return { ok: false, reason: 'song not in library' };
+        const v = (m.variants || []).find(x => x.type === 'stems');
+        if (!v) return { ok: false, reason: 'no stems variant' };
+        loadSong(v, { autoplay: true });
+        return { ok: true, base };
+      };
+      console.log('[simpleStem] TEST MODE on — AudioContext pre-initialized, window.__testPlay() exposed');
+    }
+  } catch (e) { console.warn('[test-mode] setup failed:', e); }
   setupTabs();
   setupAiSetlistBuilder();
   setupDrumLoopsTab();
@@ -2942,7 +2974,12 @@ async function fetchLibrary() {
           });
           if (merged) {
             const v = preferredPlayVariant(merged);
-            if (v) loadSong(v, { autoplay: false });
+            // silentRestore: load src but skip the buffering watchdog +
+            // failure toast. Chrome's autoplay policy blocks media-element
+            // fetch until the FIRST user gesture, so the 3-s timeout
+            // would always fire on auto-restore even with perfectly
+            // cached files. The next user click re-engages the watchdog.
+            if (v) loadSong(v, { autoplay: false, silentRestore: true });
           }
         }
       } catch (e) { console.warn('[restore] last song failed:', e); }
@@ -6210,6 +6247,17 @@ function loadSong(song, opts) {
   const activeChans   = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
   const activeElements = activeChans.map(c => audioElements[c]);
   const _songBase = (song && song.folderName) || (song && song.id) || '';
+  // Auto-restore (page-load path) — skip the buffering watchdog and the
+  // failure toast. Chrome's autoplay policy delays media-element fetch
+  // until the FIRST real user gesture, so the 3-s timeout fires every
+  // reload even when files are perfectly cached. We just set src and
+  // wait for the user to press Play; the watchdog re-engages on every
+  // subsequent click (user gesture present). Bill's preference, Q1.
+  if (opts.silentRestore) {
+    _clickInProgress = false;
+    try { _stemCacheDrainQueue(); } catch (e) {}
+    return;
+  }
   watchBuffering({
     activeElements, channels: activeChans,
     onReady: () => {

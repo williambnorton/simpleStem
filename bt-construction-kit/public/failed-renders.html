@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>simpleStem · Failed renders</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --paper:#f7f1e3; --paper-2:#ece4cf; --ink:#1c1917; --ink-dim:#57534e;
+    --rule:#d6cdb5; --c-bad:#991b1b; --c-bad-bg:#f8d4d4;
+    --c-warn:#92400e; --c-warn-bg:#fde6c4; --c-good:#166534; --c-good-bg:#d4f1de;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family: Georgia, 'Iowan Old Style', serif; font-size:14px; }
+  header { display:flex; align-items:baseline; justify-content:space-between;
+    padding:18px 32px; border-bottom:2px solid var(--ink); background:var(--paper); }
+  header h1 { margin:0; font-size:22px; font-weight:800; font-variant:small-caps; }
+  header .sub { font-size:12px; font-style:italic; color:var(--ink-dim); margin-left:10px; }
+  main { padding:18px 32px 60px; max-width:1400px; margin:0 auto; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
+  .toolbar .count { font-family: ui-monospace,'SF Mono',Menlo,monospace; font-size:12px;
+    color:var(--ink-dim); margin-right:auto; }
+  button { background:var(--ink); color:var(--paper); border:0; padding:7px 14px;
+    border-radius:2px; font-family:ui-monospace,'SF Mono',Menlo,monospace;
+    font-size:11px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase;
+    cursor:pointer; }
+  button:hover { background:#4b3f23; }
+  button.danger { background: var(--c-bad); }
+  button.danger:hover { background:#7c1414; }
+  button:disabled { opacity:0.5; cursor:wait; }
+  table { width:100%; border-collapse:collapse; background:#fffdf6;
+    border:1px solid var(--rule); border-radius:2px; }
+  th { position:sticky; top:0; background:var(--paper-2); text-align:left;
+    padding:8px 10px; font-family:'Iowan Old Style',Georgia,serif;
+    font-variant:small-caps; letter-spacing:0.04em; font-weight:700;
+    border-bottom:1.5px solid var(--ink); }
+  td { padding:8px 10px; border-bottom:1px dotted var(--rule); vertical-align:top; }
+  tr:nth-child(even) td { background:rgba(0,0,0,0.012); }
+  td.title { font-weight:700; }
+  td.when, td.url, td.file { font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:11px; color:var(--ink-dim); }
+  td.url a { color:var(--ink-dim); text-decoration:none; }
+  td.url a:hover { text-decoration:underline; }
+  td.actions { text-align:right; white-space:nowrap; }
+  td.actions button { font-size:10px; padding:4px 8px; margin-left:4px; }
+  .empty { padding:30px; text-align:center; font-style:italic; color:var(--ink-dim); }
+  .reason { font-size:11px; color:var(--c-bad); }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--ink); color:var(--paper);
+    padding:10px 14px; border-radius:3px; opacity:0; transition:opacity 0.2s ease;
+    font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:11px; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Failed renders<span class="sub">retry or clear individual jobs · also see <a href="/librarian">/librarian</a></span></h1>
+  <div><a href="/" style="font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--ink-dim);">← back to portal</a></div>
+</header>
+<main>
+  <div class="toolbar">
+    <div class="count" id="count">…</div>
+    <button id="reload">Reload</button>
+    <button id="retry-all" title="Move every failed job back to STEM_QUEUE for re-render">Retry all</button>
+    <button id="clear-all" class="danger" title="Permanently delete every failed json from disk">Clear all</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Title</th>
+        <th>Artist</th>
+        <th>URL</th>
+        <th>File</th>
+        <th>Reason</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"><tr><td colspan="7" class="empty">loading…</td></tr></tbody>
+  </table>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function showToast(text) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtWhen(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  } catch (e) { return iso; }
+}
+async function load() {
+  const r = await fetch('/api/failed-renders', { cache: 'no-store' });
+  const j = await r.json();
+  const tbody = document.getElementById('tbody');
+  document.getElementById('count').textContent = `${j.count} failed job${j.count === 1 ? '' : 's'}`;
+  if (!j.items.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">nothing failed. enjoy.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = j.items.map(it => {
+    const b = it.body || {};
+    const title = b.title || b._parseError || it.file;
+    const artist = b.artist || '';
+    const url = b.source_url || '';
+    const reason = b.processing && b.processing.error || b._parseError || b.error || '';
+    return `<tr data-file="${esc(it.file)}">
+      <td class="when">${esc(fmtWhen(it.mtime))}</td>
+      <td class="title">${esc(title)}</td>
+      <td>${esc(artist)}</td>
+      <td class="url">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.slice(0,50))}</a>` : ''}</td>
+      <td class="file">${esc(it.file)}</td>
+      <td class="reason">${esc(reason)}</td>
+      <td class="actions">
+        <button data-action="retry">Retry</button>
+        <button data-action="clear" class="danger">Clear</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+document.getElementById('reload').addEventListener('click', load);
+document.getElementById('retry-all').addEventListener('click', async () => {
+  if (!confirm('Move every failed job back to the render queue?')) return;
+  const r = await fetch('/api/failed-renders/retry-all', { method: 'POST' });
+  const j = await r.json();
+  showToast(`Retried ${j.moved} (${j.failed} failed to move)`);
+  load();
+});
+document.getElementById('clear-all').addEventListener('click', async () => {
+  if (!confirm('Permanently delete every failed json? Cannot be undone.')) return;
+  const r = await fetch('/api/failed-renders', { method: 'DELETE' });
+  const j = await r.json();
+  showToast(`Deleted ${j.deleted} files`);
+  load();
+});
+document.getElementById('tbody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const tr = btn.closest('tr');
+  const file = tr.dataset.file;
+  const action = btn.dataset.action;
+  btn.disabled = true;
+  try {
+    if (action === 'retry') {
+      const r = await fetch(`/api/failed-renders/retry/${encodeURIComponent(file)}`, { method: 'POST' });
+      const j = await r.json();
+      showToast(j.ok ? `Retrying ${file}` : `Failed: ${j.error}`);
+    } else if (action === 'clear') {
+      const r = await fetch(`/api/failed-renders/${encodeURIComponent(file)}`, { method: 'DELETE' });
+      const j = await r.json();
+      showToast(j.ok ? `Cleared ${file}` : `Failed: ${j.error}`);
+    }
+    load();
+  } catch (e) {
+    showToast('Network error: ' + e.message);
+    btn.disabled = false;
+  }
+});
+load();
+setInterval(load, 30 * 1000);
+</script>
+</body>
+</html>

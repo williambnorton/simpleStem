@@ -3049,6 +3049,87 @@ app.post('/api/enqueue', (req, res) => {
   }
 });
 
+// ── Failed-renders triage ──────────────────────────────────────────────────
+// Bill's Q2: clear current failures now; new failures get a UI page with
+// a table (timestamp, details, retry/clear per row + retry-all / clear-all
+// at the top). The page lives at /failed-renders.html; this endpoint is
+// the JSON behind it.
+app.get('/api/failed-renders', async (req, res) => {
+  const items = [];
+  const failedDir = path.join(QUEUE_DIR, '_failed');
+  try {
+    const entries = await fsp.readdir(failedDir).catch(() => []);
+    for (const f of entries) {
+      if (!f.endsWith('.json')) continue;
+      const p = path.join(failedDir, f);
+      let mtime = null;
+      let body = null;
+      try {
+        const st = await fsp.stat(p);
+        mtime = st.mtime.toISOString();
+      } catch (e) {}
+      try {
+        const raw = await fsp.readFile(p, 'utf8');
+        body = JSON.parse(raw);
+      } catch (e) {
+        body = { _parseError: (e && e.message) || String(e) };
+      }
+      items.push({ file: f, mtime, body });
+    }
+    items.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  } catch (e) {}
+  res.json({ ok: true, count: items.length, items });
+});
+// Retry one — moves the JSON back to STEM_QUEUE/ so the runner picks it up.
+app.post('/api/failed-renders/retry/:file', (req, res) => {
+  const f = req.params.file;
+  if (!f || f.includes('..') || !f.endsWith('.json')) return res.status(400).json({ ok: false, error: 'bad name' });
+  const src = path.join(QUEUE_DIR, '_failed', f);
+  const dst = path.join(QUEUE_DIR, f);
+  try {
+    fs.renameSync(src, dst);
+    res.json({ ok: true, file: f });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+// Clear one.
+app.delete('/api/failed-renders/:file', (req, res) => {
+  const f = req.params.file;
+  if (!f || f.includes('..') || !f.endsWith('.json')) return res.status(400).json({ ok: false, error: 'bad name' });
+  const p = path.join(QUEUE_DIR, '_failed', f);
+  try {
+    fs.unlinkSync(p);
+    res.json({ ok: true, file: f });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+// Bulk: retry all, clear all.
+app.post('/api/failed-renders/retry-all', (req, res) => {
+  const dir = path.join(QUEUE_DIR, '_failed');
+  let moved = 0, failed = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.json')) continue;
+      try { fs.renameSync(path.join(dir, f), path.join(QUEUE_DIR, f)); moved++; }
+      catch (e) { failed++; }
+    }
+  } catch (e) {}
+  res.json({ ok: true, moved, failed });
+});
+app.delete('/api/failed-renders', (req, res) => {
+  const dir = path.join(QUEUE_DIR, '_failed');
+  let deleted = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.json')) continue;
+      try { fs.unlinkSync(path.join(dir, f)); deleted++; } catch (e) {}
+    }
+  } catch (e) {}
+  res.json({ ok: true, deleted });
+});
+
 // ── Queue status for the portal (derived from the filesystem) ──────────────
 // Shows the three stages: dropped .webloc (awaiting metadata) → STEM_QUEUE
 // jobs (awaiting render) → the one currently rendering (.current marker).
