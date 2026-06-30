@@ -3133,6 +3133,14 @@ async function fetchLibrary() {
 
     filteredLibrary = [...mergedLibrary];
 
+    // Heal stale "failed to load" markers on songs that now have valid
+    // cached stems. Stops greyed rows from sticking after a successful
+    // re-cache or a fix that landed since the marker was set.
+    try {
+      const healed = healStaleFailedMarkers();
+      if (healed) console.log(`[failed-songs] healed ${healed} stale marker(s)`);
+    } catch (e) {}
+
     // First-time library load → try to restore the last-loaded song. This
     // runs once per page load; subsequent library refreshes (queue runner
     // pings) don't re-trigger it.
@@ -3722,12 +3730,12 @@ function renderLibrary() {
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
+    row.appendChild(tagsCell);          // wider, sits right after Artist (Bill 2026-06-30)
     row.appendChild(durationCell);
     row.appendChild(bpmCell);
     row.appendChild(keyCell);
     row.appendChild(singerCell);
     row.appendChild(drumCell);
-    row.appendChild(tagsCell);
     row.appendChild(playsCell);
     row.appendChild(actionCell);
 
@@ -5889,6 +5897,32 @@ function clearSongFailed(base) {
   if (failedSongBases.delete(base)) persistFailedSongs();
 }
 function isSongFailed(base) { return !!base && failedSongBases.has(base); }
+
+// Heal stale failed markers — Bill 2026-06-30: "if there is no problem
+// with the row, fix it so the grey row changes to a regular row."
+// Walks the failed set; for every base that now has a healthy stems
+// variant in mergedLibrary (cached:true means all six stems are in the
+// local bt-cache and known good), clear the marker. Returns the number
+// of healed entries so the caller can render a toast. Cheap — runs
+// over the local Set, no network.
+function healStaleFailedMarkers() {
+  if (!failedSongBases.size) return 0;
+  let healed = 0;
+  for (const base of [...failedSongBases]) {
+    const m = (mergedLibrary || []).find(x => {
+      const sv = x.variants && x.variants.find(v => v.type === 'stems');
+      return sv && sv.folderName === base;
+    });
+    if (!m) continue;
+    const sv = m.variants.find(v => v.type === 'stems');
+    if (sv && sv.cached) {
+      failedSongBases.delete(base);
+      healed++;
+    }
+  }
+  if (healed) persistFailedSongs();
+  return healed;
+}
 
 // Shown in the player area when a song's stems can't be loaded. Replaces
 // the buffering spinner content with a clear, dismissible error so the
@@ -11087,8 +11121,8 @@ function setupGlobalKeyboardShortcuts() {
   const SHORTCUTS = [
     { keys: ['cmd+s'],       label: 'Focus search bar',                         action: () => focusEl('song-search') },
     { keys: ['cmd+g'],       label: 'Focus gig picker',                         action: () => focusEl('gig-picker') },
-    { keys: ['cmd+shift+='], label: 'Add current song to active setlist',       action: () => addCurrentSongToActiveSetlist() },
-    { keys: ['cmd+shift+-'], label: 'Remove current song from active setlist', action: () => removeCurrentSongFromActiveSetlist() },
+    { keys: ['+'],           label: 'Add current song to active setlist',       action: () => addCurrentSongToActiveSetlist() },
+    { keys: ['-'],           label: 'Remove current song from active setlist',  action: () => removeCurrentSongFromActiveSetlist() },
     { keys: ['cmd+.'],       label: 'Toggle drum machine (persists per song)', action: () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); } },
     { keys: ['cmd+]'],       label: 'Next song in setlist',                     action: () => kbNextInSetlist() },
     { keys: ['cmd+['],       label: 'Previous song in setlist',                 action: () => kbPrevInSetlist() },
@@ -11171,26 +11205,40 @@ function setupGlobalKeyboardShortcuts() {
   window._simpleStemShortcuts = SHORTCUTS;
 
   // Canonicalize a KeyboardEvent into "cmd+shift+key" with key lowercased.
+  // Special case: when ONLY shift is held (no cmd/ctrl/alt), use the
+  // produced character directly. So pressing shift+= (which types "+")
+  // canon-izes to "+" not "shift++". Same for ?, !, etc. This is what
+  // lets us bind bare + as the add-to-setlist shortcut without colliding
+  // with Cmd+Shift+= (which Chrome reserves for zoom-in).
   function canon(e) {
     const parts = [];
-    if (e.metaKey || e.ctrlKey) parts.push('cmd');
-    if (e.shiftKey) parts.push('shift');
-    if (e.altKey)   parts.push('alt');
-    // For modifier+symbol combos (cmd+shift+=, cmd+shift+-), use e.key
-    // because e.code reports physical "Equal" / "Minus" which Bill's
-    // Keyboard Maestro macros wouldn't match.
+    const hasHardModifier = e.metaKey || e.ctrlKey || e.altKey;
+    if (hasHardModifier) {
+      if (e.metaKey || e.ctrlKey) parts.push('cmd');
+      if (e.shiftKey) parts.push('shift');
+      if (e.altKey)   parts.push('alt');
+    }
     let k = (e.key || '').toLowerCase();
     if (k === ' ') k = 'space';
     parts.push(k);
     return parts.join('+');
   }
 
+  // True when the keystroke targets a text input — bare-key shortcuts
+  // (no Cmd/Ctrl/Alt) should NEVER hijack typing. Modifier shortcuts
+  // (Cmd+S etc) DO fire from inputs since the user opted in by holding
+  // a modifier.
+  function isInputTarget(tgt) {
+    return tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' ||
+                   tgt.tagName === 'TEXTAREA' || tgt.isContentEditable);
+  }
+
   window.addEventListener('keydown', (e) => {
     const key = canon(e);
     const sc = lookup[key];
     if (!sc) return;
-    // '?' should fire from anywhere (even input focus), but the modifier
-    // shortcuts should fire even from inputs since Cmd+S etc are explicit.
+    const isBareKey = !(e.metaKey || e.ctrlKey || e.altKey);
+    if (isBareKey && isInputTarget(e.target)) return;   // don't hijack typing
     e.preventDefault();
     e.stopPropagation();
     try { sc.action(); } catch (err) { console.warn('[shortcut] action failed:', sc.label, err); }
@@ -11401,9 +11449,28 @@ async function openTagsMenu(songBase, songData, anchorBtn, refresh) {
   const currentReadiness = (songData && songData.readiness) || '';
   const READINESS = ['InTheBag', 'Rehearsal', 'TBD'];
 
+  // Bulk mode — when ≥ 2 songs are selected via the leftmost checkbox,
+  // offer a toggle to apply tag/readiness edits to all of them at once.
+  // The toggle defaults OFF; clicking it broadcasts the next change to
+  // every selected base via PUT-per-song. Untoggled = the menu acts on
+  // this row only.
+  const selectedBases = [...batchSelectedBases].filter(b => !!b);
+  const bulkAvailable = selectedBases.length >= 2;
+  const includesThisSong = bulkAvailable && selectedBases.includes(songBase);
+
   const menu = document.createElement('div');
   menu.className = 'tags-menu';
   menu.innerHTML = `
+    ${bulkAvailable ? `
+      <div class="tags-menu-bulk">
+        <label class="tags-menu-row">
+          <input type="checkbox" id="tags-bulk-toggle" ${includesThisSong ? 'checked' : ''}>
+          <span><strong>Apply to ${selectedBases.length} selected song${selectedBases.length === 1 ? '' : 's'}</strong></span>
+        </label>
+        <div class="tags-menu-bulk-hint">Edits below will write to ALL selected songs.</div>
+      </div>
+      <div class="tags-menu-divider"></div>
+    ` : ''}
     <div class="tags-menu-section">
       <div class="tags-menu-title">Tags</div>
       <div class="tags-menu-list">
@@ -11439,34 +11506,81 @@ async function openTagsMenu(songBase, songData, anchorBtn, refresh) {
   menu.style.top  = `${Math.min(window.innerHeight - 320, r.bottom + 4)}px`;
   menu.style.left = `${Math.min(window.innerWidth  - 240, r.left)}px`;
 
-  // PUT current tags state to server.
-  const persistTags = () => {
+  // Is bulk-apply mode on? Re-checked at every change so the operator
+  // can toggle it mid-session. When on, the change PUTs to every base
+  // in selectedBases; when off, only this row.
+  const bulkOn = () => bulkAvailable && menu.querySelector('#tags-bulk-toggle')?.checked;
+  const targetBases = () => bulkOn() ? selectedBases : [songBase];
+
+  // PUT current tags state to one or many bases. Sequential awaits so
+  // errors surface — N is small (max a few hundred). Patches the
+  // mergedLibrary entry for each affected base so the library row
+  // updates without a server roundtrip.
+  const persistTags = async () => {
     const checks = menu.querySelectorAll('input[type="checkbox"][data-tag]:checked');
     const tags = Array.from(checks).map(c => c.dataset.tag);
-    fetch(`/api/song/${encodeURIComponent(songBase)}/tags`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags }),
-    }).then(rr => rr.json()).then(j => {
-      if (j && j.ok) {
-        if (songData) songData.tags = j.tags;
-        if (typeof refresh === 'function') refresh();
-      }
-    });
+    const bases = targetBases();
+    let ok = 0, fail = 0;
+    for (const base of bases) {
+      try {
+        const j = await fetch(`/api/song/${encodeURIComponent(base)}/tags`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tags }),
+        }).then(rr => rr.json());
+        if (j && j.ok) {
+          ok++;
+          // Patch the matching merged entry so library re-render reflects it.
+          try {
+            const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
+              const sv = x.variants && x.variants.find(v => v.type === 'stems');
+              return sv && sv.folderName === base;
+            });
+            if (m) {
+              const sv = m.variants.find(v => v.type === 'stems');
+              if (sv) sv.tags = j.tags;
+            }
+          } catch (e) {}
+        } else fail++;
+      } catch (e) { fail++; }
+    }
+    if (songData && bases.includes(songBase)) songData.tags = tags;
+    if (typeof refresh === 'function') refresh();
+    if (typeof renderLibrary === 'function') renderLibrary();
+    if (bases.length > 1) showToast(`Tags applied to ${ok}/${bases.length} song${bases.length === 1 ? '' : 's'}` + (fail ? ` (${fail} failed)` : ''));
   };
   menu.querySelectorAll('input[type="checkbox"][data-tag]').forEach(cb => {
     cb.addEventListener('change', persistTags);
   });
   menu.querySelectorAll('input[type="radio"][data-rd]').forEach(rad => {
-    rad.addEventListener('change', () => {
-      fetch(`/api/song/${encodeURIComponent(songBase)}/readiness`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ readiness: rad.dataset.rd }),
-      }).then(rr => rr.json()).then(j => {
-        if (j && j.ok) {
-          if (songData) songData.readiness = j.readiness;
-          if (typeof refresh === 'function') refresh();
-        }
-      });
+    rad.addEventListener('change', async () => {
+      const v = rad.dataset.rd;
+      const bases = targetBases();
+      let ok = 0, fail = 0;
+      for (const base of bases) {
+        try {
+          const j = await fetch(`/api/song/${encodeURIComponent(base)}/readiness`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ readiness: v }),
+          }).then(rr => rr.json());
+          if (j && j.ok) {
+            ok++;
+            try {
+              const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
+                const sv = x.variants && x.variants.find(vv => vv.type === 'stems');
+                return sv && sv.folderName === base;
+              });
+              if (m) {
+                const sv = m.variants.find(vv => vv.type === 'stems');
+                if (sv) sv.readiness = j.readiness;
+              }
+            } catch (e) {}
+          } else fail++;
+        } catch (e) { fail++; }
+      }
+      if (songData && bases.includes(songBase)) songData.readiness = v;
+      if (typeof refresh === 'function') refresh();
+      if (typeof renderLibrary === 'function') renderLibrary();
+      if (bases.length > 1) showToast(`Readiness applied to ${ok}/${bases.length}` + (fail ? ` (${fail} failed)` : ''));
     });
   });
   menu.querySelector('.tags-menu-add').addEventListener('click', async () => {
