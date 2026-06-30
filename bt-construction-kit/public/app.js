@@ -587,6 +587,10 @@ window.addEventListener('DOMContentLoaded', () => {
   try {
     if (new URLSearchParams(location.search).get('test') === '1') {
       window.__simpleStemTestMode = true;
+      // Visual marker so it's impossible to confuse with the live
+      // performer view at a glance. styles.css paints body.test-mode
+      // with a yellow tint + a header banner.
+      document.body.classList.add('test-mode');
       // Aggressively initialize AudioContext at boot instead of waiting
       // for a user gesture. Browsers may keep it in "suspended" state
       // until a real gesture; that's fine — the rest of the app code

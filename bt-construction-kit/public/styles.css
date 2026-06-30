@@ -1,5 +1,37 @@
 /* Premium Design System & Stylesheet for StemJam */
 
+/* ===========================================================
+   TEST MODE — unmistakable yellow tint + sticky top banner so
+   the operator (and Claude in screenshots) can't confuse a
+   ?test=1 session with the live performer view at a gig.
+   Activated by app.js when URL has ?test=1.
+   =========================================================== */
+body.test-mode {
+  background: #fff8c5 !important;
+}
+body.test-mode::before {
+  content: "🧪  TEST MODE — ?test=1  ·  AudioContext pre-initialized  ·  do NOT use at a gig";
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 99999;
+  width: 100%;
+  background: #fbbf24;
+  color: #422006;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 6px 12px;
+  border-bottom: 2px solid #b45309;
+  text-transform: uppercase;
+}
+body.test-mode .brand-version,
+body.test-mode .meta .pill {
+  background: #b45309 !important;
+}
+
 :root {
   /* Light theme — HIGH CONTRAST for outdoor / sunlight use */
   --bg-dark: #eef1f7;
