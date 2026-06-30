@@ -327,15 +327,23 @@ for stem in vocals drums bass other piano guitar; do
     echo ">> ${stem}.m4a present, skipping."
     continue
   fi
-  echo ">> Encoding ${stem}.m4a (AAC 256k + faststart from ${stem}.wav)"
+  echo ">> Encoding ${stem}.m4a (AAC 256k + faststart + brand mp42 from ${stem}.wav)"
   # -movflags +faststart writes the moov atom at the FRONT of the file so
   # Chrome's <audio> decoder can start playback after the first ~64 KB
-  # instead of waiting for the entire 7-8 MB file to download. Without
-  # this, Chrome's media element stalls with networkState=2/readyState=0
-  # for 3+ seconds (which is exactly what wedged the gig on 2026-06-28
-  # and surfaces as "no stems responded after 3s" in the portal toast).
-  # Cost: one extra pass through the file at end of encode. Microseconds.
-  ffmpeg -y -loglevel error -i "$stem_wav" -c:a aac -b:a 256k -movflags +faststart "$stem_m4a"
+  # instead of waiting for the entire 7-8 MB file to download.
+  #
+  # -brand mp42 sets the ftyp major brand. Chrome's <audio> decoder
+  # REJECTS audio/mp4 files whose ftyp has major brand M4A and
+  # compatible brands "M4A isom iso2" (the ffmpeg default for AAC-in-MP4
+  # output) — loadstart fires, then 'stalled' at 3s, no metadata, no
+  # canplay. Same bytes with major brand mp42 decode normally. The
+  # drum-machine m4a files happened to be encoded by a different
+  # toolchain that emitted mp42; that's how we caught it (2026-06-29).
+  #
+  # Without BOTH of these flags, every gig is at risk of the same
+  # 3-second stem stall that wedged 2026-06-28.
+  ffmpeg -y -loglevel error -i "$stem_wav" -c:a aac -b:a 256k \
+         -movflags +faststart -brand mp42 "$stem_m4a"
 done
 
 # Default: delete stem .wav files after m4a transcode. Opt-out via
