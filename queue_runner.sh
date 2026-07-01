@@ -155,10 +155,29 @@ process_job() {
     "$CURRENT" "$title — $artist" "$rel"
   set_phase "starting"
   echo "== rendering: $title — $artist   ($rel)"
-  if render "$title" "$artist" "$url" "$cstart" "$cend"; then
-    echo "== done: $title — $artist"; finish "$job" _done
+  # Per-job full-fidelity log. Every line of stem.sh's output is tee'd
+  # into <job>.log next to the JSON so failures always leave a trace —
+  # you don't have to lsof the running perf-runner.log to see why.
+  # On success the .log is discarded (unless SIMPLE_STEM_KEEP_JOB_LOGS=1).
+  local job_log="${job%.json}.log"
+  local rc=0
+  if render "$title" "$artist" "$url" "$cstart" "$cend" 2>&1 | tee "$job_log"; then
+    rc=${PIPESTATUS[0]}
   else
-    echo "!! failed: $title — $artist" >&2; finish "$job" _failed
+    rc=${PIPESTATUS[0]}
+  fi
+  if (( rc == 0 )); then
+    echo "== done: $title — $artist"
+    [[ "${SIMPLE_STEM_KEEP_JOB_LOGS:-0}" == "1" ]] || rm -f "$job_log"
+    finish "$job" _done
+  else
+    echo "!! failed: $title — $artist   (rc=$rc, see ${job_log#$QUEUE/})" >&2
+    # Preserve the log alongside the JSON in _failed/ so triage is one
+    # cat command. Copies to the same subpath under _failed/.
+    local dest_log="$QUEUE/_failed/${rel%.json}.log"
+    mkdir -p "$(dirname "$dest_log")"
+    mv -f "$job_log" "$dest_log" 2>/dev/null || true
+    finish "$job" _failed
   fi
   rm -f "$CURRENT"
 }
