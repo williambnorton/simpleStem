@@ -169,13 +169,15 @@ print_state() {
   [[ -d "$QUEUE" ]] && nq="$(find "$QUEUE" -mindepth 1 -maxdepth 2 -name '*.json' \
         -not -path "$QUEUE/_done/*" -not -path "$QUEUE/_failed/*" 2>/dev/null | wc -l | tr -d ' ')"
   [[ -d "$STEMS" ]] && nstems="$(find "$STEMS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-  [[ -f "$BASE/CATALOG.json" ]] && ncat="$(python3 -c 'import json,sys
+  local catfile="$DATA/CATALOG.json"
+  [[ -f "$catfile" ]] || catfile="$BASE/CATALOG.json"
+  [[ -f "$catfile" ]] && ncat="$(python3 -c 'import json,sys
 d=json.load(open(sys.argv[1]))
 n=d.get("count")
 if n is None:
     try: n=len(d["data"]["songs"])
     except Exception: n="?"
-print(n)' "$BASE/CATALOG.json" 2>/dev/null || echo '?')"
+print(n)' "$catfile" 2>/dev/null || echo '?')"
   echo "  incoming: $nin webloc · queue: $nq awaiting render · cached songs: $nstems · catalog: $ncat"
 }
 
