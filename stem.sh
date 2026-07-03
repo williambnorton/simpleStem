@@ -213,6 +213,29 @@ SRC="${OUT_DIR}/source.wav"
 #    (b) --source PATH given → ffmpeg-convert the local file to source.wav
 #    (c) URL_OVERRIDE given → yt-dlp that explicit YouTube URL/ID
 #    (d) otherwise → yt-dlp smart search
+# Drive-sync race guard (2026-07-02): the Librarian downloads source.wav
+# BEFORE writing the queue job, but the tiny job JSON syncs to the Performer
+# ahead of the ~50 MB wav. If we start downloading immediately we end up with
+# our own copy AND the Librarian's — Drive keeps both as "source (1).wav".
+# When a URL job arrives and source.wav isn't here yet, poll briefly for the
+# Librarian's copy to land before falling back to our own download.
+# Tune/disable: SIMPLE_STEM_SOURCE_WAIT=0 (seconds; default 90).
+SOURCE_WAIT="${SIMPLE_STEM_SOURCE_WAIT:-90}"
+if [[ ! -f "$SRC" && -z "$LOCAL_SOURCE" && -n "$URL_OVERRIDE" && "$SOURCE_WAIT" -gt 0 ]]; then
+  _waited=0
+  while [[ ! -f "$SRC" && $_waited -lt $SOURCE_WAIT ]]; do
+    (( _waited == 0 )) && echo ">> source.wav not synced yet — waiting up to ${SOURCE_WAIT}s for the Librarian's copy…"
+    sleep 5; _waited=$(( _waited + 5 ))
+  done
+  if [[ -f "$SRC" ]]; then
+    echo ">> source.wav appeared after ${_waited}s — using the Librarian's copy."
+    # Give the sync a beat to finish writing companions (info.json).
+    sleep 2
+  else
+    echo ">> source.wav still absent after ${SOURCE_WAIT}s — downloading our own copy."
+  fi
+fi
+
 if [[ -f "$SRC" ]]; then
   echo ">> source.wav already present, skipping import/download."
 elif [[ -n "$LOCAL_SOURCE" ]]; then
@@ -295,8 +318,24 @@ if [[ -f "$OUT_DIR/vocals.wav" && -f "$OUT_DIR/drums.wav" \
 else
   echo ">> Running Demucs htdemucs_6s (6-stem; ~10–25 min on CPU)…"
   demucs -n htdemucs_6s --out "$OUT_DIR" "$SRC"
-  mv "$OUT_DIR/htdemucs_6s/source/"*.wav "$OUT_DIR/"
-  rmdir "$OUT_DIR/htdemucs_6s/source" "$OUT_DIR/htdemucs_6s"
+  # Promote Demucs output up one level. IDEMPOTENT under Drive races:
+  # Google Drive sometimes moves the six wavs to $OUT_DIR itself while
+  # Demucs is still fsync'ing them (observed 2026-07-01 for Green Onions).
+  # In that case the mv errors "No such file" but the goal state IS met.
+  # We tolerate the mv failure and verify by checking $OUT_DIR/*.wav
+  # rather than trusting mv's exit code.
+  mv -f "$OUT_DIR/htdemucs_6s/source/"*.wav "$OUT_DIR/" 2>/dev/null || true
+  for _stem in vocals drums bass other piano guitar; do
+    if [[ ! -f "$OUT_DIR/${_stem}.wav" ]]; then
+      echo ">> ERROR: ${_stem}.wav missing after Demucs — checked both" >&2
+      echo "     $OUT_DIR/${_stem}.wav" >&2
+      echo "     $OUT_DIR/htdemucs_6s/source/${_stem}.wav" >&2
+      ls -la "$OUT_DIR/htdemucs_6s/source/" 2>&1 || true
+      exit 1
+    fi
+  done
+  rmdir "$OUT_DIR/htdemucs_6s/source" 2>/dev/null || true
+  rmdir "$OUT_DIR/htdemucs_6s"        2>/dev/null || true
 fi
 
 # Ensure every stem is 48 kHz before downstream m4a transcoding.

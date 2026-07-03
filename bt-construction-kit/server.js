@@ -179,7 +179,11 @@ app.get('/', (req, res, next) => {
 // Small endpoint the client uses to learn which machine it's talking to,
 // so the brand chip can light up the correct half of the toggle.
 app.get('/api/identity', (req, res) => {
-  res.json({ machine: MACHINE_IDENTITY, hostname: os.hostname() });
+  // homeUser: the basename of $HOME (usually "wbn"). Used by the
+  // Librarian click-to-copy feature to expand "~/…" paths to absolute
+  // "/Users/<user>/…" so pasting into Finder/iTerm/rsync always works.
+  const homeUser = path.basename(os.homedir() || '');
+  res.json({ machine: MACHINE_IDENTITY, hostname: os.hostname(), homeUser });
 });
 
 // ─── KEEP-ALIVE BUSTER (2026-06-28) ───────────────────────────────────────
@@ -244,6 +248,13 @@ const LOOPS_DIR = `${SIMPLE_STEM_ROOT}/LOOPS`;
 // (110-series drum-machine settings) so we can synthesize a fallback when
 // a song has no explicit drum_pattern.
 const DRUM_MACHINE_DIR = `${SIMPLE_STEM_ROOT}/DRUM_MACHINE`;
+// Backing-track alternative to the six-stem mix — a curator's folder of
+// hand-picked stereo m4a files. Naming is unconstrained (Bill's history:
+// "Wicked Game-Chris Isaak.m4a", "100@135 Flagpole Sitta.m4a",
+// "BillWithers-AintNoSunshine-2ch.m4a", "Already Gone-Eagles-Project.m4a").
+// The server fuzzy-matches each file to a STEMS folder by normalized
+// title+artist and exposes the pairing via /api/backing-tracks/pick/:base.
+const BACKING_TRACKS_DIR = `${SIMPLE_STEM_ROOT}/BACKING_TRACKS`;
 const INCOMING_DIR = `${SIMPLE_STEM_ROOT}/INCOMING_WEBLOC`;
 const QUEUE_DIR = `${SIMPLE_STEM_ROOT}/STEM_QUEUE`;
 const SETLISTS_DIR = `${SIMPLE_STEM_ROOT}/SETLISTS`;
@@ -578,7 +589,34 @@ async function scanStems() {
         var play_count_meta = mj.play_count | 0;
         var last_played_at_meta = mj.last_played_at || null;
         var drum_machine_default_meta = !!mj.drum_machine_default;
+        // Task #129 — last playback mode used ('stems'|'drum'|'backing').
+        // Falls back to 'drum' when the legacy flag is set (for songs
+        // saved before this field existed).
+        var playback_mode_meta =
+          (mj.playback_mode && ['stems','drum','backing'].includes(mj.playback_mode))
+            ? mj.playback_mode
+            : (mj.drum_machine_default ? 'drum' : null);
         var tags_meta = Array.isArray(mj.tags) ? mj.tags.map(t => String(t).trim().toLowerCase()).filter(Boolean) : [];
+        // Task #132 — compact BMDJ# string encoding who's needed to play
+        // the song. If not explicitly set, derive from the mpb_sync
+        // band_required list so existing songs get sensible defaults.
+        var band_required_compact_meta = String(mj.band_required_compact || '').toUpperCase();
+        if (!band_required_compact_meta && Array.isArray(mj.band_required)) {
+          const MAP = { Bill: 'B', Matt: 'M', Dan: 'D', JD: 'J', Mark: '#' };
+          const chars = new Set();
+          for (const name of mj.band_required) {
+            const c = MAP[name];
+            if (c) chars.add(c);
+          }
+          band_required_compact_meta = 'BMDJ#'.split('').filter(c => chars.has(c)).join('');
+        }
+        // Task #132 — short-form key ("F#m", "Eb", "C"). If not saved,
+        // derive from the full "F# minor" / "Eb major" string.
+        var key_short_meta = mj.key_short || null;
+        if (!key_short_meta && typeof mj.key === 'string') {
+          const m = /^([A-G](?:#|b)?)\s*(major|minor)?$/.exec(mj.key.trim());
+          if (m) key_short_meta = (m[2] === 'minor') ? `${m[1]}m` : m[1];
+        }
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -624,8 +662,16 @@ async function scanStems() {
       last_played_at: (typeof last_played_at_meta !== 'undefined') ? last_played_at_meta : null,
       // Drum machine as default playback mode — set via PUT
       // /api/song/:base/drum-default. Client auto-engages drum machine
-      // on song-load when this is true.
+      // on song-load when this is true. Kept in sync with playback_mode.
       drum_machine_default: (typeof drum_machine_default_meta !== 'undefined') ? drum_machine_default_meta : false,
+      // Task #129 — last playback mode ('stems'|'drum'|'backing'). Null
+      // means "no preference; use stems". Client honors this on song-load
+      // to auto-engage whichever mode was last used.
+      playback_mode: (typeof playback_mode_meta !== 'undefined') ? playback_mode_meta : null,
+      // Task #132 — compact BMDJ# roster requirement (editable per song
+      // in the Gig Builder library) + short-form key ("F#m").
+      band_required_compact: (typeof band_required_compact_meta !== 'undefined') ? band_required_compact_meta : '',
+      key_short: (typeof key_short_meta !== 'undefined') ? key_short_meta : null,
       // Free-form tags — set via PUT /api/song/:base/tags. Used by
       // dynamic-template pseudo-gigs (__protest_songs__, __sing_along__, …)
       // to derive their song lists at runtime.
@@ -1504,6 +1550,8 @@ app.get('/api/audio/m4a/:file', (req, res) => {
 // context menu can render an override picker.
 const AUDIO_CACHE_DRUM = path.join(AUDIO_CACHE_DIR, 'DRUM_MACHINE');
 try { fs.mkdirSync(AUDIO_CACHE_DRUM, { recursive: true }); } catch (e) {}
+const AUDIO_CACHE_BACKING = path.join(AUDIO_CACHE_DIR, 'BACKING_TRACKS');
+try { fs.mkdirSync(AUDIO_CACHE_BACKING, { recursive: true }); } catch (e) {}
 
 // In-memory mirror of every drum pattern filename. Populated by
 // precacheAllDrumPatterns() at boot + hourly + Flash Cache; the audio
@@ -1665,6 +1713,247 @@ app.get('/api/audio/drum-machine/:file', (req, res) => {
   // NO sync existsSync on sourcePath — that path is Drive, and a probe
   // wedges the event loop offline. sendCachedAudio serves from local
   // cache, and only falls back to Drive behind a bounded 3s timeout.
+  sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+// New endpoint — returns every drum pattern grouped by BPM family so the
+// UI can show ALL patterns in a pulldown (task #128). Client picks the
+// auto-matched pattern by default but can select any pattern from any
+// family. Non-conforming filenames end up in the "other" bucket.
+app.get('/api/drum-machine/all-grouped', (req, res) => {
+  const all = listDrumPatterns();
+  const groups = {};
+  const other = [];
+  for (const f of all) {
+    const p = parseDrumName(f);
+    if (!p) { other.push({ filename: f, label: f.replace(/\.m4a$/i, '') }); continue; }
+    const key = String(p.bpm);
+    (groups[key] = groups[key] || []).push({
+      filename: f, bpm: p.bpm, pattern: p.pattern,
+      label: `${p.bpm}@${p.pattern}`,
+    });
+  }
+  // Sort each family by drum pattern number ascending; sort families by BPM.
+  for (const k of Object.keys(groups)) {
+    groups[k].sort((a, b) => a.pattern - b.pattern);
+  }
+  const orderedFamilies = Object.keys(groups)
+    .map(Number).sort((a, b) => a - b).map(String);
+  res.json({
+    families: orderedFamilies.map(bpm => ({
+      bpm: Number(bpm),
+      label: `${bpm} BPM`,
+      patterns: groups[bpm],
+    })),
+    other: other.length ? other : undefined,
+    total: all.length,
+  });
+});
+
+// ─── BACKING-TRACK MODULE ─────────────────────────────────────────────
+// A curator's folder of hand-picked stereo m4a files that plays INSTEAD
+// of the six-stem mix. Naming is unconstrained (Bill's history includes
+// "Wicked Game-Chris Isaak.m4a", "100@135 Flagpole Sitta.m4a",
+// "BillWithers-AintNoSunshine-2ch.m4a", "Already Gone-Eagles-Project.m4a").
+// The server fuzzy-matches each file to a STEMS folder by normalized
+// title+artist and exposes the pairing via /api/backing-tracks/pick/:base.
+// Same offline-gig contract as the drum machine: precached to
+// ~/.bt-cache/BACKING_TRACKS/ at boot + hourly, and served from local
+// cache only.
+let backingTrackList = [];          // filenames present in local cache
+let backingTrackAssignments = {};   // song_base → { file, score, source }
+function refreshBackingTrackListFromCache() {
+  try {
+    backingTrackList = fs.readdirSync(AUDIO_CACHE_BACKING)
+      .filter(f => /\.(m4a|mp3)$/i.test(f))
+      .sort();
+  } catch (e) { backingTrackList = []; }
+}
+refreshBackingTrackListFromCache();
+
+// Filename / library-title normalization. Strips extension, common
+// suffixes, tempo markers, live-version / remaster / venue markers, and
+// "BackingTrack" prefix; returns a bag of lowercase alphanumeric tokens
+// for matching. Live versions ("Sweet Home Alabama - 7/2/1977 - Oakland
+// Coliseum Stadium Lynyrd Skynyrd") normalize to the same token bag as
+// the studio version so they share backing-track pairings.
+function normalizeForMatch(s) {
+  if (!s) return [];
+  let x = String(s);
+  x = x.replace(/\.(m4a|mp3|wav|aac|m4b)$/i, '');
+  // Strip the "BackingTrack" or "Backing Tracks" prefix.
+  x = x.replace(/^\s*Backing\s*Tracks?\s*/i, '');
+  // Strip Logic-Pro / curator suffixes that don't identify the song.
+  x = x.replace(/[-_\s]+(2ch|CountIn|Actual|Project|Matt|DrumsLeft|tight|remaster(ed)?|remastered?\s*20\d\d)$/i, '');
+  x = x.replace(/[-_\s]+(V(-G(-B)?)?|DO|FULL|vocalsonly)$/i, '');
+  // Strip "- <date> - <venue words>" style live markers. Two shapes are
+  // common in the library:
+  //   "Song - 7/2/1977 - Oakland Coliseum Stadium ..."
+  //   "Song_-_7_2_1977_-_Oakland_Coliseum_Stadium_..."
+  // The first regex handles the slash-date form; the second handles the
+  // underscore-date form that STEMS folder slugs use.
+  x = x.replace(/\s*[-_]\s*\d+[\/_]\d+[\/_]\d+\s*[-_]\s*[^-_]+?(?=[-_]{2,}|$)/g, '');
+  x = x.replace(/\s*[\(\[]Live[^\)\]]*[\)\]]/gi, '');
+  x = x.replace(/\s*[\(\[]Remaster(ed)?[^\)\]]*[\)\]]/gi, '');
+  x = x.replace(/\s*[\(\[](Official|HD|HQ)[^\)\]]*[\)\]]/gi, '');
+  // Strip leading OR trailing tempo markers like "100@135" or "-100".
+  x = x.replace(/^\s*\d+@\d+\s+/, '');
+  x = x.replace(/\s+\d+@\d+\s*$/, '');
+  x = x.replace(/[-_\s]+\d+@\d+$/, '');
+  x = x.replace(/[-_\s]+\d{2,3}$/, '');    // trailing "-110"
+  // Tokenize on non-alphanumerics; drop empties + noise words.
+  const NOISE = new Set([
+    'the','a','an','of','in','on','at','to','for','and','&','with',
+    'official','audio','video','music','hd','hq','remastered','remaster',
+    'live','concert','cover','tribute','karaoke','feat','ft','featuring',
+    'song','songs','track','tracks','backing','from','by','edit','version',
+    // Venue words (strip common live-recording locations so the studio
+    // and live forms of a song normalize to the same token bag).
+    'coliseum','stadium','arena','garden','centre','center','hall',
+    'auditorium','amphitheatre','amphitheater','pavilion','park',
+    'oakland','wembley','madison','fillmore','budokan','forum',
+  ]);
+  return x.toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(t => t && t.length >= 2 && !NOISE.has(t) && !/^\d+$/.test(t));
+}
+function dice(a, b) {
+  if (!a.length || !b.length) return 0;
+  const bSet = new Set(b);
+  let hit = 0;
+  for (const t of a) if (bSet.has(t)) hit++;
+  return (2 * hit) / (a.length + b.length);
+}
+// Manifest file for persistent manual overrides. Shape:
+//   { "Sweet_Home_Alabama_Lynyrd_Skynyrd": "Sweet Home Alabama-Lynryd Skynyd-Project.m4a", ... }
+// Auto-matcher fills in the rest; manifest wins on conflict. Survives
+// server restart, unlike the in-memory-only assignments.
+const BACKING_MANIFEST_PATH = path.join(BACKING_TRACKS_DIR, 'manifest.json');
+function readBackingManifest() {
+  try {
+    if (fs.existsSync(BACKING_MANIFEST_PATH)) {
+      const raw = fs.readFileSync(BACKING_MANIFEST_PATH, 'utf8');
+      const j = JSON.parse(raw);
+      return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
+    }
+  } catch (e) { console.warn('[backing-tracks] manifest read failed:', e.message); }
+  return {};
+}
+function writeBackingManifest(obj) {
+  try {
+    fs.mkdirSync(path.dirname(BACKING_MANIFEST_PATH), { recursive: true });
+    fs.writeFileSync(BACKING_MANIFEST_PATH, JSON.stringify(obj, null, 2) + '\n');
+    return true;
+  } catch (e) {
+    console.warn('[backing-tracks] manifest write failed:', e.message);
+    return false;
+  }
+}
+
+// Rebuild the song_base → filename assignment. Runs on boot + hourly
+// (after precache) + on demand. Two changes from the first draft:
+//   1. Files can be SHARED across songs — the studio and live versions
+//      of "Sweet Home Alabama" both point at the same backing track.
+//   2. Manual overrides from manifest.json win over auto-matches.
+function rebuildBackingTrackAssignments() {
+  const assignments = {};
+  const songs = (libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs))
+    ? libraryCache.data.songs : [];
+  const stems = songs.filter(s => s.type === 'stems');
+  if (!stems.length || !backingTrackList.length) {
+    // Still honor manifest overrides even without library.
+    const manifest = readBackingManifest();
+    for (const base of Object.keys(manifest)) {
+      if (backingTrackList.includes(manifest[base])) {
+        assignments[base] = { file: manifest[base], score: 1, source: 'manifest' };
+      }
+    }
+    backingTrackAssignments = assignments;
+    return;
+  }
+  const btNorm = backingTrackList.map(f => ({ file: f, tokens: normalizeForMatch(f) }));
+  let autoCount = 0;
+  for (const s of stems) {
+    const base = s.folderName;
+    if (!base) continue;
+    const libTokens = normalizeForMatch(`${s.title || ''} ${s.artist || ''}`);
+    if (!libTokens.length) continue;
+    let best = null;
+    let bestScore = 0.45;   // slightly lower threshold now that noise is stripped
+    for (const bt of btNorm) {
+      if (!bt.tokens.length) continue;
+      const score = dice(libTokens, bt.tokens);
+      if (score > bestScore) { best = bt; bestScore = score; }
+    }
+    if (best) {
+      assignments[base] = { file: best.file, score: Number(bestScore.toFixed(3)), source: 'auto' };
+      autoCount++;
+    }
+  }
+  // Layer manifest overrides on top (manifest wins). Only accept entries
+  // whose target file actually exists in the cache; skip stale references.
+  const manifest = readBackingManifest();
+  let manifestCount = 0;
+  for (const base of Object.keys(manifest)) {
+    const file = manifest[base];
+    if (!backingTrackList.includes(file)) continue;
+    assignments[base] = { file, score: 1, source: 'manifest' };
+    manifestCount++;
+  }
+  backingTrackAssignments = assignments;
+  console.log(`[backing-tracks] rebuilt assignments: ${Object.keys(assignments).length} songs matched (${autoCount} auto, ${manifestCount} manifest), ${backingTrackList.length} files available`);
+}
+
+app.get('/api/backing-tracks/list', (req, res) => {
+  res.json({ files: backingTrackList, total: backingTrackList.length });
+});
+
+// Pairing for a specific song. Returns { file, url, score, source } or 404.
+app.get('/api/backing-tracks/pick/:base', (req, res) => {
+  const base = req.params.base;
+  const a = backingTrackAssignments[base];
+  if (!a) return res.status(404).json({ error: 'no backing track matched for this song' });
+  res.json({
+    file: a.file,
+    url: `/api/audio/backing/${encodeURIComponent(a.file)}`,
+    score: a.score,
+    source: a.source,
+  });
+});
+
+// Manual override — sends { file } to force a specific pairing (edge
+// cases the auto-matcher missed, or an operator preference). Writes to
+// BACKING_TRACKS/manifest.json so the pairing survives server restart.
+// Sending { file: null } removes the override (auto-match takes over).
+app.post('/api/backing-tracks/assign/:base', express.json(), (req, res) => {
+  const base = req.params.base;
+  const file = req.body && req.body.file;
+  const manifest = readBackingManifest();
+  if (file === null || file === '') {
+    delete manifest[base];
+    writeBackingManifest(manifest);
+    rebuildBackingTrackAssignments();
+    return res.json({ ok: true, file: null, note: 'override removed' });
+  }
+  if (!file || !backingTrackList.includes(file)) {
+    return res.status(400).json({ error: 'file not present in cache' });
+  }
+  manifest[base] = file;
+  writeBackingManifest(manifest);
+  rebuildBackingTrackAssignments();
+  res.json({ ok: true, file, persisted: true });
+});
+
+// Bulk assignments — one call to render a "map" view for the operator.
+app.get('/api/backing-tracks/assignments', (req, res) => {
+  res.json({ assignments: backingTrackAssignments });
+});
+
+app.get('/api/audio/backing/:file', (req, res) => {
+  const { file } = req.params;
+  if (file.includes('..')) return res.status(403).send('Forbidden');
+  const sourcePath = path.join(BACKING_TRACKS_DIR, file);
+  const cachePath  = path.join(AUDIO_CACHE_BACKING, file);
   sendCachedAudio(req, res, sourcePath, cachePath);
 });
 
@@ -2557,6 +2846,68 @@ async function reconcileLibrarianFolders() {
 // empty snapshot followed by per-folder updates as data arrives.
 setImmediate(() => { reconcileLibrarianFolders().catch(() => {}); });
 
+// ---- Stems-artifact reconciler --------------------------------------
+// Emits 'artifact-created' when a source.wav or a stem *.m4a appears
+// inside a STEMS/<song>/ folder. This is what powers the Librarian's
+// "wav flow" (blue) and "m4a flow" (green) visualizations — the two
+// key creation events in the pipeline:
+//   • source.wav → webloc_watch just finished the YouTube download.
+//   • *.m4a      → queue_runner just finished a Demucs+ffmpeg encode.
+// Snapshot per song is a Set of artifact filenames; deltas broadcast.
+const STEMS_ARTIFACT_NAMES = new Set([
+  'source.wav', 'vocals.m4a', 'drums.m4a', 'bass.m4a',
+  'guitar.m4a', 'piano.m4a',  'other.m4a',
+]);
+const stemsArtifactSnapshot = {};   // song → Set(artifact names present)
+let _stemsArtifactSeeded = false;
+let _artifactReconcileInFlight = false;
+async function reconcileStemsArtifacts() {
+  if (_artifactReconcileInFlight) return;
+  _artifactReconcileInFlight = true;
+  try {
+    let songDirs;
+    try {
+      songDirs = await Promise.race([
+        fsp.readdir(STEMS_DIR, { withFileTypes: true }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 2000)),
+      ]);
+    } catch (e) { return; }
+    for (const d of songDirs) {
+      if (!d.isDirectory() || d.name.startsWith('.')) continue;
+      const song = d.name;
+      const songDir = path.join(STEMS_DIR, song);
+      let files;
+      try {
+        files = await Promise.race([
+          fsp.readdir(songDir),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1200)),
+        ]);
+      } catch (e) { continue; }
+      const cur = new Set();
+      for (const f of files) if (STEMS_ARTIFACT_NAMES.has(f)) cur.add(f);
+      const prev = stemsArtifactSnapshot[song] || new Set();
+      // Only broadcast deltas AFTER the first seed pass — otherwise the
+      // whole library floods the SSE channel on server boot.
+      if (_stemsArtifactSeeded) {
+        for (const name of cur) {
+          if (!prev.has(name)) {
+            const kind = name === 'source.wav' ? 'source.wav' : 'stem.m4a';
+            librarianBroadcast('artifact-created', {
+              kind, song, file: name, at: Date.now(),
+            });
+          }
+        }
+      }
+      stemsArtifactSnapshot[song] = cur;
+    }
+    _stemsArtifactSeeded = true;
+  } finally {
+    _artifactReconcileInFlight = false;
+  }
+}
+setImmediate(() => { reconcileStemsArtifacts().catch(() => {}); });
+setInterval(() => { reconcileStemsArtifacts().catch(() => {}); }, 8000);
+
 // fs.watch on each folder; debounce a quick reconcile after any event
 // (Drive sync can fire many events for one logical change). fs.watch
 // itself is async (callback-based) — only the readdir inside reconcile
@@ -2924,15 +3275,53 @@ registerTrackedInterval('drum-precache', 60 * 60 * 1000,
   precacheAllDrumPatterns,
   { label: 'Drum precache', folder: 'drums', initialDelayMs: 60 * 60 * 1000 });
 
+// Backing-track precache — same pattern as drum patterns. Copies every
+// m4a/mp3 from BACKING_TRACKS/ into ~/.bt-cache/BACKING_TRACKS/ so the
+// player can toggle "stems ↔ backing" at a gig with no wifi. On success
+// rebuilds the song-base→file assignment map.
+async function precacheAllBackingTracks() {
+  if (!fs.existsSync(BACKING_TRACKS_DIR)) return;
+  const t0 = Date.now();
+  let copied = 0, skipped = 0, failed = 0;
+  try {
+    const files = (await fsp.readdir(BACKING_TRACKS_DIR))
+      .filter(f => /\.(m4a|mp3)$/i.test(f));
+    if (files.length === 0) {
+      console.log('[backing precache] nothing in BACKING_TRACKS/');
+      refreshBackingTrackListFromCache();
+      rebuildBackingTrackAssignments();
+      return;
+    }
+    console.log(`[backing precache] starting — ${files.length} track(s)`);
+    await runWithConcurrency(files, 4, async (f) => {
+      const src = path.join(BACKING_TRACKS_DIR, f);
+      const dst = path.join(AUDIO_CACHE_BACKING, f);
+      if (fs.existsSync(dst) && fs.statSync(dst).size > 0) { skipped++; return; }
+      try { await ensureCachedAsync(src, dst); copied++; }
+      catch (e) { failed++; }
+    });
+    refreshBackingTrackListFromCache();
+    rebuildBackingTrackAssignments();
+    console.log(`[backing precache] done — copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s, ${backingTrackList.length} cached, ${Object.keys(backingTrackAssignments).length} matched)`);
+  } catch (e) {
+    console.warn('[backing precache] failed:', e.message);
+  }
+}
+setImmediate(precacheAllBackingTracks);
+registerTrackedInterval('backing-precache', 60 * 60 * 1000,
+  precacheAllBackingTracks,
+  { label: 'Backing precache', folder: 'clips', initialDelayMs: 60 * 60 * 1000 });
+
 // Manual trigger — POST /api/precache/library forces all four passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;
 // the work runs in the background and progress is in the server log.
 app.post('/api/precache/library', (req, res) => {
-  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background', drums: 'background' });
+  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background', drums: 'background', backing: 'background' });
   setImmediate(precacheAllM4as);
   setImmediate(precacheAllStemsM4a);
   setImmediate(precacheAllCustomLoops);
   setImmediate(precacheAllDrumPatterns);
+  setImmediate(precacheAllBackingTracks);
 });
 // Clip-only trigger documented in clip_librarian/README.md.
 app.post('/api/precache/custom-loops', (req, res) => {
@@ -3657,14 +4046,31 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+// Restart-script resolution (bug fix 2026-07-02): /api/restart used to run
+// performer.sh from the DATA root (~/ClaudeDrive/simpleStem) — a stale Drive
+// copy, NOT the git clone this server was launched from. Result observed in
+// regression: the endpoint killed the server and nothing came back up.
+// Prefer the performer.sh sitting next to this code (…/bt-construction-kit/..),
+// fall back to the data root only if the clone copy is missing.
+function resolveRestartScript() {
+  const codeRoot = path.join(__dirname, '..');
+  const candidates = [
+    { root: codeRoot, script: path.join(codeRoot, 'performer.sh') },
+    { root: SIMPLE_STEM_ROOT_FOR_VERSION(), script: path.join(SIMPLE_STEM_ROOT_FOR_VERSION(), 'performer.sh') },
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c.script)) return c; } catch (e) {}
+  }
+  return { root: null, script: null };
+}
+
 // Apply a staged update: relaunch via performer.sh so the new code runs. The
 // restart is spawned DETACHED — it must outlive this very process (which it's
 // about to kill + restart). We reply first, then trigger it a moment later.
 app.post('/api/update', (req, res) => {
-  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
-  const script = path.join(root, 'performer.sh');
-  if (!fs.existsSync(script)) {
-    return res.status(500).json({ error: 'performer.sh not found at root' });
+  const { root, script } = resolveRestartScript();
+  if (!script) {
+    return res.status(500).json({ error: 'performer.sh not found (code clone or data root)' });
   }
   res.json({ ok: true, restarting: true, to: readDiskVersion() });
   // Give the response time to flush, then restart out-of-band.
@@ -3687,10 +4093,9 @@ app.post('/api/update', (req, res) => {
 // stuck). The new process is double-forked so the parent dying mid-script
 // won't take it down.
 app.post('/api/restart', (req, res) => {
-  const root = SIMPLE_STEM_ROOT_FOR_VERSION();
-  const script = path.join(root, 'performer.sh');
-  if (!fs.existsSync(script)) {
-    return res.status(500).json({ error: 'performer.sh not found at root' });
+  const { root, script } = resolveRestartScript();
+  if (!script) {
+    return res.status(500).json({ error: 'performer.sh not found (code clone or data root)' });
   }
   res.json({ ok: true, restarting: true });
   setTimeout(() => {
@@ -4692,6 +5097,74 @@ app.put('/api/song/:base/tags', express.json(), (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Per-song "who's needed to play this" — a compact string over the alphabet
+// {B, M, D, J, #} (Bill, Matt, Dan, JD, drums-role). The Gig Builder's roster
+// filter reads this to decide whether tonight's musicians can play the song
+// (with # optionally supplied by drum-machine or backing-track compensation).
+// Body: { requires: "BMD#" }. Case-insensitive on write, uppercased on save.
+// Task #132.
+const REQUIRES_ALPHABET = /^[BMDJ#]*$/;
+app.put('/api/song/:base/requires', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  let val = String((req.body && req.body.requires) || '').toUpperCase().trim();
+  if (!REQUIRES_ALPHABET.test(val)) {
+    return res.status(400).json({ error: 'requires must be a subset of B/M/D/J/# only' });
+  }
+  // Preserve BMDJ# canonical order rather than user-typed order; makes
+  // downstream string-equality checks work without normalization.
+  const ORDER = 'BMDJ#';
+  val = ORDER.split('').filter(c => val.includes(c)).join('');
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.band_required_compact = val;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.band_required_compact = val;
+      }
+    } catch (e) {}
+    res.json({ ok: true, requires: val });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Per-song key override. metadata.py sets this from librosa on ingest;
+// the operator can correct it in the row-level Key dropdown. Body:
+// { key: "F#m" } — short form (major implied, "m" suffix = minor).
+// Task #132.
+const KEY_PATTERN = /^[A-G](#|b)?m?$/;
+app.put('/api/song/:base/key', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const val = String((req.body && req.body.key) || '').trim();
+  if (!KEY_PATTERN.test(val)) {
+    return res.status(400).json({ error: 'key must match [A-G](#|b)?m? — e.g. F#m, C, Eb' });
+  }
+  const isMinor = val.endsWith('m');
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.key = isMinor
+      ? `${val.slice(0, -1)} minor`
+      : `${val} major`;
+    meta.key_short = val;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) { row.key = meta.key; row.key_short = val; }
+      }
+    } catch (e) {}
+    res.json({ ok: true, key: meta.key, key_short: val });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Drum-machine-as-default-per-song. Some songs the band plays without the
 // backing track — drum machine only. PUT this endpoint to remember that
 // choice. On next song-load the client checks metadata.drum_machine_default
@@ -4715,6 +5188,42 @@ app.put('/api/song/:base/drum-default', express.json(), (req, res) => {
       }
     } catch (e) {}
     res.json({ ok: true, drum_machine_default: flag });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Per-song playback mode (task #129). Modes: 'stems' | 'drum' | 'backing'.
+// Client persists whichever mode was last used; loadSong reads this on
+// next open and auto-engages. Backward compat: drum_machine_default is
+// kept in sync (drum=true, stems/backing=false) so any legacy consumer
+// still sees the correct flag.
+const PLAYBACK_MODES = new Set(['stems', 'drum', 'backing']);
+app.put('/api/song/:base/playback-mode', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const mode = (req.body && req.body.mode);
+  if (!PLAYBACK_MODES.has(mode)) {
+    return res.status(400).json({ error: `mode must be one of ${[...PLAYBACK_MODES].join(', ')}` });
+  }
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.playback_mode = mode;
+    // Sync the legacy flag so anything still reading drum_machine_default
+    // stays consistent.
+    meta.drum_machine_default = (mode === 'drum');
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) {
+          row.playback_mode = mode;
+          row.drum_machine_default = (mode === 'drum');
+        }
+      }
+    } catch (e) {}
+    res.json({ ok: true, playback_mode: mode, drum_machine_default: mode === 'drum' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5213,11 +5722,33 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
     bars = String(Math.ceil((meta.bpm * activeDur) / 240));
   }
 
+  // Six-stem targets — as of 2026-06-27 the portal mixes stems
+  // client-side and Logic Pro 12's Stem Splitter produces the same
+  // 6 stems Demucs produces. Bounce each stem into the SAME song folder
+  // as source.wav, using the canonical filenames the portal reads:
+  //   vocals.m4a  drums.m4a  bass.m4a  guitar.m4a  piano.m4a  other.m4a
+  // The four legacy variables (M4ADir, VMix, VGMix, VGBMix, DOMix) are
+  // kept for backward compat with any old macro version still in the
+  // wild, but they now point at the same STEMS folder so a macro that
+  // ignores the new variables at least writes to the right place.
+  const stemDir = s.dir;
   const vars = {
     // paths
     SourceDir:      s.dir,
     SourceWav:      sourceWav,
-    M4ADir:         M4A_DIR,
+    StemDir:        stemDir,               // NEW: bounce target for all 6 stems
+    StemBase:       s.b,
+    // Explicit filenames the macro should write. Six canonical stems.
+    VocalsFile:     path.join(stemDir, 'vocals.m4a'),
+    DrumsFile:      path.join(stemDir, 'drums.m4a'),
+    BassFile:       path.join(stemDir, 'bass.m4a'),
+    GuitarFile:     path.join(stemDir, 'guitar.m4a'),
+    PianoFile:      path.join(stemDir, 'piano.m4a'),
+    OtherFile:      path.join(stemDir, 'other.m4a'),
+    // Legacy vars kept for backward compat. Older macro versions read
+    // M4ADir + suffix; point those at the SAME stem folder so they
+    // still land in the right place if not yet updated.
+    M4ADir:         stemDir,
     M4ABase:        s.b,
     // identity
     Title:          meta.title  || s.b,
@@ -5498,12 +6029,16 @@ app.get('/api/gigs', (req, res) => {
     try {
       const d = readJsonCached(path.join(dir, f));
       if (!d) continue;
+      // Task #132: _ignored gigs are hidden from the sidebar. Set by
+      // DELETE on a sheet-synced gig to keep mpb_sync from re-adding it.
+      if (d._ignored) continue;
       const setlists = Array.isArray(d.setlists) ? d.setlists : [];
       out.push({
         slug: f.replace(/\.json$/i, ''),
         title: d.title || f.replace(/\.json$/i, ''),
         setlist_count: setlists.length,
         song_count: setlists.reduce((n, sl) => n + (sl.songs ? sl.songs.length : 0), 0),
+        source: d.source || 'manual',
         created_at: d.created_at || null,
         updated_at: d.updated_at || null,
       });
@@ -5533,6 +6068,218 @@ app.post('/api/gigs', (req, res) => {
   const now = new Date().toISOString();
   writeGig(slug, { title: body.title, created_at: now, updated_at: now, setlists });
   res.json({ ok: true, slug });
+});
+
+// ─── Gig Builder — deterministic query engine (task #132) ────────────
+// Accepts a compact spec describing tonight's constraints and returns a
+// DRAFT gig JSON the client can display, tweak, and eventually POST to
+// /api/gigs. This endpoint has no side effects — it doesn't create,
+// modify, or delete anything on disk. The client owns Accept/Discard.
+//
+// Input body (all fields optional except roster):
+//   {
+//     title:          "Sunday Practice Nov 2026",
+//     roster:         ["Bill","Matt","Dan"],
+//     purpose:        "practice" | "gig",
+//     set_count:      4,               // default 4
+//     target_minutes: 50,              // per set
+//     max_minutes:    60,              // hard cap per set
+//     tags_all:       ["harmonies"],   // require ALL of these tags
+//     tags_none:      ["opener"],      // exclude any of these tags
+//     modes:          ["6STEMS","DRUM","BACKING","NONE"],  // Show-filter
+//     sequencing:     "round-robin" | "natural" | "warmup" | "alternating",
+//     song_bases:     null | ["…"],    // if set, restrict to these songs
+//   }
+//
+// The scoring/assembly is pure JS over the in-memory library cache. No
+// network I/O; safe to call offline. Response is a full gig object with
+// setlists filled and a _draft: true marker.
+const ROSTER_TO_CAP = { Bill: 'B', Matt: 'M', Dan: 'D', JD: 'J', Mark: '#' };
+
+function gbCapabilitySet(roster) {
+  const caps = new Set();
+  for (const name of roster || []) {
+    const c = ROSTER_TO_CAP[name];
+    if (c) caps.add(c);
+  }
+  return caps;
+}
+function gbSongPlaysWithRoster(song, caps) {
+  const req = String(song.band_required_compact || '').toUpperCase();
+  if (!req) return true;   // no constraint set → playable by anyone
+  for (const ch of req) {
+    if (ch === '#' && !caps.has('#')) {
+      // Drums-role can be satisfied by a drum machine OR a backing track.
+      const hasDrumMachine = !!(song.drum_pattern);
+      // Best-effort backing-track check — the assignments map is authoritative.
+      const hasBackingTrack = !!(backingTrackAssignments && backingTrackAssignments[song.folderName]);
+      if (!hasDrumMachine && !hasBackingTrack) return false;
+    } else if (!caps.has(ch)) {
+      return false;
+    }
+  }
+  return true;
+}
+function gbReadinessOk(song, purpose) {
+  const r = song.readiness || 'tbd';
+  if (purpose === 'gig') return r === 'InTheCan' || r === 'Rehearse';
+  return r === 'Rehearse' || r === 'tbd';   // practice
+}
+function gbStalenessScore(song) {
+  // Higher = older = more valuable in a practice setlist.
+  if (!song.last_played_at) return 1.0;
+  const days = (Date.now() - new Date(song.last_played_at).getTime()) / 86400000;
+  return Math.min(1, days / 90);   // saturates at 3 months
+}
+function gbCurrentMode(song) {
+  return song.playback_mode || (song.drum_machine_default ? 'drum' : '6STEMS');
+}
+function gbModePass(song, allowedModes) {
+  if (!allowedModes || allowedModes.length === 0) return true;
+  const m = gbCurrentMode(song);
+  const norm = m.toUpperCase() === 'DRUM' ? 'DRUM' :
+               m.toUpperCase() === 'STEMS' || m === '6STEMS' ? '6STEMS' :
+               m.toUpperCase() === 'BACKING' ? 'BACKING' :
+               m.toUpperCase() === 'NONE' ? 'NONE' : '6STEMS';
+  return allowedModes.includes(norm);
+}
+function gbTagPass(song, tagsAll, tagsNone) {
+  const tags = Array.isArray(song.tags) ? song.tags : [];
+  if (tagsAll && tagsAll.length) {
+    for (const t of tagsAll) if (!tags.includes(t)) return false;
+  }
+  if (tagsNone && tagsNone.length) {
+    for (const t of tagsNone) if (tags.includes(t)) return false;
+  }
+  return true;
+}
+
+app.post('/api/gig-builder/build', express.json(), (req, res) => {
+  const spec = req.body || {};
+  const roster = Array.isArray(spec.roster) && spec.roster.length ? spec.roster : ['Bill','Matt','Dan'];
+  const purpose = spec.purpose === 'gig' ? 'gig' : 'practice';
+  const setCount = Math.max(1, Math.min(4, spec.set_count || 4));
+  const targetSec = Math.max(20, Math.min(120, spec.target_minutes || 50)) * 60;
+  const maxSec = Math.max(targetSec, (spec.max_minutes || 60) * 60);
+  const tagsAll = Array.isArray(spec.tags_all) ? spec.tags_all : [];
+  const tagsNone = Array.isArray(spec.tags_none) ? spec.tags_none : [];
+  const modes = Array.isArray(spec.modes) ? spec.modes : ['6STEMS','DRUM','BACKING','NONE'];
+  const sequencing = spec.sequencing || 'round-robin';
+  const restrictBases = Array.isArray(spec.song_bases) && spec.song_bases.length
+    ? new Set(spec.song_bases) : null;
+
+  const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+  const stems = songs.filter(s => s.type === 'stems');
+  const caps = gbCapabilitySet(roster);
+
+  // Filter
+  const filtered = stems.filter(s => {
+    if (restrictBases && !restrictBases.has(s.folderName)) return false;
+    if (!gbSongPlaysWithRoster(s, caps)) return false;
+    if (!gbReadinessOk(s, purpose)) return false;
+    if (!gbTagPass(s, tagsAll, tagsNone)) return false;
+    if (!gbModePass(s, modes)) return false;
+    return true;
+  });
+
+  // Score
+  const scored = filtered.map(s => {
+    let score = 0;
+    if (purpose === 'practice') {
+      score += 0.7 * gbStalenessScore(s);
+      score += (s.readiness === 'Rehearse') ? 0.4 : (s.readiness === 'tbd' ? 0.2 : 0);
+    } else {
+      score += 0.5 * Math.min(1, (s.play_count || 0) / 20);   // crowd-tested
+      score += (s.readiness === 'InTheCan') ? 0.4 : 0.1;
+    }
+    if (s.favorite) score += 0.15;
+    return { song: s, score };
+  }).sort((a, b) => b.score - a.score);
+
+  // Assemble into setCount setlists
+  const singers = ['Bill','Matt','Dan','JD'].filter(name => roster.includes(name));
+  const bySinger = {};
+  for (const name of singers) bySinger[name] = [];
+  for (const { song } of scored) {
+    const singer = (song.singer_lead || '').split(/\s+/)[0] || 'Bill';
+    if (bySinger[singer]) bySinger[singer].push(song);
+  }
+
+  const setlists = Array.from({ length: setCount }, (_, i) => ({
+    title: `Set ${i + 1}`, songs: [],
+  }));
+  const setDur = new Array(setCount).fill(0);
+
+  function pickNext(iRoundRobin) {
+    if (sequencing === 'round-robin' && singers.length) {
+      // Rotate through singer buckets until we find one with a song.
+      for (let k = 0; k < singers.length; k++) {
+        const singer = singers[(iRoundRobin + k) % singers.length];
+        if (bySinger[singer].length) return { song: bySinger[singer].shift(), advance: k + 1 };
+      }
+      return null;
+    }
+    // Natural: highest-score first, ignoring singer buckets.
+    if (!scored.length) return null;
+    const next = scored.shift().song;
+    // Remove from bucket too so re-runs stay consistent.
+    for (const sg of singers) {
+      const idx = bySinger[sg].indexOf(next);
+      if (idx >= 0) bySinger[sg].splice(idx, 1);
+    }
+    return { song: next, advance: 1 };
+  }
+
+  let curSet = 0;
+  let rrCursor = 0;
+  const remaining = () => singers.some(sg => bySinger[sg].length) || scored.length > 0;
+  let guard = 0;
+  while (remaining() && guard++ < 300 && curSet < setCount) {
+    const pick = pickNext(rrCursor);
+    if (!pick) break;
+    const song = pick.song;
+    rrCursor = (rrCursor + pick.advance) % Math.max(1, singers.length);
+    const dur = Number(song.duration_sec || song.duration || 180) + 8;   // +8s for transition
+    if (setDur[curSet] + dur > maxSec) {
+      curSet++;
+      if (curSet >= setCount) break;
+    }
+    setlists[curSet].songs.push({
+      song_base: song.folderName,
+      title: song.title || song.folderName,
+      artist: song.artist || '',
+      singer: song.singer_lead || '',
+      key: song.key_short || song.key || '',
+      duration_sec: Number(song.duration_sec || song.duration || 0),
+      mode: gbCurrentMode(song),
+    });
+    setDur[curSet] += dur;
+    if (setDur[curSet] >= targetSec) {
+      curSet++;
+      if (curSet >= setCount) break;
+    }
+  }
+
+  const total = setDur.reduce((a, b) => a + b, 0);
+  res.json({
+    ok: true,
+    draft: {
+      _draft: true,
+      title: String(spec.title || `Draft gig ${new Date().toLocaleDateString()}`).slice(0, 96),
+      spec,
+      setlists,
+      totals: {
+        songs: setlists.reduce((a, s) => a + s.songs.length, 0),
+        seconds: total,
+        set_seconds: setDur,
+      },
+    },
+    stats: {
+      library_size: stems.length,
+      filtered: filtered.length,
+      scored: scored.length,
+    },
+  });
 });
 
 app.put('/api/gigs/:slug', (req, res) => {
@@ -5597,9 +6344,24 @@ app.delete('/api/gigs/:slug', (req, res) => {
   if (!file.startsWith(dir) || !fs.existsSync(file)) {
     return res.status(404).json({ error: 'gig not found' });
   }
+  // Task #132: sheet-synced gigs get soft-deleted with _ignored:true.
+  // The next mpb_sync.py run reads this field and skips regenerating
+  // the gig, so it stays hidden until the operator either removes the
+  // field or deletes the file entirely. Real (non-synced) gigs are
+  // hard-deleted, unchanged behavior.
+  const softMode = String(req.query.mode || '').toLowerCase() === 'hide';
+  try {
+    const gig = JSON.parse(fs.readFileSync(file, 'utf8')) || {};
+    if (softMode || gig.source === 'mpb_sync') {
+      gig._ignored = true;
+      gig.ignored_at = new Date().toISOString();
+      writeGig(slug, gig);
+      return res.json({ ok: true, slug, mode: 'hidden', note: 'Sheet-synced gig hidden. Remove _ignored to restore.' });
+    }
+  } catch (e) { /* fall through to hard delete */ }
   unlinkBoth(GIGS_DIR, GIGS_LOCAL_MIRROR, `${slug}.json`);
   invalidateCachedFile(path.join(GIGS_DIR, `${slug}.json`));
-  res.json({ ok: true, slug });
+  res.json({ ok: true, slug, mode: 'deleted' });
 });
 
 // Fallback to serve index.html for spa behavior

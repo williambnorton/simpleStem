@@ -13,6 +13,8 @@ Reports back a PASS/FAIL table + a bug list.
 | P3 | Build stamp is recent | version chip differs from last test run |
 | P4 | bt-cache populated | `GET /api/cache/status` returns running:false with done==total |
 | P5 | Librarian portal alive | `GET /librarian` returns the page |
+| P6 | Boot precaches all succeeded | perf-server.log has no `precache] failed:` line; clip+drum+backing+stem precaches all report done (caught the 2026-07-02 `libCache is not defined` backing-precache crash) |
+| P7 | Chrome media pipeline sane | a generated WAV blob reaches `readyState ≥ 3` in < 2 s in a throwaway `Audio()` — if this fails, restart Chrome BEFORE blaming the app (2026-07-02: machine-wide wedge produced "no stems responded after 3s" for every song) |
 
 ## Ingest (kick off EARLY — playback steps depend on something to play)
 

@@ -767,6 +767,30 @@ function setupRollups() {
 // setlist to reorder.
 
 let activeGig = null;             // { slug, title, setlists: [...] } — live edited
+
+// ─── Schema normalization for gig setlist songs ──────────────────────
+// GIG-BLOCKER FIX (2026-07-02, task #126). mpb_sync.py writes setlist
+// entries as {"slug":"…","title":"…"} but the entire client reads
+// entry.song_base. Every mpb_sync-generated setlist song therefore
+// showed "Song not in library yet" when clicked — this is what
+// silently killed Bill's gig yesterday afternoon (100% of the EDR 4/24
+// setlist was slug-only). Rather than hunt down every reader, we
+// normalize at the single point of entry: every gig object that flows
+// into activeGig runs through this walk first, so all downstream code
+// keeps working with entry.song_base unchanged. Backward-compatible
+// with legacy song_base-only entries and forward-compatible with any
+// future producer that writes only slug.
+function normalizeGigSongBases(gig) {
+  if (!gig || !Array.isArray(gig.setlists)) return gig;
+  for (const sl of gig.setlists) {
+    if (!Array.isArray(sl.songs)) continue;
+    for (const s of sl.songs) {
+      if (!s) continue;
+      if (!s.song_base && s.slug) s.song_base = s.slug;
+    }
+  }
+  return gig;
+}
 let activeSetlistIdx = 0;          // which setlist the ghost-row + adds to
 let gigSaveTimer = null;
 // Expansion state for setlists in the sidebar. Tracks which idxs are open so
@@ -1075,8 +1099,10 @@ function loadRoundRobinGig() {
       const v = m.variants.find(x => x.type === 'stems');
       if (!v) continue;
       const lead = (v.singer_lead || '').trim();
-      const cap = lead && lead[0].toUpperCase() + lead.slice(1).toLowerCase();
-      if (buckets[cap]) {
+      // Normalize via lookup — naive capitalization turns "JD" into "Jd",
+      // which silently drops JD's entire bucket from the rotation.
+      const cap = { bill: 'Bill', matt: 'Matt', dan: 'Dan', jd: 'JD' }[lead.toLowerCase()];
+      if (cap && buckets[cap]) {
         buckets[cap].push({ song_base: v.folderName, title: m.title, artist: m.artist });
       }
     }
@@ -1165,6 +1191,10 @@ async function loadActiveGig(slug) {
       } else if (slug === PROTEST_GIG_SLUG) {
         activeGig = loadTagGig(PROTEST_GIG_SLUG, 'protest', 'Protest Songs');
       }
+      // Task #126: normalize slug → song_base for every synthetic gig
+      // too. Playlist-origin setlists come from mpb_sync.py so they
+      // still write "slug".
+      activeGig = normalizeGigSongBases(activeGig);
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
         const placeholderTitle =
           slug === YOUTUBE_SYNC_GIG_SLUG    ? '(no playlist setlists yet)' :
@@ -1204,7 +1234,7 @@ async function loadActiveGig(slug) {
   // re-render is a no-op visually.
   const cachedGig = readCache(GIG_DETAIL_CACHE_PREFIX + slug);
   if (cachedGig) {
-    activeGig = cachedGig;
+    activeGig = normalizeGigSongBases(cachedGig);
     if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
       activeGig.setlists = [{ title: 'Set 1', songs: [] }];
     }
@@ -1215,7 +1245,7 @@ async function loadActiveGig(slug) {
   try {
     const res = await fetch(`/api/gigs/${encodeURIComponent(slug)}`);
     if (!res.ok) throw new Error((await res.json()).error || 'load failed');
-    activeGig = await res.json();
+    activeGig = normalizeGigSongBases(await res.json());
     if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
       activeGig.setlists = [{ title: 'Set 1', songs: [] }];
     }
@@ -3873,7 +3903,10 @@ async function openSongMenu(base, merged) {
 
       <div class="song-modal-section">
         <label class="song-modal-label">Re-stem in Logic Pro (triggers Keyboard Maestro macro "simpleStem"):</label>
-        <button class="btn-secondary song-logic-btn">↻ Re-stem in Logic</button>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn-secondary song-logic-btn">↻ Re-stem in Logic</button>
+          <button class="btn-secondary song-logic-unlock-btn" title="Clear the KBM simpleStem_Running lock if a previous macro run got stuck">🔓 Unlock (macro stuck)</button>
+        </div>
         <div class="song-modal-logic-note"></div>
       </div>
 
@@ -3927,6 +3960,20 @@ async function openSongMenu(base, merged) {
       if (!r.ok) throw new Error(d.error || 'failed');
       logicNote.textContent = `Macro "${d.macro}" triggered — Logic Pro should open shortly.`;
     } catch (e) { logicNote.textContent = `Error: ${e.message}`; }
+  });
+
+  // Unlock — clears the KBM simpleStem_Running variable when a previous
+  // macro run got stuck (crashed macro, user aborted from KBM Editor,
+  // Logic hung, etc.). Idempotent; safe to click at any time.
+  const logicUnlockBtn = overlay.querySelector('.song-logic-unlock-btn');
+  logicUnlockBtn.addEventListener('click', async () => {
+    logicNote.textContent = 'Clearing KBM lock…';
+    try {
+      const r = await fetch('/api/logic-restem/unlock', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      logicNote.textContent = d.note || 'Lock cleared. You can retry Re-stem now.';
+    } catch (e) { logicNote.textContent = `Unlock failed: ${e.message}`; }
   });
 
   // Delete — two-click confirm: first click arms it, second click within 4s
@@ -4170,6 +4217,7 @@ function applyPitchToShifter() {
   // Drum machine inherits the same rate (combined with playbackSpeed) so
   // SEMI/FINE knobs change the drum loop tempo too.
   try { applyRateToDrumMachine(); } catch (e) {}
+  try { applyRateToBackingTrack(); } catch (e) {}
 }
 
 // Visualizer mode toggle — flips the waveform between SUM (single combined
@@ -5155,6 +5203,7 @@ document.addEventListener('DOMContentLoaded', () => {
   //       A stuck request can't sit in the queue indefinitely; the next
   //       interval can dispatch a fresh one.
   let lastHealthAt = Date.now();
+  let lastHealthFailAt = 0;   // set only when a heartbeat actually errors/times out
   let _heartbeatInFlight = false;
   // Bill 2026-06-28: "Maybe the heartbeat could be 15 or 60 seconds?"
   // Longer interval doesn't FIX Chrome's intensive-throttling (the
@@ -5175,16 +5224,26 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const r = await fetch('/api/health', { cache: 'no-store', signal: ctrl.signal });
       if (r.ok) lastHealthAt = Date.now();
-    } catch (e) { /* timeout / aborted / no-network */ }
+      else lastHealthFailAt = Date.now();
+    } catch (e) { lastHealthFailAt = Date.now(); /* timeout / aborted / no-network */ }
     finally {
       clearTimeout(t);
       _heartbeatInFlight = false;
     }
   }
   setInterval(pollHeartbeat, HEARTBEAT_INTERVAL_MS);
+  // FALSE-POSITIVE FIX (regression 2026-07-02): "no successful heartbeat in
+  // 25s" also fires when Chrome throttles background-tab timers and simply
+  // never RAN a heartbeat — the server was fine the whole time. Require
+  // positive evidence: a heartbeat must have actually FAILED more recently
+  // than the last success before we show the banner. If the timers were
+  // merely asleep, the age check alone can't trip it; instead we fire a
+  // fresh probe and let its outcome decide.
   setInterval(() => {
-    const stale = (Date.now() - lastHealthAt) > STALE_THRESHOLD_MS;
-    document.body.classList.toggle('server-stale', stale);
+    const ageStale = (Date.now() - lastHealthAt) > STALE_THRESHOLD_MS;
+    const sawFailure = lastHealthFailAt > lastHealthAt;
+    if (ageStale && !sawFailure) pollHeartbeat();  // decide on real evidence
+    document.body.classList.toggle('server-stale', ageStale && sawFailure);
   }, 500);
   // The SERVER NOT RESPONDING banner is now the restart target.
   // Bug fix per Bill: arrow "TRY THE RESTART BUTTON →" pointed at empty
@@ -6352,19 +6411,44 @@ function loadSong(song, opts) {
   if (drumPillEl && drumValEl) {
     drumPillEl.style.display = '';
     drumValEl.textContent = drumPattern || (song.practiceBpm ? `≈${song.practiceBpm}` : '--');
+    // Determine the song's remembered playback mode. Precedence:
+    //   1. explicit playback_mode field ('stems'|'drum'|'backing')
+    //   2. legacy drum_machine_default → treat as 'drum'
+    //   3. undefined → 'stems' (no change)
+    const rememberedMode =
+      (song && song.playback_mode)
+      || (currentSong && currentSong.playback_mode)
+      || ((song && song.drum_machine_default) || (currentSong && currentSong.drum_machine_default) ? 'drum' : null);
     refreshDrumMachinePick(drumPattern, song.practiceBpm).then(() => {
-      // Auto-engage drum machine if this song was last saved with the
-      // drum-machine-as-default flag. Stems still load (so they're ready
-      // if the operator toggles back), but the drum loop is what's
-      // routed to the master bus. The toggleDrumMachine call persists
-      // the same flag, so flipping it OFF removes the auto-engage.
+      // Auto-engage drum machine if the song's last mode was 'drum'.
+      // Stems still load in parallel (so a toggle back is instant), but
+      // the drum loop is what's routed to the master bus.
       try {
-        if ((song.drum_machine_default || (currentSong && currentSong.drum_machine_default)) && !drumMachineActive) {
-          engageDrumMachine();
-        }
-      } catch (e) { console.warn('[drum-default] auto-engage failed:', e); }
+        if (rememberedMode === 'drum' && !drumMachineActive) engageDrumMachine();
+      } catch (e) { console.warn('[playback-mode] drum auto-engage failed:', e); }
     }).catch(e => console.warn('[drum-machine] pick failed:', e));
   }
+  // Backing-track pick — checks whether the server matched a stereo m4a
+  // for this song. If yes, the Backing pill lights up and becomes
+  // clickable; if no, it stays greyed. Disengage any prior backing so
+  // switching songs doesn't play the old song's backing over the new
+  // song's stems.
+  if (backingTrackActive) disengageBackingTrack();
+  refreshBackingTrackPick(song && song.folderName).then(() => {
+    // Auto-engage backing track if the song's last mode was 'backing'
+    // AND the server actually matched a file for this song. If not
+    // matched, silently fall through — stems will play normally and the
+    // pill stays greyed. Next explicit engage → mode is re-persisted.
+    try {
+      const mode =
+        (song && song.playback_mode)
+        || (currentSong && currentSong.playback_mode)
+        || null;
+      if (mode === 'backing' && backingTrackUrl && !backingTrackActive) {
+        engageBackingTrack();
+      }
+    } catch (e) { console.warn('[playback-mode] backing auto-engage failed:', e); }
+  }).catch(e => console.warn('[backing-track] pick failed:', e));
   
   // Set all tracks to non-loop browser-wise to prevent wrap stutter
   Object.values(audioElements).forEach(ae => {
@@ -7313,6 +7397,7 @@ function engageDrumMachine() {
   // Sync rate to current pitch/speed knobs immediately so the drum loop
   // doesn't start at 1.0x and then jump when the next knob change fires.
   try { applyRateToDrumMachine(); } catch (e) {}
+  try { applyRateToBackingTrack(); } catch (e) {}
   // BPM-driven flash. The button gets a CSS var that the keyframes use
   // for animation-duration so the green pulse lands on every beat.
   // Fallback to 120 BPM when the song has no analyzed tempo.
@@ -7344,13 +7429,177 @@ function disengageDrumMachine() {
 function toggleDrumMachine() {
   if (drumMachineActive) disengageDrumMachine();
   else engageDrumMachine();
-  // Remember the choice as the song's default — so the next time this
-  // song loads, the drum machine engages automatically. Bill: "some songs
-  // we use drum machine instead of backing tracks; remember that."
-  // The state we just transitioned TO is what we persist.
+  // Persist the resulting mode. If we're now on drum, save 'drum'; if
+  // we just turned drum OFF, save 'stems' as the fallback (the operator
+  // is back to the six-stem mix). Keeps drum_machine_default in sync
+  // via the legacy call so any consumer of the old flag still works.
+  persistPlaybackMode(drumMachineActive ? 'drum' : 'stems');
   persistDrumDefault(drumMachineActive);
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// BACKING-TRACK MODULE (task #127)
+// A curator's pre-mixed stereo m4a plays IN PLACE OF the six-stem mix.
+// Mirrors the drum-machine flow: mutually exclusive with stems (and
+// with the drum machine), single audio element wired into masterMerger
+// via a MediaElementSource, same pitch/speed rate control.
+// ═════════════════════════════════════════════════════════════════════
+let backingTrackEl       = null;
+let backingTrackSrc      = null;
+let backingTrackActive   = false;
+let backingTrackUrl      = null;
+let backingTrackFile     = null;
+
+function ensureBackingTrackEl() {
+  if (backingTrackEl) return backingTrackEl;
+  backingTrackEl = new Audio();
+  backingTrackEl.preload = 'auto';
+  backingTrackEl.loop = false;      // one-shot; ends when song ends
+  backingTrackEl.crossOrigin = 'anonymous';
+  return backingTrackEl;
+}
+function wireBackingTrackIntoMaster() {
+  if (!audioCtx || !masterGainNode || !backingTrackEl || backingTrackSrc) return;
+  try {
+    backingTrackSrc = audioCtx.createMediaElementSource(backingTrackEl);
+    if (analyserNode) backingTrackSrc.connect(analyserNode);
+    else              backingTrackSrc.connect(masterGainNode);
+  } catch (e) { console.warn('[backing-track] wireToMaster failed:', e); }
+}
+function applyRateToBackingTrack() {
+  if (!backingTrackEl) return;
+  try {
+    const pitchRate = Math.pow(2, ((pitchSemis || 0) + (pitchCents || 0)/100) / 12);
+    const rate = (playbackSpeed || 1) * pitchRate;
+    backingTrackEl.preservesPitch = false;
+    backingTrackEl.mozPreservesPitch = false;
+    backingTrackEl.webkitPreservesPitch = false;
+    backingTrackEl.playbackRate = rate;
+  } catch (e) {}
+}
+function updateBackingChipLabel(label) {
+  const v = document.getElementById('active-backing-value');
+  if (v) v.textContent = label || '--';
+  const pill = document.getElementById('active-meta-backing');
+  if (pill) pill.classList.toggle('disabled', !label);
+}
+async function refreshBackingTrackPick(songBase) {
+  if (!songBase) {
+    backingTrackUrl = null; backingTrackFile = null;
+    updateBackingChipLabel(null);
+    return;
+  }
+  try {
+    const r = await fetch('/api/backing-tracks/pick/' + encodeURIComponent(songBase));
+    if (!r.ok) {
+      backingTrackUrl = null; backingTrackFile = null;
+      updateBackingChipLabel(null);
+      return;
+    }
+    const j = await r.json();
+    backingTrackUrl  = j.url;
+    backingTrackFile = j.file;
+    // Trim the extension + long paths for a compact chip label.
+    const shortLabel = (j.file || '').replace(/\.(m4a|mp3)$/i, '').slice(0, 24);
+    updateBackingChipLabel(shortLabel);
+    if (backingTrackActive && backingTrackEl && backingTrackUrl) {
+      backingTrackEl.src = backingTrackUrl;
+      backingTrackEl.play().catch(() => {});
+    }
+  } catch (e) {
+    backingTrackUrl = null; backingTrackFile = null;
+    updateBackingChipLabel(null);
+  }
+}
+function engageBackingTrack() {
+  if (backingTrackActive || !backingTrackUrl) return;
+  // Mutually exclusive with the drum machine.
+  if (drumMachineActive) disengageDrumMachine();
+  initAudioCtx();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  const el = ensureBackingTrackEl();
+  wireBackingTrackIntoMaster();
+  // The stereo backing is the WHOLE mix — stop the six stems so we don't
+  // pile audio. Same pattern as engageDrumMachine.
+  if (isPlaying || Object.values(audioElements).some(audioHasSrc)) {
+    stopAudio();
+  }
+  el.src = backingTrackUrl;
+  el.currentTime = 0;
+  el.play().catch(e => console.warn('[backing-track] play failed:', e));
+  backingTrackActive = true;
+  try { applyRateToBackingTrack(); } catch (e) {}
+  const pill = document.getElementById('active-meta-backing');
+  if (pill) pill.classList.add('active');
+  if (window.lucide) lucide.createIcons();
+}
+function disengageBackingTrack() {
+  if (!backingTrackActive) return;
+  try { backingTrackEl && backingTrackEl.pause(); } catch (e) {}
+  if (backingTrackEl) backingTrackEl.currentTime = 0;
+  backingTrackActive = false;
+  const pill = document.getElementById('active-meta-backing');
+  if (pill) pill.classList.remove('active');
+}
+function toggleBackingTrack() {
+  if (backingTrackActive) disengageBackingTrack();
+  else if (backingTrackUrl) engageBackingTrack();
+  // Persist. Backing engaged → 'backing'; backing disengaged → 'stems'
+  // (drum is a separate opt-in; toggling backing off doesn't imply drum).
+  persistPlaybackMode(backingTrackActive ? 'backing' : 'stems');
+}
+// Wire up the pill click.
+(function bindBackingTrackPill() {
+  const attach = () => {
+    const pill = document.getElementById('active-meta-backing');
+    if (!pill) { setTimeout(attach, 300); return; }
+    pill.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (!backingTrackUrl) return;   // no match for current song → no-op
+      toggleBackingTrack();
+    });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+
+// ─── Per-song playback mode persistence (task #129) ───────────────────
+// Remembers whether the operator last played this song via the six
+// stems, the drum machine, or the pre-made backing track. Next time the
+// song loads, that mode auto-engages so recall is one click (or zero).
+// Mode is stored in metadata.json as playback_mode ∈ 'stems'|'drum'|'backing'.
+// Backward compat: if playback_mode is unset but drum_machine_default is
+// true, treat as 'drum' (the previous single-flag behavior).
+function persistPlaybackMode(mode) {
+  try {
+    if (typeof currentSong === 'undefined' || !currentSong) return;
+    const base = currentSong.folderName || currentSong.base;
+    if (!base) return;
+    fetch(`/api/song/${encodeURIComponent(base)}/playback-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }).then(r => r.json()).then(j => {
+      if (j && j.ok) {
+        currentSong.playback_mode = j.playback_mode;
+        try {
+          const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
+            const sv = x.variants && x.variants.find(v => v.type === 'stems');
+            return sv && sv.folderName === base;
+          });
+          if (m) {
+            m.playback_mode = j.playback_mode;
+            const sv = m.variants && m.variants.find(v => v.type === 'stems');
+            if (sv) sv.playback_mode = j.playback_mode;
+          }
+        } catch (e) {}
+      }
+    }).catch(() => {});
+  } catch (e) {}
+}
 // PUT /api/song/:base/drum-default { drumDefault } and patch the in-memory
 // library variant so a subsequent loadSong sees the new flag without a
 // page reload.
@@ -7382,13 +7631,86 @@ function persistDrumDefault(flag) {
   } catch (e) {}
 }
 
-// Right-click context menu: list nearby 110@<bpm> alternates so the
-// operator can override the auto-pick mid-rehearsal without leaving
-// the player. Click an entry to swap.
+// Right-click context menu: task #128 — now shows ALL drum patterns
+// grouped by BPM family. Auto-matched pattern is highlighted at the top
+// (marked "current"); every other family is browsable. No filtering —
+// Bill can pick a totally different feel mid-rehearsal without
+// remembering exact filenames.
 let _drumCtxMenuEl = null;
-function showDrumContextMenu(x, y) {
-  if (!drumMachineAlternates || drumMachineAlternates.length === 0) return;
+let _drumGroupsCache = null;      // { families: [...], other: [...] }
+async function fetchDrumGroups() {
+  if (_drumGroupsCache) return _drumGroupsCache;
+  try {
+    const r = await fetch('/api/drum-machine/all-grouped');
+    if (r.ok) _drumGroupsCache = await r.json();
+  } catch (e) { /* fall through */ }
+  return _drumGroupsCache;
+}
+async function showDrumContextMenu(x, y) {
   hideDrumContextMenu();
+  const groups = await fetchDrumGroups();
+  if (!groups || !groups.families || !groups.families.length) {
+    // Fall back to the legacy alternates list if the new endpoint fails.
+    if (!drumMachineAlternates || drumMachineAlternates.length === 0) return;
+    return renderLegacyDrumMenu(x, y);
+  }
+  const menu = document.createElement('div');
+  menu.className = 'drum-machine-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top  = `${y}px`;
+  // Header row surfaces the current pick so it's a one-click reset back
+  // to the auto-match after browsing.
+  const cur = drumMachineFile || '';
+  const parts = [];
+  parts.push(`<div class="drum-menu-header">Drum patterns — current: <b>${escapeHtml(cur.replace(/\.m4a$/i, '') || '(none)')}</b></div>`);
+  for (const fam of groups.families) {
+    parts.push(`<div class="drum-menu-family">${fam.label}</div>`);
+    for (const p of fam.patterns) {
+      const isCur = (p.filename === cur);
+      parts.push(
+        `<button class="drum-menu-item${isCur ? ' current' : ''}" data-file="${escapeHtml(p.filename)}">` +
+        `<span class="drum-menu-item-label">${escapeHtml(p.label)}</span>` +
+        (isCur ? '<span class="drum-menu-item-tag">current</span>' : '') +
+        `</button>`
+      );
+    }
+  }
+  if (groups.other && groups.other.length) {
+    parts.push(`<div class="drum-menu-family">Other</div>`);
+    for (const p of groups.other) {
+      const isCur = (p.filename === cur);
+      parts.push(
+        `<button class="drum-menu-item${isCur ? ' current' : ''}" data-file="${escapeHtml(p.filename)}">` +
+        `<span class="drum-menu-item-label">${escapeHtml(p.label)}</span>` +
+        `</button>`
+      );
+    }
+  }
+  menu.innerHTML = parts.join('');
+  document.body.appendChild(menu);
+  _drumCtxMenuEl = menu;
+  // Scroll the current pick into view so Bill sees where he is.
+  const curEl = menu.querySelector('.drum-menu-item.current');
+  if (curEl && curEl.scrollIntoView) curEl.scrollIntoView({ block: 'center' });
+  menu.querySelectorAll('.drum-menu-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.file;
+      drumMachineFile = f;
+      drumMachineUrl  = `/api/audio/drum-machine/${encodeURIComponent(f)}`;
+      updateDrumChipLabel(f.replace(/\.m4a$/i, ''));
+      if (drumMachineActive && drumMachineEl) {
+        drumMachineEl.src = drumMachineUrl;
+        drumMachineEl.play().catch(() => {});
+      }
+      hideDrumContextMenu();
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener('click', hideDrumContextMenu, { once: true });
+  }, 0);
+}
+// Fallback used only if /api/drum-machine/all-grouped errors out.
+function renderLegacyDrumMenu(x, y) {
   const menu = document.createElement('div');
   menu.className = 'drum-machine-menu';
   menu.style.left = `${x}px`;
@@ -7890,6 +8212,7 @@ function setPlaybackSpeed(speed) {
   });
   // Drum machine follows the same speed so tempo adjustments apply to it.
   try { applyRateToDrumMachine(); } catch (e) {}
+  try { applyRateToBackingTrack(); } catch (e) {}
 }
 
 // Loop mode toggle
@@ -13226,3 +13549,643 @@ async function setupAiSetlistBuilder() {
     statusEl.className = 'ai-setlist-status ' + (cls || '');
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GIG BUILDER — task #132/#133
+// Modal launched from the gig-picker header. Filters mergedLibrary by
+// roster + tags + backing-mode; each song row has a per-song mode chip
+// (opens a picker) and four 1/2/3/4 radios that append to a setlist and
+// remove the song from the visible library. AI populate button calls
+// POST /api/gig-builder/build. Accept POSTs a new gig; Discard is client-
+// only. Everything is offline-safe.
+// ══════════════════════════════════════════════════════════════════════
+(function initGigBuilder(){
+  const ROSTER_ALL = ['Bill','Matt','Dan','JD','Mark','Joyce'];
+  const ROSTER_INI = { Bill: 'B', Matt: 'M', Dan: 'D', JD: 'J', Mark: '#' };
+  const PRESETS = {
+    duo:   ['Bill','Matt'],
+    trio:  ['Bill','Matt','Dan'],
+    power: ['Bill','Matt','Mark'],
+    full:  ['Bill','Matt','Dan','Mark'],
+    fullj: ['Bill','Matt','Dan','Mark','Joyce'],
+  };
+  const DEFAULT_TAGS = ['upbeat','slow','protest','harmonies','singalong','crowd','opener','closer'];
+  const KEYS = ['C','C#','Db','D','D#','Eb','E','F','F#','G','G#','Ab','A','A#','Bb','B',
+                'Cm','C#m','Dbm','Dm','D#m','Ebm','Em','Fm','F#m','Gm','G#m','Abm','Am','A#m','Bbm','Bm'];
+  const REQ_OPTIONS = ['','B','BM','BMD','BM#','BMD#','BMD#J','BMDJ','BMDJ#'];
+  const STORAGE_KEY = 'gigBuilder.state.v1';
+
+  let state = {
+    open: false,
+    title: '',
+    roster: ['Bill','Matt','Dan'],
+    purpose: 'practice',
+    tagsAll: new Set(),
+    showModes: new Set(['6STEMS','DRUM','BACKING','NONE']),
+    sets: [[], [], [], []],
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved) {
+      state.roster = saved.roster || state.roster;
+      state.purpose = saved.purpose || state.purpose;
+      state.tagsAll = new Set(saved.tagsAll || []);
+      state.showModes = new Set(saved.showModes || [...state.showModes]);
+    }
+  } catch (e) {}
+  function persist() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        roster: state.roster,
+        purpose: state.purpose,
+        tagsAll: [...state.tagsAll],
+        showModes: [...state.showModes],
+      }));
+    } catch (e) {}
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'gb-overlay';
+  overlay.innerHTML = `
+    <div class="gb-modal">
+      <div class="gb-hdr">
+        <h2><i data-lucide="sparkles"></i>Gig Builder</h2>
+        <input class="gb-title" placeholder="Gig title — e.g. Sunday Practice Nov 2026" />
+        <span class="gb-total-mm">0 min total</span>
+        <span class="grow"></span>
+        <button class="gb-ai primary"><i data-lucide="sparkles"></i>AI populate</button>
+        <button class="gb-clear"><i data-lucide="x"></i>Clear</button>
+        <button class="gb-accept accept"><i data-lucide="check"></i>Accept</button>
+        <button class="gb-discard close" title="Discard draft, close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="gb-filter">
+        <div class="row">
+          <span class="lbl">Tonight</span>
+          <span class="gb-roster"></span>
+          <span class="lbl" style="margin-left:8px;">Presets</span>
+          <button class="gb-preset" data-p="duo">Duo</button>
+          <button class="gb-preset" data-p="trio">Trio</button>
+          <button class="gb-preset" data-p="power">Power Trio</button>
+          <button class="gb-preset" data-p="full">Full</button>
+          <button class="gb-preset" data-p="fullj">Full+Joyce</button>
+          <span class="lbl" style="margin-left:8px;">Purpose</span>
+          <label class="gb-purpose"><input type="radio" name="gb-p" value="practice">Practice</label>
+          <label class="gb-purpose"><input type="radio" name="gb-p" value="gig">Gig</label>
+        </div>
+        <div class="row">
+          <span class="lbl">Tags</span>
+          <span class="gb-tags"></span>
+        </div>
+        <div class="row">
+          <span class="lbl">Show</span>
+          <span class="gb-modeflt"></span>
+          <span class="grow" style="flex:1;"></span>
+          <span class="gb-libcount" style="font-size:11px;color:var(--text-secondary);"></span>
+        </div>
+      </div>
+      <div class="gb-body">
+        <div class="gb-lib">
+          <div class="gb-libr-hdr">
+            <div>Title / Artist</div>
+            <div>Sng</div>
+            <div>Req</div>
+            <div>Key</div>
+            <div>Dur</div>
+            <div>▶</div>
+            <div>Stale</div>
+            <div>Backing</div>
+            <div style="text-align:center;">To set</div>
+          </div>
+          <div class="gb-libr-body"></div>
+        </div>
+        <div class="gb-sets"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const modeMenu = document.createElement('div');
+  modeMenu.className = 'gb-modepop';
+  modeMenu.style.display = 'none';
+  document.body.appendChild(modeMenu);
+
+  const el = {
+    overlay,
+    title: overlay.querySelector('.gb-title'),
+    totalMm: overlay.querySelector('.gb-total-mm'),
+    roster: overlay.querySelector('.gb-roster'),
+    tags: overlay.querySelector('.gb-tags'),
+    modeflt: overlay.querySelector('.gb-modeflt'),
+    libCount: overlay.querySelector('.gb-libcount'),
+    libBody: overlay.querySelector('.gb-libr-body'),
+    setsBody: overlay.querySelector('.gb-sets'),
+  };
+
+  function fmt(sec){ return `${Math.floor(sec/60)}:${String(Math.round(sec%60)).padStart(2,'0')}`; }
+  function fmtMin(sec){ return Math.round(sec/60); }
+  function inAnySet(base){ return state.sets.some(s => s.some(x => x.song_base === base)); }
+  // BUG-3 FIX: library variants use `duration` (seconds), server metadata
+  // uses `duration_sec`. When served from CATALOG.json, only `duration` is
+  // present. Defensive read against either field so the Builder works
+  // regardless of which server path filled the row.
+  function dur(row){ return (row && (row.duration_sec || row.duration)) || 0; }
+  function keyShort(row){
+    if (row.key_short) return row.key_short;
+    const m = /^([A-G](?:#|b)?)\s*(major|minor)?$/.exec((row.key || '').trim());
+    if (m) return (m[2] === 'minor') ? `${m[1]}m` : m[1];
+    return row.key || '';
+  }
+  function currentMode(row){
+    const m = row.playback_mode;
+    if (m === 'drum') return 'DRUM';
+    if (m === 'backing') return 'BACKING';
+    if (m === 'stems') return '6STEMS';
+    if (row.drum_machine_default) return 'DRUM';
+    return '6STEMS';
+  }
+  function reqCompact(row){
+    if (row.band_required_compact) return row.band_required_compact;
+    if (Array.isArray(row.band_required)) {
+      const MAP = { Bill:'B', Matt:'M', Dan:'D', JD:'J', Mark:'#' };
+      const chars = new Set();
+      for (const n of row.band_required) if (MAP[n]) chars.add(MAP[n]);
+      return 'BMDJ#'.split('').filter(c => chars.has(c)).join('');
+    }
+    return '';
+  }
+  function capabilitySet(){
+    const caps = new Set();
+    for (const n of state.roster) if (ROSTER_INI[n]) caps.add(ROSTER_INI[n]);
+    return caps;
+  }
+  function songSatisfiesRoster(row){
+    const caps = capabilitySet();
+    const req = reqCompact(row);
+    if (!req) return true;
+    for (const ch of req) {
+      if (ch === '#' && !caps.has('#')) {
+        const hasDrum = !!row.drum_pattern;
+        // Backing-track availability isn't in libraryCache directly; heuristic:
+        // if the mode is BACKING or the song has a matched backing track, allow.
+        if (!hasDrum) return false;
+      } else if (!caps.has(ch)) return false;
+    }
+    return true;
+  }
+  function readinessOk(row){
+    const r = row.readiness || 'tbd';
+    return state.purpose === 'gig'
+      ? (r === 'InTheCan' || r === 'Rehearse')
+      : (r === 'Rehearse' || r === 'tbd');
+  }
+  function tagsOk(row){
+    if (!state.tagsAll.size) return true;
+    const tags = row.tags || [];
+    for (const t of state.tagsAll) if (!tags.includes(t)) return false;
+    return true;
+  }
+  function modeOk(row){
+    if (state.showModes.size === 4) return true;
+    return state.showModes.has(currentMode(row));
+  }
+  function stemsRows(){
+    // BUG-1 FIX: mergedLibrary is a module-scoped `let` in the same script,
+    // not on window. In classic (non-module) <script> loading, `let` at
+    // top level creates a "script scope" variable — reachable by bare
+    // name from any other code in the same file, but NOT visible on the
+    // window object. Our IIFE is in the same file, so a bare reference
+    // works. Guarded with typeof so a rename or removal degrades to an
+    // empty library instead of throwing ReferenceError.
+    const src = (typeof mergedLibrary !== 'undefined' && Array.isArray(mergedLibrary)) ? mergedLibrary : [];
+    const rows = [];
+    for (const m of src) {
+      const sv = m.variants && m.variants.find(v => v.type === 'stems');
+      if (sv) rows.push(sv);
+    }
+    return rows;
+  }
+  function filteredPool(){
+    return stemsRows().filter(r =>
+      !inAnySet(r.folderName)
+      && songSatisfiesRoster(r)
+      && readinessOk(r)
+      && tagsOk(r)
+      && modeOk(r)
+    );
+  }
+
+  function renderChrome(){
+    el.roster.innerHTML = ROSTER_ALL.map(n => {
+      const on = state.roster.includes(n);
+      const ini = ROSTER_INI[n] ? `<span class="ini">${ROSTER_INI[n]}</span>` : '';
+      return `<label class="gb-chk"><input type="checkbox" data-r="${n}" ${on?'checked':''}>${n}${ini}</label>`;
+    }).join(' ');
+    el.roster.querySelectorAll('input[data-r]').forEach(cb => {
+      cb.addEventListener('change', e => {
+        const n = e.target.dataset.r;
+        if (e.target.checked) state.roster.push(n);
+        else state.roster = state.roster.filter(x => x !== n);
+        persist(); renderAll();
+      });
+    });
+    overlay.querySelectorAll('input[name="gb-p"]').forEach(r => {
+      r.checked = (r.value === state.purpose);
+      r.addEventListener('change', e => { state.purpose = e.target.value; persist(); renderAll(); });
+    });
+    overlay.querySelectorAll('.gb-preset').forEach(b => {
+      b.addEventListener('click', () => {
+        state.roster = PRESETS[b.dataset.p].slice();
+        persist(); renderAll();
+      });
+    });
+    // Aggregate available tags from library + defaults
+    const seen = new Set(DEFAULT_TAGS);
+    for (const r of stemsRows()) if (Array.isArray(r.tags)) r.tags.forEach(t => seen.add(t));
+    el.tags.innerHTML = [...seen].sort().map(t => {
+      const on = state.tagsAll.has(t) ? 'on' : '';
+      return `<button class="gb-theme ${on}" data-t="${t}">${t}</button>`;
+    }).join(' ');
+    el.tags.querySelectorAll('.gb-theme').forEach(b => {
+      b.addEventListener('click', () => {
+        const t = b.dataset.t;
+        if (state.tagsAll.has(t)) state.tagsAll.delete(t);
+        else state.tagsAll.add(t);
+        persist(); renderAll();
+      });
+    });
+    el.modeflt.innerHTML = ['6STEMS','DRUM','BACKING','NONE'].map(m => {
+      const on = state.showModes.has(m) ? '' : 'off';
+      return `<button class="gb-modef ${on}" data-m="${m}">${m}</button>`;
+    }).join(' ');
+    el.modeflt.querySelectorAll('.gb-modef').forEach(b => {
+      b.addEventListener('click', () => {
+        const m = b.dataset.m;
+        if (state.showModes.has(m)) state.showModes.delete(m);
+        else state.showModes.add(m);
+        persist(); renderAll();
+      });
+    });
+  }
+
+  function renderLibrary(){
+    const pool = filteredPool();
+    const totalMin = fmtMin(pool.reduce((a,r) => a + dur(r), 0));
+    el.libCount.textContent = `${pool.length} songs · ${totalMin} min available`;
+    if (!pool.length) {
+      el.libBody.innerHTML = '<div class="gb-empty">no songs match — loosen a tag or × one from a set</div>';
+      return;
+    }
+    el.libBody.innerHTML = pool.map(r => {
+      const b = r.folderName || '';
+      const mode = currentMode(r);
+      const req = reqCompact(r);
+      const kShort = keyShort(r);
+      const keyOpts = KEYS.map(k => `<option value="${k}" ${k===kShort?'selected':''}>${k}</option>`).join('');
+      const reqOpts = REQ_OPTIONS.map(x => `<option value="${x}" ${x===req?'selected':''}>${x || '(any)'}</option>`).join('');
+      const staleStr = staleLabel(r.last_played_at);
+      return `
+        <div class="gb-libr" data-base="${b}">
+          <div class="tt">${escapeHtml(r.title || b)}<span class="art">${escapeHtml(r.artist || '')}</span></div>
+          <div class="mono">${escapeHtml((r.singer_lead || '').slice(0,1))}</div>
+          <select data-req="${b}">${reqOpts}</select>
+          <select data-key="${b}">${keyOpts}</select>
+          <div class="mono">${fmt(dur(r))}</div>
+          <div class="mono">${r.play_count || 0}</div>
+          <div class="mono">${staleStr}</div>
+          <div><span class="gb-modechip ${mode==='6STEMS'?'':mode}" data-mode-for="${b}">${modeLabel(r, mode)}</span></div>
+          <div class="gb-rad">${[0,1,2,3].map(i => `<span data-t="${b}" data-set="${i}" title="Send to Set ${i+1}">${i+1}</span>`).join('')}</div>
+        </div>
+      `;
+    }).join('');
+    el.libBody.querySelectorAll('[data-req]').forEach(s => {
+      s.addEventListener('change', async e => {
+        const base = s.dataset.req;
+        const val = e.target.value;
+        try {
+          const rr = await fetch(`/api/song/${encodeURIComponent(base)}/requires`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requires: val }),
+          });
+          if (rr.ok) {
+            const row = stemsRows().find(x => x.folderName === base);
+            if (row) row.band_required_compact = val;
+            renderAll();
+          }
+        } catch (err) {}
+      });
+    });
+    el.libBody.querySelectorAll('[data-key]').forEach(s => {
+      s.addEventListener('change', async e => {
+        const base = s.dataset.key;
+        const val = e.target.value;
+        try {
+          const rr = await fetch(`/api/song/${encodeURIComponent(base)}/key`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: val }),
+          });
+          if (rr.ok) {
+            const j = await rr.json();
+            const row = stemsRows().find(x => x.folderName === base);
+            if (row) { row.key = j.key; row.key_short = j.key_short; }
+          }
+        } catch (err) {}
+      });
+    });
+    el.libBody.querySelectorAll('.gb-modechip').forEach(c => {
+      c.addEventListener('click', e => { e.stopPropagation(); openModePop(c, c.dataset.modeFor); });
+    });
+    el.libBody.querySelectorAll('.gb-rad span').forEach(r => {
+      r.addEventListener('click', () => {
+        const base = r.dataset.t;
+        const idx = +r.dataset.set;
+        const row = stemsRows().find(x => x.folderName === base);
+        if (!row) return;
+        state.sets[idx].push({
+          song_base: base,
+          title: row.title || base,
+          artist: row.artist || '',
+          singer: row.singer_lead || '',
+          key: keyShort(row) || row.key || '',
+          duration_sec: dur(row),
+          mode: currentMode(row),
+        });
+        // Flash the target setlist header for feedback
+        const hdr = el.setsBody.querySelectorAll('.gb-set-hdr')[idx];
+        if (hdr) { hdr.classList.add('flash'); setTimeout(() => hdr.classList.remove('flash'), 600); }
+        renderAll();
+      });
+    });
+  }
+
+  function staleLabel(iso){
+    if (!iso) return '—';
+    const d = (Date.now() - new Date(iso).getTime()) / 86400000;
+    if (d < 1) return 'today';
+    if (d < 14) return `${Math.round(d)}d`;
+    if (d < 60) return `${Math.round(d/7)}wk`;
+    return `${Math.round(d/30)}mo`;
+  }
+  function modeLabel(row, m){
+    if (m === 'DRUM' && row.drum_pattern) return row.drum_pattern;
+    return m;
+  }
+  function escapeHtml(s){
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function openModePop(anchor, base){
+    const row = stemsRows().find(x => x.folderName === base); if (!row) return;
+    const rect = anchor.getBoundingClientRect();
+    const cur = currentMode(row);
+    const options = [
+      { id:'6STEMS', label:'6STEMS', hint:'stems 6-ch', avail:true },
+      { id:'DRUM', label:'DRUM', hint:row.drum_pattern || 'no pattern', avail:!!row.drum_pattern },
+      { id:'BACKING', label:'BACKING', hint:'stereo 2-ch', avail:true },
+      { id:'NONE', label:'NONE', hint:'', avail:true },
+    ];
+    modeMenu.innerHTML = options.map(o => {
+      const cls = ['gb-modepop-opt', o.id===cur?'on':'', !o.avail?'na':''].join(' ');
+      return `<div class="${cls}" data-pick="${o.id}">${o.label}<span class="hint">${escapeHtml(o.hint)}</span></div>`;
+    }).join('');
+    modeMenu.style.display = 'block';
+    modeMenu.style.left = rect.left + 'px';
+    modeMenu.style.top = (rect.bottom + 4) + 'px';
+    modeMenu.querySelectorAll('.gb-modepop-opt').forEach(op => {
+      op.addEventListener('click', async () => {
+        if (op.classList.contains('na')) return;
+        const pick = op.dataset.pick;
+        const modeStr = pick === '6STEMS' ? 'stems' : pick === 'DRUM' ? 'drum' : pick === 'BACKING' ? 'backing' : 'stems';
+        try {
+          await fetch(`/api/song/${encodeURIComponent(base)}/playback-mode`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: modeStr }),
+          });
+          row.playback_mode = modeStr;
+        } catch (e) {}
+        modeMenu.style.display = 'none';
+        renderAll();
+      });
+    });
+    setTimeout(() => {
+      document.addEventListener('click', function h(ev){
+        if (!modeMenu.contains(ev.target)) { modeMenu.style.display='none'; document.removeEventListener('click', h); }
+      });
+    }, 0);
+  }
+
+  function renderSets(){
+    let totalSec = 0;
+    el.setsBody.innerHTML = state.sets.map((set, idx) => {
+      const secs = set.reduce((a, s) => a + dur(s), 0);
+      totalSec += secs;
+      const mins = fmtMin(secs);
+      const remaining = 50 - mins;
+      const meta = set.length === 0 ? '0 songs · 0 min · target 50 min' :
+        (remaining >= 0 ? `${set.length} songs · ${mins} min · ${remaining} min to target`
+                        : `${set.length} songs · ${mins} min · +${-remaining} over 50 min`);
+      const overClass = remaining < 0 ? 'over' : '';
+      return `
+        <div class="gb-set">
+          <div class="gb-set-hdr">
+            <span class="sn">Set ${idx+1}</span>
+            <span class="sm ${overClass}">${meta}</span>
+          </div>
+          ${set.length ? set.map((s, i) => `
+            <div class="gb-setrow">
+              <span class="idx">${i+1}</span>
+              <div class="tt">${escapeHtml(s.title)}<span class="art">${escapeHtml(s.artist)}</span></div>
+              <span class="mono">${escapeHtml((s.singer || '').slice(0,1))}</span>
+              <span class="mono">${escapeHtml(reqCompact(stemsRows().find(x => x.folderName === s.song_base) || {}) || '')}</span>
+              <span class="mono">${escapeHtml(s.key)}</span>
+              <span class="mono">${fmt(dur(s))}</span>
+              <span class="mono"></span>
+              <div><span class="gb-modechip ${s.mode==='6STEMS'?'':s.mode}" data-mode-for-set="${idx}:${i}">${s.mode}</span></div>
+              <span class="btns">
+                <button class="up" data-s="${idx}" data-i="${i}" ${i===0?'style="opacity:0.3;pointer-events:none;"':''}><i data-lucide="chevron-up"></i></button>
+                <button class="dn" data-s="${idx}" data-i="${i}" ${i===set.length-1?'style="opacity:0.3;pointer-events:none;"':''}><i data-lucide="chevron-down"></i></button>
+                <button class="rm" data-s="${idx}" data-i="${i}" title="Return to library"><i data-lucide="x"></i></button>
+              </span>
+            </div>
+          `).join('') : '<div class="gb-set-empty">empty — click a 1·2·3·4 in the library above</div>'}
+        </div>
+      `;
+    }).join('');
+    el.totalMm.textContent = `${fmtMin(totalSec)} min total`;
+    el.setsBody.querySelectorAll('.up').forEach(b => b.addEventListener('click', e => {
+      const si = +e.currentTarget.dataset.s, i = +e.currentTarget.dataset.i;
+      [state.sets[si][i-1], state.sets[si][i]] = [state.sets[si][i], state.sets[si][i-1]];
+      renderAll();
+    }));
+    el.setsBody.querySelectorAll('.dn').forEach(b => b.addEventListener('click', e => {
+      const si = +e.currentTarget.dataset.s, i = +e.currentTarget.dataset.i;
+      [state.sets[si][i+1], state.sets[si][i]] = [state.sets[si][i], state.sets[si][i+1]];
+      renderAll();
+    }));
+    el.setsBody.querySelectorAll('.rm').forEach(b => b.addEventListener('click', e => {
+      const si = +e.currentTarget.dataset.s, i = +e.currentTarget.dataset.i;
+      state.sets[si].splice(i, 1); renderAll();
+    }));
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderAll(){ renderChrome(); renderLibrary(); renderSets(); }
+
+  overlay.querySelector('.gb-clear').addEventListener('click', () => { state.sets = [[],[],[],[]]; renderAll(); });
+  overlay.querySelector('.gb-discard').addEventListener('click', async () => {
+    // Task #136 — if AI populate auto-saved a draft, Discard removes it
+    // so the sidebar doesn't keep pointing at an abandoned draft.
+    if (state._draftSlug) {
+      try { await fetch(`/api/gigs/${encodeURIComponent(state._draftSlug)}`, { method: 'DELETE' }); } catch (e) {}
+      state._draftSlug = null;
+      if (typeof fetchGigs === 'function') await fetchGigs();
+    }
+    close();
+  });
+  overlay.querySelector('.gb-title').addEventListener('input', e => { state.title = e.target.value; });
+  overlay.querySelector('.gb-ai').addEventListener('click', async () => {
+    // Restrict the server-side query engine to whatever's currently in
+    // the client's filtered pool — so tag/mode filters carry through.
+    const pool = filteredPool();
+    const bases = pool.map(r => r.folderName);
+    try {
+      const rr = await fetch('/api/gig-builder/build', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: state.title,
+          roster: state.roster,
+          purpose: state.purpose,
+          set_count: 4,
+          target_minutes: 50,
+          modes: [...state.showModes],
+          tags_all: [...state.tagsAll],
+          song_bases: bases,
+        }),
+      });
+      if (!rr.ok) throw new Error(await rr.text());
+      const j = await rr.json();
+      const setsRaw = (j.draft && j.draft.setlists) || [];
+      state.sets = [[], [], [], []];
+      for (let i = 0; i < 4; i++) {
+        state.sets[i] = (setsRaw[i] && setsRaw[i].songs) ? setsRaw[i].songs.map(s => ({
+          song_base: s.song_base,
+          title: s.title,
+          artist: s.artist,
+          singer: s.singer,
+          key: s.key,
+          duration_sec: dur(s),
+          mode: (s.mode || '6STEMS').toUpperCase(),
+        })) : [];
+      }
+      renderAll();
+      // Task #136 — Bill's expectation: after AI populate, the draft
+      // shows in the gig sidebar immediately (not just in the modal).
+      // Auto-save the draft with a "Draft …" title if none set, refresh
+      // the sidebar so it renders the setlists, and keep the modal open
+      // so the operator can keep tweaking.
+      await autoSaveDraft();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast(`Build failed: ${e.message || e}`, 3500);
+    }
+  });
+
+  // Auto-save the current sets to a real gig so the sidebar can show
+  // them while the operator continues tweaking. Called from AI populate.
+  // Reuses the same gig by remembered slug so repeated AI populates
+  // don't stack up as multiple gigs.
+  async function autoSaveDraft(){
+    const setlists = state.sets.map((set, i) => ({
+      title: `Set ${i+1}`,
+      songs: set.map(s => ({ song_base: s.song_base })),
+    })).filter(sl => sl.songs.length);
+    if (!setlists.length) return;
+    if (!state.title || !state.title.trim()) {
+      const d = new Date();
+      const stamp = `${d.toLocaleDateString(undefined, {month:'short', day:'numeric'})} ${d.toTimeString().slice(0,5)}`;
+      state.title = `Draft ${stamp}`;
+      overlay.querySelector('.gb-title').value = state.title;
+    }
+    try {
+      // If we already saved this draft once, delete the previous slug
+      // before re-posting so the sidebar reflects the new title/sets.
+      // Simpler than a PATCH endpoint and avoids server-side changes.
+      if (state._draftSlug) {
+        try { await fetch(`/api/gigs/${encodeURIComponent(state._draftSlug)}`, { method: 'DELETE' }); }
+        catch (e) {}
+      }
+      let rr = await fetch('/api/gigs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: state.title, setlists }),
+      });
+      // 409 → title already exists on disk from a prior session; make it unique.
+      if (rr.status === 409) {
+        state.title = state.title + ' ' + Math.floor(Math.random() * 90 + 10);
+        overlay.querySelector('.gb-title').value = state.title;
+        rr = await fetch('/api/gigs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: state.title, setlists }),
+        });
+      }
+      const j = await rr.json();
+      if (!rr.ok) throw new Error(j.error || 'save failed');
+      state._draftSlug = j.slug || state._draftSlug;
+      if (typeof fetchGigs === 'function') await fetchGigs();
+      if (typeof loadActiveGig === 'function' && j.slug) await loadActiveGig(j.slug);
+      if (typeof showToast === 'function') showToast(`Draft in sidebar: "${state.title}"`, 2000);
+    } catch (e) {
+      console.warn('[gig-builder] auto-save failed:', e);
+    }
+  }
+
+  overlay.querySelector('.gb-accept').addEventListener('click', async () => {
+    const title = (state.title || '').trim();
+    if (!title) { if (typeof showToast === 'function') showToast('Give the gig a title first', 2500); return; }
+    const setlists = state.sets.map((set, i) => ({
+      title: `Set ${i+1}`,
+      songs: set.map(s => ({ song_base: s.song_base })),
+    })).filter(sl => sl.songs.length);
+    if (!setlists.length) { if (typeof showToast === 'function') showToast('At least one setlist must have a song', 2500); return; }
+    try {
+      // Task #136 — if a draft was auto-saved during AI populate, replace
+      // it in place rather than creating a duplicate. Delete-then-post is
+      // the simplest approach (no server change), and the draft slug
+      // gets released back to whatever title the operator finalized on.
+      if (state._draftSlug) {
+        try { await fetch(`/api/gigs/${encodeURIComponent(state._draftSlug)}`, { method: 'DELETE' }); } catch (e) {}
+        state._draftSlug = null;
+      }
+      const rr = await fetch('/api/gigs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, setlists }),
+      });
+      const j = await rr.json();
+      if (!rr.ok) throw new Error(j.error || 'save failed');
+      close();
+      if (typeof fetchGigs === 'function') await fetchGigs();
+      if (typeof loadActiveGig === 'function' && j.slug) await loadActiveGig(j.slug);
+      if (typeof showToast === 'function') showToast(`"${title}" saved`, 2000);
+    } catch (e) {
+      if (typeof showToast === 'function') showToast(`Save failed: ${e.message || e}`, 4000);
+    }
+  });
+
+  function open(){
+    state.open = true; overlay.classList.add('open');
+    state.title = state.title || `Practice ${new Date().toLocaleDateString()}`;
+    overlay.querySelector('.gb-title').value = state.title;
+    renderAll();
+    if (window.lucide) lucide.createIcons();
+  }
+  function close(){
+    state.open = false; overlay.classList.remove('open');
+    modeMenu.style.display = 'none';
+  }
+  window.openGigBuilder = open;
+
+  function wireTrigger(){
+    const btn = document.getElementById('gig-builder-btn');
+    if (!btn) { setTimeout(wireTrigger, 300); return; }
+    btn.addEventListener('click', open);
+    if (window.lucide) lucide.createIcons();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireTrigger);
+  else wireTrigger();
+})();

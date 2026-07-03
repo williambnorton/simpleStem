@@ -439,7 +439,14 @@ def sync_gig(text, gig_title, gigs_dir, by_full, by_title, artist_of,
         if not slug:
             unmatched.append({"title": title, "artist": artist})
             continue
-        setlists[-1]["songs"].append({"slug": slug, "title": title})
+        # Write BOTH keys — song_base is what the client reads, slug
+        # is kept for backward compatibility with any external consumer.
+        # Task #126 (2026-07-02): the client-only "slug" schema was the
+        # root cause of the gig failure — every mpb_sync setlist entry
+        # showed "Song not in library yet" because app.js reads
+        # entry.song_base. Producer + consumer both align on song_base
+        # now; the extra slug field is harmless.
+        setlists[-1]["songs"].append({"song_base": slug, "slug": slug, "title": title})
 
     # Drop any leading empty setlists
     while setlists and not setlists[0]["songs"] and len(setlists) > 1:
@@ -458,6 +465,23 @@ def sync_gig(text, gig_title, gigs_dir, by_full, by_title, artist_of,
     if not dry_run:
         gigs_dir.mkdir(exist_ok=True)
         out = gigs_dir / f"{slug_of(gig_title)}.json"
+        # Task #132 — respect _ignored: true. When the operator soft-deletes
+        # a sheet-synced gig from the portal (DELETE /api/gigs/:slug marks
+        # it), we preserve that hidden state instead of regenerating the
+        # file every sync. Removing _ignored from the JSON (or deleting
+        # the file) restores normal sync behavior on the next run.
+        if out.exists():
+            try:
+                existing = json.loads(out.read_text())
+                if existing.get("_ignored"):
+                    return {
+                        "setlists": len(setlists),
+                        "songs_matched": sum(len(s["songs"]) for s in setlists),
+                        "unmatched": len(unmatched),
+                        "ignored": True,
+                    }
+            except Exception:
+                pass
         out.write_text(json.dumps(gig, indent=2, ensure_ascii=False) + "\n")
 
     return {

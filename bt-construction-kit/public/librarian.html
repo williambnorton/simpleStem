@@ -278,9 +278,63 @@
     }
     .pipeline-svg {
       width: 100%;
-      height: 260px;
+      height: 340px;
       display: block;
     }
+    .pipeline-svg .folder-type-label {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      font-weight: 800;
+      text-anchor: middle;
+      letter-spacing: 0.06em;
+      text-transform: lowercase;
+    }
+    .pipeline-svg .folder-type-label.wav { fill: #1e40af; }
+    .pipeline-svg .folder-type-label.m4a { fill: #166534; }
+    .pipeline-svg .folder-type-label.other { fill: var(--ink-2); }
+    /* File-listing under each folder — the actual names of what's
+       currently in the folder, so Bill can see "yes, midnight_rider
+       is queued right now." Up to 3 lines per folder, truncated. */
+    .pipeline-svg .folder-file {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 8px;
+      fill: var(--ink);
+      text-anchor: middle;
+      letter-spacing: 0;
+    }
+    .pipeline-svg .folder-file.dim { fill: var(--ink-dim); font-style: italic; }
+    /* Click-to-copy affordance — the whole folder group is clickable,
+       with a subtle hover cursor change and tooltip via <title>. */
+    .pipeline-svg .folder { cursor: pointer; }
+    .pipeline-svg .folder:hover .folder-body { fill: #efe0b7; }
+    /* Working animation — when a file lands in a folder or the phase
+       says work is happening there, the folder body pulses to signal
+       "processing before handoff to the next folder". */
+    .pipeline-svg .folder.working .folder-body {
+      animation: folder-working 1.4s ease-in-out infinite;
+    }
+    @keyframes folder-working {
+      0%, 100% { fill: #d6cdb5; }
+      50%      { fill: #f9d8a5; }
+    }
+    /* Copy toast — a floating text at top-right that flashes when a
+       folder path is copied to the clipboard. */
+    .copy-toast {
+      position: absolute;
+      top: 12px; right: 14px;
+      background: var(--c-good-bg);
+      color: var(--c-good);
+      border: 1px solid var(--c-good);
+      border-radius: 3px;
+      padding: 4px 10px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .copy-toast.show { opacity: 1; }
     .pipeline-svg .arrow-path {
       fill: none;
       stroke: var(--ink-dim);
@@ -623,6 +677,149 @@
       0%, 100% { transform: translate(0, 0); }
       50%      { transform: translate(0, -3px); }
     }
+
+    /* ================================================================
+       Artifact flows — the two key creation events in the pipeline.
+         BLUE  = source.wav (webloc_watch just finished a YouTube pull)
+         GREEN = *.m4a stem (queue_runner just finished a Demucs encode)
+       These are the visualizations Bill asked to see highlighted.
+       ================================================================ */
+    .pipeline-svg .artifact-dot {
+      stroke: var(--ink);
+      stroke-width: 1;
+      fill: #fffdf6;
+      opacity: 0.55;
+      transition: fill 0.3s ease, opacity 0.3s ease;
+    }
+    .pipeline-svg .artifact-dot.wav.on {
+      fill: #1e40af;
+      opacity: 1;
+    }
+    .pipeline-svg .artifact-dot.m4a.on {
+      fill: #166534;
+      opacity: 1;
+    }
+    .pipeline-svg .artifact-dot.wav.flash {
+      animation: dot-flash-wav 1.6s ease-out 1;
+    }
+    .pipeline-svg .artifact-dot.m4a.flash {
+      animation: dot-flash-m4a 1.6s ease-out 1;
+    }
+    @keyframes dot-flash-wav {
+      0%   { fill: #93c5fd; }
+      25%  { fill: #1e40af; }
+      100% { fill: #1e40af; }
+    }
+    @keyframes dot-flash-m4a {
+      0%   { fill: #86efac; }
+      25%  { fill: #166534; }
+      100% { fill: #166534; }
+    }
+    .pipeline-svg .artifact-slot-label {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 7px;
+      font-weight: 700;
+      fill: var(--ink-dim);
+      text-anchor: middle;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    /* Flight glyph for the source.wav creation (blue, launched with
+       label "src.wav"). Same motion mechanic as the generic flight,
+       but styled to distinguish the wav flow. */
+    .pipeline-svg .flight-wav rect { fill: #dbeafe; stroke: #1e40af; stroke-width: 1.4; }
+    .pipeline-svg .flight-wav text {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 7px;
+      font-weight: 800;
+      fill: #1e40af;
+      text-anchor: middle;
+      letter-spacing: 0.05em;
+    }
+    .pipeline-svg .flight-m4a rect { fill: #dcfce7; stroke: #166534; stroke-width: 1.4; }
+    .pipeline-svg .flight-m4a text {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 7px;
+      font-weight: 800;
+      fill: #166534;
+      text-anchor: middle;
+      letter-spacing: 0.05em;
+    }
+    /* Flare — a bright pop above the STEMS folder each time an
+       artifact lands. Blue for src.wav, green for a stem m4a. */
+    .pipeline-svg .artifact-flare {
+      pointer-events: none;
+      animation: flare-pop 1.8s ease-out 1;
+    }
+    .pipeline-svg .artifact-flare.wav .flare-ring { stroke: #1e40af; }
+    .pipeline-svg .artifact-flare.wav .flare-txt  { fill:   #1e40af; }
+    .pipeline-svg .artifact-flare.m4a .flare-ring { stroke: #166534; }
+    .pipeline-svg .artifact-flare.m4a .flare-txt  { fill:   #166534; }
+    .pipeline-svg .flare-ring {
+      fill: none;
+      stroke-width: 2;
+    }
+    .pipeline-svg .flare-txt {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 9px;
+      font-weight: 800;
+      text-anchor: middle;
+      letter-spacing: 0.06em;
+    }
+    @keyframes flare-pop {
+      0%   { opacity: 0; }
+      20%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* Artifact ticker — a scrolling monospace line under the pipeline
+       showing the last few creation events. Persistent history so Bill
+       can see "yes, drums.m4a for Midnight Rider just landed". */
+    .artifact-ticker {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 14px 4px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      color: var(--ink-dim);
+      border-top: 1px dotted var(--rule);
+      margin-top: 6px;
+      min-height: 22px;
+      flex-wrap: wrap;
+    }
+    .artifact-ticker .ticker-label {
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+    .artifact-ticker .ticker-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 7px;
+      border-radius: 2px;
+      background: #fffdf6;
+      border: 1px solid var(--rule);
+      animation: ticker-in 0.4s ease-out 1;
+    }
+    .artifact-ticker .ticker-item.wav { border-color: #1e40af; color: #1e40af; }
+    .artifact-ticker .ticker-item.m4a { border-color: #166534; color: #166534; }
+    .artifact-ticker .ticker-item .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block;
+    }
+    .artifact-ticker .ticker-item.wav .dot { background: #1e40af; }
+    .artifact-ticker .ticker-item.m4a .dot { background: #166534; }
+    @keyframes ticker-in {
+      0%   { opacity: 0; transform: translateX(-6px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+    .artifact-ticker .ticker-empty {
+      font-style: italic;
+      opacity: 0.6;
+    }
   </style>
 </head>
 <body>
@@ -681,8 +878,9 @@
         <h2>Living pipeline</h2>
         <span class="blurb">Folders open when they hold files. Arrows pulse when a file moves. Drive health ticks once a minute.</span>
       </div>
-      <div class="pipeline-stage">
-        <svg id="pipeline-svg" class="pipeline-svg" viewBox="0 0 1100 260" preserveAspectRatio="xMidYMid meet">
+      <div class="pipeline-stage" style="position:relative;">
+        <div class="copy-toast" id="copy-toast">copied</div>
+        <svg id="pipeline-svg" class="pipeline-svg" viewBox="0 0 1100 340" preserveAspectRatio="xMidYMid meet">
           <!-- Arrows. Each defines a path the file-flight animation follows. -->
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -701,7 +899,9 @@
           <!-- Folders. Each is an SVG group with body, tab, flap (the opening
                lid), label, and a count badge. The .has-files class toggles
                the open animation; .active pulses the body. -->
-          <g class="folder" data-key="incoming" transform="translate(75, 50)">
+          <g class="folder" data-key="incoming" data-path="~/ClaudeDrive/simpleStem/INCOMING_WEBLOC" transform="translate(75, 50)">
+            <title>Click to copy folder path</title>
+            <text class="folder-type-label other" x="50" y="-2">.webloc</text>
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
@@ -709,8 +909,13 @@
             <rect class="folder-count-chip" data-count-chip="incoming" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="incoming">0</text>
             <text class="folder-timer" x="50" y="145" data-timer="incoming"></text>
+            <text class="folder-file dim" x="50" y="163" data-file-slot="incoming" data-slot-index="0">—</text>
+            <text class="folder-file"     x="50" y="175" data-file-slot="incoming" data-slot-index="1"></text>
+            <text class="folder-file"     x="50" y="187" data-file-slot="incoming" data-slot-index="2"></text>
           </g>
-          <g class="folder" data-key="queued" transform="translate(295, 50)">
+          <g class="folder" data-key="queued" data-path="~/ClaudeDrive/simpleStem/STEM_QUEUE" transform="translate(295, 50)">
+            <title>Click to copy folder path</title>
+            <text class="folder-type-label wav" x="50" y="-2">source.wav</text>
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
@@ -718,17 +923,42 @@
             <rect class="folder-count-chip" data-count-chip="queued" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="queued">0</text>
             <text class="folder-timer" x="50" y="145" data-timer="queued"></text>
+            <text class="folder-file dim" x="50" y="163" data-file-slot="queued" data-slot-index="0">—</text>
+            <text class="folder-file"     x="50" y="175" data-file-slot="queued" data-slot-index="1"></text>
+            <text class="folder-file"     x="50" y="187" data-file-slot="queued" data-slot-index="2"></text>
           </g>
-          <g class="folder" data-key="stems" transform="translate(515, 50)">
+          <g class="folder" data-key="stems" data-path="~/ClaudeDrive/simpleStem/STEMS" transform="translate(515, 50)">
+            <title>Click to copy folder path</title>
+            <text class="folder-type-label m4a" x="50" y="-2">.m4a</text>
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
-            <text class="folder-label" x="50" y="78">STEMS</text>
+            <text class="folder-label" x="50" y="46">STEMS</text>
+            <!-- Artifact progress dots for the most-recently-touched song.
+                 One BLUE dot for source.wav (webloc_watch download), six
+                 GREEN dots for the stem *.m4a files (Demucs+ffmpeg). Fills
+                 in as each artifact lands so Bill can watch the render
+                 progress at a glance. -->
+            <text class="artifact-slot-label" x="14" y="60">SRC</text>
+            <circle class="artifact-dot wav" data-artifact="source.wav" cx="14" cy="70" r="3.2"></circle>
+            <text class="artifact-slot-label" x="55" y="60">M4A ×6</text>
+            <circle class="artifact-dot m4a" data-artifact="vocals.m4a" cx="34" cy="70" r="3.2"></circle>
+            <circle class="artifact-dot m4a" data-artifact="drums.m4a"  cx="44" cy="70" r="3.2"></circle>
+            <circle class="artifact-dot m4a" data-artifact="bass.m4a"   cx="54" cy="70" r="3.2"></circle>
+            <circle class="artifact-dot m4a" data-artifact="guitar.m4a" cx="64" cy="70" r="3.2"></circle>
+            <circle class="artifact-dot m4a" data-artifact="piano.m4a"  cx="74" cy="70" r="3.2"></circle>
+            <circle class="artifact-dot m4a" data-artifact="other.m4a"  cx="84" cy="70" r="3.2"></circle>
+            <text class="artifact-slot-label" data-role="current-song" x="50" y="88" style="font-size:6px;">idle</text>
             <rect class="folder-count-chip" data-count-chip="stems" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="stems">0</text>
             <text class="folder-timer" x="50" y="145" data-timer="stems"></text>
+            <text class="folder-file dim" x="50" y="163" data-file-slot="stems" data-slot-index="0">—</text>
+            <text class="folder-file"     x="50" y="175" data-file-slot="stems" data-slot-index="1"></text>
+            <text class="folder-file"     x="50" y="187" data-file-slot="stems" data-slot-index="2"></text>
           </g>
-          <g class="folder" data-key="drums" transform="translate(735, 50)">
+          <g class="folder" data-key="drums" data-path="~/ClaudeDrive/simpleStem/DRUM_MACHINE" transform="translate(735, 50)">
+            <title>Click to copy folder path</title>
+            <text class="folder-type-label m4a" x="50" y="-2">.m4a</text>
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
@@ -736,8 +966,13 @@
             <rect class="folder-count-chip" data-count-chip="drums" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="drums">0</text>
             <text class="folder-timer" x="50" y="145" data-timer="drums"></text>
+            <text class="folder-file dim" x="50" y="163" data-file-slot="drums" data-slot-index="0">—</text>
+            <text class="folder-file"     x="50" y="175" data-file-slot="drums" data-slot-index="1"></text>
+            <text class="folder-file"     x="50" y="187" data-file-slot="drums" data-slot-index="2"></text>
           </g>
-          <g class="folder" data-key="clips" transform="translate(955, 50)">
+          <g class="folder" data-key="clips" data-path="~/ClaudeDrive/simpleStem/CUSTOM_LOOPS" transform="translate(955, 50)">
+            <title>Click to copy folder path</title>
+            <text class="folder-type-label m4a" x="50" y="-2">.m4a</text>
             <rect class="folder-body" x="0" y="14" width="100" height="80" rx="4"></rect>
             <rect class="folder-tab"  x="6" y="4"  width="40"  height="14" rx="3"></rect>
             <rect class="folder-flap" x="0" y="14" width="100" height="46" rx="4"></rect>
@@ -745,11 +980,14 @@
             <rect class="folder-count-chip" data-count-chip="clips" x="14" y="106" width="72" height="22"></rect>
             <text class="folder-count empty" x="50" y="118" data-count="clips">0</text>
             <text class="folder-timer" x="50" y="145" data-timer="clips"></text>
+            <text class="folder-file dim" x="50" y="163" data-file-slot="clips" data-slot-index="0">—</text>
+            <text class="folder-file"     x="50" y="175" data-file-slot="clips" data-slot-index="1"></text>
+            <text class="folder-file"     x="50" y="187" data-file-slot="clips" data-slot-index="2"></text>
           </g>
 
           <!-- Health-check checkmark — flashes when /api/librarian/events
                'health' event fires (every 60s). -->
-          <g transform="translate(540, 240)">
+          <g transform="translate(540, 315)">
             <text id="health-tick" class="health-tick tick-ok" text-anchor="middle">DRIVE OK · checking…</text>
             <text id="health-mark" class="health-mark" text-anchor="middle" x="0" y="-14" font-size="22">✓</text>
           </g>
@@ -761,6 +999,17 @@
           <span class="lg"><span class="swatch closed"></span>folder empty</span>
           <span class="lg"><span class="swatch open"></span>folder has files</span>
           <span class="lg"><span class="swatch active"></span>folder being worked on (active phase)</span>
+          <span class="lg" style="color:#1e40af;font-weight:700;">● source.wav flow</span>
+          <span class="lg" style="color:#166534;font-weight:700;">● m4a stem flow</span>
+        </div>
+        <!-- Artifact ticker — last several source.wav / *.m4a creation
+             events, newest first. Blue chip = webloc_watch just finished
+             a YouTube pull; green chip = queue_runner just finished a
+             Demucs+ffmpeg encode. Persistent so Bill can scan the
+             history without watching every frame. -->
+        <div class="artifact-ticker" id="artifact-ticker">
+          <span class="ticker-label">Latest artifacts:</span>
+          <span class="ticker-empty" id="ticker-empty">waiting for first render…</span>
         </div>
       </div>
     </section>
@@ -949,6 +1198,11 @@
           const hn = document.getElementById('hostname');
           if (hn) hn.textContent += `  (viewed from ${i.machine})`;
         }
+        // Home directory basename — the folder-click copies expanded
+        // absolute paths (Bill wants "/Users/wbn/ClaudeDrive/…" not
+        // "~/ClaudeDrive/…"). Falls back to "wbn" if the identity
+        // endpoint doesn't expose it.
+        if (i && i.homeUser) window.__homeUser = i.homeUser;
       } catch (e) { /* network / endpoint missing; harmless */ }
     })();
 
@@ -1140,6 +1394,18 @@
     }
     poll();
     setInterval(poll, REFRESH_MS);
+    // Chrome throttles setInterval in background tabs to ~1/min (or
+    // stops it entirely when the tab is hidden). When the operator
+    // brings the tab back to the foreground, we don't want to sit on
+    // possibly-hours-old state (e.g. "CATALOG.json UNKNOWN SHAPE" that
+    // was true overnight but has been canonical for 10 hours). Force
+    // an immediate re-poll on visibilitychange + window focus so the
+    // UI catches up within a few hundred ms of the tab being visible.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') poll();
+    });
+    window.addEventListener('focus', () => poll());
+    window.addEventListener('pageshow', () => poll());
 
     // =================================================================
     // LIVING PIPELINE — SSE-driven folder open/close, arrow pulse,
@@ -1202,6 +1468,83 @@
       g.classList.add('active');
       setTimeout(() => g.classList.remove('active'), durationMs || 2200);
     }
+    // Working animation — pulses the folder body while the machine is
+    // doing the work that produces its output (webloc_watch downloading
+    // a source.wav, queue_runner running Demucs, etc.). Distinct from
+    // .active (which just glows on file arrival) — this signals
+    // ongoing computation, not a one-shot event.
+    function setFolderWorking(key, on) {
+      const g = folderEls[key];
+      if (!g) return;
+      g.classList.toggle('working', !!on);
+    }
+    // Render up to 3 filenames inside the folder's file slots. Truncates
+    // long slugs to fit the 100px folder width in the SVG. Bill wants
+    // to see WHICH .webloc is queued right now, WHICH source.wav is
+    // being stemmed, etc.
+    function truncateFilename(name, max) {
+      if (!name) return '';
+      if (name.length <= max) return name;
+      return name.slice(0, max - 1) + '…';
+    }
+    function setFolderFiles(key, names) {
+      const g = folderEls[key];
+      if (!g) return;
+      const slots = g.querySelectorAll('[data-file-slot="' + key + '"]');
+      const list = (names || []).slice(0, 3);
+      slots.forEach((slot, i) => {
+        if (i === 0 && list.length === 0) {
+          slot.textContent = '—';
+          slot.classList.add('dim');
+        } else if (i < list.length) {
+          slot.textContent = truncateFilename(list[i], 22);
+          slot.classList.remove('dim');
+        } else {
+          slot.textContent = '';
+        }
+      });
+      // If more than 3, the third slot shows "+N more" instead of a name.
+      if (list.length === 3 && names.length > 3) {
+        const third = slots[2];
+        if (third) {
+          third.textContent = '+' + (names.length - 3) + ' more';
+          third.classList.add('dim');
+        }
+      }
+    }
+    // Click-to-copy — clicking a folder group copies its filesystem
+    // path to the clipboard so Bill can jump to it in Finder / iTerm.
+    function copyFolderPath(path) {
+      const expanded = path.replace(/^~\//, '/Users/' + (window.__homeUser || 'wbn') + '/');
+      const text = expanded;
+      const write = navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(text)
+        : Promise.reject(new Error('clipboard API unavailable'));
+      write.then(() => flashCopyToast('copied: ' + path))
+           .catch(() => {
+             // Fallback: create a textarea, select, exec copy.
+             const ta = document.createElement('textarea');
+             ta.value = text; document.body.appendChild(ta);
+             ta.select();
+             try { document.execCommand('copy'); flashCopyToast('copied: ' + path); }
+             catch (e) { flashCopyToast('copy failed'); }
+             document.body.removeChild(ta);
+           });
+    }
+    function flashCopyToast(msg) {
+      const t = document.getElementById('copy-toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(flashCopyToast._h);
+      flashCopyToast._h = setTimeout(() => t.classList.remove('show'), 1600);
+    }
+    document.querySelectorAll('.pipeline-svg .folder').forEach(g => {
+      g.addEventListener('click', () => {
+        const path = g.getAttribute('data-path');
+        if (path) copyFolderPath(path);
+      });
+    });
     // Animate a small file glyph along an arrow path. Uses SVG
     // <animateMotion> bound to the path id so the icon follows the
     // exact arrow curve (straight lines today, but future-proof for
@@ -1268,6 +1611,29 @@
       setFolderCount(key, Math.max(0, (folderCount[key] || 0) + delta));
     }
 
+    // Per-folder file list — populated from snapshot/file-added/file-removed
+    // so we can render the actual .webloc / job.json / stem-folder names
+    // inside each folder in the SVG.
+    const folderFiles = { incoming: [], queued: [], stems: [], drums: [], clips: [] };
+    function folderFileAdd(key, name) {
+      const arr = folderFiles[key] || (folderFiles[key] = []);
+      if (!arr.includes(name)) arr.unshift(name);   // newest first
+      setFolderFiles(key, arr);
+    }
+    function folderFileRemove(key, name) {
+      const arr = folderFiles[key] || [];
+      const i = arr.indexOf(name);
+      if (i >= 0) arr.splice(i, 1);
+      setFolderFiles(key, arr);
+    }
+    function folderFileSet(key, names) {
+      // Sort newest-first if we can, but the server doesn't send mtimes
+      // in the snapshot — falling back to alphabetical is fine because
+      // the count chip already conveys size.
+      folderFiles[key] = (names || []).slice().sort();
+      setFolderFiles(key, folderFiles[key]);
+    }
+
     function startLibrarianSSE() {
       const es = new EventSource('/api/librarian/events');
       es.addEventListener('hello', () => {});
@@ -1277,6 +1643,7 @@
           for (const k of Object.keys(j.folders || {})) {
             const list = j.folders[k] || [];
             setFolderCount(k, list.length);
+            folderFileSet(k, list);
           }
         } catch (e) {}
       });
@@ -1284,6 +1651,7 @@
         try {
           const j = JSON.parse(ev.data);
           bumpFolder(j.folder, +1);
+          folderFileAdd(j.folder, j.name);
           setFolderActive(j.folder, 2000);
         } catch (e) {}
       });
@@ -1291,6 +1659,7 @@
         try {
           const j = JSON.parse(ev.data);
           bumpFolder(j.folder, -1);
+          folderFileRemove(j.folder, j.name);
           // File left this folder. Light up the arrow to the next folder
           // and launch a flight glyph along it.
           const next = NEXT_FOLDER[j.folder];
@@ -1305,11 +1674,18 @@
         try {
           const j = JSON.parse(ev.data);
           // While a song is being rendered, mark STEM_QUEUE and STEMS
-          // both as active (queued → processing → stems).
+          // both as active (queued → processing → stems). The 'working'
+          // class stays on until the next phase transition, so the
+          // folder pulses continuously through the long Demucs step.
           if (j.current) {
             setFolderActive('queued', 4000);
             setFolderActive('stems',  4000);
             setArrowActive('queued', 'stems', 4000);
+            setFolderWorking('queued', true);
+            setFolderWorking('stems',  true);
+          } else {
+            setFolderWorking('queued', false);
+            setFolderWorking('stems',  false);
           }
         } catch (e) {}
       });
@@ -1319,11 +1695,171 @@
           flashHealth(!!j.ok, j.latencyMs, j.error);
         } catch (e) {}
       });
+      // ---- Artifact-flow events ---------------------------------------
+      // Emitted by the server whenever a source.wav or a stem *.m4a
+      // appears in a STEMS/<song>/ folder. Drives:
+      //   • the progress dots inside the STEMS folder (per-song state)
+      //   • a flare popup above the STEMS folder (event notification)
+      //   • a moving glyph along the appropriate arrow (in-flight)
+      //   • the artifact ticker below the pipeline (history)
+      es.addEventListener('artifact-created', (ev) => {
+        try {
+          const j = JSON.parse(ev.data);
+          onArtifactCreated(j.kind, j.song, j.file, j.at);
+        } catch (e) {}
+      });
       es.onerror = () => {
         // EventSource auto-reconnects with backoff. Nothing to do.
       };
     }
     startLibrarianSSE();
+
+    // =================================================================
+    // ARTIFACT-FLOW VISUALIZATION
+    // Highlights the two key creation events in the pipeline:
+    //   BLUE  = source.wav landed (webloc_watch just finished a
+    //           YouTube download for a song)
+    //   GREEN = a *.m4a stem landed (queue_runner just finished
+    //           Demucs+ffmpeg on one stem)
+    // =================================================================
+    let currentArtifactSong = null;   // whose dots are we showing?
+    const M4A_STEMS = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
+
+    function resetArtifactDots(song) {
+      currentArtifactSong = song;
+      document.querySelectorAll('.pipeline-svg .artifact-dot').forEach(dot => {
+        dot.classList.remove('on');
+        dot.classList.remove('flash');
+      });
+      const label = document.querySelector('.pipeline-svg [data-role="current-song"]');
+      if (label) {
+        // Truncate long slugs so they fit inside the folder rectangle.
+        const short = (song || 'idle').slice(0, 18);
+        label.textContent = short;
+      }
+    }
+    function lightDot(file) {
+      const dot = document.querySelector(`.pipeline-svg .artifact-dot[data-artifact="${file}"]`);
+      if (!dot) return;
+      dot.classList.add('on');
+      dot.classList.remove('flash');
+      // Reflow so the animation restarts even if the class was already on.
+      void dot.getBoundingClientRect();
+      dot.classList.add('flash');
+      setTimeout(() => dot.classList.remove('flash'), 1700);
+    }
+    function popFlare(kind, label) {
+      const svg = document.getElementById('pipeline-svg');
+      if (!svg) return;
+      const NS = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'artifact-flare ' + (kind === 'source.wav' ? 'wav' : 'm4a'));
+      // Positioned above the STEMS folder (folder center X = 565, folder top Y ~= 44).
+      g.setAttribute('transform', 'translate(565, 38)');
+      const ring = document.createElementNS(NS, 'circle');
+      ring.setAttribute('class', 'flare-ring');
+      ring.setAttribute('cx', '0'); ring.setAttribute('cy', '0');
+      ring.setAttribute('r', '18');
+      g.appendChild(ring);
+      const txt = document.createElementNS(NS, 'text');
+      txt.setAttribute('class', 'flare-txt');
+      txt.setAttribute('x', '0'); txt.setAttribute('y', '3');
+      txt.textContent = label;
+      g.appendChild(txt);
+      svg.appendChild(g);
+      setTimeout(() => { try { svg.removeChild(g); } catch (e) {} }, 1900);
+    }
+    // A styled flight glyph — blue "src.wav" pill from incoming → stems,
+    // green "m4a" pill from queued → stems. Uses the existing arrow
+    // paths so the motion looks native to the pipeline.
+    function flightArtifact(kind, fromKey, toKey, label) {
+      const path = arrowEls[fromKey + '->' + toKey];
+      const layer = document.getElementById('flight-layer');
+      if (!path || !layer) return;
+      const NS = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', kind === 'source.wav' ? 'flight-wav' : 'flight-m4a');
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', '-14'); rect.setAttribute('y', '-7');
+      rect.setAttribute('width', '28'); rect.setAttribute('height', '14');
+      rect.setAttribute('rx', '2');
+      g.appendChild(rect);
+      const txt = document.createElementNS(NS, 'text');
+      txt.setAttribute('x', '0'); txt.setAttribute('y', '3');
+      txt.textContent = label;
+      g.appendChild(txt);
+      const motion = document.createElementNS(NS, 'animateMotion');
+      motion.setAttribute('dur', '1.6s');
+      motion.setAttribute('repeatCount', '1');
+      motion.setAttribute('fill', 'freeze');
+      const mp = document.createElementNS(NS, 'mpath');
+      mp.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#' + path.id);
+      motion.appendChild(mp);
+      g.appendChild(motion);
+      layer.appendChild(g);
+      setTimeout(() => { try { layer.removeChild(g); } catch (e) {} }, 1900);
+    }
+    // Ticker — persistent history strip. Keeps the last 8 events, newest
+    // first, so Bill can see "yes, drums.m4a for Midnight Rider just
+    // landed" without watching every frame.
+    const artifactTickerItems = [];
+    function pushTicker(kind, song, file) {
+      artifactTickerItems.unshift({ kind, song, file, at: Date.now() });
+      if (artifactTickerItems.length > 8) artifactTickerItems.pop();
+      renderTicker();
+    }
+    function renderTicker() {
+      const el = document.getElementById('artifact-ticker');
+      if (!el) return;
+      const emptyEl = document.getElementById('ticker-empty');
+      if (!artifactTickerItems.length) {
+        if (emptyEl) emptyEl.style.display = '';
+        el.querySelectorAll('.ticker-item').forEach(n => n.remove());
+        return;
+      }
+      if (emptyEl) emptyEl.style.display = 'none';
+      // Remove old items, re-append in order.
+      el.querySelectorAll('.ticker-item').forEach(n => n.remove());
+      for (const it of artifactTickerItems) {
+        const kindClass = it.kind === 'source.wav' ? 'wav' : 'm4a';
+        const short = (it.song || '').slice(0, 22);
+        const chip = document.createElement('span');
+        chip.className = 'ticker-item ' + kindClass;
+        chip.innerHTML =
+          '<span class="dot"></span>' +
+          '<span>' + it.file + '</span>' +
+          '<span style="opacity:0.65;">·</span>' +
+          '<span style="opacity:0.75;">' + short + '</span>';
+        el.appendChild(chip);
+      }
+    }
+    function onArtifactCreated(kind, song, file, at) {
+      // If this is a different song than we're tracking, reset the
+      // dot state so the SVG shows the newest song's progress.
+      if (song !== currentArtifactSong) resetArtifactDots(song);
+      lightDot(file);
+      // Pop a flare + fly the glyph along the right arrow. For a
+      // source.wav we visualize INCOMING → STEMS (webloc_watch's
+      // download completing); for a stem m4a we visualize QUEUED →
+      // STEMS (queue_runner's Demucs finishing that stem).
+      if (kind === 'source.wav') {
+        popFlare('source.wav', 'SRC.WAV');
+        // No direct incoming→stems arrow; run two-hop flight.
+        flightArtifact('source.wav', 'incoming', 'queued', 'src.wav');
+        setTimeout(() => flightArtifact('source.wav', 'queued', 'stems', 'src.wav'), 700);
+        setFolderActive('stems', 2400);
+      } else {
+        // Compute progress fraction (how many m4a's landed).
+        const gotten = M4A_STEMS.filter(f => {
+          const d = document.querySelector(`.pipeline-svg .artifact-dot[data-artifact="${f}"]`);
+          return d && d.classList.contains('on');
+        }).length;
+        popFlare('stem.m4a', `M4A ${gotten}/6`);
+        flightArtifact('stem.m4a', 'queued', 'stems', file.replace('.m4a',''));
+        setFolderActive('stems', 2200);
+      }
+      pushTicker(kind, song, file);
+    }
 
     // =================================================================
     // LIBRARY VIEW — table of every STEMS/<song>/, with stem-health
@@ -1350,10 +1886,15 @@
       const rows = libRows
         .filter(r => {
           if (!q) return true;
+          // "0/6", "3/6" etc. match the Stems Health column, and a missing
+          // stem name ("vocals") matches its miss-list.
+          const stemsStr = `${r.stemsPresent}/${r.stemsTotal || 6}`;
           return (r.title  || '').toLowerCase().includes(q)
               || (r.artist || '').toLowerCase().includes(q)
               || (r.singer || '').toLowerCase().includes(q)
-              || (r.base   || '').toLowerCase().includes(q);
+              || (r.base   || '').toLowerCase().includes(q)
+              || stemsStr.includes(q)
+              || (r.missing || []).some(m => m.toLowerCase().includes(q));
         })
         .sort((a, b) => {
           const k = libSort.col;

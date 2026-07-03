@@ -35,6 +35,24 @@ POLL="${POLL:-5}"
 
 [[ -x "$STEM_SCRIPT" || -f "$STEM_SCRIPT" ]] || { echo "Missing $STEM_SCRIPT" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "Missing python3" >&2; exit 1; }
+
+# ── Performer-only guard ────────────────────────────────────────────────────
+# Demucs must NEVER run on the 8 GB Librarian mini (CLAUDE.md: memory crash),
+# and a second runner on another machine defeats the Drive-synced lock (each
+# machine's mkdir succeeds locally before sync — both "hold" the lock). A
+# foreign runner racing the Performer is how phantom empty markers land in
+# _failed/ (observed 2026-07-02: successful render, failedRenders went up).
+# Fuzzy match like server.js MACHINE_IDENTITY; override for bench testing:
+#   SIMPLE_STEM_FORCE_RUNNER=1 ./queue_runner.sh
+_hn="$(hostname | tr '[:upper:]' '[:lower:]')"
+if [[ "${SIMPLE_STEM_FORCE_RUNNER:-0}" != "1" ]]; then
+  case "$_hn" in
+    *librarian*|*mini*)
+      echo "!! queue_runner refusing to start on '$_hn' — this looks like the Librarian." >&2
+      echo "   Demucs renders belong on the Performer. Set SIMPLE_STEM_FORCE_RUNNER=1 to override." >&2
+      exit 1 ;;
+  esac
+fi
 mkdir -p "$QUEUE" "$STEMS" "$QUEUE/_done" "$QUEUE/_failed"
 
 # Read title/artist/source_url/clip_start/clip_end from a job json (one per line,
@@ -132,11 +150,16 @@ finish() {
   mkdir -p "$(dirname "$dest")"
   if [[ -f "$job" ]]; then
     mv -f "$job" "$dest" 2>/dev/null || { rm -f "$job" 2>/dev/null || true; }
-  else
+  elif [[ "$bucket" == "_done" ]]; then
     # Source job already gone (Drive sync race / placeholder). The work itself
     # completed; just leave a marker so it isn't re-picked and we don't crash.
     echo "   (job file $rel already absent — recording $bucket marker)" >&2
     : > "$dest" 2>/dev/null || true
+  else
+    # _failed + job file gone: someone else consumed the job (usually the
+    # other machine finished it). An empty marker here would inflate the
+    # portal's failedRenders count with an unparseable ghost — skip it.
+    echo "   (job file $rel already absent — NOT recording a _failed marker; another runner owned it)" >&2
   fi
   local srcdir; srcdir="$(dirname "$job")"
   if [[ "$srcdir" != "$QUEUE" ]] && ! ls "$srcdir"/*.json >/dev/null 2>&1; then
@@ -151,6 +174,7 @@ process_job() {
   if [[ -z "$title" ]]; then
     echo "!! $rel: no title; moving to _failed" >&2; finish "$job" _failed; return
   fi
+  local song_base_val; song_base_val="$(song_base "$title" "$artist")"
   python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"song":sys.argv[2],"job":sys.argv[3]}))' \
     "$CURRENT" "$title — $artist" "$rel"
   set_phase "starting"
@@ -166,12 +190,32 @@ process_job() {
   else
     rc=${PIPESTATUS[0]}
   fi
+  # ─── Outcome-based verification (bug #124 fix) ────────────────────
+  # stem.sh's exit code is unreliable in a couple of edge cases:
+  #   • Drive sync moves Demucs output before stem.sh's mv can, then
+  #     the mv exits non-zero even though the goal state is achieved.
+  #   • The while-read/tee subshell plumbing occasionally propagates
+  #     a stray non-zero from set_phase's python3 heredoc.
+  # Both were observed 2026-06-30/07-01 (Midnight_Rider had all 6 m4a
+  # on disk but rc was non-zero → misfiled to _failed). Ground truth
+  # is disk state. If all six m4a stems are present in the song
+  # folder, the render succeeded. Real crashes leave <6 m4as so
+  # genuine failures are still caught.
+  local out_dir="$STEMS/$song_base_val"
+  local m4a_missing=0
+  for _s in vocals drums bass other piano guitar; do
+    [[ -f "$out_dir/${_s}.m4a" ]] || m4a_missing=$((m4a_missing + 1))
+  done
+  if (( rc != 0 && m4a_missing == 0 )); then
+    echo "== outcome-based override: rc=$rc but 6/6 m4a stems present in $out_dir — treating as done"
+    rc=0
+  fi
   if (( rc == 0 )); then
     echo "== done: $title — $artist"
     [[ "${SIMPLE_STEM_KEEP_JOB_LOGS:-0}" == "1" ]] || rm -f "$job_log"
     finish "$job" _done
   else
-    echo "!! failed: $title — $artist   (rc=$rc, see ${job_log#$QUEUE/})" >&2
+    echo "!! failed: $title — $artist   (rc=$rc, m4a_missing=$m4a_missing/6, see ${job_log#$QUEUE/})" >&2
     # Preserve the log alongside the JSON in _failed/ so triage is one
     # cat command. Copies to the same subpath under _failed/.
     local dest_log="$QUEUE/_failed/${rel%.json}.log"

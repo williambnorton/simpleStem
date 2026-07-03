@@ -97,6 +97,13 @@
             <button id="gig-dup-btn" class="btn-icon" title="Duplicate this gig (copies all setlists)"><i data-lucide="copy"></i></button>
             <button id="gig-del-btn" class="btn-icon" title="Delete this gig" disabled><i data-lucide="trash-2"></i></button>
           </div>
+          <!-- Gig Builder trigger (task #132/#133). Opens the modal
+               where the operator filters the library by roster/tags/mode
+               and either hand-picks songs into setlists via the 1·2·3·4
+               radios or has the deterministic engine populate them. -->
+          <button id="gig-builder-btn" class="setlist-side-toggle" style="margin: 6px 0 8px; background: var(--bg-accent); color: var(--text-accent); border-color: var(--border-accent);">
+            <i data-lucide="sparkles"></i> <span>Build a gig…</span>
+          </button>
 
           <!-- Setlists (1-4) live here; each is a nested .gig-setlist rollup -->
           <div id="gig-setlists" class="gig-setlists"></div>
@@ -257,6 +264,20 @@
                 <div>
                   <span id="active-drum-value" class="stat-val">--</span>
                   <span class="stat-lbl">Drum</span>
+                </div>
+              </div>
+              <!-- Backing-track pill — toggles the pre-mixed stereo m4a
+                   from BACKING_TRACKS/ instead of the six-stem mix.
+                   Enabled only when the server matched a backing track
+                   for the current song. Mutually exclusive with the
+                   drum-machine toggle. -->
+              <div class="meta-stat-pill hover-glow backing-track-btn"
+                   id="active-meta-backing"
+                   title="Left-click: play backing-track m4a instead of stems.">
+                <i data-lucide="music-2" class="text-blue"></i>
+                <div>
+                  <span id="active-backing-value" class="stat-val">--</span>
+                  <span class="stat-lbl">Backing</span>
                 </div>
               </div>
               <!-- Tall digital clock pill — date + time stacked. Matches the
@@ -722,12 +743,12 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <div class="col-select" style="width: 45px; cursor: default;">Set</div>
               <div class="col-title" data-sort="title">Song Title <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-tags" title="Tags + readiness — click a row's tag cell to pick">Tags</div>
               <div class="col-duration" data-sort="duration">Dur <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-singer" data-sort="singer">Singer <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-drum" data-sort="drum">Drum <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-tags" title="Tags + readiness — click a row's tag cell to pick">Tags</div>
               <div class="col-plays" data-sort="plays" title="Times audio actually produced output for this song">Plays <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-action">Action</div>
             </div>

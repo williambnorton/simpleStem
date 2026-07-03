@@ -13,10 +13,16 @@ These work everywhere except when a text input has focus.
 | Key | Action |
 |---|---|
 | **Space** | Play / pause transport |
+| **+** | Add the currently-loaded song to the active setlist |
+| **−** | Remove the currently-loaded song from the active setlist |
 | **/** | Quick-search (vim-style) — focuses the song search bar |
 | **?** | Open / close the shortcut cheat-sheet overlay |
 | `V D B G P O` | Toggle the V/D/B/G/P/O stem solo (existing behavior) |
 | `1` … `9` | Drop a section divider at the current playhead (existing) |
+
+Bare-key shortcuts are silently ignored when a text input has focus, so
+they never hijack what you're typing. Press `Esc` first if a search bar
+swallowed your `+`.
 
 ## Focus & navigation
 
@@ -49,8 +55,8 @@ These work everywhere except when a text input has focus.
 
 | Shortcut | Action |
 |---|---|
-| **Cmd+Shift+=** | Add currently-loaded song to active setlist |
-| **Cmd+Shift+-** | Remove currently-loaded song from active setlist |
+| **+** *(bare key)* | Add currently-loaded song to active setlist — was Cmd+Shift+= but that collided with Chrome zoom-in |
+| **−** *(bare key)* | Remove currently-loaded song from active setlist |
 | **Cmd+Shift+F** | Toggle the favorite ★ on the current song |
 | **Cmd+.** | Toggle the drum machine for the current song (also persists `drum_machine_default` in metadata) |
 
