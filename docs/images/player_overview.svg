@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 760" font-family="Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b3541e"/>
+    </marker>
+  </defs>
+  <style>
+    .callout{font-size:13px;fill:#333;font-weight:bold}
+    .sub{font-size:11px;fill:#666}
+    .lead{stroke:#b3541e;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+    .pane{fill:#fbfaf7;stroke:#c9c4b8}
+    .pill{fill:#20242e;rx:8}
+    .pillT{font-size:10px;fill:#fff;text-anchor:middle;font-weight:bold}
+    .btn{fill:#f4f4f6;stroke:#9aa0a6;rx:14}
+  </style>
+
+  <rect x="150" y="30" width="880" height="700" class="pane" rx="14"/>
+
+  <text x="170" y="66" font-size="18" font-weight="bold" fill="#222">★ 2 tickets to paradise — Eddie Money</text>
+  <rect class="pill" x="560" y="44" width="66" height="36"/><text class="pillT" x="593" y="60">131</text><text class="pillT" x="593" y="72">BPM</text>
+  <rect class="pill" x="632" y="44" width="72" height="36"/><text class="pillT" x="668" y="60">A major</text><text class="pillT" x="668" y="72">KEY</text>
+  <rect class="pill" x="710" y="44" width="86" height="36"/><text class="pillT" x="753" y="60">120@130</text><text class="pillT" x="753" y="72">DRUM</text>
+  <rect class="pill" x="802" y="44" width="130" height="36"/><text class="pillT" x="867" y="60">Two tickets to…</text><text class="pillT" x="867" y="72">BACKING</text>
+  <rect class="pill" x="938" y="44" width="80" height="36"/><text class="pillT" x="978" y="66">Fri 8:28 PM</text>
+
+  <rect x="170" y="94" width="848" height="86" fill="#e9e7f5" stroke="#b9b4d8" rx="6"/>
+  <g font-size="9" fill="#fff">
+    <rect x="200" y="98" width="52" height="12" fill="#4a90d9" rx="2"/><text x="206" y="107">VERSE</text>
+    <rect x="300" y="98" width="58" height="12" fill="#d9534f" rx="2"/><text x="306" y="107">CHORUS</text>
+    <rect x="420" y="98" width="54" height="12" fill="#8e6bbf" rx="2"/><text x="426" y="107">BRIDGE</text>
+    <rect x="540" y="98" width="44" height="12" fill="#e8913a" rx="2"/><text x="546" y="107">SOLO</text>
+  </g>
+  <line x1="430" y1="94" x2="430" y2="180" stroke="#222" stroke-width="2"/>
+
+  <g font-size="11" fill="#333">
+    <rect x="170" y="192" width="52" height="18" class="btn" rx="4"/><text x="176" y="205">+ CLIP</text>
+    <rect x="228" y="192" width="64" height="18" class="btn" rx="4"/><text x="234" y="205">+ ACTION</text>
+    <rect x="298" y="192" width="88" height="18" fill="#20242e" rx="4"/><text x="305" y="205" fill="#f2c14e">FETCH LYRICS</text>
+    <rect x="700" y="192" width="40" height="18" class="btn" rx="4"/><text x="708" y="205">INIT</text>
+    <rect x="744" y="192" width="56" height="18" class="btn" rx="4"/><text x="750" y="205">ACCEPT</text>
+    <rect x="804" y="192" width="48" height="18" class="btn" rx="4"/><text x="810" y="205">NEXT ▶</text>
+    <rect x="856" y="192" width="42" height="18" fill="#3b7dd8" rx="4"/><text x="862" y="205" fill="#fff">SAVE</text>
+    <rect x="902" y="192" width="48" height="18" fill="#f2c14e" rx="4"/><text x="908" y="205">CLEAR</text>
+  </g>
+
+  <g>
+    <circle cx="230" cy="270" r="24" class="btn"/><text x="230" y="276" text-anchor="middle" font-size="14">|◀</text>
+    <circle cx="290" cy="270" r="24" class="btn"/><text x="290" y="276" text-anchor="middle" font-size="14">◻</text>
+    <circle cx="356" cy="270" r="30" fill="#20242e"/><text x="356" y="277" text-anchor="middle" font-size="16" fill="#fff">▶</text>
+    <circle cx="422" cy="270" r="24" class="btn"/><text x="422" y="276" text-anchor="middle" font-size="14">≫</text>
+    <circle cx="482" cy="270" r="24" class="btn"/><text x="482" y="276" text-anchor="middle" font-size="14">▶|</text>
+    <circle cx="542" cy="270" r="24" class="btn"/><text x="542" y="276" text-anchor="middle" font-size="14">⇄</text>
+    <circle cx="602" cy="270" r="22" class="btn"/><text x="602" y="275" text-anchor="middle" font-size="11">1.00x</text>
+  </g>
+
+  <rect x="650" y="238" width="220" height="66" fill="#eaf7ef" stroke="#7fcf9d" rx="10"/>
+  <text x="760" y="266" text-anchor="middle" font-size="16" font-weight="bold" fill="#2c8f57">⇄ LOOPER</text>
+  <text x="760" y="284" text-anchor="middle" font-size="10" fill="#557">no section</text>
+  <circle cx="898" cy="270" r="17" class="btn"/><text x="898" y="275" text-anchor="middle" font-size="12">🕰</text>
+  <circle cx="938" cy="270" r="17" class="btn"/><text x="938" y="275" text-anchor="middle" font-size="12">#</text>
+  <circle cx="978" cy="270" r="17" class="btn"/><text x="978" y="275" text-anchor="middle" font-size="12">🎙</text>
+
+  <rect x="920" y="310" width="100" height="60" fill="#efece4" stroke="#c9c4b8" rx="8"/>
+  <circle cx="948" cy="340" r="14" fill="#20242e"/><text x="948" y="362" text-anchor="middle" font-size="9" fill="#555">CENT</text>
+  <circle cx="992" cy="340" r="14" fill="#20242e"/><text x="992" y="362" text-anchor="middle" font-size="9" fill="#555">SEMI</text>
+
+  <rect x="170" y="392" width="848" height="316" fill="#fdf6dd" stroke="#e0cf96" rx="12"/>
+  <text x="190" y="418" font-size="13" font-weight="bold" fill="#555">Stem Mixer Console</text>
+  <rect x="330" y="402" width="470" height="24" fill="#b98a2e" rx="10"/>
+  <text x="340" y="418" font-size="10" fill="#fff">XR18 connected … (now: MacBook Pro Speakers)   → XR18   → Sys Out</text>
+  <g>
+    <circle cx="830" cy="414" r="11" class="btn"/><text x="830" y="418" text-anchor="middle" font-size="9">📋</text>
+    <circle cx="858" cy="414" r="11" class="btn"/><text x="858" y="418" text-anchor="middle" font-size="9">💾</text>
+    <circle cx="886" cy="414" r="11" class="btn"/><text x="886" y="418" text-anchor="middle" font-size="9">🔔</text>
+    <circle cx="914" cy="414" r="11" class="btn"/><text x="914" y="418" text-anchor="middle" font-size="9">↻</text>
+    <circle cx="942" cy="414" r="11" fill="#d9534f"/><text x="942" y="418" text-anchor="middle" font-size="9" fill="#fff">⛑</text>
+  </g>
+  <g fill="#fbfaf7" stroke="#c9c4b8">
+    <rect x="190" y="440" width="128" height="250" rx="8"/><rect x="326" y="440" width="128" height="250" rx="8"/>
+    <rect x="462" y="440" width="128" height="250" rx="8"/><rect x="598" y="440" width="128" height="250" rx="8"/>
+    <rect x="734" y="440" width="128" height="250" rx="8"/><rect x="870" y="440" width="128" height="250" rx="8"/>
+  </g>
+  <g font-size="10" fill="#444" text-anchor="middle" font-weight="bold">
+    <text x="254" y="460">VOCALS</text><text x="390" y="460">DRUMS</text><text x="526" y="460">BASS</text>
+    <text x="662" y="460">GUITAR</text><text x="798" y="460">PIANO</text><text x="934" y="460">OTHER</text>
+  </g>
+  <text x="594" y="600" font-size="11" fill="#999" text-anchor="middle">(see player_channel_strip.svg for every control on a strip)</text>
+
+  <rect x="1052" y="30" width="34" height="700" fill="#f2f7f2" stroke="#c9d8c9" rx="8"/>
+  <rect x="1064" y="300" width="10" height="200" fill="#37b26c" rx="5"/>
+
+  <text class="callout" x="10" y="60">Favorite star + title</text>
+  <path class="lead" d="M140,56 C155,56 160,58 168,60"/>
+
+  <text class="callout" x="590" y="24">Meta pills: BPM · KEY · DRUM pattern (click = engage,</text>
+  <text class="callout" x="590" y="38" > right-click = alternates) · BACKING (click = engage)</text>
+  <path class="lead" d="M700,42 C720,44 730,44 740,46"/>
+
+  <text class="callout" x="10" y="120">Visualizer: per-stem waveforms,</text>
+  <text class="sub" x="10" y="135">section bands, playhead. Drag = seek;</text>
+  <text class="sub" x="10" y="149">keys 1–9 drop section markers</text>
+  <path class="lead" d="M138,132 C155,134 160,134 168,136"/>
+
+  <text class="callout" x="10" y="205">Clip/Action/Lyrics tools</text>
+  <path class="lead" d="M10,210 C60,224 120,216 166,203"/>
+
+  <text class="callout" x="10" y="262">Transport: restart · stop · play/pause</text>
+  <text class="sub" x="10" y="277">· fast-forward · next-in-setlist · repeat · speed</text>
+  <path class="lead" d="M130,282 C165,286 185,280 202,274"/>
+
+  <text class="callout" x="660" y="330">LOOPER — loops the current section</text>
+  <text class="sub" x="660" y="344">seamlessly; playhead follows the loop</text>
+  <path class="lead" d="M740,318 C748,312 752,308 756,304"/>
+
+  <text class="callout" x="900" y="230">Click · Count-in · Mic</text>
+  <path class="lead" d="M935,236 C936,244 936,248 936,252"/>
+
+  <text class="callout" x="1040" y="390" transform="rotate(90 1040,390)"> </text>
+  <text class="callout" x="10" y="345">CENT (±50) and SEMI (±3 in ½ steps)</text>
+  <text class="sub" x="10" y="360">pitch knobs — drum machine follows too</text>
+  <path class="lead" d="M270,352 C600,360 850,352 916,344"/>
+
+  <text class="callout" x="10" y="420">Mixer header: routing presets, XR18/SysOut</text>
+  <text class="sub" x="10" y="435">switches, copy state 📋, Flash Cache 💾, alerts 🔔,</text>
+  <text class="sub" x="10" y="449">restart ↻, first-aid ⛑ (kick coreaudiod)</text>
+  <path class="lead" d="M148,440 C160,438 165,432 172,426"/>
+
+  <text class="callout" x="1096" y="392">Master</text>
+  <text class="callout" x="1096" y="407">volume</text>
+  <text class="sub" x="1096" y="421">full-height rail</text>
+  <path class="lead" d="M1094,398 C1090,398 1088,398 1086,398"/>
+
+  <text class="callout" x="200" y="740">Action bar (top right): INIT proposes an automation sequence · ACCEPT keeps it · NEXT steps · SAVE persists · CLEAR wipes (confirm)</text>
+</svg>

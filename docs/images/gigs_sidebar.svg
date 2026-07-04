@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 640" font-family="Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b3541e"/>
+    </marker>
+  </defs>
+  <style>
+    .callout{font-size:13px;fill:#333;font-weight:bold}
+    .sub{font-size:11px;fill:#666}
+    .lead{stroke:#b3541e;stroke-width:1.6;fill:none;marker-end:url(#ar3)}
+    .row{fill:#fdf6dd;stroke:#e0cf96;rx:4}
+    .rowG{fill:#e7f5ec;stroke:#bfe0cc;rx:4}
+    .rowP{fill:#f0e9f7;stroke:#d5c6e8;rx:4}
+    .btn{fill:#f4f4f6;stroke:#9aa0a6;rx:4}
+    .t{font-size:10px;fill:#333}
+  </style>
+
+  <rect x="30" y="20" width="300" height="600" fill="#ffffff" stroke="#c9c4b8" rx="10"/>
+
+  <text x="48" y="52" font-size="13" font-weight="bold" fill="#333">🗓 Gig:  Draft Jul 3 20:35</text>
+  <rect class="btn" x="252" y="38" width="20" height="18"/><text class="t" x="257" y="51">4</text>
+
+  <rect class="btn" x="44" y="66" width="150" height="22"/><text class="t" x="52" y="81">Draft Jul 3 20:35 (4) ▾</text>
+  <rect class="btn" x="200" y="66" width="22" height="22"/><text class="t" x="205" y="81">✎</text>
+  <rect class="btn" x="226" y="66" width="22" height="22"/><text class="t" x="232" y="81">+</text>
+  <rect class="btn" x="252" y="66" width="22" height="22"/><text class="t" x="257" y="81">⧉</text>
+  <rect class="btn" x="278" y="66" width="22" height="22"/><text class="t" x="284" y="81">🗑</text>
+
+  <rect x="44" y="100" width="256" height="26" fill="#f5f2ff" stroke="#c9bcf0" rx="6"/>
+  <text x="172" y="117" text-anchor="middle" font-size="12" fill="#5a4a9f" font-weight="bold">✨ Build a gig…</text>
+
+  <rect x="44" y="138" width="256" height="24" fill="#eef3fb" stroke="#b8cbe8" rx="6"/>
+  <text class="t" x="54" y="154" font-weight="bold">Set 1</text>
+  <text class="t" x="220" y="154">14</text>
+  <text class="t" x="244" y="154">×</text><text class="t" x="264" y="154">⌄</text>
+  <g font-size="11">
+    <rect class="btn" x="52" y="168" width="20" height="18"/><text x="56" y="181">|◀</text>
+    <rect class="btn" x="76" y="168" width="20" height="18"/><text x="81" y="181">◻</text>
+    <rect class="btn" x="100" y="168" width="20" height="18"/><text x="105" y="181">▶</text>
+    <rect class="btn" x="124" y="168" width="20" height="18"/><text x="128" y="181">▶|</text>
+    <text class="t" x="252" y="181">15 / 21</text>
+  </g>
+  <rect class="row" x="52" y="194" width="240" height="18"/><text class="t" x="60" y="207">⋮⋮ American Girl</text><text class="t" x="280" y="207">×</text>
+  <rect class="rowG" x="52" y="216" width="240" height="18"/><text class="t" x="60" y="229">⋮⋮ Higher Ground</text><text class="t" x="280" y="229">×</text>
+  <rect class="rowP" x="52" y="238" width="240" height="18"/><text class="t" x="60" y="251">⋮⋮ Cant let go</text><text class="t" x="280" y="251">×</text>
+  <rect x="52" y="260" width="240" height="18" fill="#f2fbf5" stroke="#8fd6a8" stroke-dasharray="4 3" rx="4"/>
+  <text class="t" x="60" y="273" fill="#557">"GREAT NIGHT (feat. Shovels…)" [Of…</text>
+  <rect x="272" y="261" width="16" height="16" fill="#37b26c" rx="8"/><text x="276" y="273" font-size="11" fill="#fff">+</text>
+
+  <rect x="44" y="292" width="256" height="24" fill="#f7f7f7" stroke="#ddd" rx="6"/>
+  <text class="t" x="54" y="308" font-weight="bold">Set 2</text><text class="t" x="220" y="308">10</text><text class="t" x="244" y="308">×</text><text class="t" x="264" y="308">›</text>
+  <rect x="44" y="322" width="256" height="24" fill="#f7f7f7" stroke="#ddd" rx="6"/>
+  <text class="t" x="54" y="338" font-weight="bold">Set 3</text><text class="t" x="220" y="338">13</text><text class="t" x="244" y="338">×</text><text class="t" x="264" y="338">›</text>
+
+  <rect x="44" y="356" width="256" height="24" fill="#fcfcfc" stroke="#e5e5e5" rx="6"/>
+  <text x="172" y="372" text-anchor="middle" font-size="11" fill="#999">＋ Add a setlist (max 4)</text>
+
+  <rect x="44" y="396" width="256" height="24" fill="#fcfcfc" stroke="#e5e5e5" rx="6"/>
+  <text class="t" x="54" y="412" font-weight="bold">📊 Library Analytics</text><text class="t" x="284" y="412">›</text>
+
+  <text class="callout" x="360" y="52">Gig picker — real gigs plus 9</text>
+  <text class="sub" x="360" y="67">pseudo-gigs (Favorites, Recents,</text>
+  <text class="sub" x="360" y="81">Bill/Matt/Dan/JD Songs, RoundRobin,</text>
+  <text class="sub" x="360" y="95">YouTube Sync, Manual Setlists)</text>
+  <path class="lead" d="M355,62 C330,66 310,72 200,76" opacity="0"/>
+  <path class="lead" d="M355,58 C300,62 250,70 198,75"/>
+
+  <text class="callout" x="360" y="126">Rename ✎ · New + · Duplicate ⧉ · Delete 🗑</text>
+  <path class="lead" d="M355,120 C330,112 316,96 306,84"/>
+
+  <text class="callout" x="360" y="160">Gig Builder — filter by roster/tags/</text>
+  <text class="sub" x="360" y="175">mode, hand-pick or auto-populate</text>
+  <path class="lead" d="M355,158 C336,146 320,130 302,118"/>
+
+  <text class="callout" x="360" y="210">Per-setlist mini transport +</text>
+  <text class="sub" x="360" y="225">position (15 / 21)</text>
+  <path class="lead" d="M355,208 C300,196 220,184 148,180"/>
+
+  <text class="callout" x="360" y="258">Songs color-coded by lead singer;</text>
+  <text class="sub" x="360" y="273">drag ⋮⋮ to reorder, × removes,</text>
+  <text class="sub" x="360" y="287">click starts setlist playback here</text>
+  <path class="lead" d="M355,258 C330,248 310,236 296,228"/>
+
+  <text class="callout" x="360" y="322">Ghost row: the loaded song offers</text>
+  <text class="sub" x="360" y="337">a green + — click to commit it</text>
+  <text class="sub" x="360" y="351">(batch-checked rows appear too)</text>
+  <path class="lead" d="M355,322 C330,306 306,284 292,272"/>
+
+  <text class="callout" x="360" y="400">Add a setlist — enabled on real</text>
+  <text class="sub" x="360" y="415">gigs (max 4); use the planner for</text>
+  <text class="sub" x="360" y="429">standalone manual setlists</text>
+  <path class="lead" d="M355,400 C330,392 316,380 302,372"/>
+
+  <text class="callout" x="360" y="470">Library Analytics — tempo profile,</text>
+  <text class="sub" x="360" y="485">songs by key, songs by singer</text>
+  <path class="lead" d="M355,468 C330,448 316,424 304,412"/>
+</svg>
