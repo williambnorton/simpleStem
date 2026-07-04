@@ -1467,7 +1467,9 @@
         'lib-cataloger':    'Cataloger · catalog.py loop',
         'lib-catalogwatch': 'Catalogwatch · fswatch trigger',
         'lib-mpbsync':      'MPB Sync · Sheet → metadata',
+        'lib-portal':       'Portal · server.js',
         'lib-autoupdate':   'Auto-update · git pull loop',
+        'lib-heartbeat':    'Heartbeat · status → Drive',
       };
       Object.keys(friendly).forEach(name => {
         const d = state.librarianDaemons[name];
@@ -1475,7 +1477,16 @@
         const cls = d && d.running ? 'state-good' : 'state-bad';
         div.className = 'card ' + cls;
         const main = d && d.running ? 'running' : 'stopped';
-        const sub = d && d.running ? `pid ${d.pid}` : (d && d.reason ? d.reason : 'no pid file');
+        // Heartbeat-sourced cards show the REAL pid + which host runs it +
+        // how fresh the heartbeat is; fallback cards show the local reason.
+        let sub;
+        if (d && d.running) {
+          sub = 'pid ' + d.pid
+              + (d.host ? ' on ' + d.host.replace(/\.local$/, '') : '')
+              + (typeof d.heartbeatAgeSec === 'number' ? ' · hb ' + d.heartbeatAgeSec + 's ago' : '');
+        } else {
+          sub = (d && d.reason) ? d.reason : 'no pid file / no heartbeat';
+        }
         div.innerHTML =
           '<div class="c-title">' + friendly[name] + '</div>' +
           '<div class="c-main">' + main + '</div>' +

@@ -8026,3 +8026,19 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .gb-modepop-opt.on { background: rgba(123, 200, 255, 0.14); color: #7bc8ff; font-weight: 600; }
 .gb-modepop-opt.na { opacity: 0.36; cursor: not-allowed; text-decoration: line-through; }
 .gb-modepop-opt .hint { margin-left: auto; font-size: 10px; color: var(--text-secondary, #999); }
+
+/* ===== Playback-source mode pills (Bill 2026-07-04) =====
+   The 6 STEMS / DRUM / BACKING pills show WHICH source the transport
+   controls. .mode-active = this is the armed source (steady highlight);
+   .mode-playing = it is audibly playing right now (blinking border). */
+.meta-stat-pill.mode-active {
+  outline: 2px solid #37b26c;
+  outline-offset: 1px;
+}
+.meta-stat-pill.mode-playing {
+  animation: mode-pill-blink 1s ease-in-out infinite;
+}
+@keyframes mode-pill-blink {
+  0%, 100% { outline-color: #37b26c; box-shadow: 0 0 0 0 rgba(55, 178, 108, 0.0); }
+  50%      { outline-color: #7fe3a8; box-shadow: 0 0 10px 2px rgba(55, 178, 108, 0.55); }
+}

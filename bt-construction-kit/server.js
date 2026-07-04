@@ -2754,25 +2754,54 @@ async function probeLibrarianState() {
     }
   } catch (e) {}
 
-  // Librarian-only daemons — filter to lib-* pid files. Performer daemons
-  // (perf-*) are not surfaced here on purpose.
+  // Librarian-only daemons. AUTHORITATIVE SOURCE (2026-07-04): the mini's
+  // heartbeat service writes $DATA/.run-status/librarian.json every ~20s
+  // with pid + alive per service. That file is on Drive, so BOTH machines'
+  // dashboards show truth with real PIDs — the old local-pid-file check
+  // read "stopped · no pid file" whenever the dashboard wasn't served by
+  // the same machine that runs the daemons. Local pid files remain as a
+  // fallback when the heartbeat file is missing or stale (>90s).
+  const LIB_DAEMONS = ['lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync', 'lib-portal', 'lib-autoupdate', 'lib-heartbeat'];
+  let hb = null;
+  try {
+    const raw = await Promise.race([
+      fsp.readFile(path.join(SIMPLE_STEM_ROOT, '.run-status', 'librarian.json'), 'utf8'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    hb = JSON.parse(raw);
+  } catch (e) { /* no heartbeat file yet — fall back below */ }
+  const hbAgeSec = hb && hb.epoch ? Math.round(Date.now() / 1000 - hb.epoch) : null;
+  const hbFresh = hbAgeSec !== null && hbAgeSec < 90;
+
   const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
   const codeDotRun = path.join(__dirname, '..', '.run');
-  const LIB_DAEMONS = ['lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync', 'lib-autoupdate'];
   for (const name of LIB_DAEMONS) {
+    if (hb && hb.services && hb.services[name] !== undefined) {
+      const svc = hb.services[name] || {};
+      state.librarianDaemons[name] = {
+        running: hbFresh && !!svc.alive,
+        pid: svc.pid || null,
+        host: hb.hostname || null,
+        heartbeatAgeSec: hbAgeSec,
+        source: 'heartbeat',
+        reason: hbFresh ? undefined : `heartbeat stale (${hbAgeSec}s)`,
+      };
+      continue;
+    }
+    // Fallback: local pid files (only truthful on the machine that runs them).
     const pidPath1 = path.join(dotRun, `${name}.pid`);
     const pidPath2 = path.join(codeDotRun, `${name}.pid`);
     const pidPath = fs.existsSync(pidPath1) ? pidPath1 :
                     fs.existsSync(pidPath2) ? pidPath2 : null;
     if (!pidPath) {
-      state.librarianDaemons[name] = { running: false, pid: null, reason: 'no pid file' };
+      state.librarianDaemons[name] = { running: false, pid: null, reason: 'no pid file / no heartbeat' };
       continue;
     }
     try {
       const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
       let alive = false;
       try { process.kill(pid, 0); alive = true; } catch (e) {}
-      state.librarianDaemons[name] = { running: alive, pid, pidPath };
+      state.librarianDaemons[name] = { running: alive, pid, pidPath, source: 'local-pid' };
     } catch (e) {
       state.librarianDaemons[name] = { running: false, pid: null, reason: e.message };
     }

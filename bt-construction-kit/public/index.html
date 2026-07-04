@@ -231,7 +231,7 @@
                    playback so this also doubles as a "the song is NOT
                    playing" reminder. -->
               <div id="drum-machine-banner" class="drum-machine-banner">
-                <i data-lucide="drum"></i> Drum Machine playing — press Play to switch back to the song
+                <i data-lucide="drum"></i> Drum Machine is the playback source — transport controls it · click the 6 STEMS pill to return to the song
               </div>
             </div>
             <div class="track-meta-right">
@@ -259,6 +259,18 @@
                    override the auto-pick. The value shown is the file the
                    server picked: an explicit metadata.drum_pattern when
                    present, else the closest 110@<bpm> metronome. -->
+              <!-- 6 STEMS pill: shows/returns to the six-stem mixer source.
+                   Highlighted when stems are the active source; blinking
+                   border while they are the one actually playing. Click
+                   while drum/backing is engaged = disengage back to stems. -->
+              <div class="meta-stat-pill hover-glow stems-mode-btn" id="active-meta-stems"
+                   title="Six-stem mixer is the playback source. Click to return here from drum machine / backing track.">
+                <i data-lucide="sliders-horizontal" class="text-green"></i>
+                <div>
+                  <span class="stat-val">6</span>
+                  <span class="stat-lbl">Stems</span>
+                </div>
+              </div>
               <div class="meta-stat-pill hover-glow drum-machine-btn" id="active-meta-drum"
                    title="Left-click: drum machine ↔ backing track. Right-click: pick another pattern.">
                 <i data-lucide="drum" class="text-orange"></i>

@@ -7108,10 +7108,25 @@ async function togglePlayPause() {
     try { await audioCtx.resume(); } catch (e) {}
   }
 
-  // Mutual exclusion: pressing Play disengages the drum machine if it's
-  // running. Drum machine and backing track never coexist.
-  if (drumMachineActive) {
-    disengageDrumMachine();
+  // UNIFIED TRANSPORT (Bill 2026-07-04): Play/Pause acts on whatever
+  // source is ACTIVE. Previously pressing Play while the drum machine ran
+  // silently disengaged it and reloaded the stems — confusing and, mid-
+  // failure, it collapsed the player. Now the transport controls the
+  // engaged source; returning to the six-stem mix is an explicit click on
+  // the 6 STEMS pill (or disengaging the drum/backing pill).
+  if (drumMachineActive && drumMachineEl) {
+    if (drumMachineEl.paused) drumMachineEl.play().catch(e => console.warn('[transport] drum play failed:', e));
+    else drumMachineEl.pause();
+    updateModePills();
+    updateTransportIcon();
+    return;
+  }
+  if (backingTrackActive && backingTrackEl) {
+    if (backingTrackEl.paused) backingTrackEl.play().catch(e => console.warn('[transport] backing play failed:', e));
+    else backingTrackEl.pause();
+    updateModePills();
+    updateTransportIcon();
+    return;
   }
 
   let activeElements = Object.values(audioElements).filter(ae => audioHasSrc(ae));
@@ -7325,6 +7340,8 @@ function ensureDrumMachineEl() {
   drumMachineEl.preload = 'auto';
   drumMachineEl.loop = true;
   drumMachineEl.crossOrigin = 'anonymous';
+  drumMachineEl.addEventListener('play',  () => { try { updateModePills(); updateTransportIcon(); } catch (e) {} });
+  drumMachineEl.addEventListener('pause', () => { try { updateModePills(); updateTransportIcon(); } catch (e) {} });
   // Wire into the master bus AFTER the user gesture creates audioCtx.
   // wireDrumMachineIntoMaster is called from togglePlayPause's gesture
   // path AND from engageDrumMachine, whichever fires first.
@@ -7456,6 +7473,66 @@ function disengageDrumMachine() {
   // to start it again — explicit gesture, no surprise resume.
 }
 
+// ── Playback-source mode plumbing (Bill 2026-07-04) ──────────────────────
+// The transport controls the ACTIVE source; the 6 STEMS / DRUM / BACKING
+// pills show which one that is (steady outline) and whether it's audibly
+// playing (blinking outline).
+function activeSourceEl() {
+  if (drumMachineActive && drumMachineEl) return drumMachineEl;
+  if (backingTrackActive && backingTrackEl) return backingTrackEl;
+  return null;
+}
+function updateTransportIcon() {
+  const el = activeSourceEl();
+  const playing = el ? !el.paused : isPlaying;
+  if (els && els.btnPlay) {
+    els.btnPlay.innerHTML = playing ? `<i data-lucide="pause"></i>` : `<i data-lucide="play"></i>`;
+    try { lucide.createIcons(); } catch (e) {}
+  }
+}
+function updateModePills() {
+  const mode = drumMachineActive ? 'drum' : backingTrackActive ? 'backing' : 'stems';
+  const playing = {
+    stems:   isPlaying,
+    drum:    !!(drumMachineEl && !drumMachineEl.paused),
+    backing: !!(backingTrackEl && !backingTrackEl.paused),
+  };
+  const map = { stems: 'active-meta-stems', drum: 'active-meta-drum', backing: 'active-meta-backing' };
+  for (const [m, id] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.classList.toggle('mode-active', m === mode);
+    el.classList.toggle('mode-playing', m === mode && playing[m]);
+  }
+}
+// Safety net: pill state self-heals even if an engage path forgets to call.
+setInterval(() => { try { updateModePills(); } catch (e) {} }, 1000);
+// 6 STEMS pill: explicit return to the six-stem mixer source. Bound by
+// DELEGATION at the document level so it survives any re-render of the
+// meta-pill row (a directly-bound listener was observed detached in the
+// wild on 2026-07-04).
+document.addEventListener('click', (e) => {
+  const pill = e.target && e.target.closest ? e.target.closest('#active-meta-stems') : null;
+  if (!pill) return;
+  e.preventDefault(); e.stopPropagation();
+  try {
+    if (drumMachineActive) disengageDrumMachine();
+    if (backingTrackActive) disengageBackingTrack();
+    // Update the LOCAL mode synchronously before loadSong below —
+    // persistPlaybackMode only writes currentSong.playback_mode after its
+    // PUT round-trip, and loadSong auto-engages the remembered mode, so
+    // without this the drum machine re-engaged itself (2026-07-04 bug).
+    if (currentSong) currentSong.playback_mode = 'stems';
+    persistPlaybackMode('stems');
+    // Rehydrate the stems (engaging drum/backing cleared their srcs) so
+    // the next Play starts immediately instead of a surprise reload.
+    if (currentSong && !Object.values(audioElements).some(audioHasSrc)) {
+      loadSong(currentSong, { silentRestore: true });
+    }
+    updateModePills(); updateTransportIcon();
+  } catch (err) { console.warn('[stems-pill]', err); }
+});
+
 function toggleDrumMachine() {
   if (drumMachineActive) disengageDrumMachine();
   else engageDrumMachine();
@@ -7486,6 +7563,8 @@ function ensureBackingTrackEl() {
   backingTrackEl.preload = 'auto';
   backingTrackEl.loop = false;      // one-shot; ends when song ends
   backingTrackEl.crossOrigin = 'anonymous';
+  backingTrackEl.addEventListener('play',  () => { try { updateModePills(); updateTransportIcon(); } catch (e) {} });
+  backingTrackEl.addEventListener('pause', () => { try { updateModePills(); updateTransportIcon(); } catch (e) {} });
   return backingTrackEl;
 }
 function wireBackingTrackIntoMaster() {
@@ -9811,7 +9890,17 @@ function setupEventListeners() {
   
   // Player Controls
   els.btnPlay.addEventListener('click', togglePlayPause);
-  els.btnStop.addEventListener('click', stopAudio);
+  els.btnStop.addEventListener('click', () => {
+    // Stop acts on the ACTIVE source: drum/backing = pause + rewind (the
+    // source stays engaged and armed); stems = full stopAudio teardown.
+    const src = (typeof activeSourceEl === 'function') && activeSourceEl();
+    if (src) {
+      try { src.pause(); src.currentTime = 0; } catch (e) {}
+      updateModePills(); updateTransportIcon();
+      return;
+    }
+    stopAudio();
+  });
   // ⏮ Beginning: seek every active stem to 0 (keep play/pause state).
   if (els.btnGoBeginning) {
     els.btnGoBeginning.addEventListener('click', () => {

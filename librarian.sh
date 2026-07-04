@@ -31,7 +31,7 @@ INCOMING="$DATA/INCOMING_WEBLOC"
 STEMS="$DATA/STEMS"
 CATALOG_INTERVAL="${CATALOG_INTERVAL:-3600}"   # seconds between catalog passes (hourly)
 MPB_SYNC_INTERVAL="${MPB_SYNC_INTERVAL:-86400}" # seconds between MPB Sheet syncs (daily)
-SERVICES="watcher cataloger catalogwatch mpbsync portal autoupdate"
+SERVICES="watcher cataloger catalogwatch mpbsync portal autoupdate heartbeat"
 mkdir -p "$RUN"
 
 pidfile() { echo "$RUN/lib-$1.pid"; }
@@ -86,6 +86,10 @@ start_cmd() {
                # work too — both machines read the same Drive folder —
                # but the Librarian is curatorial, not the live App.
                echo "exec node '$BASE/bt-construction-kit/server.js'" ;;
+    heartbeat) # Write pid/alive state for every service to Drive every
+               # ~20s ($DATA/.run-status/librarian.json) so BOTH machines'
+               # dashboards show truthful green/red daemon cards with PIDs.
+               echo "while true; do '$BASE/librarian_heartbeat.sh' || true; sleep 20; done" ;;
     autoupdate) # Follow origin/main unattended: one guarded pass every
                # 120s (fetch → ff-only pull → detached restart). The pass
                # lives in its own script so it can also be run by hand:

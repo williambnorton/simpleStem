@@ -387,7 +387,12 @@ function draw() {
   // Render mode — SUM (combined waveform) or STEMS (six per-stem lanes).
   // Set via #viz-mode-toggle in the visualizer area; persisted in
   // localStorage as 'simpleStem.vizMode' ('sum' or 'stems').
-  const mode = (window.__vizMode === 'stems') ? 'stems' : 'sum';
+  // Single-m4a sources (drum machine, backing track, legacy m4a) are ONE
+  // stereo file -- always draw them as one full-height lane. Rendering the
+  // same waveform in six stem lanes implied six stems that don't exist
+  // (Bill 2026-07-04).
+  const mode = stemPeaks.has('__m4a__') ? 'sum'
+             : (window.__vizMode === 'stems') ? 'stems' : 'sum';
 
   // Auto-follow the playhead if we're zoomed and it's drifting out of
   // the visible window. Runs before any draw math so this frame uses the
