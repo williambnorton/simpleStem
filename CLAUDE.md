@@ -455,6 +455,20 @@ field. This is NOT YET WIRED — see the roadmap.
   lines are fine to keep at debug verbosity, but the periodic summary
   with timestamp + ETA is the load-bearing signal.
 
+- **Two-machine command delivery — ALWAYS explicit, ALWAYS both machines.**
+  Whenever work ends in something Bill must run, present TWO clearly
+  labeled, copy-paste-ready blocks: one headed **"Paste these commands
+  into Performer"** and one headed **"Paste these commands into
+  Librarian"** — in that order, every time, even when one machine has
+  nothing to do (then give it a harmless verification command such as
+  `./librarian.sh status` and say why nothing more is needed). Each block
+  must be complete and self-contained: start with the `cd`, include every
+  command in sequence, no placeholders, no `#` comments (see the zsh rule
+  below), and no shorthand prose like "then push to git" or "pull on the
+  mini" in place of the actual commands. Bill pastes these into two iTerm
+  windows verbatim; anything that isn't literally pasteable is a bug in
+  the response.
+
 - **Shell snippets pasted into zsh — NEVER use `#` comments inside the code
   block, in any form, in any position.** No same-line trailing comments
   (`git push origin main # pushes the fix`), no leading comment lines
