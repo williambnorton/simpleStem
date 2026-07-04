@@ -51,9 +51,9 @@ Ingest test song: Warren Zevon — Werewolves of London (c6M89iDabwM).
 | I4–I6 | ✅ | 6/6 stems 39 MB · bpm 104 G major · health row complete |
 | OC1 | ✅ | cache 351/351, 0 failed (new song included) |
 | OC2 | ✅ | audio hot path clean (local-cache statSync only; drum list memory-only) |
-| OC3 | ⏸ | operator drill (`./offline_test.sh 60`) — standing item |
+| OC3 | ✅ | TWO drills same day. (1) offline_regression.sh 180s: health ≤1 ms throughout, 3×36-song audio sweeps clean (worst 62 ms), 7 endpoints error-free, log clean — PASS 0 warnings. (2) Interactive 221 s wifi-off gig drill via in-page driver: 5 setlist songs played + advanced, pause/resume/seek, drum + backing engaged with transport control per source, stop=rewind-armed, 6 STEMS returns ×3, setlist add persisted server-side OFFLINE then removed, looper engage/disengage, 8-song soak, health worst 3 ms offline, dead-man wifi restore worked. 25/25 core steps PASS (5 soak flags were a stale-DOM harness artifact — all 4 songs verified loading 158–779 ms after) |
 
-**Score: 58 ✅ · 5 ⚠ (design/observational) · 0 ❌ open**
+**Score: 59 ✅ · 4 ⚠ (design/observational) · 0 ❌ open** — OC3 completed later same day, twice.
 
 ## Bugs found this run
 
