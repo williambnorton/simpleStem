@@ -1341,7 +1341,7 @@ select {
    ============================================================ */
 @media (min-width: 1600px) {
   .app-container {
-    grid-template-columns: 380px 1fr 84px !important;
+    grid-template-columns: 285px minmax(0, 1fr) 84px !important;
   }
   /* Compact top pane is the default — these overrides used to enlarge the
      player on big screens but we're trading title size for screen real
@@ -1359,7 +1359,7 @@ select {
    ============================================================ */
 @media (min-width: 2200px) {
   .app-container {
-    grid-template-columns: 440px 1fr 96px !important;
+    grid-template-columns: 330px minmax(0, 1fr) 96px !important;
     max-width: 2400px;
     margin: 0 auto;
   }
@@ -1370,9 +1370,12 @@ select {
 /* Main Grid Layout */
 .app-container {
   display: grid;
-  /* Sidebar wider so long song titles fit without ellipsis. Title-only
-     setlist rows (artist hidden) get most of the new width. */
-  grid-template-columns: 360px 1fr 84px;
+  /* Sidebar trimmed 25% (was 360px) — Bill 2026-07-03: reclaim screen for
+     the mixer + master rail. minmax(0,1fr) lets the middle column SHRINK
+     below its content min-width; without it the mixer strips force the
+     grid wider than the viewport and shove the master-volume rail
+     off-screen on laptop displays. */
+  grid-template-columns: 270px minmax(0, 1fr) 84px;
   height: 100vh;
   width: 100vw;
 }
@@ -1943,6 +1946,14 @@ select {
      between sidebar (now wider) and the player is half what it was. */
   padding: 24px 24px 24px 12px;
   gap: 24px;
+  /* SCROLL FIX (Bill 2026-07-03): body is overflow:hidden, and the rule
+     giving .main-content its own scroller was lost at some point — content
+     below the fold (Song Library) was unreachable and no scrollbar ever
+     appeared. This IS the whole-app scroller, as the escape-hatch comment
+     above always claimed. min-width:0 pairs with the grid minmax(0,1fr). */
+  overflow-y: auto;
+  height: 100vh;
+  min-width: 0;
 }
 
 /* Player Hero Section — tighter padding + no min-height so the active

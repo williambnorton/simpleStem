@@ -237,6 +237,11 @@ async function setWaveformStems(sources) {
   waveformDuration = 0;
   waveformError = false;
   waveformLoading = true;
+  // Invalidate the onset table IMMEDIATELY. It used to keep the PREVIOUS
+  // song's onsets until this song finished decoding, so a count-in fired
+  // early aligned its clicks to the wrong song (Bill 2026-07-03).
+  window.songOnsetTimes = null;
+  window.songOnsetCount = 0;
 
   const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
   const entries = Object.entries(sources || {});

@@ -811,6 +811,8 @@ function setupGigSidebar() {
   document.getElementById('gig-new-btn').addEventListener('click', openGigTemplatePicker);
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
+  const renameBtn = document.getElementById('gig-rename-btn');
+  if (renameBtn) renameBtn.addEventListener('click', onGigRename);
   document.getElementById('gig-picker').addEventListener('change', e => {
     if (e.target.value) loadActiveGig(e.target.value);
   });
@@ -1505,6 +1507,23 @@ async function onGigNew() {
   } catch (e) { alert(`Couldn't create gig: ${e.message}`); }
 }
 
+async function onGigRename() {
+  if (!activeGig || !activeGig.slug) return;
+  if (activeGig.synthetic || activeGig.readOnly) {
+    if (typeof showToast === 'function') showToast('Built-in gigs can’t be renamed');
+    return;
+  }
+  const newTitle = prompt('Rename this gig:', activeGig.title || '');
+  if (!newTitle || !newTitle.trim() || newTitle.trim() === activeGig.title) return;
+  activeGig.title = newTitle.trim();
+  const nameEl = document.getElementById('gig-side-name');
+  if (nameEl) nameEl.textContent = activeGig.title;
+  // persistActiveGig PUTs the gig; the server renames the slug when the
+  // title changed (renamed_from) and we re-point the picker there.
+  await persistActiveGig();
+  renderGigSidebar();
+}
+
 async function onGigDuplicate() {
   if (!activeGig || !activeGig.slug) return;
   const newTitle = prompt('Name the duplicated gig:', `${activeGig.title} (copy)`);
@@ -1639,6 +1658,11 @@ function renderGigSidebar() {
   dupBtn.disabled = ro || synthetic;
   delBtn.disabled = ro || synthetic;
   addBtn.disabled = ro || synthetic || activeGig.setlists.length >= 4;
+  const renameBtn = document.getElementById('gig-rename-btn');
+  if (renameBtn) {
+    renameBtn.disabled = ro || synthetic;
+    renameBtn.title = (ro || synthetic) ? 'Built-in gigs can’t be renamed' : 'Rename this gig';
+  }
   if (ro) {
     dupBtn.title = 'YouTube Sync gig is read-only';
     delBtn.title = 'YouTube Sync gig is read-only';
@@ -6344,18 +6368,7 @@ function loadSong(song, opts) {
   // only the currently-audible ones on each render frame (so mute/solo
   // /fader changes are reflected in the envelope). For m4a tracks there's
   // a single source.
-  if (typeof window.setWaveformStems === 'function') {
-    if (song.type === 'm4a' && song.fileName) {
-      window.setWaveformStems({ __m4a__: `/api/audio/m4a/${encodeURIComponent(song.fileName)}` });
-    } else if (song.type === 'stems' && song.folderName && song.stems) {
-      const sources = {};
-      for (const ch of CHANNELS) {
-        const fn = song.stems[ch];
-        if (fn) sources[ch] = `/api/audio/stems/${song.folderName}/${fn}`;
-      }
-      if (Object.keys(sources).length) window.setWaveformStems(sources);
-    }
-  }
+  refreshWaveformForSong(song);
 
   els.trackTitle.textContent = song.title;
   els.trackArtist.textContent = song.artist;
@@ -7169,6 +7182,18 @@ async function togglePlayPause() {
     try {
       const bpm = (currentSong && currentSong.practiceBpm) || 120;
       const beatSec = 60 / bpm;
+      // The onset table is computed asynchronously by the visualizer after
+      // song load. If it isn't ready yet, wait for it (up to 3 s) rather
+      // than counting in against t=0 — clicks that don't land on the real
+      // first downbeat are worse than a moment of latency (Bill 2026-07-03).
+      if (!Array.isArray(window.songOnsetTimes) && typeof clickBeatOffsetOverride !== 'number') {
+        const tWait0 = performance.now();
+        while (!Array.isArray(window.songOnsetTimes) && performance.now() - tWait0 < 3000) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+        console.log(`[count-in] waited ${(performance.now() - tWait0).toFixed(0)}ms for onset table ` +
+                    `(${Array.isArray(window.songOnsetTimes) ? 'ready' : 'TIMED OUT — falling back to t=0'})`);
+      }
       const songFirstBeat = getBeatOffsetSec();     // seconds into audio
       const countDur      = 4 * beatSec;
       // How long to delay audio.play() so we have room for all 4 clicks
@@ -7394,6 +7419,10 @@ function engageDrumMachine() {
   el.currentTime = 0;
   el.play().catch(e => console.warn('[drum-machine] play failed:', e));
   drumMachineActive = true;
+  // Show the drum pattern's waveform — it's now the only thing sounding.
+  if (typeof window.setWaveformStems === 'function') {
+    window.setWaveformStems({ __m4a__: drumMachineUrl });
+  }
   // Sync rate to current pitch/speed knobs immediately so the drum loop
   // doesn't start at 1.0x and then jump when the next knob change fires.
   try { applyRateToDrumMachine(); } catch (e) {}
@@ -7418,6 +7447,7 @@ function disengageDrumMachine() {
   try { drumMachineEl && drumMachineEl.pause(); } catch (e) {}
   if (drumMachineEl) drumMachineEl.currentTime = 0;
   drumMachineActive = false;
+  refreshWaveformForSong(currentSong);   // back to the stems waveform
   const pill = document.getElementById('active-meta-drum');
   if (pill) pill.classList.remove('active');
   const banner = document.getElementById('drum-machine-banner');
@@ -7483,6 +7513,27 @@ function updateBackingChipLabel(label) {
   const pill = document.getElementById('active-meta-backing');
   if (pill) pill.classList.toggle('disabled', !label);
 }
+// Waveform source router (Bill 2026-07-03): the visualizer shows whatever
+// is actually SOUNDING. Stems songs feed per-stem URLs; when the backing
+// track or the drum machine is engaged, their m4a takes over the display
+// (both are mutually exclusive with the stems). Disengaging restores the
+// stems waveform via the same helper.
+function refreshWaveformForSong(song) {
+  if (typeof window.setWaveformStems !== 'function') return;
+  if (!song) song = currentSong;
+  if (!song) return;
+  if (song.type === 'm4a' && song.fileName) {
+    window.setWaveformStems({ __m4a__: `/api/audio/m4a/${encodeURIComponent(song.fileName)}` });
+  } else if (song.type === 'stems' && song.folderName && song.stems) {
+    const sources = {};
+    for (const ch of CHANNELS) {
+      const fn = song.stems[ch];
+      if (fn) sources[ch] = `/api/audio/stems/${song.folderName}/${fn}`;
+    }
+    if (Object.keys(sources).length) window.setWaveformStems(sources);
+  }
+}
+
 async function refreshBackingTrackPick(songBase) {
   if (!songBase) {
     backingTrackUrl = null; backingTrackFile = null;
@@ -7529,6 +7580,10 @@ function engageBackingTrack() {
   el.play().catch(e => console.warn('[backing-track] play failed:', e));
   backingTrackActive = true;
   try { applyRateToBackingTrack(); } catch (e) {}
+  // Show the backing track's waveform — it's now the only thing sounding.
+  if (typeof window.setWaveformStems === 'function') {
+    window.setWaveformStems({ __m4a__: backingTrackUrl });
+  }
   const pill = document.getElementById('active-meta-backing');
   if (pill) pill.classList.add('active');
   if (window.lucide) lucide.createIcons();
@@ -7538,6 +7593,7 @@ function disengageBackingTrack() {
   try { backingTrackEl && backingTrackEl.pause(); } catch (e) {}
   if (backingTrackEl) backingTrackEl.currentTime = 0;
   backingTrackActive = false;
+  refreshWaveformForSong(currentSong);   // back to the stems waveform
   const pill = document.getElementById('active-meta-backing');
   if (pill) pill.classList.remove('active');
 }
@@ -10774,6 +10830,8 @@ let sectionLooperRange  = null;
 let loopBufferSources   = {};   // chan → AudioBufferSourceNode
 let loopStartedAtCtxT   = 0;
 let loopInitialOffset   = 0;
+let loopPlaybackRate    = 1;    // media playbackRate captured at engage (SEMI/FINE)
+let loopSyncTimer       = null; // keeps MediaElements pinned to the loop position
 
 // Find the section that contains time `t` — returns {startT, endT, color}.
 // If `t` is between two section boundaries, this is the band running from
@@ -10874,6 +10932,14 @@ async function setupSeamlessLoop(startT, endT) {
   // already ran (or is about to). Don't create sources we can't track.
   if (myGen !== loopGeneration) return;
 
+  // ONE shared engage offset + rate for every stem, captured at the same
+  // instant. Per-channel offsets (the old code) started each buffer a few
+  // ms apart; and ignoring the media playbackRate made the loop jump back
+  // to 1.00x whenever SEMI/FINE was engaged.
+  const anyAe = Object.values(audioElements).find(a => a && audioHasSrc(a));
+  const mediaRate = (anyAe && anyAe.playbackRate) || 1;
+  const rawOffset = anyAe ? (anyAe.currentTime - startT) : 0;
+
   const sources = {};
   for (const item of decoded.filter(Boolean)) {
     const { chan, ae, nodes, fullBuffer, startSample, loopLen, sr } = item;
@@ -10888,13 +10954,14 @@ async function setupSeamlessLoop(startT, endT) {
     src.loop = true;
     src.loopStart = 0;
     src.loopEnd = loopLen / sr;
+    try { src.playbackRate.value = mediaRate; } catch (e) {}
     // Silence the MediaElement path via mediaMute (NOT a disconnect)
     // so Chrome keeps advancing currentTime — which the sync loop reads
     // to animate the playhead. The BufferSource feeds stripGain in
     // parallel; mediaMute=0 means the MediaElement audio adds nothing.
     if (nodes.mediaMute) nodes.mediaMute.gain.value = 0;
     src.connect(nodes.stripGain);
-    const offset = Math.max(0, Math.min(loopLen / sr, ae.currentTime - startT));
+    const offset = Math.max(0, Math.min(loopLen / sr, rawOffset));
     src.start(0, offset);
     sources[chan] = src;
     allLoopBufferSources.add(src);
@@ -10912,26 +10979,48 @@ async function setupSeamlessLoop(startT, endT) {
 
   loopBufferSources = sources;
   loopStartedAtCtxT = audioCtx.currentTime;
-  const firstChan = Object.keys(sources)[0];
-  loopInitialOffset = firstChan
-    ? Math.max(0, audioElements[firstChan].currentTime - startT)
-    : 0;
+  loopPlaybackRate = mediaRate;
+  loopInitialOffset = Math.max(0, Math.min(endT - startT, rawOffset));
+
+  // PLAYHEAD FIX (Bill 2026-07-03): the muted MediaElements keep playing
+  // LINEARLY, so after the first wrap the playhead used to walk out of the
+  // section (and could reach song end → auto-advance mid-loop!), and
+  // disengage "skipped" back to the real loop position. Pin the media
+  // elements to the audible loop position a few times a second — the
+  // timeline UI reads media currentTime, so the playhead now follows the
+  // loop exactly, wraps included, and disengage hands off with no jump.
+  const sectionLen = endT - startT;
+  if (loopSyncTimer) clearInterval(loopSyncTimer);
+  loopSyncTimer = setInterval(() => {
+    if (myGen !== loopGeneration || !audioCtx || sectionLen <= 0) return;
+    const elapsed = (audioCtx.currentTime - loopStartedAtCtxT) * loopPlaybackRate;
+    const posT = startT + (((loopInitialOffset + elapsed) % sectionLen) + sectionLen) % sectionLen;
+    for (const ae of Object.values(audioElements)) {
+      if (!ae || !audioHasSrc(ae)) continue;
+      if (Math.abs(ae.currentTime - posT) > 0.3) {
+        try { ae.currentTime = posT; } catch (e) {}
+      }
+    }
+  }, 250);
+
   console.log(`[loop] engaged gen=${myGen}: ${Object.keys(sources).length} stems, ` +
-              `region ${startT.toFixed(2)}s → ${endT.toFixed(2)}s`);
+              `region ${startT.toFixed(2)}s → ${endT.toFixed(2)}s, rate ${mediaRate.toFixed(3)}`);
 }
 
 function tearDownSeamlessLoop() {
   // Bump the generation so any in-flight setupSeamlessLoop bails out
   // before it creates buffer sources we can't track.
   loopGeneration++;
+  if (loopSyncTimer) { clearInterval(loopSyncTimer); loopSyncTimer = null; }
 
   // Compute the audible position WITHIN the section so we can hand the
-  // playhead off to the MediaElement after teardown.
+  // playhead off to the MediaElement after teardown. Scale elapsed time
+  // by the loop playback rate (SEMI/FINE) or the handoff lands early.
   let handoffT = null;
   if (audioCtx && sectionLooperRange && loopBufferSources && Object.keys(loopBufferSources).length > 0) {
     const sectionLen = sectionLooperRange.endT - sectionLooperRange.startT;
     if (sectionLen > 0) {
-      const elapsed = audioCtx.currentTime - loopStartedAtCtxT;
+      const elapsed = (audioCtx.currentTime - loopStartedAtCtxT) * (loopPlaybackRate || 1);
       const offsetInSection = ((loopInitialOffset + elapsed) % sectionLen + sectionLen) % sectionLen;
       handoffT = sectionLooperRange.startT + offsetInSection;
     }
@@ -10978,6 +11067,7 @@ function tearDownSeamlessLoop() {
   loopBufferSources = {};
   loopStartedAtCtxT = 0;
   loopInitialOffset = 0;
+  loopPlaybackRate = 1;
 }
 
 // Public helper: any code path that swaps the playing song should call this
