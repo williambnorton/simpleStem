@@ -317,20 +317,26 @@ if [[ -f "$OUT_DIR/vocals.wav" && -f "$OUT_DIR/drums.wav" \
   echo ">> Stems already present, skipping Demucs."
 else
   echo ">> Running Demucs htdemucs_6s (6-stem; ~10–25 min on CPU)…"
-  demucs -n htdemucs_6s --out "$OUT_DIR" "$SRC"
-  # Promote Demucs output up one level. IDEMPOTENT under Drive races:
-  # Google Drive sometimes moves the six wavs to $OUT_DIR itself while
-  # Demucs is still fsync'ing them (observed 2026-07-01 for Green Onions).
-  # In that case the mv errors "No such file" but the goal state IS met.
-  # We tolerate the mv failure and verify by checking $OUT_DIR/*.wav
-  # rather than trusting mv's exit code.
+  # LOCAL SCRATCH (2026-07-04, Werewolves postmortem): Demucs used to write
+  # its intermediate wavs straight into the Drive CloudStorage mount, and
+  # Drive can yank/rename the output dir mid-write — torchcodec then dies
+  # with "avio_open failed … No such file or directory" and the job lands
+  # in _failed even though nothing is wrong with the audio. Separate onto
+  # LOCAL disk, then move the finished stems into the Drive folder in one
+  # pass. (Same class of fix as the source.wav download race.)
+  DEMUCS_WORK="${TMPDIR:-/tmp}/simplestem_demucs_$$"
+  mkdir -p "$DEMUCS_WORK"
+  demucs -n htdemucs_6s --out "$DEMUCS_WORK" "$SRC"
+  mv -f "$DEMUCS_WORK/htdemucs_6s/source/"*.wav "$OUT_DIR/" 2>/dev/null || true
+  rm -rf "$DEMUCS_WORK"
+  # Legacy fallback: tolerate older partial runs that separated directly
+  # into the Drive folder (pre-2026-07-04 layout).
   mv -f "$OUT_DIR/htdemucs_6s/source/"*.wav "$OUT_DIR/" 2>/dev/null || true
   for _stem in vocals drums bass other piano guitar; do
     if [[ ! -f "$OUT_DIR/${_stem}.wav" ]]; then
-      echo ">> ERROR: ${_stem}.wav missing after Demucs — checked both" >&2
+      echo ">> ERROR: ${_stem}.wav missing after Demucs — checked" >&2
       echo "     $OUT_DIR/${_stem}.wav" >&2
-      echo "     $OUT_DIR/htdemucs_6s/source/${_stem}.wav" >&2
-      ls -la "$OUT_DIR/htdemucs_6s/source/" 2>&1 || true
+      echo "     (local scratch was $DEMUCS_WORK)" >&2
       exit 1
     fi
   done

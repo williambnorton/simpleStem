@@ -1,126 +1,226 @@
-# simpleStem regression test
+# simpleStem regression test — the full regimen
 
 When Bill says **"REGRESSION TEST"**, Claude runs this end-to-end suite
-against the Performer and Librarian using computer-use / Claude-in-Chrome.
-Reports back a PASS/FAIL table + a bug list.
+against the Performer and Librarian using computer-use / Claude-in-Chrome,
+and reports a PASS/FAIL table + a bug list. Results files are named
+`REGRESSION_RESULTS_<date>.md`.
 
-## Pre-flight (must pass before any other step)
+## Phases and rationale
+
+The order is deliberate. Four principles:
+
+1. **Cheapest checks first, fail fast.** Static gates take seconds and catch
+   code rot before any UI work. A syntax error found in Phase 0 saves an
+   hour of confused browser testing.
+2. **Environment before features.** The July 2–4 wedges proved that a hung
+   coreaudiod makes EVERY feature test fail with misleading symptoms. Phase
+   1 must pass — especially P7 — before any playback result is meaningful.
+3. **Overlap the slow path.** A Demucs render takes minutes. Kick ingest off
+   in Phase 2, test everything else while it cooks, verify the result at
+   the end (I4–I6).
+4. **Mutating and system-level tests last, with restoration.** Anything that
+   writes metadata gets restored (stars, singers, modes). Anything that
+   recycles processes (restart round-trip) runs after the feature suites so
+   a restart bug can't invalidate them. Destructive/physical tests (Wi-Fi
+   radio flip, kick-coreaudiod, USB replug) are OPERATOR-ONLY — automation
+   must never sever its own control channel or degrade the rig.
+
+| Phase | Suite | Why it exists |
+|---|---|---|
+| 0 | ST — static gates | catch broken code before touching the app |
+| 1 | P — pre-flight environment | nothing else is meaningful if this fails |
+| 2 | I1–I3 — ingest kick-off | start the slow path early |
+| 3 | L — library | the operator's main navigation surface |
+| 4 | PB — playback core | the reason the app exists |
+| 5 | SRC — playback sources & mode pills | transport must control what's sounding |
+| 6 | DM — drum machine | live rehearsal workhorse |
+| 7 | LC — looper & count-in | practice tools; historically skip-prone |
+| 8 | SL + GR — setlists, gigs, rename | gig-night navigation |
+| 9 | LB — librarian dashboard | curation visibility + pipeline truth |
+| 10 | SYS — system controls | restart, snapshot, Wi-Fi, caffeinate |
+| 11 | R — robustness | rapid-fire and recovery behavior |
+| 12 | I4–I6 + OC — ingest completion & offline contract | the gig guarantee |
+
+## Phase 0 — Static gates (ST)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| ST1 | JS syntax | `node --check` clean on server.js, app.js, visualizer.js |
+| ST2 | Shell syntax | `bash -n` clean on performer.sh, librarian.sh, queue_runner.sh, stem.sh, webloc_watch.sh, autoupdate_librarian.sh, librarian_heartbeat.sh |
+| ST3 | Inline HTML JS | librarian.html script blocks parse (`new Function`) |
+| ST4 | Catalog conformance | server boot log has no `[catalog-conformance] DRIFT` |
+| ST5 | Git hygiene | working tree state known; no unexpected foreign edits |
+
+## Phase 1 — Pre-flight environment (P)
 
 | ID | Test | Pass criterion |
 |---|---|---|
 | P1 | Chrome connected via MCP | `list_connected_browsers` returns ≥ 1 device |
 | P2 | Performer server alive | `GET /api/health` returns 200 fast |
-| P3 | Build stamp is recent | version chip differs from last test run |
-| P4 | bt-cache populated | `GET /api/cache/status` returns running:false with done==total |
+| P3 | Build stamp is current | version chip matches newest code mtime; no Update chip pending |
+| P4 | bt-cache populated | `GET /api/cache/status` running:false, done==total, failed==0 |
 | P5 | Librarian portal alive | `GET /librarian` returns the page |
-| P6 | Boot precaches all succeeded | perf-server.log has no `precache] failed:` line; clip+drum+backing+stem precaches all report done (caught the 2026-07-02 `libCache is not defined` backing-precache crash) |
-| P7 | Chrome media pipeline sane | a generated WAV blob reaches `readyState ≥ 3` in < 2 s in a throwaway `Audio()` — if this fails, restart Chrome BEFORE blaming the app (2026-07-02: machine-wide wedge produced "no stems responded after 3s" for every song) |
+| P6 | Boot precaches all succeeded | perf-server.log has no `precache] failed:` line |
+| P7 | Media pipeline sane | a generated WAV blob reaches `readyState ≥ 3` in < 2 s in a throwaway `Audio()`. **If this fails, STOP and run the first-aid ladder (docs/postmortem_hangs.pdf) — no playback result below is meaningful.** |
 
-## Ingest (kick off EARLY — playback steps depend on something to play)
+## Phase 2 — Ingest kick-off (I1–I3)
 
-| ID | Test | Pass criterion |
-|---|---|---|
-| I1 | Drop a YouTube playlist URL | INCOMING_WEBLOC sees a new `.webloc` within 5s |
-| I2 | Watcher decomposes the playlist | STEM_QUEUE has > 1 entries within 60s |
-| I3 | Render starts | `/api/queue` shows `processing` non-null within 60s |
-| I4 | Render completes within 15 min | New STEMS/<slug>/ folder with all 6 stems sized > 1 MB |
-| I5 | metadata.json present | Title, artist, bpm, key populated |
-| I6 | Stems-health endpoint sees it | `/api/librarian/stems-health` row with stemsPresent=6 |
-
-Reference playlist for I1: `https://www.youtube.com/playlist?list=PL87YY3OyC-86tLauIcFi0T1e0kY34_nvm`
-(Bill's). Use the search box in the library FIRST to pick a video from
-that playlist whose slug is NOT already in the library; that's the one
-to drop.
-
-## Library browsing
+Reference playlist: `https://www.youtube.com/playlist?list=PL87YY3OyC-86tLauIcFi0T1e0kY34_nvm`.
+Search the library FIRST and pick a video whose slug is NOT already present;
+if all are present, pick any well-known song absent from the library.
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| L1 | Library row count matches catalog | header "Found N unique songs" matches `/api/library` length |
-| L2 | Search box filters | typing "tickets" reduces rows to ones with "tickets" in title |
-| L3 | Column sort | clicking Title header sorts ascending; click again → descending |
-| L4 | Star/favorite toggle | clicking ☆ persists; reload page; star still filled |
-| L5 | Singer pulldown | choosing Matt persists; reload; still Matt |
-| L6 | Drum pattern chip | shows `120@130` (or similar) for songs that have it |
+| I1 | Drop a YouTube URL (portal ingest box) | INCOMING_WEBLOC sees a new `.webloc` within 5s |
+| I2 | Watcher decomposes | STEM_QUEUE gains an entry within ~90s (Drive sync included) |
+| I3 | Render starts | `/api/queue` shows `processing` non-null (or header chip shows the job) |
 
-## Playback
+## Phase 3 — Library (L)
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| PB1 | Click song row | song loads, audio elements get src, readyState reaches ≥ 3 within 2s |
-| PB2 | Play button | pressing space or Play starts audio; visualizer animates |
-| PB3 | Pause | audio stops; visualizer freezes; currentTime preserved |
-| PB4 | Resume | playback continues from saved time |
-| PB5 | Seek bar drag | playhead moves to clicked position; all 6 stems stay in sync |
-| PB6 | Stem mute | clicking Mute on a strip silences that stem only |
-| PB7 | Stem solo | Solo isolates one stem |
-| PB8 | Master volume fader | drag changes audible level on all stems |
-| PB9 | SEMI / FINE tempo | knob change applies to stems AND drum machine simultaneously |
-| PB10 | Looper engage | playhead loops between current IN/OUT |
-| PB11 | Routing buttons (→XR18, →SysOut, →D) | XR18 status probe reports active when sending |
-| PB12 | Per-strip +5 / +10 boost | engaging boost audibly louder; mutex with the other |
+| L1 | Row count matches API | header "Found N" == `/api/library` length |
+| L2 | Search filters | typing "tickets" reduces to matching rows |
+| L3 | Column sort | Title asc on first click, desc on second |
+| L4 | Star persists | toggle ☆, reload, still ★ — then restore |
+| L5 | Singer pulldown persists | set Matt, reload, still Matt — then restore |
+| L6 | Drum chip | `120@130`-style chip renders for songs that have it |
 
-## Drum machine
+## Phase 4 — Playback core (PB)
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| DM1 | Drum pill always visible | shown in player header regardless of song |
-| DM2 | Click pill engages drum | bright green border + BPM flash animation visible |
-| DM3 | Drum signal in visualizer | waveform / level meter animates while drum loops |
-| DM4 | SEMI/FINE pitch changes drum tempo | engage drum, change SEMI; drum loop tempo changes |
-| DM5 | Right-click context menu | shows alternates list |
-| DM6 | Switching alternate | new drum file loads + plays without dropout |
-| DM7 | Click pill again disengages | green border removed; backing track stays stopped (per design) |
+| PB1 | Song load | 6 stems reach readyState ≥ 3 in < 2s |
+| PB2 | Play | audio starts; currentTime advances |
+| PB3 | Pause | freezes; position preserved |
+| PB4 | Resume | continues from saved time |
+| PB5 | Seek | all 6 stems land on the target, spread < 0.05s |
+| PB6 | Mute | stripGain → 0 for that stem only; restores exactly |
+| PB7 | Solo | isolates one stem (others → 0) |
+| PB8 | Master fader | scales every strip (fader × master) |
+| PB9 | SEMI/FINE | half-step quantized (2^(n/24)); FINE ±1 cent; restores |
+| PB10 | Looper wrap | playhead cycles inside the section (see LC too) |
+| PB11 | Routing | →XR18 probe reports isDefaultOutput true; →Sys Out restores |
+| PB12 | Boosts | +5 = ×1.78, +10 = ×3.16, mutually exclusive, fader untouched |
 
-## Setlist / Gig navigation
+## Phase 5 — Playback sources & mode pills (SRC) — added 2026-07-04
 
-| ID | Test | Pass criterion |
-|---|---|---|
-| SL1 | Sidebar shows current gig | gig title matches `Sunday_June28` or selected |
-| SL2 | Click setlist item | loads the song into player |
-| SL3 | Auto-advance | after a track ends, next setlist song loads |
-| SL4 | Create a new manual setlist | new entry appears under `__manual_setlists__`; persisted via POST /api/setlists |
-| SL5 | Add song to manual setlist | drag or click adds; persists on reload |
-| SL6 | Switch to __favorites__ pseudo-gig | shows only starred songs |
-| SL7 | Switch to __recents__ | shows the songs we just clicked, newest first |
-| SL8 | Switch to __round_robin__ | sequence interleaves singers |
-
-## Librarian view
+Rationale: the transport must control whatever is audible; the pills are the
+operator's only mode indicator at a dark gig.
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| LB1 | `/librarian` loads | page renders within 2s |
-| LB2 | Plumbing cards: Drive | "Live" with latency < 100 ms |
-| LB3 | Plumbing cards: CATALOG.json | shape "canonical" (NOT "UNKNOWN SHAPE") |
-| LB4 | Living Pipeline folder counts | INCOMING + STEM_QUEUE + STEMS counts match real disk |
-| LB5 | Folders animate open / closed | folder with files shows open flap + ambient docs |
-| LB6 | Arrow pulse on file movement | drop a webloc → see file glyph fly INCOMING → STEM_QUEUE |
-| LB7 | Drive health checkmark | green ✓ pulses once per minute |
-| LB8 | Active Tasks countdowns | drum/clip/stem precaches show mm:ss countdown ticking down once/sec |
-| LB9 | Library table loads | 350+ rows with stems-health column |
-| LB10 | URL drop enqueue | paste a YouTube URL + Enqueue → INCOMING_WEBLOC gets the file |
-| LB11 | Stems Health filter (search by "0/6") | shows the empty/partial songs |
+| SRC1 | 6 STEMS pill present | renders in the meta row |
+| SRC2 | Stems mode indication | playing stems → stems pill `mode-active` + blinking `mode-playing` |
+| SRC3 | Drum engage indication | drum pill blinks; stems pill goes quiet |
+| SRC4 | Transport controls drum | Play pauses/resumes the DRUM element; stems untouched |
+| SRC5 | Stop on drum | pause + rewind to 0; drum stays engaged and armed |
+| SRC6 | Return to stems | 6 STEMS pill click disengages drum/backing, rehydrates 6 stems, persists mode 'stems' |
+| SRC7 | Single-lane visualizer | drum/backing engaged → ONE waveform lane, not six copies |
+| SRC8 | Backing parity | SRC3–SRC6 hold for the backing track when the song has one |
 
-## Robustness checks
+## Phase 6 — Drum machine (DM)
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| R1 | Click 5 different songs in 10 sec | each loads in < 2s; no toast errors |
-| R2 | Page reload mid-playback | auto-restore picks up last song |
-| R3 | Server restart button | "CLICK HERE TO RESTART" banner triggers restart cleanly |
-| R4 | Snapshot button | feedback appears; `~/.simpleStem-catalog/snapshots/` has new entry |
-| R5 | XR18 disconnect mid-test | gracefully reverts to SysOut, banner notes the change |
+| DM1 | Pill always visible | shown regardless of song |
+| DM2 | Engage | green glow + BPM flash + banner |
+| DM3 | Drum audio flows | element playing, correct file |
+| DM4 | SEMI couples | drum playbackRate follows the knob |
+| DM5 | Right-click menu | alternates list with CURRENT marked |
+| DM6 | Switch alternate | new file plays without dropout; session-only (metadata untouched) |
+| DM7 | Disengage | pill dims; song stays stopped (explicit-gesture design) |
+
+## Phase 7 — Looper & count-in (LC) — added 2026-07-04
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| LC1 | Engage no-skip | audible position continuous at engage |
+| LC2 | Playhead follows loop | media currentTime wraps at section end back to start (≤0.3s drift) |
+| LC3 | Disengage continuity | position right after ≈ right before (wall-clock delta only) |
+| LC4 | Rate-matched loop | with SEMI ≠ 0, loop buffers play at the media rate |
+| LC5 | Count-in schedule | with count-in on + fresh start: waits for onset table (log line), 4 clicks land one beat apart ending one beat before the first downbeat; audio enters on "5" |
+
+## Phase 8 — Setlists, gigs, rename (SL + GR)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| SL1 | Sidebar shows current gig | picker + title match |
+| SL2 | Click setlist song | loads into player |
+| SL3 | Auto-advance | song end → next setlist song plays |
+| SL4 | Create manual setlist | via planner; appears under `__manual_setlists__` |
+| SL5 | Ghost-add | loaded song's green + commits to the open setlist; persists via POST /api/setlists; removal persists too |
+| SL6 | `__favorites__` | only starred songs |
+| SL7 | `__recents__` | newest first |
+| SL8 | `__round_robin__` | Bill→Matt→Dan→JD interleave, all four buckets drained |
+| GR1 | Gig rename | pencil button renames; slug + picker + sidebar follow; disabled on pseudo-gigs; restore after |
+
+## Phase 9 — Librarian dashboard (LB)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| LB1 | `/librarian` loads | renders < 2s |
+| LB2 | Drive card | "Live" with low latency |
+| LB3 | CATALOG.json card | canonical shape, plausible row count |
+| LB4 | Pipeline folder counts | match API/disk truth |
+| LB5 | Folders animate | open flap + ambient docs when non-empty |
+| LB6 | Filename flights | file glyph + FULL filename travels the arrow on movement; NEWEST captions per stage |
+| LB7 | Drive health tick | timestamped ✓ updates |
+| LB8 | Active Tasks countdowns | mm:ss ticking |
+| LB9 | Library health table | all songs with stems column; search works |
+| LB10 | URL-drop enqueue | Enqueue button feeds INCOMING_WEBLOC |
+| LB11 | Stems-health search | "0/6" filters to empty/partial; missing stem names match too |
+| LB12 | Daemon heartbeat cards | green with "pid N on <host> · hb Ns ago" when the mini's heartbeat file is fresh; red with stale-age otherwise (added 2026-07-04) |
+| LB13 | Auto-update evidence | `.code-version` marker on Drive matches origin/main after mini pull cycle (added 2026-07-04) |
+
+## Phase 10 — System controls (SYS) — added 2026-07-04
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| SYS1 | Restart round-trip | POST /api/restart → server back < 30s on the correct build (this IS old R3) |
+| SYS2 | Snapshot | POST fires 200 (visible feedback is a known gap) |
+| SYS3 | WIFI pill | GET /api/system/wifi returns device + state; pill mirrors it. Radio FLIP is operator-only — automation must not cut its own control channel |
+| SYS4 | Caffeinate service | perf-caffeinate pid alive while performer.sh runs |
+
+## Phase 11 — Robustness (R)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| R1 | 5 songs in 10s | each < 2s, no error toasts |
+| R2 | Reload mid-playback | last song auto-restores; Play resumes |
+| R4 | Failed-render triage | /failed-renders.html lists; retry/clear work |
+| R5 | XR18 degrade/recover | ORPHANED banner on bad enumeration; recovers or SysOut fallback (observational — do NOT yank USB in automation) |
+
+## Phase 12 — Ingest completion & offline contract (I4–I6 + OC)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| I4 | Render completes | new STEMS/<slug>/ with 6 stems > 1 MB |
+| I5 | metadata.json | title/artist/bpm/key populated |
+| I6 | Health row | stemsPresent 6/6 within one health pass |
+| OC1 | Cache complete | /api/cache/status done==total, failed==0 (incl. the new song after precache) |
+| OC2 | Hot-path audit | no sync Drive reads in /api/audio handlers; sendCachedAudio cache-first with bounded Drive race |
+| OC3 | Physical offline drill | OPERATOR: `./offline_test.sh 60` on the Performer + play/advance/drum during the window |
 
 ## Output
 
-At the end, report:
+1. Markdown PASS/FAIL table, one row per ID (✅/❌/⚠/⏸), brief notes.
+2. Bug list: severity (P0/P1/P2), file:line, repro steps, FIXED/OPEN status.
+3. "Questions for Bill" — judgment calls needing the operator.
 
-1. A markdown table with one row per test ID, column `Status` = ✅ PASS / ❌ FAIL / ⚠️ SKIP, column `Notes` brief.
-2. A bug list with severity (P0 / P1 / P2), file:line if known, and reproduction steps.
-3. A separate "Questions for Bill" list — improvements requiring his input.
+## Execution craft notes (learned the hard way)
+
+- Re-query DOM elements fresh after every re-render; cached NodeLists go stale.
+- Stub `window.prompt/confirm/alert` BEFORE clicking `+ CLIP`, `+ ACTION`,
+  `CLEAR`, duplicate/delete — native dialogs freeze CDP automation.
+- Restore every mutation: stars, singer, playback_mode, drum alternate,
+  gig titles, test setlist entries.
+- Never flip Wi-Fi off or kick coreaudiod from automation; never leave
+  playback running between phases.
+- The player collapses on load failure — a P7 re-check beats confusion.
 
 ## Updates to this spec
 
-Any time Claude finds a test that should have been here but wasn't, append
-it under the appropriate section AND in the commit message say `regression:
-add LBx`. The spec evolves with the system.
+When a test should have existed but didn't, append it under its phase AND
+say `regression: add <ID>` in the commit message. The spec evolves with the
+system.
