@@ -2704,11 +2704,61 @@ async function probeLibrarianState() {
     }
   } catch (e) {}
 
+  // Newest artifact per pipeline stage — powers the Living Pipeline's
+  // per-folder "now processing" caption + flight labels on /librarian.
+  // ADDITIVE field: nothing pre-existing reads it. All probes here are
+  // ASYNC fs with a bounded Promise.race timeout (same rule as the SSE
+  // reconciler below — these dirs sit on Drive, and one sync readdir/stat
+  // would wedge the event loop when Drive stalls). On a timeout the stage
+  // reports null for this poll and the next poll heals.
+  state.pipelineNewest = { incoming: null, queued: null, stems: null, drums: null, clips: null };
+  const newestInDir = async (dir, match, wantDir) => {
+    const entries = await Promise.race([
+      fsp.readdir(dir, { withFileTypes: true }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    const names = entries
+      .filter(d => (wantDir ? d.isDirectory() : d.isFile()))
+      .map(d => d.name)
+      .filter(match);
+    if (!names.length) return null;
+    const stats = await Promise.race([
+      Promise.all(names.map(async n => {
+        try { const st = await fsp.stat(path.join(dir, n)); return { name: n, mtimeMs: st.mtimeMs }; }
+        catch (e) { return null; }
+      })),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 1500)),
+    ]);
+    const best = stats.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+    return best ? { name: best.name, ageSec: Math.round((Date.now() - best.mtimeMs) / 1000) } : null;
+  };
+  try {
+    const newestStages = [
+      ['incoming', INCOMING_DIR,     f => f.endsWith('.webloc'),                      false],
+      ['queued',   QUEUE_DIR,        f => f.endsWith('.json') && !f.startsWith('.'),  false],
+      ['drums',    DRUM_MACHINE_DIR, f => /\.m4a$/i.test(f),                          false],
+      ['clips',    CUSTOM_LOOPS_DIR, f => /\.m4a$/i.test(f),                          false],
+    ];
+    await Promise.all(newestStages.map(async ([key, dir, match, wantDir]) => {
+      try { state.pipelineNewest[key] = await newestInDir(dir, match, wantDir); } catch (e) {}
+    }));
+    // STEMS is a few hundred song dirs — re-statting them all here would be
+    // wasteful when the recentRenders block above already found the newest
+    // one. Reuse its answer.
+    if (state.recentRenders && state.recentRenders.length) {
+      const newest = state.recentRenders[0];
+      state.pipelineNewest.stems = {
+        name: newest.name,
+        ageSec: Math.round((Date.now() - new Date(newest.mtime).getTime()) / 1000),
+      };
+    }
+  } catch (e) {}
+
   // Librarian-only daemons — filter to lib-* pid files. Performer daemons
   // (perf-*) are not surfaced here on purpose.
   const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
   const codeDotRun = path.join(__dirname, '..', '.run');
-  const LIB_DAEMONS = ['lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
+  const LIB_DAEMONS = ['lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync', 'lib-autoupdate'];
   for (const name of LIB_DAEMONS) {
     const pidPath1 = path.join(dotRun, `${name}.pid`);
     const pidPath2 = path.join(codeDotRun, `${name}.pid`);
@@ -2856,7 +2906,7 @@ setImmediate(() => { reconcileLibrarianFolders().catch(() => {}); });
 // Snapshot per song is a Set of artifact filenames; deltas broadcast.
 const STEMS_ARTIFACT_NAMES = new Set([
   'source.wav', 'vocals.m4a', 'drums.m4a', 'bass.m4a',
-  'guitar.m4a', 'piano.m4a',  'other.m4a',
+  'guitar.m4a', 'piano.m4a',  'other.m4a', 'metadata.json',
 ]);
 const stemsArtifactSnapshot = {};   // song → Set(artifact names present)
 let _stemsArtifactSeeded = false;
@@ -2891,7 +2941,9 @@ async function reconcileStemsArtifacts() {
       if (_stemsArtifactSeeded) {
         for (const name of cur) {
           if (!prev.has(name)) {
-            const kind = name === 'source.wav' ? 'source.wav' : 'stem.m4a';
+            const kind = name === 'source.wav'    ? 'source.wav'
+                       : name === 'metadata.json' ? 'metadata.json'
+                       : 'stem.m4a';
             librarianBroadcast('artifact-created', {
               kind, song, file: name, at: Date.now(),
             });

@@ -410,6 +410,74 @@
       font-size: 13px;
       pointer-events: none;
     }
+    /* Full-filename label riding under every in-flight glyph, so Bill
+       can see exactly WHICH file is moving (not just "a file moved").
+       The paint-order halo keeps the tiny text legible where it crosses
+       the dashed arrows and folder outlines. */
+    .pipeline-svg .flight-name {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 8px;
+      font-weight: 700;
+      fill: var(--ink);
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fffdf6;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    .pipeline-svg .flight-wav  .flight-name { fill: #1e40af; }
+    .pipeline-svg .flight-m4a  .flight-name { fill: #166534; }
+    .pipeline-svg .flight-meta .flight-name { fill: #92400e; }
+    .pipeline-svg .flight-meta rect { fill: #fde6c4; stroke: #92400e; stroke-width: 1.4; }
+    .pipeline-svg .flight-meta text {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 7px;
+      font-weight: 800;
+      fill: #92400e;
+      text-anchor: middle;
+      letter-spacing: 0.05em;
+    }
+    /* Per-stage "now processing" caption — the FULL name of the newest
+       file in that stage. Middle-truncated with … ONLY when wider than
+       the column; the SVG <title> tooltip always carries the full name. */
+    .pipeline-svg .folder-newest {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 8px;
+      font-weight: 700;
+      fill: var(--ink-2);
+      text-anchor: middle;
+    }
+    .pipeline-svg .folder-newest.dim { fill: var(--ink-dim); font-style: italic; font-weight: normal; }
+    .pipeline-svg .folder-newest-caption {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 7px;
+      fill: var(--ink-dim);
+      text-anchor: middle;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    /* Continuous render flow — while queue_runner holds a job in
+       STEM_QUEUE/.current, the QUEUED→STEMS arrow marches non-stop
+       (same keyframes as .active, but persistent, no timeout) and a
+       looping glyph rides it with the song folder + current artifact. */
+    .pipeline-svg .arrow-path.render-active {
+      stroke: #d97706;
+      stroke-width: 2.5;
+      opacity: 1;
+      animation: arrow-march 0.8s linear infinite;
+    }
+    .pipeline-svg .render-flow-label {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 8px;
+      font-weight: 800;
+      fill: #92400e;
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fffdf6;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    .pipeline-svg .render-flow-label .phase-line { font-weight: normal; }
     .pipeline-svg .health-tick {
       font-family: 'Iowan Old Style', Georgia, serif;
       font-size: 11px;
@@ -755,6 +823,8 @@
     .pipeline-svg .artifact-flare.wav .flare-txt  { fill:   #1e40af; }
     .pipeline-svg .artifact-flare.m4a .flare-ring { stroke: #166534; }
     .pipeline-svg .artifact-flare.m4a .flare-txt  { fill:   #166534; }
+    .pipeline-svg .artifact-flare.meta .flare-ring { stroke: #92400e; }
+    .pipeline-svg .artifact-flare.meta .flare-txt  { fill:   #92400e; }
     .pipeline-svg .flare-ring {
       fill: none;
       stroke-width: 2;
@@ -806,12 +876,14 @@
     }
     .artifact-ticker .ticker-item.wav { border-color: #1e40af; color: #1e40af; }
     .artifact-ticker .ticker-item.m4a { border-color: #166534; color: #166534; }
+    .artifact-ticker .ticker-item.meta { border-color: #92400e; color: #92400e; }
     .artifact-ticker .ticker-item .dot {
       width: 8px; height: 8px; border-radius: 50%;
       display: inline-block;
     }
     .artifact-ticker .ticker-item.wav .dot { background: #1e40af; }
     .artifact-ticker .ticker-item.m4a .dot { background: #166534; }
+    .artifact-ticker .ticker-item.meta .dot { background: #92400e; }
     @keyframes ticker-in {
       0%   { opacity: 0; transform: translateX(-6px); }
       100% { opacity: 1; transform: translateX(0); }
@@ -891,6 +963,10 @@
             </marker>
           </defs>
           <!-- 5 folders at y=110. Spacing: 120, 320, 540, 760, 980 -->
+          <!-- Entry arrow — the pipeline's front door. A .webloc landing in
+               INCOMING flies in along this stub with its full filename. -->
+          <text class="folder-type-label other" x="40" y="98">web</text>
+          <path id="arrow-0" class="arrow-path" d="M14,110 L68,110" marker-end="url(#ah)" data-from="web" data-to="incoming" />
           <path id="arrow-1" class="arrow-path" d="M170,110 L290,110" marker-end="url(#ah)" data-from="incoming" data-to="queued" />
           <path id="arrow-2" class="arrow-path" d="M390,110 L510,110" marker-end="url(#ah)" data-from="queued"   data-to="stems"  />
           <path id="arrow-3" class="arrow-path" d="M610,110 L730,110" marker-end="url(#ah)" data-from="stems"    data-to="drums"  />
@@ -912,6 +988,8 @@
             <text class="folder-file dim" x="50" y="163" data-file-slot="incoming" data-slot-index="0">—</text>
             <text class="folder-file"     x="50" y="175" data-file-slot="incoming" data-slot-index="1"></text>
             <text class="folder-file"     x="50" y="187" data-file-slot="incoming" data-slot-index="2"></text>
+            <text class="folder-newest-caption" x="50" y="204">newest</text>
+            <text class="folder-newest dim" x="50" y="215" data-newest="incoming">—</text>
           </g>
           <g class="folder" data-key="queued" data-path="~/ClaudeDrive/simpleStem/STEM_QUEUE" transform="translate(295, 50)">
             <title>Click to copy folder path</title>
@@ -926,6 +1004,8 @@
             <text class="folder-file dim" x="50" y="163" data-file-slot="queued" data-slot-index="0">—</text>
             <text class="folder-file"     x="50" y="175" data-file-slot="queued" data-slot-index="1"></text>
             <text class="folder-file"     x="50" y="187" data-file-slot="queued" data-slot-index="2"></text>
+            <text class="folder-newest-caption" x="50" y="204">newest</text>
+            <text class="folder-newest dim" x="50" y="215" data-newest="queued">—</text>
           </g>
           <g class="folder" data-key="stems" data-path="~/ClaudeDrive/simpleStem/STEMS" transform="translate(515, 50)">
             <title>Click to copy folder path</title>
@@ -955,6 +1035,8 @@
             <text class="folder-file dim" x="50" y="163" data-file-slot="stems" data-slot-index="0">—</text>
             <text class="folder-file"     x="50" y="175" data-file-slot="stems" data-slot-index="1"></text>
             <text class="folder-file"     x="50" y="187" data-file-slot="stems" data-slot-index="2"></text>
+            <text class="folder-newest-caption" x="50" y="204">newest</text>
+            <text class="folder-newest dim" x="50" y="215" data-newest="stems">—</text>
           </g>
           <g class="folder" data-key="drums" data-path="~/ClaudeDrive/simpleStem/DRUM_MACHINE" transform="translate(735, 50)">
             <title>Click to copy folder path</title>
@@ -969,6 +1051,8 @@
             <text class="folder-file dim" x="50" y="163" data-file-slot="drums" data-slot-index="0">—</text>
             <text class="folder-file"     x="50" y="175" data-file-slot="drums" data-slot-index="1"></text>
             <text class="folder-file"     x="50" y="187" data-file-slot="drums" data-slot-index="2"></text>
+            <text class="folder-newest-caption" x="50" y="204">newest</text>
+            <text class="folder-newest dim" x="50" y="215" data-newest="drums">—</text>
           </g>
           <g class="folder" data-key="clips" data-path="~/ClaudeDrive/simpleStem/CUSTOM_LOOPS" transform="translate(955, 50)">
             <title>Click to copy folder path</title>
@@ -983,6 +1067,8 @@
             <text class="folder-file dim" x="50" y="163" data-file-slot="clips" data-slot-index="0">—</text>
             <text class="folder-file"     x="50" y="175" data-file-slot="clips" data-slot-index="1"></text>
             <text class="folder-file"     x="50" y="187" data-file-slot="clips" data-slot-index="2"></text>
+            <text class="folder-newest-caption" x="50" y="204">newest</text>
+            <text class="folder-newest dim" x="50" y="215" data-newest="clips">—</text>
           </g>
 
           <!-- Health-check checkmark — flashes when /api/librarian/events
@@ -1001,6 +1087,7 @@
           <span class="lg"><span class="swatch active"></span>folder being worked on (active phase)</span>
           <span class="lg" style="color:#1e40af;font-weight:700;">● source.wav flow</span>
           <span class="lg" style="color:#166534;font-weight:700;">● m4a stem flow</span>
+          <span class="lg" style="color:#92400e;font-weight:700;">● metadata.json flow</span>
         </div>
         <!-- Artifact ticker — last several source.wav / *.m4a creation
              events, newest first. Blue chip = webloc_watch just finished
@@ -1178,7 +1265,10 @@
       });
     });
 
-    // Build stamp + machine identity for the page title.
+    // Build stamp + machine identity for the page title. The running
+    // version is also remembered so the auto-reload poll below can tell
+    // when the server has restarted on newer code.
+    let rememberedVersion = null;
     (async () => {
       try {
         const [vRes, iRes] = await Promise.all([
@@ -1188,6 +1278,7 @@
         const v = vRes.ok ? await vRes.json() : null;
         const i = iRes.ok ? await iRes.json() : null;
         const stamp = (v && v.running) || '';
+        if (stamp) rememberedVersion = stamp;
         const bv = document.getElementById('brand-version');
         if (bv) bv.textContent = stamp;
         document.title = `simpleStem Librarian ${stamp}`.trim();
@@ -1205,6 +1296,23 @@
         if (i && i.homeUser) window.__homeUser = i.homeUser;
       } catch (e) { /* network / endpoint missing; harmless */ }
     })();
+
+    // Auto-reload when the portal restarts on new code (the Librarian's
+    // autoupdate service pulls + restarts unattended). Poll /api/version
+    // once a minute; if .running differs from the stamp we loaded with,
+    // reload so this dashboard always runs the code the portal serves.
+    // Fetch failures (server mid-restart) just skip that tick — the
+    // next successful poll catches the new version.
+    setInterval(async () => {
+      try {
+        const r = await fetch('/api/version', { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!j || !j.running) return;
+        if (rememberedVersion == null) { rememberedVersion = j.running; return; }
+        if (j.running !== rememberedVersion) location.reload();
+      } catch (e) { /* server mid-restart — skip this tick */ }
+    }, 60 * 1000);
 
     function setCard(id, stateClass, main, sub) {
       const card = document.getElementById('card-' + id);
@@ -1324,6 +1432,14 @@
       fillListing('recent-list', state.recentRenders,
         r => `<div class="row"><span class="name">${r.name}</span><span class="when">${ageStr(r.mtime)}</span></div>`);
 
+      // Living pipeline: per-stage "newest file" captions + the
+      // continuous render-flow animation (both defined in the LIVING
+      // PIPELINE section below; function declarations are hoisted).
+      // The poll is the reconciliation path — SSE events update the
+      // same surfaces instantly, this heals anything they missed.
+      if (state.pipelineNewest) updatePipelineNewest(state.pipelineNewest);
+      setRenderFlow(ing.processing || null);
+
       // Library stats
       const ls = state.libraryStats;
       const songsMain = document.getElementById('songs-main');
@@ -1351,6 +1467,7 @@
         'lib-cataloger':    'Cataloger · catalog.py loop',
         'lib-catalogwatch': 'Catalogwatch · fswatch trigger',
         'lib-mpbsync':      'MPB Sync · Sheet → metadata',
+        'lib-autoupdate':   'Auto-update · git pull loop',
       };
       Object.keys(friendly).forEach(name => {
         const d = state.librarianDaemons[name];
@@ -1512,6 +1629,171 @@
         }
       }
     }
+    // ---- Per-stage "newest file" caption -----------------------------
+    // Shows the FULL name of the newest file in each stage under its
+    // folder. Middle-truncated (name…tail) ONLY when the rendered text
+    // is wider than the column; the <title> tooltip always carries the
+    // untruncated name. Data source: state.pipelineNewest from the
+    // /api/librarian/state poll, plus optimistic updates on SSE
+    // file-added (the file that just landed IS the newest).
+    const NEWEST_MAX_W = 200;   // viewBox units ≈ one pipeline column
+    function middleTruncateSvg(textEl, full, maxW) {
+      textEl.textContent = full;
+      if (textEl.getComputedTextLength() <= maxW) return;
+      let keep = full.length - 2;
+      while (keep > 6) {
+        const head = Math.ceil(keep / 2);
+        const tail = keep - head;
+        textEl.textContent = full.slice(0, head) + '…' + full.slice(full.length - tail);
+        if (textEl.getComputedTextLength() <= maxW) return;
+        keep -= 2;
+      }
+    }
+    function setFolderNewest(key, info) {
+      const el = document.querySelector('.pipeline-svg [data-newest="' + key + '"]');
+      if (!el) return;
+      const name = info && info.name;
+      if (!name) {
+        el.textContent = '—';
+        el.classList.add('dim');
+        return;
+      }
+      el.classList.remove('dim');
+      middleTruncateSvg(el, name, NEWEST_MAX_W);
+      // <title> is a non-rendered SVG element, so appending it after
+      // textContent is set doesn't affect the visible label. The next
+      // setFolderNewest call replaces textContent, which drops the old
+      // title node too — no accumulation.
+      const tipNS = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      tipNS.textContent = (info.ageSec != null) ? name + ' · ' + ageStrFromSec(info.ageSec) : name;
+      el.appendChild(tipNS);
+    }
+    function updatePipelineNewest(newest) {
+      for (const key of ['incoming', 'queued', 'stems', 'drums', 'clips']) {
+        setFolderNewest(key, newest[key]);
+      }
+    }
+    // ---- Continuous render flow --------------------------------------
+    // While STEM_QUEUE/.current holds a job (queue_runner is rendering
+    // on the Performer), the QUEUED→STEMS arrow marches non-stop, both
+    // folders pulse 'working', a labeled glyph loops along the arrow,
+    // and a two-line caption under the arrow names the song's STEMS
+    // folder + the artifact the current phase is forming. Driven by
+    // BOTH the SSE 'phase' event (instant) and the 3s poll (healing).
+    const renderFlowState = { active: false, glyph: null, label: null };
+    function slugifyForDisplay(s) {
+      // Mirrors lib-common.sh slugify closely enough for a display
+      // label: keep ASCII alnum + _ -, everything else → _, collapse.
+      return String(s || '')
+        .replace(/[^A-Za-z0-9_-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    }
+    function phaseArtifactName(phase) {
+      const p = String(phase || '').toLowerCase();
+      if (p.includes('demucs') || p.includes('separat'))   return 'vocals.m4a … 6 stems';
+      if (p.includes('mixing') || p.includes('encoding'))  return 'vocals.m4a … 6 stems';
+      if (p.includes('analyz') || p.includes('metadata'))  return 'metadata.json';
+      if (p.includes('download') || p.includes('slicing') || p.includes('cached source')) return 'source.wav';
+      return 'job.json';
+    }
+    function setRenderFlow(processing) {
+      const arrow = arrowEls['queued->stems'];
+      const layer = document.getElementById('flight-layer');
+      if (!processing) {
+        if (!renderFlowState.active) return;
+        renderFlowState.active = false;
+        if (arrow) { arrow.classList.remove('render-active'); arrow.setAttribute('marker-end', 'url(#ah)'); }
+        if (renderFlowState.glyph && layer) { try { layer.removeChild(renderFlowState.glyph); } catch (e) {} }
+        if (renderFlowState.label) { try { renderFlowState.label.remove(); } catch (e) {} }
+        renderFlowState.glyph = null;
+        renderFlowState.label = null;
+        setFolderWorking('queued', false);
+        setFolderWorking('stems',  false);
+        return;
+      }
+      const songBase = slugifyForDisplay(processing.song || processing.job || '');
+      const artifact = phaseArtifactName(processing.phase);
+      const NS = 'http://www.w3.org/2000/svg';
+      if (!renderFlowState.active) {
+        renderFlowState.active = true;
+        if (arrow) { arrow.classList.add('render-active'); arrow.setAttribute('marker-end', 'url(#ah-active)'); }
+        setFolderWorking('queued', true);
+        setFolderWorking('stems',  true);
+        // Looping glyph — same paper-sheet as the one-shot flights but
+        // with repeatCount=indefinite so it cycles for the whole render.
+        if (layer && arrow) {
+          const g = document.createElementNS(NS, 'g');
+          g.setAttribute('class', 'flight');
+          const rect = document.createElementNS(NS, 'rect');
+          rect.setAttribute('x', '-7'); rect.setAttribute('y', '-9');
+          rect.setAttribute('width', '14'); rect.setAttribute('height', '18');
+          rect.setAttribute('fill', '#fffdf6');
+          rect.setAttribute('stroke', '#1c1917');
+          rect.setAttribute('stroke-width', '1.2');
+          rect.setAttribute('rx', '1');
+          g.appendChild(rect);
+          const fold = document.createElementNS(NS, 'polygon');
+          fold.setAttribute('points', '2,-9 7,-9 7,-4');
+          fold.setAttribute('fill', '#d6cdb5');
+          fold.setAttribute('stroke', '#1c1917');
+          fold.setAttribute('stroke-width', '0.8');
+          g.appendChild(fold);
+          const label = document.createElementNS(NS, 'text');
+          label.setAttribute('class', 'flight-name');
+          label.setAttribute('x', '0'); label.setAttribute('y', '22');
+          label.setAttribute('data-role', 'flow-artifact');
+          g.appendChild(label);
+          const motion = document.createElementNS(NS, 'animateMotion');
+          motion.setAttribute('dur', '2.8s');
+          motion.setAttribute('repeatCount', 'indefinite');
+          const mp = document.createElementNS(NS, 'mpath');
+          mp.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#' + arrow.id);
+          motion.appendChild(mp);
+          g.appendChild(motion);
+          layer.appendChild(g);
+          renderFlowState.glyph = g;
+        }
+        // Static two-line caption under the QUEUED→STEMS arrow: the
+        // song's STEMS folder name, then artifact · phase.
+        const svg = document.getElementById('pipeline-svg');
+        if (svg) {
+          const label = document.createElementNS(NS, 'text');
+          label.setAttribute('class', 'render-flow-label');
+          label.setAttribute('x', '450'); label.setAttribute('y', '152');
+          const t1 = document.createElementNS(NS, 'tspan');
+          t1.setAttribute('x', '450'); t1.setAttribute('dy', '0');
+          t1.setAttribute('data-role', 'flow-song');
+          label.appendChild(t1);
+          const t2 = document.createElementNS(NS, 'tspan');
+          t2.setAttribute('x', '450'); t2.setAttribute('dy', '12');
+          t2.setAttribute('class', 'phase-line');
+          t2.setAttribute('data-role', 'flow-phase');
+          label.appendChild(t2);
+          svg.appendChild(label);
+          renderFlowState.label = label;
+        }
+      }
+      // Refresh the texts on every tick (phase changes mid-render).
+      const glyphLabel = renderFlowState.glyph && renderFlowState.glyph.querySelector('[data-role="flow-artifact"]');
+      if (glyphLabel && glyphLabel.textContent !== artifact) glyphLabel.textContent = artifact;
+      const songLine = renderFlowState.label && renderFlowState.label.querySelector('[data-role="flow-song"]');
+      if (songLine) {
+        const full = 'STEMS/' + songBase + '/';
+        if (songLine.dataset.full !== full) {
+          songLine.dataset.full = full;
+          middleTruncateSvg(songLine, full, 220);
+        }
+      }
+      const phaseLine = renderFlowState.label && renderFlowState.label.querySelector('[data-role="flow-phase"]');
+      if (phaseLine) {
+        const full = artifact + (processing.phase ? ' · ' + processing.phase : '');
+        if (phaseLine.dataset.full !== full) {
+          phaseLine.dataset.full = full;
+          middleTruncateSvg(phaseLine, full, 240);
+        }
+      }
+    }
     // Click-to-copy — clicking a folder group copies its filesystem
     // path to the clipboard so Bill can jump to it in Finder / iTerm.
     function copyFolderPath(path) {
@@ -1572,6 +1854,18 @@
       fold.setAttribute('stroke', '#1c1917');
       fold.setAttribute('stroke-width', '0.8');
       g.appendChild(fold);
+      // The FULL filename rides under the sheet — Bill wants to see
+      // exactly which file is moving, not just "a file moved".
+      if (name) {
+        const label = document.createElementNS(NS, 'text');
+        label.setAttribute('class', 'flight-name');
+        label.setAttribute('x', '0'); label.setAttribute('y', '22');
+        label.textContent = name;
+        const tip = document.createElementNS(NS, 'title');
+        tip.textContent = name;
+        label.appendChild(tip);
+        g.appendChild(label);
+      }
       const motion = document.createElementNS(NS, 'animateMotion');
       motion.setAttribute('dur', '1.6s');
       motion.setAttribute('repeatCount', '1');
@@ -1653,6 +1947,15 @@
           bumpFolder(j.folder, +1);
           folderFileAdd(j.folder, j.name);
           setFolderActive(j.folder, 2000);
+          // The file that just landed is by definition the newest in its
+          // stage — update the caption now, don't wait for the next poll.
+          setFolderNewest(j.folder, { name: j.name, ageSec: 0 });
+          // A .webloc landing in INCOMING is the pipeline's entry event:
+          // fly it in from the "web" stub with its full filename.
+          if (j.folder === 'incoming') {
+            setArrowActive('web', 'incoming', 1800);
+            flightAlongArrow('web', 'incoming', j.name);
+          }
         } catch (e) {}
       });
       es.addEventListener('file-removed', (ev) => {
@@ -1673,20 +1976,13 @@
       es.addEventListener('phase', (ev) => {
         try {
           const j = JSON.parse(ev.data);
-          // While a song is being rendered, mark STEM_QUEUE and STEMS
-          // both as active (queued → processing → stems). The 'working'
-          // class stays on until the next phase transition, so the
-          // folder pulses continuously through the long Demucs step.
-          if (j.current) {
-            setFolderActive('queued', 4000);
-            setFolderActive('stems',  4000);
-            setArrowActive('queued', 'stems', 4000);
-            setFolderWorking('queued', true);
-            setFolderWorking('stems',  true);
-          } else {
-            setFolderWorking('queued', false);
-            setFolderWorking('stems',  false);
-          }
+          // Delegate to the continuous render-flow visualization — it
+          // owns the persistent marching arrow, the looping labeled
+          // glyph, the under-arrow song/phase caption, and the
+          // 'working' pulse on QUEUED + STEMS for the whole render.
+          // (The 3s /api/librarian/state poll drives the same function,
+          // so a dropped SSE connection self-heals within one poll.)
+          setRenderFlow(j.current || null);
         } catch (e) {}
       });
       es.addEventListener('health', (ev) => {
@@ -1753,7 +2049,8 @@
       if (!svg) return;
       const NS = 'http://www.w3.org/2000/svg';
       const g = document.createElementNS(NS, 'g');
-      g.setAttribute('class', 'artifact-flare ' + (kind === 'source.wav' ? 'wav' : 'm4a'));
+      g.setAttribute('class', 'artifact-flare ' +
+        (kind === 'source.wav' ? 'wav' : kind === 'metadata.json' ? 'meta' : 'm4a'));
       // Positioned above the STEMS folder (folder center X = 565, folder top Y ~= 44).
       g.setAttribute('transform', 'translate(565, 38)');
       const ring = document.createElementNS(NS, 'circle');
@@ -1769,16 +2066,20 @@
       svg.appendChild(g);
       setTimeout(() => { try { svg.removeChild(g); } catch (e) {} }, 1900);
     }
-    // A styled flight glyph — blue "src.wav" pill from incoming → stems,
-    // green "m4a" pill from queued → stems. Uses the existing arrow
-    // paths so the motion looks native to the pipeline.
-    function flightArtifact(kind, fromKey, toKey, label) {
+    // A styled flight glyph — blue pill for source.wav, green for a stem
+    // m4a, amber for metadata.json. The pill carries a short type tag;
+    // the FULL filename rides underneath (Bill wants the actual names,
+    // not just colored dots). Uses the existing arrow paths so the
+    // motion looks native to the pipeline.
+    function flightArtifact(kind, fromKey, toKey, fullName) {
       const path = arrowEls[fromKey + '->' + toKey];
       const layer = document.getElementById('flight-layer');
       if (!path || !layer) return;
       const NS = 'http://www.w3.org/2000/svg';
       const g = document.createElementNS(NS, 'g');
-      g.setAttribute('class', kind === 'source.wav' ? 'flight-wav' : 'flight-m4a');
+      g.setAttribute('class',
+        kind === 'source.wav'    ? 'flight-wav'  :
+        kind === 'metadata.json' ? 'flight-meta' : 'flight-m4a');
       const rect = document.createElementNS(NS, 'rect');
       rect.setAttribute('x', '-14'); rect.setAttribute('y', '-7');
       rect.setAttribute('width', '28'); rect.setAttribute('height', '14');
@@ -1786,8 +2087,19 @@
       g.appendChild(rect);
       const txt = document.createElementNS(NS, 'text');
       txt.setAttribute('x', '0'); txt.setAttribute('y', '3');
-      txt.textContent = label;
+      txt.textContent = kind === 'source.wav'    ? 'wav'
+                      : kind === 'metadata.json' ? 'json' : 'm4a';
       g.appendChild(txt);
+      if (fullName) {
+        const nameEl = document.createElementNS(NS, 'text');
+        nameEl.setAttribute('class', 'flight-name');
+        nameEl.setAttribute('x', '0'); nameEl.setAttribute('y', '20');
+        nameEl.textContent = fullName;
+        const tip = document.createElementNS(NS, 'title');
+        tip.textContent = fullName;
+        nameEl.appendChild(tip);
+        g.appendChild(nameEl);
+      }
       const motion = document.createElementNS(NS, 'animateMotion');
       motion.setAttribute('dur', '1.6s');
       motion.setAttribute('repeatCount', '1');
@@ -1821,7 +2133,8 @@
       // Remove old items, re-append in order.
       el.querySelectorAll('.ticker-item').forEach(n => n.remove());
       for (const it of artifactTickerItems) {
-        const kindClass = it.kind === 'source.wav' ? 'wav' : 'm4a';
+        const kindClass = it.kind === 'source.wav'    ? 'wav'
+                        : it.kind === 'metadata.json' ? 'meta' : 'm4a';
         const short = (it.song || '').slice(0, 22);
         const chip = document.createElement('span');
         chip.className = 'ticker-item ' + kindClass;
@@ -1844,10 +2157,18 @@
       // STEMS (queue_runner's Demucs finishing that stem).
       if (kind === 'source.wav') {
         popFlare('source.wav', 'SRC.WAV');
-        // No direct incoming→stems arrow; run two-hop flight.
-        flightArtifact('source.wav', 'incoming', 'queued', 'src.wav');
-        setTimeout(() => flightArtifact('source.wav', 'queued', 'stems', 'src.wav'), 700);
+        // No direct incoming→stems arrow; run two-hop flight. The full
+        // artifact name rides under the pill on both hops.
+        flightArtifact('source.wav', 'incoming', 'queued', 'source.wav');
+        setTimeout(() => flightArtifact('source.wav', 'queued', 'stems', 'source.wav'), 700);
         setFolderActive('stems', 2400);
+      } else if (kind === 'metadata.json') {
+        // Metadata formation — metadata.py / mpb_sync just wrote the
+        // song's contract file. Amber flow so it reads as distinct from
+        // the audio artifacts.
+        popFlare('metadata.json', 'METADATA');
+        flightArtifact('metadata.json', 'queued', 'stems', 'metadata.json');
+        setFolderActive('stems', 2200);
       } else {
         // Compute progress fraction (how many m4a's landed).
         const gotten = M4A_STEMS.filter(f => {
@@ -1855,7 +2176,7 @@
           return d && d.classList.contains('on');
         }).length;
         popFlare('stem.m4a', `M4A ${gotten}/6`);
-        flightArtifact('stem.m4a', 'queued', 'stems', file.replace('.m4a',''));
+        flightArtifact('stem.m4a', 'queued', 'stems', file);
         setFolderActive('stems', 2200);
       }
       pushTicker(kind, song, file);
