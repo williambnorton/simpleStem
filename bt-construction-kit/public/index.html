@@ -296,6 +296,16 @@
               <!-- Tall digital clock pill — date + time stacked. Matches the
                    height of the BPM/Key pills via the .meta-stat-pill class
                    so the row stays flush. -->
+              <!-- WIFI radio pill (Bill 2026-07-04): gig rigs run offline —
+                   flip the radio off at the venue (XR18 control is Ethernet;
+                   everything the portal needs is in local cache). -->
+              <div id="wifi-pill" class="meta-stat-pill hover-glow" title="Toggle the Mac's Wi-Fi radio. Off at gigs = no network churn; the portal and XR18 (Ethernet) don't need it.">
+                <i data-lucide="wifi"></i>
+                <div>
+                  <span id="wifi-pill-state" class="stat-val">…</span>
+                  <span class="stat-lbl">WiFi</span>
+                </div>
+              </div>
               <div id="analog-clock-digital-wrap" class="meta-stat-pill digital-clock-pill" title="Local time">
                 <span id="analog-clock-digital" class="digital-clock-text">--:--</span>
               </div>

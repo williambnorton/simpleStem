@@ -4206,6 +4206,47 @@ app.post('/api/restart', (req, res) => {
 //
 // `sudo -n` ("non-interactive") then succeeds; missing entry => exit 1
 // with "a password is required" on stderr, which we surface to the UI.
+// ── Wi-Fi radio control (Bill 2026-07-04) ──────────────────────────────────
+// At gigs the rig is offline by design: the portal is localhost, stems live
+// in ~/.bt-cache, and XR18 control rides Ethernet. Killing the radio removes
+// a whole class of network churn (mDNS, Drive sync retries, captive-portal
+// probing) implicated in audio trouble, and forces link-local addressing.
+// The header WIFI pill calls these; localhost-only server, no auth needed.
+let _wifiDevice = null;
+function wifiDevice(cb) {
+  if (_wifiDevice) return cb(null, _wifiDevice);
+  const { execFile } = require('child_process');
+  execFile('networksetup', ['-listallhardwareports'], { timeout: 4000 }, (err, out) => {
+    if (err) return cb(err);
+    const m = /Hardware Port: Wi-Fi\nDevice: (\S+)/.exec(String(out));
+    if (!m) return cb(new Error('no Wi-Fi hardware port found'));
+    _wifiDevice = m[1];
+    cb(null, _wifiDevice);
+  });
+}
+app.get('/api/system/wifi', (req, res) => {
+  const { execFile } = require('child_process');
+  wifiDevice((err, dev) => {
+    if (err) return res.status(500).json({ ok: false, error: err.message });
+    execFile('networksetup', ['-getairportpower', dev], { timeout: 4000 }, (e2, out) => {
+      if (e2) return res.status(500).json({ ok: false, error: e2.message });
+      res.json({ ok: true, device: dev, on: /:\s*On/i.test(String(out)) });
+    });
+  });
+});
+app.post('/api/system/wifi', (req, res) => {
+  const { execFile } = require('child_process');
+  const want = !!(req.body && req.body.on);
+  wifiDevice((err, dev) => {
+    if (err) return res.status(500).json({ ok: false, error: err.message });
+    execFile('networksetup', ['-setairportpower', dev, want ? 'on' : 'off'], { timeout: 6000 }, (e2) => {
+      if (e2) return res.status(500).json({ ok: false, error: e2.message });
+      console.log(`[wifi] radio switched ${want ? 'ON' : 'OFF'} (${dev})`);
+      res.json({ ok: true, device: dev, on: want });
+    });
+  });
+});
+
 app.post('/api/audio/kick-coreaudio', (req, res) => {
   const { spawn } = require('child_process');
   logDebugEvent('kick-coreaudio-start', {});

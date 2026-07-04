@@ -7473,6 +7473,49 @@ function disengageDrumMachine() {
   // to start it again — explicit gesture, no surprise resume.
 }
 
+// ── WIFI pill (Bill 2026-07-04) ───────────────────────────────────────────
+// Shows the Mac radio state; click toggles it via /api/system/wifi. Off at
+// gigs: the portal is localhost + cache, XR18 control rides Ethernet.
+(function wifiPill() {
+  let known = null;
+  async function refresh() {
+    try {
+      const j = await fetch('/api/system/wifi').then(r => r.json());
+      if (!j || !j.ok) return;
+      known = !!j.on;
+      const st = document.getElementById('wifi-pill-state');
+      const pill = document.getElementById('wifi-pill');
+      if (st) st.textContent = known ? 'ON' : 'OFF';
+      if (pill) {
+        pill.style.outline = known ? '' : '2px solid #b3541e';
+        pill.title = known
+          ? 'Wi-Fi is ON. Click to turn it OFF for the gig (portal + XR18 Ethernet control keep working).'
+          : 'Wi-Fi is OFF — gig mode. Click to turn it back ON.';
+      }
+    } catch (e) { /* server restarting; next tick heals */ }
+  }
+  document.addEventListener('click', async (e) => {
+    const pill = e.target && e.target.closest ? e.target.closest('#wifi-pill') : null;
+    if (!pill) return;
+    e.preventDefault(); e.stopPropagation();
+    const want = known === null ? false : !known;
+    const st = document.getElementById('wifi-pill-state');
+    if (st) st.textContent = '…';
+    try {
+      const j = await fetch('/api/system/wifi', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ on: want }),
+      }).then(r => r.json());
+      if (j && j.ok && typeof showToast === 'function') {
+        showToast(want ? 'Wi-Fi radio ON' : 'Wi-Fi radio OFF — gig mode');
+      }
+    } catch (err) { console.warn('[wifi]', err); }
+    setTimeout(refresh, 1200);
+  });
+  refresh();
+  setInterval(refresh, 30000);
+})();
+
 // ── Playback-source mode plumbing (Bill 2026-07-04) ──────────────────────
 // The transport controls the ACTIVE source; the 6 STEMS / DRUM / BACKING
 // pills show which one that is (steady outline) and whether it's audibly

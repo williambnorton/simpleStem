@@ -25,7 +25,7 @@ RUN="$BASE/.run"                            # runtime state stays with the code
 QUEUE="$DATA/STEM_QUEUE"
 STEMS="$DATA/STEMS"
 PORT="${PORT:-3000}"            # portal port (server.js reads $PORT too)
-SERVICES="runner midi server"
+SERVICES="runner midi server caffeinate"
 mkdir -p "$RUN"
 
 # Version = newest mtime across the code files, formatted YYMMDD.HHMM (local).
@@ -97,6 +97,15 @@ start_cmd() {
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
     midi)   echo "exec '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
     server) echo "cd '$BASE/bt-construction-kit' && exec '${NODE_BIN:-node}' server.js" ;;
+    caffeinate)
+            # Gig insurance (Bill 2026-07-04): while the Performer rig runs,
+            # the Mac must not idle-sleep, display-sleep, or system-sleep.
+            # AUTOMATIC by design -- a forgotten button press is exactly the
+            # failure that kills a gig (sleep/wake is the top coreaudiod-
+            # wedge trigger; see docs/10_AUDIO_WEDGE_DEEP_DIVE.md). The
+            # hot-corner screensaver still works: caffeinate blocks SLEEP,
+            # not a manually invoked screen saver.
+            echo "exec caffeinate -dis" ;;
   esac
 }
 
