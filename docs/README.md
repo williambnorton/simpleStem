@@ -17,6 +17,7 @@ Runbook if the van leaves in an hour.
 | [07_LIBRARIAN.md](07_LIBRARIAN.md) | The Mac mini's role, a tour of the `/librarian` dashboard (Living Pipeline, health table, daemons), auto-update behavior, and `librarian.sh` commands. |
 | [08_GIG_DAY_RUNBOOK.md](08_GIG_DAY_RUNBOOK.md) | The pre-gig checklist (Flash Cache, offline test, XR18 hookup, sound check), during-gig operations, and the audio failure first-aid ladder. |
 | [09_TROUBLESHOOTING.md](09_TROUBLESHOOTING.md) | Symptom-indexed fixes: songs that won't load, the SERVER NOT RESPONDING banner, missing stems, failed renders, Drive sync friction, and the two-machine git rules. |
+- **10_AUDIO_WEDGE_DEEP_DIVE.md** — cited research report on the CoreAudio/XR18 USB wedge: failure chain, recovery ladder, ranked fixes.
 
 Screenshots referenced throughout live in [`images/`](images/) and are being
 added incrementally; a `SCREENSHOT:` caption marks each planned image.
