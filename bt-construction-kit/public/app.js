@@ -14411,3 +14411,424 @@ async function setupAiSetlistBuilder() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireTrigger);
   else wireTrigger();
 })();
+
+// ═════════════════════════════════════════════════════════════════════════
+// OVERDUB LOOPER (Bill 2026-07-05) — loop-record/overdub on top of the
+// section LOOPER. The looper provides the clock (loopStartedAtCtxT /
+// loopInitialOffset / loopPlaybackRate on the shared audioCtx); this module
+// records takes from a capture device (BlackHole 2ch = Logic's LOOP bus),
+// punches in/out on loop-cycle boundaries, layers takes sample-locked, and
+// auto-saves every kept take to STEMS/<base>/loops/<session>/ as fast-start
+// m4a + loop.json. Monitoring stays in hardware (XR18→amps) — this module
+// never routes the input to the speakers, so there is no feedback path and
+// no monitoring latency. Capture alignment is handled by the latency trim.
+// ═════════════════════════════════════════════════════════════════════════
+(function overdubLooper() {
+  const $ = id => document.getElementById(id);
+  const od = {
+    stream: null, srcNode: null, worklet: null, muteTap: null,
+    testOsc: null, testGain: null, testMode: false,
+    cap: null,             // {ch0:[],ch1:[],samples,firstCtxTime,sr}
+    state: 'idle',         // idle|armed|recording|take-ready
+    punchInCtx: 0, punchOutCtx: null,
+    pending: null,         // {buffer, cycles, node, gainNode}
+    layers: [],            // {name,file,buffer,node,gainNode,muted,chip}
+    session: null,         // {id, base, sectionStart, sectionEnd}
+    autoloadedFor: null,
+    maxCycles: 8,
+  };
+  const latMs = () => Math.max(0, Number($('od-latency') && $('od-latency').value) || 0);
+  try { const saved = localStorage.getItem('simpleStem.odLatencyMs'); if (saved !== null && $('od-latency')) $('od-latency').value = saved; } catch (e) {}
+  const status = t => { const el = $('od-status'); if (el) el.textContent = t; };
+  const loopLen = () => sectionLooperRange ? (sectionLooperRange.endT - sectionLooperRange.startT) : 0;
+  const loopRate = () => loopPlaybackRate || 1;
+  const loopPos = (t) => { const L = loopLen(); if (L <= 0) return 0; const p = (loopInitialOffset + (t - loopStartedAtCtxT) * loopRate()) % L; return (p + L) % L; };
+  const nextTopCtx = (t) => t + (loopLen() - loopPos(t)) / loopRate();
+  const cycleWall = () => loopLen() / loopRate();
+
+  const WORKLET_SRC = `
+    class OdRecorder extends AudioWorkletProcessor {
+      constructor(){ super(); this.blocks = 0; }
+      process(inputs){
+        const inp = inputs[0];
+        if (inp && inp.length) {
+          const c0 = inp[0] ? new Float32Array(inp[0]) : new Float32Array(128);
+          // MUST be a distinct buffer: transferring the same ArrayBuffer
+          // twice throws DataCloneError and silently kills the processor
+          // (found 2026-07-05 with a mono test source).
+          const c1 = inp[1] ? new Float32Array(inp[1]) : new Float32Array(c0);
+          let peak = 0;
+          for (let i=0;i<c0.length;i++){ const a=Math.abs(c0[i]); if(a>peak)peak=a; }
+          this.port.postMessage({c0, c1, peak}, [c0.buffer, c1.buffer]);
+        }
+        return true;
+      }
+    }
+    registerProcessor('od-recorder', OdRecorder);`;
+
+  let workletReady = null;
+  function ensureWorklet() {
+    if (workletReady) return workletReady;
+    initAudioCtx();
+    const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
+    workletReady = audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+    return workletReady;
+  }
+
+  function startCapture(sourceNode) {
+    od.cap = { ch0: [], ch1: [], samples: 0, firstCtxTime: null, sr: audioCtx.sampleRate };
+    od.worklet = new AudioWorkletNode(audioCtx, 'od-recorder', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    od.worklet.onprocessorerror = (e) => { console.warn('[overdub] worklet processor error', e); status('CAPTURE ERROR — worklet died; press REC to retry'); resetToIdle(); stopCaptureKeepStream(); };
+    od.worklet.port.onmessage = (e) => {
+      const { c0, c1, peak } = e.data;
+      if (od.cap.firstCtxTime === null) od.cap.firstCtxTime = audioCtx.currentTime - (c0.length / od.cap.sr);
+      od.cap.ch0.push(c0); od.cap.ch1.push(c1); od.cap.samples += c0.length;
+      const m = $('od-meter-fill'); if (m) m.style.width = Math.min(100, Math.round(peak * 130)) + '%';
+      if (od.state === 'recording' && od.punchOutCtx !== null) {
+        const doneCtx = od.punchOutCtx + latMs()/1000 + 0.25;
+        const capturedThrough = od.cap.firstCtxTime + od.cap.samples / od.cap.sr;
+        if (capturedThrough >= doneCtx) assembleTake();
+      }
+      if (od.state === 'recording' && od.punchOutCtx === null) {
+        const cyclesIn = (audioCtx.currentTime - od.punchInCtx) / cycleWall();
+        if (cyclesIn >= od.maxCycles) { od.punchOutCtx = nextTopCtx(audioCtx.currentTime); status('max cycles — punching out at loop top'); }
+      }
+    };
+    od.muteTap = audioCtx.createGain(); od.muteTap.gain.value = 0;
+    sourceNode.connect(od.worklet);
+    od.worklet.connect(od.muteTap); od.muteTap.connect(audioCtx.destination);
+  }
+  function stopCapture() {
+    try { od.worklet && od.worklet.disconnect(); } catch (e) {}
+    try { od.muteTap && od.muteTap.disconnect(); } catch (e) {}
+    try { od.srcNode && od.srcNode.disconnect(); } catch (e) {}
+    try { od.testOsc && od.testOsc.stop(); } catch (e) {}
+    try { od.testGain && od.testGain.disconnect(); } catch (e) {}
+    od.worklet = null; od.muteTap = null; od.testOsc = null; od.testGain = null;
+    const m = $('od-meter-fill'); if (m) m.style.width = '0%';
+  }
+
+  function capSlice(fromCtx, toCtx) {
+    const sr = od.cap.sr;
+    const shift = latMs() / 1000;
+    let i0 = Math.round((fromCtx + shift - od.cap.firstCtxTime) * sr);
+    let i1 = Math.round((toCtx + shift - od.cap.firstCtxTime) * sr);
+    i0 = Math.max(0, i0); i1 = Math.min(od.cap.samples, i1);
+    const n = Math.max(0, i1 - i0);
+    const out0 = new Float32Array(n), out1 = new Float32Array(n);
+    let acc = 0;
+    for (let b = 0; b < od.cap.ch0.length && acc < i1; b++) {
+      const blk0 = od.cap.ch0[b], blk1 = od.cap.ch1[b];
+      const bStart = acc, bEnd = acc + blk0.length;
+      if (bEnd > i0) {
+        const sA = Math.max(i0, bStart), sB = Math.min(i1, bEnd);
+        for (let s = sA; s < sB; s++) { out0[s - i0] = blk0[s - bStart]; out1[s - i0] = blk1[s - bStart]; }
+      }
+      acc = bEnd;
+    }
+    return { out0, out1, n, sr };
+  }
+
+  function assembleTake() {
+    const cycles = Math.max(1, Math.round((od.punchOutCtx - od.punchInCtx) / cycleWall()));
+    const { out0, out1, n, sr } = capSlice(od.punchInCtx, od.punchOutCtx);
+    if (n < sr * 0.2) { status('take too short — discarded'); resetToIdle(); return; }
+    const buf = audioCtx.createBuffer(2, n, sr);
+    buf.getChannelData(0).set(out0); buf.getChannelData(1).set(out1);
+    stopCaptureKeepStream();
+    od.pending = { buffer: buf, cycles };
+    startLayerNode(od.pending, true);
+    od.state = 'take-ready';
+    $('od-rec').classList.remove('od-recording', 'od-armed');
+    $('od-keep').disabled = false; $('od-discard').disabled = false;
+    status(`take ready — ${cycles} cycle(s), ${ (n/sr).toFixed(1) }s. KEEP or DISCARD (it is playing in the loop now)`);
+  }
+  function stopCaptureKeepStream() {
+    try { od.worklet && od.worklet.disconnect(); } catch (e) {}
+    try { od.muteTap && od.muteTap.disconnect(); } catch (e) {}
+    try { od.testOsc && od.testOsc.stop(); } catch (e) {}
+    try { od.testGain && od.testGain.disconnect(); } catch (e) {}
+    od.worklet = null; od.muteTap = null; od.testOsc = null; od.testGain = null;
+    const m = $('od-meter-fill'); if (m) m.style.width = '0%';
+  }
+
+  function startLayerNode(layer, isPreview) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = layer.buffer;
+    src.loop = true; src.loopStart = 0; src.loopEnd = layer.buffer.duration;
+    const g = audioCtx.createGain(); g.gain.value = 1;
+    src.connect(g); g.connect(masterGainNode);
+    const at = nextTopCtx(audioCtx.currentTime);
+    src.start(at, 0);
+    layer.node = src; layer.gainNode = g;
+    try { allLoopBufferSources.add(src); } catch (e) {}
+    return layer;
+  }
+  function stopLayerNode(layer) {
+    try { layer.node && layer.node.stop(); } catch (e) {}
+    try { layer.node && layer.node.disconnect(); } catch (e) {}
+    try { layer.gainNode && layer.gainNode.disconnect(); } catch (e) {}
+    try { allLoopBufferSources.delete(layer.node); } catch (e) {}
+    layer.node = null; layer.gainNode = null;
+  }
+
+  function resetToIdle() {
+    od.state = 'idle'; od.punchOutCtx = null; od.pending = null; od.cap = null;
+    const rec = $('od-rec'); if (rec) rec.classList.remove('od-armed', 'od-recording');
+    if ($('od-keep')) $('od-keep').disabled = true;
+    if ($('od-discard')) $('od-discard').disabled = true;
+    if ($('od-undo')) $('od-undo').disabled = od.layers.length === 0;
+  }
+
+  function wavEncode(buffer) {
+    const n = buffer.length, sr = buffer.sampleRate, ch = 2;
+    const bytes = 44 + n * ch * 2;
+    const ab = new ArrayBuffer(bytes); const v = new DataView(ab);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * ch * 2, true);
+    const c0 = buffer.getChannelData(0), c1 = buffer.getChannelData(1);
+    let o = 44;
+    for (let i = 0; i < n; i++) {
+      v.setInt16(o, Math.max(-1, Math.min(1, c0[i])) * 0x7FFF, true); o += 2;
+      v.setInt16(o, Math.max(-1, Math.min(1, c1[i])) * 0x7FFF, true); o += 2;
+    }
+    return ab;
+  }
+
+  function ensureSession() {
+    const base = currentSong && (currentSong.folderName || currentSong.base);
+    if (!od.session || od.session.base !== base ||
+        Math.abs(od.session.sectionStart - sectionLooperRange.startT) > 0.5) {
+      const d = new Date();
+      const id = 'od_' + d.toISOString().slice(0, 19).replace(/[-:T]/g, '').slice(0, 14);
+      od.session = { id, base, sectionStart: sectionLooperRange.startT, sectionEnd: sectionLooperRange.endT };
+    }
+    const lbl = $('od-session-label'); if (lbl) lbl.textContent = od.session.id + ' · ' + od.layers.length + ' layer(s)';
+    return od.session;
+  }
+
+  async function saveLayer(layer) {
+    const sess = ensureSession();
+    const wav = wavEncode(layer.buffer);
+    const q = new URLSearchParams({
+      name: layer.name, sectionStart: sess.sectionStart, sectionEnd: sess.sectionEnd,
+      bpm: (currentSong && currentSong.practiceBpm) || '', cycles: layer.cycles || 1,
+      rate: loopRate(), latencyMs: latMs(),
+    });
+    const r = await fetch(`/api/loop-session/${encodeURIComponent(sess.base)}/${sess.id}/layer?` + q, {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: wav,
+    }).then(x => x.json()).catch(e => ({ ok: false, error: String(e) }));
+    if (r && r.ok) { layer.file = r.layer.file; status(`saved ${r.layer.file}`); }
+    else { status('SAVE FAILED: ' + (r && r.error)); if (typeof showToast === 'function') showToast('Overdub save failed — layer is only in memory'); }
+    const lbl = $('od-session-label'); if (lbl) lbl.textContent = od.session.id + ' · ' + od.layers.length + ' layer(s)';
+  }
+
+  function addLayerChip(layer) {
+    const wrap = $('od-layers'); if (!wrap) return;
+    const chip = document.createElement('div');
+    chip.className = 'od-layer-chip';
+    chip.innerHTML = `<span class="od-layer-name">${layer.name}</span>` +
+      `<button class="od-layer-btn od-mute" title="Mute/unmute this layer">M</button>` +
+      `<button class="od-layer-btn od-del" title="Delete this layer (removes the saved file)">✕</button>`;
+    chip.querySelector('.od-mute').addEventListener('click', () => {
+      layer.muted = !layer.muted;
+      if (layer.gainNode) layer.gainNode.gain.value = layer.muted ? 0 : 1;
+      chip.classList.toggle('od-muted', layer.muted);
+    });
+    chip.querySelector('.od-del').addEventListener('click', () => deleteLayer(layer));
+    layer.chip = chip;
+    wrap.appendChild(chip);
+  }
+  async function deleteLayer(layer) {
+    stopLayerNode(layer);
+    if (layer.chip) layer.chip.remove();
+    od.layers = od.layers.filter(l => l !== layer);
+    if (layer.file && od.session) {
+      await fetch(`/api/loop-session/${encodeURIComponent(od.session.base)}/${od.session.id}/layer/${layer.file}`, { method: 'DELETE' }).catch(() => {});
+    }
+    if ($('od-undo')) $('od-undo').disabled = od.layers.length === 0;
+    const lbl = $('od-session-label'); if (lbl && od.session) lbl.textContent = od.session.id + ' · ' + od.layers.length + ' layer(s)';
+  }
+
+  async function fillInputs() {
+    try {
+      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tmp.getTracks().forEach(t => t.stop());
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const sel = $('od-input');
+      sel.innerHTML = '<option value="">choose input…</option>';
+      devs.filter(d => d.kind === 'audioinput').forEach(d => {
+        const o = document.createElement('option');
+        o.value = d.deviceId; o.textContent = d.label || d.deviceId.slice(0, 12);
+        if (/blackhole/i.test(d.label)) o.textContent = '★ ' + o.textContent;
+        sel.appendChild(o);
+      });
+      const bh = [...sel.options].find(o => /blackhole/i.test(o.textContent));
+      if (bh) { sel.value = bh.value; sel.dispatchEvent(new Event('change')); }
+      status('pick the capture input (★ = BlackHole, Logic’s LOOP bus)');
+    } catch (e) { status('mic permission denied — TEST mode still works'); }
+  }
+
+  async function openStream(deviceId) {
+    if (od.stream) { od.stream.getTracks().forEach(t => t.stop()); od.stream = null; }
+    try { od.srcNode && od.srcNode.disconnect(); } catch (e) {}
+    initAudioCtx();
+    od.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      deviceId: { exact: deviceId },
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+      channelCount: 2,
+    }});
+    od.srcNode = audioCtx.createMediaStreamSource(od.stream);
+    od.testMode = false;
+    status('input live — engage LOOPER, then ● REC');
+  }
+
+  function makeTestSource() {
+    // Synthetic beeps on every beat of the loop, injected straight into the
+    // capture graph (never to the speakers). Exercises the ENTIRE chain —
+    // punch quantization, slicing, latency trim, save, reload — without an
+    // instrument. Beeps land ON the grid, so after a TEST take the layer
+    // should click perfectly with the drum stem; if it sounds early/late,
+    // adjust the latency trim.
+    const bpm = (currentSong && currentSong.practiceBpm) || 120;
+    const beat = 60 / bpm / loopRate();
+    od.testGain = audioCtx.createGain(); od.testGain.gain.value = 0;
+    od.testOsc = audioCtx.createOscillator(); od.testOsc.type = 'square'; od.testOsc.frequency.value = 880;
+    od.testOsc.connect(od.testGain);
+    const t0 = nextTopCtx(audioCtx.currentTime);
+    for (let b = 0; b < Math.ceil((od.maxCycles + 1) * loopLen() / (60 / bpm)); b++) {
+      const t = t0 + b * beat;
+      od.testGain.gain.setValueAtTime(0.0, t);
+      od.testGain.gain.linearRampToValueAtTime(0.7, t + 0.003);
+      od.testGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    }
+    od.testOsc.start();
+    od.testMode = true;
+    return od.testGain;
+  }
+
+  async function armRec(useTest) {
+    if (!sectionLooperActive || loopLen() <= 0) {
+      if (typeof showToast === 'function') showToast('Engage the LOOPER on a section first');
+      return;
+    }
+    if (od.state === 'recording') {
+      od.punchOutCtx = nextTopCtx(audioCtx.currentTime);
+      status('punching out at the loop top…');
+      return;
+    }
+    if (od.state !== 'idle') return;
+    await ensureWorklet();
+    let source;
+    if (useTest) source = makeTestSource();
+    else if (od.srcNode) source = od.srcNode;
+    else { if (typeof showToast === 'function') showToast('Pick a capture input first (or use TEST)'); return; }
+    startCapture(source);
+    od.state = 'armed';
+    $('od-rec').classList.add('od-armed');
+    od.punchInCtx = nextTopCtx(audioCtx.currentTime);
+    od.punchOutCtx = null;
+    status('armed — punching in at the loop top…');
+    const tick = setInterval(() => {
+      if (od.state === 'armed' && audioCtx.currentTime >= od.punchInCtx) {
+        od.state = 'recording';
+        $('od-rec').classList.remove('od-armed'); $('od-rec').classList.add('od-recording');
+        status('● recording — press REC again to punch out (auto after ' + od.maxCycles + ' cycles)');
+      }
+      if (od.state !== 'armed' && od.state !== 'recording') clearInterval(tick);
+    }, 50);
+  }
+
+  function keepTake() {
+    if (od.state !== 'take-ready' || !od.pending) return;
+    const layer = od.pending;
+    layer.name = 'take' + (od.layers.length + 1);
+    layer.muted = false;
+    od.layers.push(layer);
+    addLayerChip(layer);
+    saveLayer(layer);
+    od.pending = null;
+    resetToIdle();
+    status('layer kept + saving — ● REC for the next instrument');
+  }
+  function discardTake() {
+    if (od.state !== 'take-ready' || !od.pending) return;
+    stopLayerNode(od.pending);
+    od.pending = null;
+    resetToIdle();
+    status('take discarded — ● REC to try again');
+  }
+  function undoLayer() {
+    if (!od.layers.length) return;
+    deleteLayer(od.layers[od.layers.length - 1]);
+    status('last layer removed');
+  }
+
+  async function tryAutoload() {
+    const base = currentSong && (currentSong.folderName || currentSong.base);
+    if (!base || !sectionLooperActive) return;
+    const key = base + '@' + sectionLooperRange.startT.toFixed(1);
+    if (od.autoloadedFor === key) return;
+    od.autoloadedFor = key;
+    const r = await fetch('/api/loop-session/' + encodeURIComponent(base)).then(x => x.json()).catch(() => null);
+    if (!r || !r.ok || !r.sessions.length) return;
+    const match = r.sessions.find(s => Math.abs(s.sectionStart - sectionLooperRange.startT) < 0.5 && s.layers.length);
+    if (!match) return;
+    status(`found session ${match.sessionId} (${match.layers.length} layers) — loading…`);
+    od.session = { id: match.sessionId, base, sectionStart: match.sectionStart, sectionEnd: match.sectionEnd };
+    for (const l of match.layers) {
+      try {
+        const ab = await fetch(`/api/audio/loop-layer/${encodeURIComponent(base)}/${match.sessionId}/${l.file}`).then(x => x.arrayBuffer());
+        const buf = await audioCtx.decodeAudioData(ab);
+        const layer = { buffer: buf, cycles: l.cycles, name: l.name || ('take' + l.n), file: l.file, muted: false };
+        startLayerNode(layer, false);
+        od.layers.push(layer);
+        addLayerChip(layer);
+      } catch (e) { console.warn('[overdub] layer load failed', l.file, e); }
+    }
+    if ($('od-undo')) $('od-undo').disabled = od.layers.length === 0;
+    const lbl = $('od-session-label'); if (lbl) lbl.textContent = od.session.id + ' · ' + od.layers.length + ' layer(s)';
+    status(od.layers.length + ' saved layer(s) loaded — they join at the next loop top');
+  }
+
+  function teardownAll() {
+    stopCapture();
+    if (od.pending) { stopLayerNode(od.pending); od.pending = null; }
+    od.layers.forEach(stopLayerNode);
+    od.layers.forEach(l => l.chip && l.chip.remove());
+    od.layers = [];
+    od.autoloadedFor = null;
+    resetToIdle();
+    const lbl = $('od-session-label'); if (lbl) lbl.textContent = '';
+  }
+
+  let wasActive = false;
+  setInterval(() => {
+    const active = !!sectionLooperActive;
+    if (active && !wasActive) { status('LOOPER engaged — pick input or TEST, then ● REC'); tryAutoload(); }
+    if (!active && wasActive) { teardownAll(); status('engage LOOPER on a section to overdub'); }
+    wasActive = active;
+  }, 500);
+
+  document.addEventListener('click', (e) => {
+    const hit = id => e.target && e.target.closest && e.target.closest('#' + id);
+    if (hit('od-rec'))      { e.preventDefault(); armRec(false); }
+    else if (hit('od-test')){ e.preventDefault(); armRec(true); }
+    else if (hit('od-keep')){ e.preventDefault(); keepTake(); }
+    else if (hit('od-discard')) { e.preventDefault(); discardTake(); }
+    else if (hit('od-undo')) { e.preventDefault(); undoLayer(); }
+  });
+  const sel = $('od-input');
+  if (sel) {
+    sel.addEventListener('mousedown', function once() {
+      if (sel.options.length <= 1) fillInputs();
+    });
+    sel.addEventListener('change', () => { if (sel.value) openStream(sel.value).catch(e => status('input open failed: ' + e.message)); });
+  }
+  window.__od = od;   // debug/testing handle
+  const lat = $('od-latency');
+  if (lat) lat.addEventListener('change', () => { try { localStorage.setItem('simpleStem.odLatencyMs', lat.value); } catch (e) {} });
+})();

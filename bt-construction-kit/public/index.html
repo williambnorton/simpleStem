@@ -488,6 +488,34 @@
                   <div class="holodeck-meter"><div id="holodeck-mic-level" class="holodeck-meter-fill"></div></div>
                 </div>
               </div>
+              <!-- OVERDUB looper panel (Bill 2026-07-05). Rides the section
+                   LOOPER: seed = whatever stems are audible while the looper
+                   cycles; takes are recorded from the selected input device
+                   (BlackHole carries Logic's LOOP bus = wet instruments),
+                   punch in/out quantized to the loop boundary, layered
+                   sample-locked, auto-saved as m4a per song+section. -->
+              <div class="overdub-card glass-card" id="overdub-card">
+                <div class="overdub-head">
+                  <span class="overdub-title">OVERDUB</span>
+                  <select id="od-input" class="glass-select od-input-sel" title="Capture device. Pick 'BlackHole 2ch' for Logic's LOOP bus (wet instruments)."><option value="">enable input…</option></select>
+                  <div class="od-meter" title="Input level"><div id="od-meter-fill" class="od-meter-fill"></div></div>
+                </div>
+                <div class="overdub-btn-row">
+                  <button id="od-rec" class="od-btn od-rec" type="button" title="Arm/punch: first press arms (records from the next loop top); press again to punch out at the next loop top. Auto punch-out after 8 cycles.">● REC</button>
+                  <button id="od-keep" class="od-btn od-keep" type="button" disabled title="Keep this take as a new layer (auto-saves to the song's loop session)">✓ KEEP</button>
+                  <button id="od-discard" class="od-btn" type="button" disabled title="Throw the take away">✗ DISCARD</button>
+                  <button id="od-undo" class="od-btn" type="button" disabled title="Remove the most recent layer (deletes it from the session)">⟲ UNDO</button>
+                  <button id="od-test" class="od-btn od-test" type="button" title="Self-test: records a synthetic beep take through the whole capture chain (no instrument needed)">TEST</button>
+                </div>
+                <div class="overdub-status" id="od-status">engage LOOPER on a section to overdub</div>
+                <div class="overdub-layers" id="od-layers"></div>
+                <div class="overdub-foot">
+                  <label class="od-lat-label" title="Capture latency trim: how far to shift recorded takes EARLIER to sit on the grid. Adjust by ear: record a percussive take, nudge until it locks.">latency
+                    <input id="od-latency" type="number" min="0" max="500" step="1" value="30"> ms
+                  </label>
+                  <span class="od-session" id="od-session-label"></span>
+                </div>
+              </div>
               <fieldset class="pitch-fix-pane">
                 <legend class="pitch-fix-legend-hidden" aria-hidden="true">Pitch Fix</legend>
                 <div class="pitch-knob-cell" data-knob="fine">

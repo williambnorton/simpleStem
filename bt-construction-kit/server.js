@@ -4206,6 +4206,134 @@ app.post('/api/restart', (req, res) => {
 //
 // `sudo -n` ("non-interactive") then succeeds; missing entry => exit 1
 // with "a password is required" on stderr, which we surface to the UI.
+// ── LOOP OVERDUB SESSIONS (Bill 2026-07-05) ───────────────────────────────
+// The portal's overdub looper records takes (WAV, from the browser's capture
+// of BlackHole / an XR18 pair) and persists them per song + section:
+//   STEMS/<base>/loops/<sessionId>/layerN_<name>_<stamp>.m4a   (fast-start)
+//   STEMS/<base>/loops/<sessionId>/loop.json                    (manifest)
+// WAV arrives raw (express.raw) to dodge JSON size limits; ffmpeg transcodes
+// to the house format (AAC 256k, +faststart, brand mp42). Layer audio is
+// served cache-first like every other hot audio path.
+const AUDIO_CACHE_LOOPSESS = path.join(AUDIO_CACHE_DIR, 'LOOPSESS');
+try { fs.mkdirSync(AUDIO_CACHE_LOOPSESS, { recursive: true }); } catch (e) {}
+
+function loopSessDir(base, sessionId) {
+  const s1 = safeSongDir(base);
+  if (!s1) return null;
+  if (!/^[A-Za-z0-9_\-]+$/.test(sessionId || '')) return null;
+  return { songDir: s1.dir, base: s1.b, dir: path.join(s1.dir, 'loops', sessionId) };
+}
+
+async function readLoopManifest(dir) {
+  try { return JSON.parse(await fsp.readFile(path.join(dir, 'loop.json'), 'utf8')); }
+  catch (e) { return null; }
+}
+
+// Save one layer. Metadata rides in query params; body is the raw WAV.
+app.post('/api/loop-session/:base/:sessionId/layer',
+  express.raw({ type: 'application/octet-stream', limit: '128mb' }),
+  async (req, res) => {
+    const t0 = Date.now();
+    const ls = loopSessDir(req.params.base, req.params.sessionId);
+    if (!ls) return res.status(400).json({ ok: false, error: 'bad base/session id' });
+    const name = String(req.query.name || 'layer').replace(/[^A-Za-z0-9_\-]/g, '_').slice(0, 40) || 'layer';
+    const meta = {
+      sectionStart: Number(req.query.sectionStart) || 0,
+      sectionEnd: Number(req.query.sectionEnd) || 0,
+      bpm: Number(req.query.bpm) || null,
+      cycles: Number(req.query.cycles) || 1,
+      rate: Number(req.query.rate) || 1,
+      latencyMs: Number(req.query.latencyMs) || 0,
+    };
+    if (!req.body || !req.body.length) return res.status(400).json({ ok: false, error: 'empty body' });
+    try {
+      await fsp.mkdir(ls.dir, { recursive: true });
+      const manifest = (await readLoopManifest(ls.dir)) || {
+        base: ls.base, sessionId: req.params.sessionId,
+        createdAt: new Date().toISOString(),
+        sectionStart: meta.sectionStart, sectionEnd: meta.sectionEnd,
+        bpm: meta.bpm, layers: [],
+      };
+      const n = manifest.layers.length + 1;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileBase = `layer${n}_${name}_${stamp}`;
+      // WAV to LOCAL scratch first (never encode against the Drive mount —
+      // same lesson as the Demucs local-scratch fix).
+      const os2 = require('os');
+      const scratchWav = path.join(os2.tmpdir(), `simplestem_od_${process.pid}_${Date.now()}.wav`);
+      const scratchM4a = scratchWav.replace(/\.wav$/, '.m4a');
+      await fsp.writeFile(scratchWav, req.body);
+      const { execFile } = require('child_process');
+      await new Promise((resolve, reject) => {
+        execFile('ffmpeg', ['-y', '-loglevel', 'error', '-i', scratchWav,
+          '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-brand', 'mp42',
+          scratchM4a], { timeout: 60000 }, (err) => err ? reject(err) : resolve());
+      });
+      const outFile = `${fileBase}.m4a`;
+      await fsp.copyFile(scratchM4a, path.join(ls.dir, outFile));
+      try { await fsp.unlink(scratchWav); } catch (e) {}
+      try { await fsp.unlink(scratchM4a); } catch (e) {}
+      const layer = { n, name, file: outFile, addedAt: new Date().toISOString(),
+                      cycles: meta.cycles, rate: meta.rate, latencyMs: meta.latencyMs, gain: 1 };
+      manifest.layers.push(layer);
+      await fsp.writeFile(path.join(ls.dir, 'loop.json'), JSON.stringify(manifest, null, 2) + '\n');
+      console.log(`[loop-session] ${ls.base}/${req.params.sessionId} += ${outFile} (${req.body.length} bytes wav, ${Date.now() - t0}ms)`);
+      res.json({ ok: true, layer, manifest });
+    } catch (e) {
+      console.warn('[loop-session] save failed:', e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+// List sessions for a song (newest first), with manifests.
+app.get('/api/loop-session/:base', async (req, res) => {
+  const s1 = safeSongDir(req.params.base);
+  if (!s1) return res.status(400).json({ ok: false, error: 'bad base' });
+  const loopsDir = path.join(s1.dir, 'loops');
+  try {
+    const entries = await Promise.race([
+      fsp.readdir(loopsDir, { withFileTypes: true }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-stall')), 3000)),
+    ]).catch(() => []);
+    const sessions = [];
+    for (const d of entries) {
+      if (!d.isDirectory()) continue;
+      const m = await readLoopManifest(path.join(loopsDir, d.name));
+      if (m) sessions.push(m);
+    }
+    sessions.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    res.json({ ok: true, sessions });
+  } catch (e) { res.json({ ok: true, sessions: [] }); }
+});
+
+// Serve a layer's audio — cache-first like every hot audio path.
+app.get('/api/audio/loop-layer/:base/:sessionId/:file', async (req, res) => {
+  const ls = loopSessDir(req.params.base, req.params.sessionId);
+  const f = req.params.file;
+  if (!ls || !/^[A-Za-z0-9_\-]+\.m4a$/.test(f)) return res.status(400).send('bad path');
+  const sourcePath = path.join(ls.dir, f);
+  const cachePath = path.join(AUDIO_CACHE_LOOPSESS, ls.base, req.params.sessionId, f);
+  try { fs.mkdirSync(path.dirname(cachePath), { recursive: true }); } catch (e) {}
+  return sendCachedAudio(req, res, sourcePath, cachePath);
+});
+
+// Remove a layer (UNDO). Deletes the m4a + manifest entry.
+app.delete('/api/loop-session/:base/:sessionId/layer/:file', async (req, res) => {
+  const ls = loopSessDir(req.params.base, req.params.sessionId);
+  const f = req.params.file;
+  if (!ls || !/^[A-Za-z0-9_\-]+\.m4a$/.test(f)) return res.status(400).json({ ok: false, error: 'bad path' });
+  try {
+    const manifest = await readLoopManifest(ls.dir);
+    if (!manifest) return res.status(404).json({ ok: false, error: 'no manifest' });
+    manifest.layers = manifest.layers.filter(l => l.file !== f);
+    await fsp.unlink(path.join(ls.dir, f)).catch(() => {});
+    await fsp.unlink(path.join(AUDIO_CACHE_LOOPSESS, ls.base, req.params.sessionId, f)).catch(() => {});
+    await fsp.writeFile(path.join(ls.dir, 'loop.json'), JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`[loop-session] ${ls.base}/${req.params.sessionId} -= ${f}`);
+    res.json({ ok: true, manifest });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── Wi-Fi radio control (Bill 2026-07-04) ──────────────────────────────────
 // At gigs the rig is offline by design: the portal is localhost, stems live
 // in ~/.bt-cache, and XR18 control rides Ethernet. Killing the radio removes
