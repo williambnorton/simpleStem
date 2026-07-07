@@ -4738,7 +4738,6 @@ function applySidebarWidth(px) {
 // control its level and destination (Bill: "this click track audio uses
 // the Other track volume/mute/solo/output selector"). The sync source is
 // whatever is actually playing — stems, backing track, or drum machine.
-let clickTrackOn = false;             // CLICK button: whole-song metronome
 let midiSyncOn = false;               // MIDI SYNC button state
 let clickLastScheduledBeat = -1;
 let clickLastSongTime = 0;
@@ -4827,38 +4826,37 @@ function clickPlayheadPos() {
   return 0;
 }
 
-// Section ranges with click flags. Convention matches the automation
-// dispatcher: section i spans [i === 0 ? 0 : sorted[i-1].t, sorted[i].t).
-// `countIn` treats the legacy per-section `clickIn` flag as an alias.
-function clickSectionRanges() {
-  if (!Array.isArray(automationSections) || !automationSections.length) return [];
-  const sorted = automationSections.slice().sort((a, b) => a.t - b.t);
-  return sorted.map((sec, i) => ({
-    start: i === 0 ? 0 : sorted[i - 1].t,
-    end: sec.t,
-    click: !!sec.click,
-    countIn: !!(sec.countIn || sec.clickIn),
-    ref: sec,
-  }));
+// Click regions are DERIVED from click-track automation events. Pressing
+// the clock button on the OTHER strip drops a 'click-on' or 'click-off'
+// action at the playhead (persisted like any other action), and the
+// scheduler treats a beat at song-time t as click-active iff the most
+// recent click event at-or-before t is 'click-on'. Scrub-safe by
+// construction: no state machine to resync after a seek.
+function clickStateAt(t) {
+  let on = false, last = -1;
+  if (Array.isArray(automationEvents)) {
+    for (const e of automationEvents) {
+      if ((e.type === 'click-on' || e.type === 'click-off') && e.t <= t + 0.001 && e.t >= last) {
+        last = e.t;
+        on = (e.type === 'click-on');
+      }
+    }
+  }
+  return on;
 }
 
-function clickSectionAt(t) {
-  const ranges = clickSectionRanges();
-  for (const r of ranges) if (t >= r.start && t < r.end) return r;
-  return null;
-}
-
-// Is a grid beat at song-time t audible? Any of three gates suffices:
-// whole-song CLICK, inside a +Click section, or in the 4-beat count-in
-// window before a +Count-in section (mid-song only — the first section's
-// count-in is the togglePlayPause pre-roll, since beats before t=0 can't
-// play from the timeline).
-function clickBeatAudible(t, ranges, period) {
-  if (clickTrackOn) return true;
-  for (const r of ranges) {
-    if (r.click && t >= r.start && t < r.end) return true;
-    if (r.countIn && r.start > 0.1 &&
-        t >= r.start - 4 * period - 0.02 && t < r.start - 0.02) return true;
+// Is a grid beat at song-time t audible? Either the click track is ON at t
+// (per the click events), or COUNT-IN is armed and t falls in the 4-beat
+// lead-in window before a mid-song click-on point (the song-start lead-in
+// is the togglePlayPause pre-roll — beats before t=0 can't play from the
+// timeline).
+function clickBeatAudible(t, period) {
+  if (clickStateAt(t)) return true;
+  if (automationCountIn && Array.isArray(automationEvents)) {
+    for (const e of automationEvents) {
+      if (e.type === 'click-on' && e.t > 0.1 &&
+          t >= e.t - 4 * period - 0.02 && t < e.t - 0.02) return true;
+    }
   }
   return false;
 }
@@ -4866,50 +4864,40 @@ function clickBeatAudible(t, ranges, period) {
 function setupClickTrack() {
   const btn = document.getElementById('btn-click-toggle');
   if (btn) btn.addEventListener('click', () => {
-    clickTrackOn = !clickTrackOn;
-    btn.classList.toggle('active', clickTrackOn);
-    if (clickTrackOn) { try { initAudioCtx(); } catch (e) {} }
+    if (!currentSong || !Array.isArray(automationEvents)) {
+      showToast('Load a song first');
+      return;
+    }
+    try { initAudioCtx(); } catch (e) {}
+    const pos = clickPlayheadPos();
+    const turningOn = !clickStateAt(pos);
+    automationEvents.push({
+      t: Math.round(pos * 1000) / 1000,
+      type: turningOn ? 'click-on' : 'click-off',
+      label: '',
+      fired: true,
+    });
+    automationEvents.sort((a, b) => a.t - b.t);
+    markAutomationDirty();
+    try { renderAutomationLane(); } catch (e) {}
+    updateClickButton();
+    clickLastScheduledBeat = -1;
+    showToast(`Click track ${turningOn ? 'ON' : 'OFF'} from ${pos.toFixed(1)}s — action set into the song`);
   });
   const syncBtn = document.getElementById('midi-btn-midi-sync');
   if (syncBtn) syncBtn.addEventListener('click', () => {
     midiSyncOn = !midiSyncOn;
     syncBtn.classList.toggle('active', midiSyncOn);
   });
-  const addClick = document.getElementById('midi-btn-add-click');
-  if (addClick) addClick.addEventListener('click', () => toggleSectionClickFlag('click'));
-  const addCountIn = document.getElementById('midi-btn-add-countin');
-  if (addCountIn) addCountIn.addEventListener('click', () => toggleSectionClickFlag('countIn'));
   startClickScheduler();
 }
 
-// + Click / + Count-in actions: toggle the flag on the section under the
-// playhead. Persists with the sections through SAVE / song-end auto-save.
-function toggleSectionClickFlag(flag) {
-  const pos = clickPlayheadPos();
-  const r = clickSectionAt(pos);
-  if (!r) {
-    showToast('No section at the playhead — place section markers first (keys 1-9 or ACCEPT)');
-    return;
-  }
-  const on = !r.ref[flag];
-  r.ref[flag] = on;
-  if (!on) delete r.ref[flag];
-  if (flag === 'countIn' && !on) delete r.ref.clickIn;  // retire the legacy alias on explicit off
-  markAutomationDirty();
-  updateClickActionButtons();
-  clickLastScheduledBeat = -1;
-  showToast(`${flag === 'click' ? 'Section click' : 'Count-in'} ${on ? 'ON' : 'off'} for this section — SAVE to persist`);
-}
-
-// Light the +Click/+Count-in buttons when the playhead's section carries
-// the flag; called from the scheduler tick (throttled) and on toggles.
-function updateClickActionButtons() {
-  const bc = document.getElementById('midi-btn-add-click');
-  const bi = document.getElementById('midi-btn-add-countin');
-  if (!bc && !bi) return;
-  const r = clickSectionAt(clickPlayheadPos());
-  if (bc) bc.classList.toggle('active', !!(r && r.click));
-  if (bi) bi.classList.toggle('active', !!(r && r.countIn));
+// The clock button lights when the click track is ON at the playhead.
+// Called from the scheduler tick (throttled) and after toggles.
+function updateClickButton() {
+  const btn = document.getElementById('btn-click-toggle');
+  if (!btn) return;
+  btn.classList.toggle('active', clickStateAt(clickPlayheadPos()));
 }
 
 // ── MIDI clock sync ──────────────────────────────────────────────────────
@@ -4975,12 +4963,11 @@ function startClickScheduler() {
   setInterval(() => {
     const st = clickPlaybackState();
     midiClockReconcile(st);
-    if (++clickBtnSyncCounter % 8 === 0) updateClickActionButtons();
+    if (++clickBtnSyncCounter % 8 === 0) updateClickButton();
     if (!st.playing || !audioCtx) return;
     if (st.pos < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
     clickLastSongTime = st.pos;
-    const ranges = clickSectionRanges();
-    if (!clickTrackOn && !ranges.some(r => r.click || r.countIn)) {
+    if (!Array.isArray(automationEvents) || !automationEvents.some(e => e.type === 'click-on')) {
       clickLastScheduledBeat = -1;
       return;
     }
@@ -4991,7 +4978,7 @@ function startClickScheduler() {
     while (g.phase + idx * period < st.pos + LOOKAHEAD) {
       if (idx > clickLastScheduledBeat) {
         const beatT = g.phase + idx * period;
-        if (clickBeatAudible(beatT, ranges, period)) {
+        if (clickBeatAudible(beatT, period)) {
           const delay = (beatT - st.pos) / (st.rate || 1);
           if (delay >= -0.01) {
             try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), idx % 4 === 0); }
@@ -9390,6 +9377,17 @@ async function onLyricsModalSave() {
     lyricsState.cachedLines = _normalizeLyrics(persisted);
     lyricsState.cursor = 0;
     console.log('[lyric] cachedLines populated:', lyricsState.cachedLines.length, 'lines');
+    // Loading lyrics is a REPLACE operation (Bill 2026-07-07): the operator
+    // is about to re-place lines across the song, and placements from an
+    // earlier pass would double up on screen. Wipe them now.
+    const stale = automationEvents.filter(e => e.type === 'lyric-line').length;
+    if (stale) {
+      automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
+      markAutomationDirty();
+      try { renderAutomationLane(); } catch (e) {}
+      showToast(`Cleared ${stale} previously placed lyric line${stale === 1 ? '' : 's'} — fresh placement pass`);
+      console.log('[lyric] replace-mode: cleared', stale, 'placed lyric-line actions');
+    }
     closeLyricsModal();
   } finally {
     els.lyricsModalSave.disabled = false;
@@ -10713,6 +10711,8 @@ function eventMarkerLabel(e) {
     return `${STEM_LETTER[e.stem] || '?'}${lvl}`;
   }
   if (e.type === 'skip-section') return '⏩';
+  if (e.type === 'click-on')  return '⏱+';
+  if (e.type === 'click-off') return '⏱−';
   if (e.type === 'lyric-line') return e.mode === 'append' ? 'L+' : 'L';
   const ch = e.channel || 1;
   if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
@@ -10736,6 +10736,8 @@ function eventClass(e) {
     return 'evt-fade-mid';
   }
   if (e.type === 'skip-section') return 'evt-skip';
+  if (e.type === 'click-on')     return 'evt-unmute';
+  if (e.type === 'click-off')    return 'evt-mute';
   if (e.type === 'lyric-line')   return 'evt-lyric';
   return 'evt-midi';
 }
@@ -10748,6 +10750,8 @@ function eventSummary(e) {
   if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
   if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
   if (e.type === 'skip-section') return 'SKIP to next section';
+  if (e.type === 'click-on')  return 'CLICK TRACK ON from here (audible on the Other strip)';
+  if (e.type === 'click-off') return 'CLICK TRACK OFF from here';
   if (e.type === 'lyric-line') return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
   return e.type || 'event';
 }
@@ -12546,6 +12550,13 @@ async function fireAutomationEvent(e) {
   // (Bill taps multiple lines within 2 s to build up a chorus block).
   if (e.type === 'lyric-line') {
     return fireLyricLine(e);
+  }
+  // CLICK-ON / CLICK-OFF — click regions are derived from these events by
+  // the click scheduler (clickStateAt), so firing is a no-op beyond
+  // refreshing the clock button on the Other strip.
+  if (e.type === 'click-on' || e.type === 'click-off') {
+    try { updateClickButton(); } catch (err) {}
+    return;
   }
   // SKIP-SECTION — jump the playhead to the next section boundary defined
   // on the yellow lane. Computed dynamically at fire time so if the user

@@ -402,14 +402,10 @@
                    REPLACES the on-screen lyrics. SAVE persists them. -->
               <button id="midi-btn-add-lyric" class="midi-toolbar-btn midi-action-add midi-action-lyric" title="Drop the next cached lyric line at the playhead. Tap multiple times within 2s to stack; tap after >2s to replace. Right-click to re-open the lyrics editor.">+ Lyric</button>
               <button id="midi-btn-lyrics-show" class="midi-toolbar-btn midi-action-add midi-action-lyric-show" style="display:none;" title="Toggle the lyrics overlay on/off. Only visible when this song has lyric actions placed.">Show Lyrics</button>
-              <!-- + Click / + Count-in: per-section click-track flags.
-                   Toggle the flag on the section under the playhead; the
-                   metronome (beat grid fitted to THIS source's audio,
-                   routed through the OTHER strip) sounds inside +Click
-                   sections and for the 4 beats before +Count-in sections.
-                   Saved with the sections via SAVE. -->
-              <button id="midi-btn-add-click" class="midi-toolbar-btn midi-action-add" title="Toggle CLICK for the section under the playhead — the metronome is audible for that whole section. Click audio plays through the OTHER channel strip (its fader/mute/solo/routing apply). Saved with SAVE.">+ Click</button>
-              <button id="midi-btn-add-countin" class="midi-toolbar-btn midi-action-add" title="Toggle COUNT-IN for the section under the playhead — 4 clicks on the beat grid lead in just before the section starts. On the FIRST section this arms the song-start count-in (4 beats before the downbeat). Saved with SAVE.">+ Count-in</button>
+              <!-- Click on/off is now recorded from the clock button on
+                   the OTHER strip header as click-track actions; the old
+                   + Click / + Count-in section-flag buttons were retired
+                   2026-07-07 in favor of that event model. -->
               <button id="midi-btn-midi-sync" class="midi-toolbar-btn" title="MIDI SYNC: broadcast 24-ppqn MIDI clock to every connected MIDI device while the song plays, tempo-locked to the beat grid × playback rate (SEMI-aware) — keeps loopers in sync with playback. Requires the MIDI sidecar (./performer.sh start).">MIDI Sync</button>
               <!-- Action favorites (#midi-preset-slots) removed per user
                    request 06/2026 -- they weren't getting used and the
@@ -485,13 +481,9 @@
                   <span class="looper-btn-label">LOOPER</span>
                   <span class="looper-btn-sub" id="looper-section-text">no section</span>
                 </button>
-                <!-- CLICK = latching whole-song metronome on the beat
-                     grid; COUNT-IN arms the 4-beat song-start pre-roll.
-                     Per-SECTION click/count-in flags live in the + Click /
-                     + Count-in actions beneath the visualizer. Click audio
-                     routes through the OTHER channel strip. -->
-                <button id="btn-click-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="CLICK: whole-song click track on the beat grid, synced to whatever source is playing (stems / backing / drum machine). Audio plays through the OTHER strip — its fader/mute/solo/routing set the click's level and destination."><i data-lucide="alarm-clock"></i></button>
-                <button id="btn-count-in-toggle" class="control-btn toggle-btn looper-side-btn hover-glow" title="COUNT-IN: 4 clicks on the beat grid before the song's first downbeat, so the band starts together. Audible when this is lit AND the OTHER strip is unmuted with its fader up. Saved per song."><i data-lucide="hash"></i><span class="ci-num">4</span></button>
+                <!-- The CLICK + COUNT-IN buttons moved onto the OTHER
+                     channel strip header 2026-07-07 (Bill: the click IS
+                     ch 6 audio, so its controls belong on that strip). -->
                 <!-- HOLODECK voice control. Click to start listening; say
                      "HOLODECK, ..." to issue a command. The level meter
                      under the icon shows the system is hearing the room. -->
@@ -706,7 +698,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <!-- Other Channel -->
               <div class="channel-strip other-strip">
                 <div class="fader-container">
-                  <div class="channel-header"><span class="channel-icon text-orange"><i data-lucide="music"></i></span><span class="channel-name">Other</span></div>
+                  <div class="channel-header other-click-header"><button id="btn-click-toggle" class="strip-click-btn hover-glow" title="CLICK TRACK on/off from the playhead. Toggling drops a 'click track on' / 'click track off' action into the song at the playhead, so the click replays with the song. Click audio plays on THIS strip (ch 6) — fader/mute/solo/routing apply."><i data-lucide="alarm-clock"></i></button><span class="channel-name">Other</span><button id="btn-count-in-toggle" class="strip-click-btn hover-glow" title="COUNT-IN: extend the click track to 4 beats BEFORE each click-track-on point (and before the song's first downbeat at song start), so the band comes in together. Saved per song."><i data-lucide="hash"></i></button></div>
                   <div class="fader-track">
                     <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>

@@ -2895,6 +2895,21 @@ select {
 .channel-header .channel-icon { display: inline-flex; align-items: center; }
 .channel-header .channel-icon i { width: 14px; height: 14px; }
 .channel-header .channel-name { line-height: 1; }
+/* Click-track controls live ON the Other strip header: clock (click
+   on/off action at the playhead) left, count-in right. */
+.other-click-header { justify-content: space-between; }
+.strip-click-btn {
+  width: 20px; height: 20px; padding: 0; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 5px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.strip-click-btn i, .strip-click-btn svg { width: 13px; height: 13px; }
+.strip-click-btn.active {
+  background: var(--color-green, #27ae60);
+  border-color: transparent;
+  color: #fff;
+}
 
 .fader-track {
   /* Shorter than the original 180 — saves vertical room so all 6 stems can
@@ -6413,22 +6428,6 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
    Font override: Space Grotesk's bold capital I has prominent top/bottom
    serifs that read like a 'T'. Arial Black renders 'I' as a clean vertical
    block with no ambiguity. */
-/* Count-in toggle button: # icon with a small "4" badge so the action is
-   obvious at a glance. Active state inherits the existing .toggle-btn.active
-   green outline that the click-toggle uses. */
-#btn-count-in-toggle { position: relative; }
-#btn-count-in-toggle .ci-num {
-  position: absolute;
-  bottom: 4px; right: 5px;
-  font-size: 9px;
-  font-weight: 900;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  padding: 1px 3px;
-  border-radius: 3px;
-  line-height: 1;
-}
-
 .midi-event-marker.evt-init {
   background: #9b59b6;
   color: #fff;
@@ -6449,8 +6448,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   justify-content: center;
   gap: 8px;
 }
-/* Click + Count-in buttons that moved next to LOOPER. Sized to look like
-   accessories of the big LOOPER button rather than primary transport. */
+/* Accessory buttons beside LOOPER (HOLODECK mic still lives here). */
 .looper-side-btn {
   width: 40px;
   height: 40px;
@@ -6459,13 +6457,6 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   align-items: center;
   justify-content: center;
   position: relative;
-}
-.looper-side-btn .ci-num {
-  position: absolute;
-  right: 4px;
-  bottom: 2px;
-  font-size: 9px;
-  font-weight: 800;
 }
 .looper-btn {
   flex: 1 1 auto;
