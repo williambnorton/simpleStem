@@ -243,6 +243,8 @@ async function setWaveformStems(sources) {
   window.songOnsetTimes = null;
   window.songOnsetCount = 0;
   window.songBeatGrid = null;
+  onsetEnv = null;
+  onsetEnvHopSec = 0;
 
   const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
   const entries = Object.entries(sources || {});
@@ -268,6 +270,7 @@ async function setWaveformStems(sources) {
       if (requestId !== stemPeaksRequestId) return;  // newer song loaded
       if (!waveformDuration) waveformDuration = buf.duration;
       stemPeaks.set(key, computePeaks(buf, PEAK_BUCKETS));
+      accumulateOnsetEnvelope(buf);
     } catch (e) {
       console.warn('[visualizer] peaks failed for', key, url, e.message);
     }
@@ -346,6 +349,33 @@ function buildBeatGrid(onsets) {
       if (score > best.score) best = { score, period, phase };
     }
   }
+  // Least-squares refinement over matched onsets (t ≈ phase + n·period):
+  // kills the residual per-beat drift the coarse candidate search leaves.
+  for (let pass = 0; pass < 2; pass++) {
+    let sn = 0, st = 0, snn = 0, snt = 0, m = 0;
+    for (const t of onsets) {
+      const n = Math.round((t - best.phase) / best.period);
+      const dev = t - (best.phase + n * best.period);
+      if (Math.abs(dev) < TOL) { sn += n; st += t; snn += n * n; snt += n * t; m++; }
+    }
+    if (m >= 8) {
+      const denom = m * snn - sn * sn;
+      if (denom !== 0) {
+        const period = (m * snt - sn * st) / denom;
+        const phase = (st - period * sn) / m;
+        if (period > 0.15 && Math.abs(period - best.period) < best.period * 0.03) {
+          best.period = period;
+          best.phase = phase;
+        }
+      }
+    }
+  }
+  let score = 0;
+  for (const t of onsets) {
+    const dev = Math.abs(t - best.phase - Math.round((t - best.phase) / best.period) * best.period);
+    if (dev < TOL) score += 1 - dev / TOL;
+  }
+  best.score = score;
   let phase = best.phase % best.period;
   if (phase < 0) phase += best.period;
   return {
@@ -354,7 +384,72 @@ function buildBeatGrid(onsets) {
   };
 }
 
+// High-resolution onset envelope, separate from the drawing peaks. The
+// drawing envelope has PEAK_BUCKETS buckets across the WHOLE song — ~190 ms
+// each on a 5-minute track — which quantized onset timestamps so badly the
+// fitted beat grid wandered audibly off the music (Bill 2026-07-07: "the
+// click does not sound like it is sync'd"). This one is 512 samples per
+// frame (~10.7 ms at 48 kHz), max-combined across stems during decode.
+let onsetEnv = null;
+let onsetEnvHopSec = 0;
+
+function accumulateOnsetEnvelope(buf) {
+  const HOP = 512;
+  const n = Math.floor(buf.length / HOP);
+  if (n < 4) return;
+  if (!onsetEnv || n > onsetEnv.length) {
+    const grown = new Float32Array(n);
+    if (onsetEnv) grown.set(onsetEnv);
+    onsetEnv = grown;
+  }
+  onsetEnvHopSec = HOP / buf.sampleRate;
+  const channels = Math.min(buf.numberOfChannels, 2);
+  for (let ch = 0; ch < channels; ch++) {
+    const data = buf.getChannelData(ch);
+    for (let i = 0; i < n; i++) {
+      let peak = 0;
+      const start = i * HOP, end = start + HOP;
+      for (let j = start; j < end; j++) {
+        const v = Math.abs(data[j]);
+        if (v > peak) peak = v;
+      }
+      if (peak > onsetEnv[i]) onsetEnv[i] = peak;
+    }
+  }
+}
+
+function computeOnsetTimesHighRes() {
+  const env = onsetEnv, hop = onsetEnvHopSec, N = env.length;
+  let max = 0;
+  for (let i = 0; i < N; i++) if (env[i] > max) max = env[i];
+  if (!max) return null;
+  // Half-wave-rectified rise over a ~21 ms lag, peak-picked with an
+  // adaptive threshold and 110 ms minimum spacing.
+  const LAG = 2;
+  const d = new Float32Array(N);
+  let dsum = 0, dcnt = 0;
+  for (let i = LAG; i < N; i++) {
+    const r = (env[i] - env[i - LAG]) / max;
+    if (r > 0) { d[i] = r; dsum += r; dcnt++; }
+  }
+  const thr = Math.max(0.06, 1.8 * (dcnt ? dsum / dcnt : 0));
+  const minSpace = Math.ceil(0.11 / hop);
+  const onsets = [];
+  let last = -minSpace;
+  for (let i = LAG; i < N - 1; i++) {
+    if (d[i] >= thr && d[i] >= d[i - 1] && d[i] >= d[i + 1] && (i - last) >= minSpace) {
+      onsets.push((i - LAG / 2) * hop);
+      last = i;
+    }
+  }
+  return onsets.length ? onsets : null;
+}
+
 function computeOnsetTimes() {
+  if (onsetEnv && onsetEnvHopSec > 0) {
+    const hi = computeOnsetTimesHighRes();
+    if (hi) return hi;
+  }
   if (!stemPeaks.size || !waveformDuration) return null;
   // Build a combined peaks envelope using max-of-stems (mute/solo state
   // doesn't matter here; we want the song's underlying structure).

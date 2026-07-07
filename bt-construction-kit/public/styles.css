@@ -2899,16 +2899,40 @@ select {
    on/off action at the playhead) left, count-in right. */
 .other-click-header { justify-content: space-between; }
 .strip-click-btn {
-  width: 20px; height: 20px; padding: 0; flex: 0 0 auto;
+  width: 28px; height: 28px; padding: 0; flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid rgba(0,0,0,0.18); border-radius: 5px;
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 6px;
   background: transparent; color: inherit; cursor: pointer;
+  transition: background 90ms ease-out, color 90ms ease-out;
 }
-.strip-click-btn i, .strip-click-btn svg { width: 13px; height: 13px; }
+.strip-click-btn i, .strip-click-btn svg { width: 17px; height: 17px; }
 .strip-click-btn.active {
   background: var(--color-green, #27ae60);
   border-color: transparent;
   color: #fff;
+}
+/* Clock button states: GREEN = ready to press (flashes to the beat while
+   the song plays, proving the grid is locked), YELLOW = click track ON at
+   the playhead (flashes to the beat too). */
+#btn-click-toggle.click-ready {
+  background: rgba(39, 174, 96, 0.18);
+  border-color: rgba(39, 174, 96, 0.6);
+  color: #1d8f4f;
+}
+#btn-click-toggle.click-ready.beat-flash {
+  background: var(--color-green, #27ae60);
+  border-color: transparent;
+  color: #fff;
+}
+#btn-click-toggle.click-live {
+  background: rgba(241, 196, 15, 0.3);
+  border-color: rgba(241, 196, 15, 0.8);
+  color: #7a6207;
+}
+#btn-click-toggle.click-live.beat-flash {
+  background: #f1c40f;
+  border-color: transparent;
+  color: #000;
 }
 
 .fader-track {

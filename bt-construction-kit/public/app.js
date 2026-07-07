@@ -4892,12 +4892,30 @@ function setupClickTrack() {
   startClickScheduler();
 }
 
-// The clock button lights when the click track is ON at the playhead.
-// Called from the scheduler tick (throttled) and after toggles.
+// Clock-button state coloring: YELLOW while the click track is ON at the
+// playhead, GREEN when a song is loaded and it's ready to press. The
+// on-the-beat flash itself is driven by the scheduler tick (clickBeatFlash)
+// so it pulses in time with the grid — a visual confirmation that the grid
+// is locked to the music before you commit a click-on.
 function updateClickButton() {
   const btn = document.getElementById('btn-click-toggle');
   if (!btn) return;
-  btn.classList.toggle('active', clickStateAt(clickPlayheadPos()));
+  const onNow = !!currentSong && clickStateAt(clickPlayheadPos());
+  btn.classList.toggle('click-live', onNow);
+  btn.classList.toggle('click-ready', !!currentSong && !onNow);
+}
+
+function clickBeatFlash(st) {
+  const btn = document.getElementById('btn-click-toggle');
+  if (!btn) return;
+  let flash = false;
+  if (st.playing) {
+    const g = getClickGrid();
+    let frac = ((st.pos - g.phase) / g.period) % 1;
+    if (frac < 0) frac += 1;
+    flash = frac < 0.28;
+  }
+  btn.classList.toggle('beat-flash', flash);
 }
 
 // ── MIDI clock sync ──────────────────────────────────────────────────────
@@ -4963,6 +4981,7 @@ function startClickScheduler() {
   setInterval(() => {
     const st = clickPlaybackState();
     midiClockReconcile(st);
+    clickBeatFlash(st);
     if (++clickBtnSyncCounter % 8 === 0) updateClickButton();
     if (!st.playing || !audioCtx) return;
     if (st.pos < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
