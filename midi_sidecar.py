@@ -12,6 +12,9 @@ Endpoints
 GET  /health                → { ok, ports: [...] }
 GET  /ports                 → { outputs: [...] }
 POST /send                  → fire one message
+POST /clock                 → 24-ppqn MIDI clock control
+    body: { action: "start" | "bpm" | "stop", bpm: 30-300, port: optional
+            substring filter; default = broadcast to every output }
     body: { port: "helix",  # substring match against output port names
             type: "pc" | "cc" | "note_on" | "note_off",
             channel: 1..16,
@@ -32,6 +35,8 @@ pip3 install mido python-rtmidi
 
 import json
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 try:
@@ -74,6 +79,101 @@ def get_output(needle):
     if name not in _outputs:
         _outputs[name] = mido.open_output(name)
     return _outputs[name]
+
+
+class MidiClock:
+    """24-ppqn MIDI clock generator. One background thread, absolute-time
+    scheduled (perf_counter) so tempo doesn't drift with sleep jitter.
+    Broadcasts to every output port (or a substring-filtered subset) so
+    loopers/pedals follow the portal's playback tempo. Driven by POST /clock
+    with {action: start|bpm|stop, bpm?, port?}.
+    """
+
+    def __init__(self):
+        self._thread = None
+        self._stop_evt = threading.Event()
+        self._lock = threading.Lock()
+        self._interval = 60.0 / (120.0 * 24.0)
+        self.bpm = 0.0
+        self.running = False
+        self.port_filter = None
+
+    def _targets(self):
+        try:
+            names = mido.get_output_names()
+        except Exception:
+            names = []
+        if self.port_filter:
+            needle = self.port_filter.lower()
+            names = [n for n in names if needle in n.lower()]
+        outs = []
+        for n in names:
+            try:
+                if n not in _outputs:
+                    _outputs[n] = mido.open_output(n)
+                outs.append(_outputs[n])
+            except Exception:
+                pass
+        return outs
+
+    def start(self, bpm, port_filter=None):
+        self.stop(send_stop=False)
+        with self._lock:
+            self.bpm = float(bpm)
+            self._interval = 60.0 / (self.bpm * 24.0)
+        self.port_filter = port_filter or None
+        self._stop_evt.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self.running = True
+        self._thread.start()
+
+    def set_bpm(self, bpm):
+        with self._lock:
+            self.bpm = float(bpm)
+            self._interval = 60.0 / (self.bpm * 24.0)
+
+    def stop(self, send_stop=True):
+        if self._thread and self._thread.is_alive():
+            self._stop_evt.set()
+            self._thread.join(timeout=1.0)
+        self._thread = None
+        self.running = False
+        if send_stop:
+            for out in self._targets():
+                try:
+                    out.send(mido.Message("stop"))
+                except Exception:
+                    pass
+
+    def _run(self):
+        outs = self._targets()
+        for out in outs:
+            try:
+                out.send(mido.Message("start"))
+            except Exception:
+                pass
+        next_t = time.perf_counter()
+        ticks = 0
+        while not self._stop_evt.is_set():
+            for out in outs:
+                try:
+                    out.send(mido.Message("clock"))
+                except Exception:
+                    pass
+            with self._lock:
+                iv = self._interval
+            next_t += iv
+            ticks += 1
+            if ticks % 240 == 0:
+                outs = self._targets()
+            delay = next_t - time.perf_counter()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                next_t = time.perf_counter()
+
+
+_clock = MidiClock()
 
 
 def build_msg(body):
@@ -128,7 +228,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            return self._json(200, {"ok": True, "ports": mido.get_output_names()})
+            return self._json(200, {"ok": True, "ports": mido.get_output_names(),
+                                    "clock": {"running": _clock.running, "bpm": _clock.bpm}})
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names()})
         self._json(404, {"error": "not found"})
@@ -142,7 +243,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": f"bad json: {e}"})
         if self.path == "/send":
             return self._handle_send(body)
+        if self.path == "/clock":
+            return self._handle_clock(body)
         self._json(404, {"error": "not found"})
+
+    def _handle_clock(self, body):
+        action = (body.get("action") or "").lower()
+        try:
+            if action == "start":
+                bpm = float(body.get("bpm", 120))
+                if not (30.0 <= bpm <= 300.0):
+                    raise ValueError(f"bpm must be 30-300, got {bpm}")
+                _clock.start(bpm, body.get("port"))
+                return self._json(200, {"ok": True, "running": True, "bpm": _clock.bpm})
+            if action == "bpm":
+                bpm = float(body.get("bpm", 120))
+                if not (30.0 <= bpm <= 300.0):
+                    raise ValueError(f"bpm must be 30-300, got {bpm}")
+                _clock.set_bpm(bpm)
+                return self._json(200, {"ok": True, "running": _clock.running, "bpm": _clock.bpm})
+            if action == "stop":
+                _clock.stop()
+                return self._json(200, {"ok": True, "running": False})
+            raise ValueError(f"unsupported clock action: {action!r}")
+        except ValueError as e:
+            return self._json(400, {"error": str(e)})
+        except Exception as e:
+            return self._json(500, {"error": f"clock failed: {e}"})
 
     def _handle_send(self, body):
         out = get_output(body.get("port"))

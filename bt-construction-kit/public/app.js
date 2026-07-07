@@ -4722,126 +4722,69 @@ function applySidebarWidth(px) {
   document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
 }
 
-// ── Click track ──────────────────────────────────────────────────────────
-// Song-synced metronome. Replaces the old setInterval-driven version that
-// drifted from the actual playback timeline. New approach:
-//   - rAF poll reads audioElement.currentTime every frame
-//   - look-ahead window (200ms) — for each beat in that window we haven't
-//     scheduled yet, schedule an oscillator click at the matching
-//     AudioContext.currentTime + offset
-//   - silent while song is paused; re-syncs after a seek (lastScheduledBeat
-//     resets when currentTime jumps backward)
-//
-// Result: every audible click lands ON one of the vertical beat markers
-// drawn on the waveform. Easy for a musician to replace the studio drums
-// in their head by playing along with the visual + audible grid.
-let clickEnabled = false;
+// ── Click track (v2 — whole-song, source-synced, Other-strip routed) ────
+// Rebuilt 2026-07-07 per Bill's spec. One dynamically generated beat grid
+// per loaded source (window.songBeatGrid, fitted by the visualizer at
+// decode time to the SAME audio the operator sees), consumed four ways:
+//   1. CLICK button (next to LOOPER): latching whole-song metronome.
+//   2. "+ Click" action beneath the visualizer: click audible for the
+//      whole section under the playhead (persisted with the sections).
+//   3. "+ Count-in" action: 4 grid beats audible just BEFORE the flagged
+//      section; on the first section this arms the song-start count-in.
+//   4. MIDI SYNC: 24-ppqn MIDI clock broadcast by the sidecar, tempo
+//      slaved to the same grid × current playback rate.
+// The click's audio is an oscillator routed through the OTHER channel
+// strip's stripGain, so the Other fader / mute / solo / output routing
+// control its level and destination (Bill: "this click track audio uses
+// the Other track volume/mute/solo/output selector"). The sync source is
+// whatever is actually playing — stems, backing track, or drum machine.
+let clickTrackOn = false;             // CLICK button: whole-song metronome
+let midiSyncOn = false;               // MIDI SYNC button state
 let clickLastScheduledBeat = -1;
 let clickLastSongTime = 0;
-let clickIdleSince = 0;
-// Number of clicks fired since the last toggle-on. Click track auto-disables
-// after 4 — short pre-roll counter, not a continuous metronome.
-let clickBeatsFired = 0;
-const CLICK_MAX_BEATS = 4;
+let clickSchedulerStarted = false;
+// Optional manual override for the first-downbeat time — settable via a
+// future "tap first beat" button. null = auto from onsets/grid.
+let clickBeatOffsetOverride = null;
 
-function setupClickTrack() {
-  const btn = document.getElementById('btn-click-toggle');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    clickEnabled = !clickEnabled;
-    btn.classList.toggle('active', clickEnabled);
-    if (clickEnabled) {
-      initAudioCtx();
-      clickLastScheduledBeat = -1;
-      clickLastSongTime = 0;
-      clickBeatsFired = 0;
-      clickSchedulerTick();
-    }
-  });
+function getClickGrid() {
+  const g = window.songBeatGrid;
+  if (g && g.period > 0) return g;
+  const bpm = (currentSong && currentSong.practiceBpm) || 120;
+  return { bpm, period: 60 / bpm, phase: legacyBeatOffsetSec(), source: 'fallback' };
 }
 
-// Where the first downbeat occurs in seconds. Anchors the BPM grid so
-// clicks align with the actual beat instead of t=0 (which is usually intro
-// silence or anacrusis). Computed once per song from the first onset; if
-// onsets aren't ready yet, falls back to 0.
-function getBeatOffsetSec() {
+// First onset ≥ 50ms — the pre-grid heuristic, kept as the fallback.
+function legacyBeatOffsetSec() {
   if (typeof clickBeatOffsetOverride === 'number') return clickBeatOffsetOverride;
   const onsets = window.songOnsetTimes;
   if (Array.isArray(onsets) && onsets.length) {
-    // Skip very-early micro-spikes (< 50 ms) — they're usually fade-in
-    // artifacts, not the real first beat.
     for (const t of onsets) { if (t >= 0.05) return t; }
   }
   return 0;
 }
 
-function clickSchedulerTick() {
-  if (!clickEnabled) return;
-  requestAnimationFrame(clickSchedulerTick);
-  if (!audioCtx || !masterGainNode) return;
-
-  // Pick the audio element that's currently driving playback.
-  let songTime = null;
-  for (const ch of CHANNELS) {
-    const ae = audioElements[ch];
-    if (ae && ae.src && !ae.paused) { songTime = ae.currentTime; break; }
+// Where the song's first real downbeat lands, snapped to the beat grid
+// when one exists. Anchors the song-start count-in.
+function getBeatOffsetSec() {
+  if (typeof clickBeatOffsetOverride === 'number') return clickBeatOffsetOverride;
+  const first = legacyBeatOffsetSec();
+  const g = window.songBeatGrid;
+  if (g && g.period > 0) {
+    const n = Math.round((first - g.phase) / g.period);
+    const snapped = g.phase + n * g.period;
+    if (snapped >= 0 && Math.abs(snapped - first) <= 0.12) return snapped;
   }
-  if (songTime == null) {
-    // No song playing → start the inactivity countdown. If 5 s elapses
-    // without playback the click track auto-disables so it can't sit in
-    // a RAF loop forever after a stray button press.
-    if (!clickIdleSince) clickIdleSince = Date.now();
-    else if (Date.now() - clickIdleSince > 5000) {
-      clickEnabled = false;
-      clickIdleSince = 0;
-      const btn = document.getElementById('btn-click-toggle');
-      if (btn) btn.classList.remove('active');
-      console.warn('[click] auto-disabled after 5s with no playback');
-    }
-    return;
-  }
-  clickIdleSince = 0;
-
-  // Seek detection: if the song time jumped backwards, reset our
-  // 'already-scheduled' cursor so future events fire again.
-  if (songTime < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
-  clickLastSongTime = songTime;
-
-  const LOOKAHEAD_SEC = 0.2;
-  const bpm = (currentSong && currentSong.practiceBpm) || 120;
-  const beatSec = 60 / bpm;
-  const offset = getBeatOffsetSec();
-
-  // BPM grid anchored to the first real downbeat. Each click lands at
-  // offset + N * beatSec — so the BEATS stay BPM-locked but the GRID is
-  // aligned to where the song actually starts playing in time. Every 4th
-  // beat is treated as a downbeat (higher-pitched click).
-  let beatIdx = Math.max(0, Math.floor((songTime - offset) / beatSec));
-  while (offset + beatIdx * beatSec < songTime + LOOKAHEAD_SEC) {
-    if (beatIdx > clickLastScheduledBeat) {
-      const beatTime = offset + beatIdx * beatSec;
-      const delay = beatTime - songTime;
-      if (delay >= -0.01) {
-        fireClickAt(audioCtx.currentTime + Math.max(delay, 0), beatIdx % 4 === 0);
-        clickBeatsFired++;
-        // After 4 beats, auto-disable. Schedules a small grace so the 4th
-        // click is heard before the scheduler stops requesting frames.
-        if (clickBeatsFired >= CLICK_MAX_BEATS) {
-          setTimeout(() => {
-            clickEnabled = false;
-            const btn = document.getElementById('btn-click-toggle');
-            if (btn) btn.classList.remove('active');
-          }, Math.max(0, delay * 1000) + 80);
-        }
-      }
-      clickLastScheduledBeat = beatIdx;
-    }
-    beatIdx++;
-  }
+  return first;
 }
-// Optional user override for the beat offset — settable via a future "tap
-// first beat" button. null means: auto-detect from onsets.
-let clickBeatOffsetOverride = null;
+
+// The Other strip's gain node is the click's output — fader, mute, solo
+// and output routing all apply. Falls back to master gain until the strips
+// have been built (first stems init).
+function clickOutputNode() {
+  const st = (typeof stripNodes === 'object' && stripNodes) ? stripNodes.other : null;
+  return (st && st.stripGain) ? st.stripGain : masterGainNode;
+}
 
 function fireClickAt(when, downbeat) {
   const osc = audioCtx.createOscillator();
@@ -4849,15 +4792,217 @@ function fireClickAt(when, downbeat) {
   osc.type = 'triangle';
   osc.frequency.value = downbeat ? 1800 : 1200;
   gain.gain.setValueAtTime(0, when);
-  gain.gain.linearRampToValueAtTime(downbeat ? 0.35 : 0.22, when + 0.002);
+  gain.gain.linearRampToValueAtTime(downbeat ? 0.5 : 0.32, when + 0.002);
   gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
   osc.connect(gain);
-  // Route through master gain so the click obeys master volume; lands on
-  // outputs 0-1 regardless of stem channel routing so the click always
-  // reaches the monitor mix.
-  gain.connect(masterGainNode);
+  gain.connect(clickOutputNode());
   osc.start(when);
   osc.stop(when + 0.08);
+}
+
+// Mode-aware playback probe: whatever source is audible drives the click —
+// drum machine, backing track, or the stems master.
+function clickPlaybackState() {
+  const src = (typeof activeSourceEl === 'function') ? activeSourceEl() : null;
+  if (src && src.src && !src.paused) {
+    return { pos: src.currentTime, rate: src.playbackRate || 1, playing: true };
+  }
+  for (const ch of CHANNELS) {
+    const ae = audioElements[ch];
+    if (ae && ae.src && !ae.paused) {
+      return { pos: ae.currentTime, rate: ae.playbackRate || 1, playing: true };
+    }
+  }
+  return { pos: 0, rate: 1, playing: false };
+}
+
+// Playhead position even while paused (for the +Click/+Count-in actions).
+function clickPlayheadPos() {
+  const src = (typeof activeSourceEl === 'function') ? activeSourceEl() : null;
+  if (src && src.src) return src.currentTime;
+  for (const ch of CHANNELS) {
+    const ae = audioElements[ch];
+    if (ae && ae.src) return ae.currentTime;
+  }
+  return 0;
+}
+
+// Section ranges with click flags. Convention matches the automation
+// dispatcher: section i spans [i === 0 ? 0 : sorted[i-1].t, sorted[i].t).
+// `countIn` treats the legacy per-section `clickIn` flag as an alias.
+function clickSectionRanges() {
+  if (!Array.isArray(automationSections) || !automationSections.length) return [];
+  const sorted = automationSections.slice().sort((a, b) => a.t - b.t);
+  return sorted.map((sec, i) => ({
+    start: i === 0 ? 0 : sorted[i - 1].t,
+    end: sec.t,
+    click: !!sec.click,
+    countIn: !!(sec.countIn || sec.clickIn),
+    ref: sec,
+  }));
+}
+
+function clickSectionAt(t) {
+  const ranges = clickSectionRanges();
+  for (const r of ranges) if (t >= r.start && t < r.end) return r;
+  return null;
+}
+
+// Is a grid beat at song-time t audible? Any of three gates suffices:
+// whole-song CLICK, inside a +Click section, or in the 4-beat count-in
+// window before a +Count-in section (mid-song only — the first section's
+// count-in is the togglePlayPause pre-roll, since beats before t=0 can't
+// play from the timeline).
+function clickBeatAudible(t, ranges, period) {
+  if (clickTrackOn) return true;
+  for (const r of ranges) {
+    if (r.click && t >= r.start && t < r.end) return true;
+    if (r.countIn && r.start > 0.1 &&
+        t >= r.start - 4 * period - 0.02 && t < r.start - 0.02) return true;
+  }
+  return false;
+}
+
+function setupClickTrack() {
+  const btn = document.getElementById('btn-click-toggle');
+  if (btn) btn.addEventListener('click', () => {
+    clickTrackOn = !clickTrackOn;
+    btn.classList.toggle('active', clickTrackOn);
+    if (clickTrackOn) { try { initAudioCtx(); } catch (e) {} }
+  });
+  const syncBtn = document.getElementById('midi-btn-midi-sync');
+  if (syncBtn) syncBtn.addEventListener('click', () => {
+    midiSyncOn = !midiSyncOn;
+    syncBtn.classList.toggle('active', midiSyncOn);
+  });
+  const addClick = document.getElementById('midi-btn-add-click');
+  if (addClick) addClick.addEventListener('click', () => toggleSectionClickFlag('click'));
+  const addCountIn = document.getElementById('midi-btn-add-countin');
+  if (addCountIn) addCountIn.addEventListener('click', () => toggleSectionClickFlag('countIn'));
+  startClickScheduler();
+}
+
+// + Click / + Count-in actions: toggle the flag on the section under the
+// playhead. Persists with the sections through SAVE / song-end auto-save.
+function toggleSectionClickFlag(flag) {
+  const pos = clickPlayheadPos();
+  const r = clickSectionAt(pos);
+  if (!r) {
+    showToast('No section at the playhead — place section markers first (keys 1-9 or ACCEPT)');
+    return;
+  }
+  const on = !r.ref[flag];
+  r.ref[flag] = on;
+  if (!on) delete r.ref[flag];
+  if (flag === 'countIn' && !on) delete r.ref.clickIn;  // retire the legacy alias on explicit off
+  markAutomationDirty();
+  updateClickActionButtons();
+  clickLastScheduledBeat = -1;
+  showToast(`${flag === 'click' ? 'Section click' : 'Count-in'} ${on ? 'ON' : 'off'} for this section — SAVE to persist`);
+}
+
+// Light the +Click/+Count-in buttons when the playhead's section carries
+// the flag; called from the scheduler tick (throttled) and on toggles.
+function updateClickActionButtons() {
+  const bc = document.getElementById('midi-btn-add-click');
+  const bi = document.getElementById('midi-btn-add-countin');
+  if (!bc && !bi) return;
+  const r = clickSectionAt(clickPlayheadPos());
+  if (bc) bc.classList.toggle('active', !!(r && r.click));
+  if (bi) bi.classList.toggle('active', !!(r && r.countIn));
+}
+
+// ── MIDI clock sync ──────────────────────────────────────────────────────
+// The sidecar owns the actual 24-ppqn clock thread (HTTP can't carry
+// 50 msgs/sec). The portal just reconciles: playing → start at the grid's
+// effective BPM, rate change → bpm update, paused/stopped → stop.
+let midiClockState = { running: false, bpmSent: 0, lastPost: 0, warned: false };
+
+async function midiClockPost(body) {
+  try {
+    const r = await fetch('/api/midi/clock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    midiClockState.warned = false;
+    return true;
+  } catch (e) {
+    if (!midiClockState.warned) {
+      console.warn('[midi-sync] clock post failed (sidecar down?):', e.message);
+      showToast('MIDI Sync: sidecar unreachable — start it with ./performer.sh start');
+      midiClockState.warned = true;
+    }
+    return false;
+  }
+}
+
+function midiClockReconcile(st) {
+  if (!midiSyncOn) {
+    if (midiClockState.running) { midiClockState.running = false; midiClockPost({ action: 'stop' }); }
+    return;
+  }
+  const g = getClickGrid();
+  const bpm = Math.round((60 / g.period) * (st.rate || 1) * 10) / 10;
+  const now = Date.now();
+  if (st.playing && !midiClockState.running) {
+    midiClockState.running = true; midiClockState.bpmSent = bpm; midiClockState.lastPost = now;
+    midiClockPost({ action: 'start', bpm });
+  } else if (!st.playing && midiClockState.running) {
+    midiClockState.running = false;
+    midiClockPost({ action: 'stop' });
+  } else if (st.playing && Math.abs(bpm - midiClockState.bpmSent) > 0.5 && now - midiClockState.lastPost > 500) {
+    midiClockState.bpmSent = bpm; midiClockState.lastPost = now;
+    midiClockPost({ action: 'bpm', bpm });
+  }
+}
+
+// ── The scheduler ────────────────────────────────────────────────────────
+// One permanent 60 ms interval (NOT requestAnimationFrame — rAF stops
+// entirely when the tab is hidden or the window is covered, which would
+// silence the click and freeze the MIDI clock mid-song). Background tabs
+// clamp intervals to 1 s, so the look-ahead widens to 1.5 s when hidden;
+// Web Audio scheduling stays sample-accurate either way. Each pass reads
+// the active source's position, schedules any grid beats inside the
+// look-ahead that pass the audibility gates, and reconciles the MIDI
+// clock. Beat cursor resets on backward seeks (covers scrub + LOOPER wrap).
+let clickBtnSyncCounter = 0;
+
+function startClickScheduler() {
+  if (clickSchedulerStarted) return;
+  clickSchedulerStarted = true;
+  setInterval(() => {
+    const st = clickPlaybackState();
+    midiClockReconcile(st);
+    if (++clickBtnSyncCounter % 8 === 0) updateClickActionButtons();
+    if (!st.playing || !audioCtx) return;
+    if (st.pos < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
+    clickLastSongTime = st.pos;
+    const ranges = clickSectionRanges();
+    if (!clickTrackOn && !ranges.some(r => r.click || r.countIn)) {
+      clickLastScheduledBeat = -1;
+      return;
+    }
+    const g = getClickGrid();
+    const period = g.period;
+    const LOOKAHEAD = (document.visibilityState === 'hidden') ? 1.5 : 0.3;  // song-seconds
+    let idx = Math.max(0, Math.ceil((st.pos - g.phase - 0.005) / period));
+    while (g.phase + idx * period < st.pos + LOOKAHEAD) {
+      if (idx > clickLastScheduledBeat) {
+        const beatT = g.phase + idx * period;
+        if (clickBeatAudible(beatT, ranges, period)) {
+          const delay = (beatT - st.pos) / (st.rate || 1);
+          if (delay >= -0.01) {
+            try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), idx % 4 === 0); }
+            catch (e) {}
+          }
+        }
+        clickLastScheduledBeat = idx;
+      }
+      idx++;
+    }
+  }, 60);
 }
 
 // ── Format-column variant filters ────────────────────────────────────────
@@ -6852,53 +6997,14 @@ function startSyncLoop() {
   const masterTrack = activeTracks[0];
   const masterAe = audioElements[masterTrack];
   
-  // Track which section's clickIn pre-roll we've already scheduled so we
-  // don't re-fire the same one every 100ms.
-  let lastClickInSectionIdx = -1;
   syncInterval = setInterval(() => {
     if (!isPlaying) return;
 
     let masterTime = masterAe.currentTime;
 
-    // Section-attached click pre-roll: when the playhead approaches the
-    // start of a section whose clickIn flag is true, fire 4 beats of click
-    // timed to land exactly at the section boundary. Skips the FIRST
-    // section because that case is handled by togglePlayPause's
-    // pre-roll (4 silent clicks before audio starts).
-    if (audioCtx && Array.isArray(automationSections) && automationSections.length > 1) {
-      const bpm = (currentSong && currentSong.practiceBpm) || 120;
-      const beatSec = 60 / bpm;
-      const window = 4 * beatSec + 0.15;
-      // section[i].startT = i==0 ? 0 : automationSections[i-1].t. Walk only
-      // mid-song sections (i >= 1).
-      const sorted = automationSections.slice().sort((a, b) => a.t - b.t);
-      for (let i = 1; i < sorted.length; i++) {
-        if (!sorted[i] || !sorted[i].clickIn) continue;
-        const startT = sorted[i - 1].t;
-        const dt = startT - masterTime;
-        if (dt >= 0 && dt < window && lastClickInSectionIdx !== i) {
-          // Schedule 4 clicks landing on startT - 4*beatSec ... startT.
-          // audioCtx time of the first click = current ctx time + (dt - 4*beatSec).
-          const startCtxT = audioCtx.currentTime + (dt - 4 * beatSec);
-          for (let k = 0; k < 4; k++) {
-            try { fireClickAt(Math.max(audioCtx.currentTime, startCtxT + k * beatSec), true); }
-            catch (e) {}
-          }
-          lastClickInSectionIdx = i;
-          break;
-        }
-      }
-      // Reset the "already scheduled" guard when the playhead moves well
-      // past or before any pending section start so subsequent crossings
-      // re-fire (covers seek + LOOPER wrap).
-      if (lastClickInSectionIdx >= 0) {
-        const sec = sorted[lastClickInSectionIdx];
-        const startT = sorted[lastClickInSectionIdx - 1]?.t || 0;
-        if (sec && (masterTime > startT + 1 || masterTime < startT - 8)) {
-          lastClickInSectionIdx = -1;
-        }
-      }
-    }
+    // (The old section clickIn pre-roll lived here. Replaced 2026-07-07 by
+    // the beat-grid click scheduler — startClickScheduler() — which handles
+    // whole-song click, +Click sections, and +Count-in lead-ins.)
 
     // Section LOOPER: while seamless AudioBuffer loop is playing, the
     // MediaElement is silenced but still advances. Rewind it 50ms early
@@ -7189,7 +7295,7 @@ async function togglePlayPause() {
   //
   // Section-aware: fires if either the legacy song-level automationCountIn
   // is set OR the first section has clickIn=true.
-  const firstSectionClickIn = !!(automationSections && automationSections[0] && automationSections[0].clickIn);
+  const firstSectionClickIn = !!(automationSections && automationSections[0] && (automationSections[0].countIn || automationSections[0].clickIn));
   if ((automationCountIn || firstSectionClickIn) && isFreshStart && audioCtx) {
     countInInProgress = true;
     els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
@@ -7437,7 +7543,11 @@ function engageDrumMachine() {
   el.play().catch(e => console.warn('[drum-machine] play failed:', e));
   drumMachineActive = true;
   // Show the drum pattern's waveform — it's now the only thing sounding.
+  // Beat-grid hint: the pattern's own BPM from its <bpm>@<pattern> filename,
+  // falling back to the song's practice BPM.
   if (typeof window.setWaveformStems === 'function') {
+    const m = /(?:^|[\/])(\d{2,3})@[^\/]*$/.exec(decodeURIComponent(drumMachineUrl || ''));
+    window.songBpmHint = (m && Number(m[1])) || Number(currentSong && currentSong.practiceBpm) || null;
     window.setWaveformStems({ __m4a__: drumMachineUrl });
   }
   // Sync rate to current pitch/speed knobs immediately so the drum loop
@@ -7644,6 +7754,7 @@ function refreshWaveformForSong(song) {
   if (typeof window.setWaveformStems !== 'function') return;
   if (!song) song = currentSong;
   if (!song) return;
+  window.songBpmHint = Number(song.practiceBpm || song.bpm) || null;
   if (song.type === 'm4a' && song.fileName) {
     window.setWaveformStems({ __m4a__: `/api/audio/m4a/${encodeURIComponent(song.fileName)}` });
   } else if (song.type === 'stems' && song.folderName && song.stems) {
@@ -7704,6 +7815,7 @@ function engageBackingTrack() {
   try { applyRateToBackingTrack(); } catch (e) {}
   // Show the backing track's waveform — it's now the only thing sounding.
   if (typeof window.setWaveformStems === 'function') {
+    window.songBpmHint = Number(currentSong && currentSong.practiceBpm) || null;
     window.setWaveformStems({ __m4a__: backingTrackUrl });
   }
   const pill = document.getElementById('active-meta-backing');

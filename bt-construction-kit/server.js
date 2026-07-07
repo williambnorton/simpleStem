@@ -4881,11 +4881,15 @@ app.put('/api/song/:base/automation', (req, res) => {
           .map(x => ({
             t: Math.round(x.t * 1000) / 1000,
             color: Math.max(1, Math.min(9, parseInt(x.color, 10) || 1)),
-            // Click-in: 4-beat metronome pre-roll fires before this section
-            // starts. Per-section flag — sets first-section pre-roll AND
-            // mid-song "approach" pre-roll when the playhead enters this
-            // section's window.
-            clickIn: !!x.clickIn,
+            // Click-track flags (2026-07-07 rebuild):
+            //   click   — metronome audible for this whole section
+            //   countIn — 4 grid beats audible just before this section
+            //             (first section = the song-start count-in)
+            //   clickIn — legacy alias for countIn; kept so old saves and
+            //             old clients round-trip unchanged
+            ...(x.click ? { click: true } : {}),
+            ...((x.countIn || x.clickIn) ? { countIn: true } : {}),
+            ...(x.clickIn ? { clickIn: true } : {}),
           }))
           .sort((a, b) => a.t - b.t)
       : [];
@@ -5752,6 +5756,22 @@ app.get('/api/midi/ports', async (req, res) => {
 app.post('/api/midi/send', async (req, res) => {
   try {
     const r = await sidecarFetch('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    });
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+// MIDI clock control — the sidecar owns the 24-ppqn clock thread; the
+// portal just tells it start/bpm/stop. Body: { action: 'start'|'bpm'|'stop',
+// bpm?, port? }. Broadcasts to all outputs unless `port` narrows it.
+app.post('/api/midi/clock', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/clock', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body || {}),

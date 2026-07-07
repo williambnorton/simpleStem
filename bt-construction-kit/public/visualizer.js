@@ -242,6 +242,7 @@ async function setWaveformStems(sources) {
   // early aligned its clicks to the wrong song (Bill 2026-07-03).
   window.songOnsetTimes = null;
   window.songOnsetCount = 0;
+  window.songBeatGrid = null;
 
   const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
   const entries = Object.entries(sources || {});
@@ -293,6 +294,64 @@ async function setWaveformStems(sources) {
   // Also republish the BPM hint so the click scheduler can fall back when
   // onsets are sparse.
   window.songOnsetCount = window.songOnsetTimes ? window.songOnsetTimes.length : 0;
+  // Beat grid: BPM period + phase fitted to the onsets of THIS source.
+  // Everything click-related (whole-song click, section click/count-in,
+  // MIDI clock) consumes window.songBeatGrid so all four stay in lockstep
+  // with the audio the operator is actually hearing.
+  window.songBeatGrid = buildBeatGrid(window.songOnsetTimes);
+  if (window.songBeatGrid) {
+    const g = window.songBeatGrid;
+    console.log(`[visualizer] beat grid: ${g.bpm.toFixed(1)} bpm, phase ${g.phase.toFixed(3)}s, ` +
+                `score ${g.score.toFixed(1)}/${g.onsetCount || 0} (${g.source})`);
+  }
+}
+
+// Fit a beat grid (period + phase) to the detected onsets. The BPM hint
+// comes from the app (metadata.json practiceBpm, set on window.songBpmHint
+// before setWaveformStems is called); when absent we estimate it from the
+// median inter-onset interval folded into 70-180 BPM. The period is allowed
+// to flex +/-1.5% around the hint (librosa's estimate is good but not
+// sample-exact) and the phase candidates are the first onsets themselves.
+// Score = proximity-weighted count of onsets within 70 ms of a grid line.
+function buildBeatGrid(onsets) {
+  const hint = Number(window.songBpmHint);
+  let bpm = (isFinite(hint) && hint >= 40 && hint <= 260) ? hint : null;
+  if (!bpm && Array.isArray(onsets) && onsets.length >= 8) {
+    const iois = [];
+    for (let i = 1; i < onsets.length; i++) iois.push(onsets[i] - onsets[i - 1]);
+    iois.sort((x, y) => x - y);
+    let p = iois[Math.floor(iois.length / 2)];
+    if (p > 0.01) {
+      while (60 / p > 180) p *= 2;
+      while (60 / p < 70) p /= 2;
+      bpm = 60 / p;
+    }
+  }
+  if (!bpm) bpm = 120;
+  const basePeriod = 60 / bpm;
+  if (!Array.isArray(onsets) || onsets.length < 4) {
+    return { bpm, period: basePeriod, phase: 0, score: 0, onsetCount: 0, source: 'bpm-only' };
+  }
+  let best = { score: -1, period: basePeriod, phase: 0 };
+  const TOL = 0.07;
+  for (let pm = -3; pm <= 3; pm++) {
+    const period = basePeriod * (1 + pm * 0.005);
+    const phases = onsets.slice(0, 24).map(t => t % period);
+    for (const phase of phases) {
+      let score = 0;
+      for (const t of onsets) {
+        const d = Math.abs(t - phase - Math.round((t - phase) / period) * period);
+        if (d < TOL) score += 1 - d / TOL;
+      }
+      if (score > best.score) best = { score, period, phase };
+    }
+  }
+  let phase = best.phase % best.period;
+  if (phase < 0) phase += best.period;
+  return {
+    bpm: 60 / best.period, period: best.period, phase,
+    score: best.score, onsetCount: onsets.length, source: 'onset-fit',
+  };
 }
 
 function computeOnsetTimes() {

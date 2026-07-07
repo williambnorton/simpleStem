@@ -6560,6 +6560,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .midi-toolbar-btn.danger.has-actions:hover { background: #ffd84a; color: #000; }
 .midi-toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Latched state for the click-track actions (+ Click / + Count-in /
+   MIDI Sync): solid green like the other engaged toggles. */
+.midi-toolbar-btn.active {
+  background: var(--color-green, #27ae60);
+  border-color: transparent;
+  color: #fff;
+}
 .midi-event-marker .midi-event-tip {
   position: absolute;
   bottom: 100%;
