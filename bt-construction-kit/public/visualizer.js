@@ -379,7 +379,7 @@ function rigidBeatsFromFit(fit, duration) {
 function smoothBeats(beats) {
   if (!beats || beats.length < 9) return beats;
   const out = beats.slice();
-  const W = 8;
+  const W = 20;   // ±20 beats ≈ ±9 s: only slow, genuine drift survives
   for (let i = 0; i < beats.length; i++) {
     const a = Math.max(0, i - W), b = Math.min(beats.length - 1, i + W);
     let sn = 0, st = 0, snn = 0, snt = 0, m = 0;
@@ -448,7 +448,7 @@ function buildBeatGridDP() {
   const P = (60 / bpm0) / hop;                    // target period in frames
   const lo = Math.max(2, Math.round(P * 0.65));
   const hi = Math.round(P * 1.55);
-  const TIGHT = 9;                                // tempo-prior tightness
+  const TIGHT = 14;                               // tempo-prior tightness (raised from 9 — mid-song slip on Long Hard Ride)
   const score = new Float32Array(N);
   const from = new Int32Array(N).fill(-1);
   for (let i = lo; i < N; i++) {

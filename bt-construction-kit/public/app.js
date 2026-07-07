@@ -4963,6 +4963,40 @@ function updateClickButton() {
   btn.classList.toggle('click-ready', !!currentSong && !onNow);
 }
 
+// Timeline time readout: elapsed (left, mm:ss), total (right), and a
+// floating timestamp riding above the slider thumb at the playhead.
+// Driven from the click scheduler tick so it tracks WHATEVER source is
+// playing (stems / backing / drum machine) and follows seeks while paused.
+function formatTimeMMSS(secs) {
+  if (!isFinite(secs) || secs < 0) secs = 0;
+  const m = Math.floor(secs / 60), s2 = Math.floor(secs % 60);
+  return `${String(m).padStart(2, '0')}:${String(s2).padStart(2, '0')}`;
+}
+
+function activeDurationSec() {
+  const src = (typeof activeSourceEl === 'function') ? activeSourceEl() : null;
+  if (src && isFinite(src.duration) && src.duration > 0) return src.duration;
+  for (const ch of CHANNELS) {
+    const ae = audioElements[ch];
+    if (ae && ae.src && isFinite(ae.duration) && ae.duration > 0) return ae.duration;
+  }
+  return (currentSong && (currentSong.duration_sec || currentSong.duration)) || 0;
+}
+
+function updateTimelineTimeUI(t) {
+  const tt = document.getElementById('timeline-tooltip');
+  const cur = document.getElementById('time-current');
+  const durEl = document.getElementById('time-duration');
+  const dur = activeDurationSec();
+  if (cur) cur.textContent = formatTimeMMSS(t);
+  if (durEl && dur > 0) durEl.textContent = formatTimeMMSS(dur);
+  if (tt) {
+    tt.textContent = formatTimeMMSS(t);
+    const pct = dur > 0 ? Math.min(100, Math.max(0, (t / dur) * 100)) : 0;
+    tt.style.left = pct + '%';
+  }
+}
+
 function clickBeatFlash(st) {
   const btn = document.getElementById('btn-click-toggle');
   if (!btn) return;
@@ -5052,7 +5086,9 @@ function startClickScheduler() {
     const st = clickPlaybackState();
     midiClockReconcile(st);
     clickBeatFlash(st);
-    if (++clickBtnSyncCounter % 8 === 0) updateClickButton();
+    ++clickBtnSyncCounter;
+    if (clickBtnSyncCounter % 4 === 0) updateTimelineTimeUI(st.playing ? st.pos : clickPlayheadPos());
+    if (clickBtnSyncCounter % 8 === 0) updateClickButton();
     if (!st.playing || !audioCtx) return;
     if (st.pos < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
     clickLastSongTime = st.pos;
