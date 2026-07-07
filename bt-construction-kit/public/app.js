@@ -4753,6 +4753,26 @@ function getClickGrid() {
   return { bpm, period: 60 / bpm, phase: legacyBeatOffsetSec(), source: 'fallback' };
 }
 
+// Binary search: first index in sorted array arr with arr[k] >= x.
+function gridLowerBound(arr, x) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+// Local beat period near song-time t: for a DP-tracked grid this follows
+// the band's drift (average of the surrounding intervals); for a fixed
+// grid it's just the global period.
+function gridLocalPeriod(g, t) {
+  const b = g && g.beats;
+  if (!b || b.length < 2) return g ? g.period : 0.5;
+  let k = gridLowerBound(b, t);
+  const a = Math.max(1, Math.min(k - 1, b.length - 3));
+  let sum = 0, n = 0;
+  for (let i = a; i < Math.min(a + 4, b.length); i++) { sum += b[i] - b[i - 1]; n++; }
+  return n ? sum / n : g.period;
+}
+
 // First onset ≥ 50ms — the pre-grid heuristic, kept as the fallback.
 function legacyBeatOffsetSec() {
   if (typeof clickBeatOffsetOverride === 'number') return clickBeatOffsetOverride;
@@ -4769,7 +4789,12 @@ function getBeatOffsetSec() {
   if (typeof clickBeatOffsetOverride === 'number') return clickBeatOffsetOverride;
   const first = legacyBeatOffsetSec();
   const g = window.songBeatGrid;
-  if (g && g.period > 0) {
+  if (g && Array.isArray(g.beats) && g.beats.length) {
+    const k = gridLowerBound(g.beats, first);
+    const cands = [g.beats[Math.max(0, k - 1)], g.beats[Math.min(k, g.beats.length - 1)]];
+    const snapped = Math.abs(cands[0] - first) <= Math.abs(cands[1] - first) ? cands[0] : cands[1];
+    if (snapped >= 0 && Math.abs(snapped - first) <= 0.12) return snapped;
+  } else if (g && g.period > 0) {
     const n = Math.round((first - g.phase) / g.period);
     const snapped = g.phase + n * g.period;
     if (snapped >= 0 && Math.abs(snapped - first) <= 0.12) return snapped;
@@ -4911,9 +4936,18 @@ function clickBeatFlash(st) {
   let flash = false;
   if (st.playing) {
     const g = getClickGrid();
-    let frac = ((st.pos - g.phase) / g.period) % 1;
-    if (frac < 0) frac += 1;
-    flash = frac < 0.28;
+    const b = g.beats;
+    if (b && b.length > 1) {
+      const k = Math.max(1, gridLowerBound(b, st.pos));
+      const prev = b[k - 1], next = b[Math.min(k, b.length - 1)];
+      const span = Math.max(0.05, next - prev);
+      const frac = (st.pos - prev) / span;
+      flash = frac >= 0 && frac < 0.28;
+    } else {
+      let frac = ((st.pos - g.phase) / g.period) % 1;
+      if (frac < 0) frac += 1;
+      flash = frac < 0.28;
+    }
   }
   btn.classList.toggle('beat-flash', flash);
 }
@@ -4950,7 +4984,10 @@ function midiClockReconcile(st) {
     return;
   }
   const g = getClickGrid();
-  const bpm = Math.round((60 / g.period) * (st.rate || 1) * 10) / 10;
+  // Local tempo: with a DP-tracked grid the MIDI clock follows the band's
+  // drift instead of broadcasting one global BPM for the whole song.
+  const localPeriod = st.playing ? gridLocalPeriod(g, st.pos) : g.period;
+  const bpm = Math.round((60 / localPeriod) * (st.rate || 1) * 10) / 10;
   const now = Date.now();
   if (st.playing && !midiClockState.running) {
     midiClockState.running = true; midiClockState.bpmSent = bpm; midiClockState.lastPost = now;
@@ -4993,20 +5030,40 @@ function startClickScheduler() {
     const g = getClickGrid();
     const period = g.period;
     const LOOKAHEAD = (document.visibilityState === 'hidden') ? 1.5 : 0.3;  // song-seconds
-    let idx = Math.max(0, Math.ceil((st.pos - g.phase - 0.005) / period));
-    while (g.phase + idx * period < st.pos + LOOKAHEAD) {
-      if (idx > clickLastScheduledBeat) {
-        const beatT = g.phase + idx * period;
-        if (clickBeatAudible(beatT, period)) {
-          const delay = (beatT - st.pos) / (st.rate || 1);
-          if (delay >= -0.01) {
-            try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), idx % 4 === 0); }
-            catch (e) {}
+    const beats = g.beats;
+    if (beats && beats.length) {
+      // DP-tracked grid: schedule the explicit beat times.
+      let k = gridLowerBound(beats, st.pos - 0.005);
+      while (k < beats.length && beats[k] < st.pos + LOOKAHEAD) {
+        if (k > clickLastScheduledBeat) {
+          const beatT = beats[k];
+          if (clickBeatAudible(beatT, gridLocalPeriod(g, beatT))) {
+            const delay = (beatT - st.pos) / (st.rate || 1);
+            if (delay >= -0.01) {
+              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), k % 4 === 0); }
+              catch (e) {}
+            }
           }
+          clickLastScheduledBeat = k;
         }
-        clickLastScheduledBeat = idx;
+        k++;
       }
-      idx++;
+    } else {
+      let idx = Math.max(0, Math.ceil((st.pos - g.phase - 0.005) / period));
+      while (g.phase + idx * period < st.pos + LOOKAHEAD) {
+        if (idx > clickLastScheduledBeat) {
+          const beatT = g.phase + idx * period;
+          if (clickBeatAudible(beatT, period)) {
+            const delay = (beatT - st.pos) / (st.rate || 1);
+            if (delay >= -0.01) {
+              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), idx % 4 === 0); }
+              catch (e) {}
+            }
+          }
+          clickLastScheduledBeat = idx;
+        }
+        idx++;
+      }
     }
   }, 60);
 }

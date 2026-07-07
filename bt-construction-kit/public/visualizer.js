@@ -301,12 +301,83 @@ async function setWaveformStems(sources) {
   // Everything click-related (whole-song click, section click/count-in,
   // MIDI clock) consumes window.songBeatGrid so all four stay in lockstep
   // with the audio the operator is actually hearing.
-  window.songBeatGrid = buildBeatGrid(window.songOnsetTimes);
+  window.songBeatGrid = buildBeatGridDP() || buildBeatGrid(window.songOnsetTimes);
   if (window.songBeatGrid) {
     const g = window.songBeatGrid;
     console.log(`[visualizer] beat grid: ${g.bpm.toFixed(1)} bpm, phase ${g.phase.toFixed(3)}s, ` +
-                `score ${g.score.toFixed(1)}/${g.onsetCount || 0} (${g.source})`);
+                `${g.beats ? g.beats.length + ' tracked beats' : 'fixed grid'}, ` +
+                `score ${g.score.toFixed(1)} (${g.source})`);
   }
+}
+
+// Dynamic-programming beat tracker (Ellis-style). A single global
+// (phase, period) grid locks at its fit anchor and drifts audibly against
+// any recording without a studio click — i.e. most of this library (Bill
+// 2026-07-07: click synced at the start of the song, off the beat two
+// minutes in). This walks the high-res onset-strength envelope with a
+// tempo prior around the metadata BPM and returns EXPLICIT beat times that
+// follow the band's drift. Consumers get {beats: [...]} plus the median
+// period/phase fields for back-compat.
+function buildBeatGridDP() {
+  if (!onsetEnv || !onsetEnvHopSec) return null;
+  const hop = onsetEnvHopSec, N = onsetEnv.length;
+  if (N < 200) return null;
+  const hint = Number(window.songBpmHint);
+  const bpm0 = (isFinite(hint) && hint >= 40 && hint <= 260) ? hint : 120;
+  // Onset strength: rectified 2-frame rise, normalized to mean 1.
+  const LAG = 2;
+  let max = 0;
+  for (let i = 0; i < N; i++) if (onsetEnv[i] > max) max = onsetEnv[i];
+  if (!max) return null;
+  const O = new Float32Array(N);
+  let sum = 0;
+  for (let i = LAG; i < N; i++) {
+    const r = (onsetEnv[i] - onsetEnv[i - LAG]) / max;
+    if (r > 0) { O[i] = r; sum += r; }
+  }
+  if (!sum) return null;
+  const mean = sum / N;
+  for (let i = 0; i < N; i++) O[i] /= mean;
+  const P = (60 / bpm0) / hop;                    // target period in frames
+  const lo = Math.max(2, Math.round(P * 0.65));
+  const hi = Math.round(P * 1.55);
+  const TIGHT = 9;                                // tempo-prior tightness
+  const score = new Float32Array(N);
+  const from = new Int32Array(N).fill(-1);
+  for (let i = lo; i < N; i++) {
+    let bs = -1e9, bj = -1;
+    const j1 = i - lo, j0 = Math.max(0, i - hi);
+    for (let j = j0; j <= j1; j++) {
+      const pen = Math.log((i - j) / P);
+      const v = score[j] - TIGHT * pen * pen;
+      if (v > bs) { bs = v; bj = j; }
+    }
+    score[i] = O[i] + (bj >= 0 ? bs : 0);
+    from[i] = bj;
+  }
+  // Backtrack from the best-scoring frame near the end of the song.
+  let end = -1, besc = -1e9;
+  for (let i = Math.max(0, N - Math.round(2.2 * P)); i < N; i++) {
+    if (score[i] > besc) { besc = score[i]; end = i; }
+  }
+  if (end < 0) return null;
+  const idxs = [];
+  for (let i = end; i >= 0 && idxs.length < 30000; i = from[i]) {
+    idxs.push(i);
+    if (from[i] < 0) break;
+  }
+  idxs.reverse();
+  if (idxs.length < 8) return null;
+  const beats = idxs.map(i => (i - LAG / 2) * hop);
+  const iv = [];
+  for (let k = 1; k < beats.length; k++) iv.push(beats[k] - beats[k - 1]);
+  iv.sort((a, b) => a - b);
+  const med = iv[Math.floor(iv.length / 2)];
+  if (!(med > 0.15 && med < 2)) return null;
+  return {
+    bpm: 60 / med, period: med, phase: beats[0], beats,
+    score: besc, onsetCount: idxs.length, source: 'dp',
+  };
 }
 
 // Fit a beat grid (period + phase) to the detected onsets. The BPM hint
