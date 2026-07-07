@@ -658,6 +658,14 @@ function seekAllAudioTo(seconds) {
       try { ae.currentTime = Math.max(0, Math.min(seconds, ae.duration || seconds)); } catch (e) {}
     }
   }
+  // Scrub the lyrics overlay to match the new playhead position so the
+  // operator sees which line lives there — not just whichever line was
+  // last fired during playback.
+  try {
+    if (typeof window.syncLyricsToPlayhead === 'function') {
+      window.syncLyricsToPlayhead(seconds);
+    }
+  } catch (e) {}
 }
 
 // Compat with the old API — app.js calls startBeatingVisualizer(bpm)

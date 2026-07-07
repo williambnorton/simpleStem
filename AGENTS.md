@@ -17,6 +17,7 @@ A band backing-track system. YouTube URLs → 6-stem Demucs separations served t
 |---|---|
 | Rules the codebase expects agents to follow | `CLAUDE.md` |
 | Design, data contracts, code map, endpoints | `ARCHITECTURE.md` |
+| The invariant table (what will break if you violate a rule, and why) | `CONTRACTS.md` |
 | End-to-end flow diagram | `WORKFLOW.md` |
 | How a bandmate uses the app | `USER_GUIDE.md` (may not exist yet) |
 | Keyboard shortcuts + KM integration | `SHORTCUTS.md` |

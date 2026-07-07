@@ -8753,9 +8753,11 @@ async function onLyricTap(e) {
   // NOT shift the cursor backward.
   const cur = lyricsState.placedCount || 0;
   if (cur >= lyricsState.cachedLines.length) {
-    if (confirm(`All ${lyricsState.cachedLines.length} lyric lines have been placed. Re-open the editor to revise them?`)) {
-      openLyricsModal('edit');
-    }
+    // Nothing left to place — either the lyrics file returned 0 usable
+    // lines (Wicked Game hit this: all-bracket / whitespace file) or every
+    // line has already been dropped. Skip the confirm and drop straight
+    // into the editor so Bill can paste again.
+    openLyricsModal(lyricsState.cachedLines.length ? 'edit' : 'initial');
     return;
   }
   const now = Date.now();
@@ -8873,6 +8875,44 @@ function fireLyricLine(e) {
   _renderLyricDisplay();
 }
 
+// Scrub-sync: called from the visualizer's seekAllAudioTo whenever the
+// playhead is dragged / clicked. Reconstructs what the overlay would show
+// AT that moment under normal playback and paints it, so the operator can
+// see which lyric line lives at the position they're pointing at.
+//
+// Rules:
+//   - Consider only lyric-line events with non-empty text and t <= target.
+//   - The visible "burst" starts at the most-recent 'replace' event at or
+//     before target. All 'append' events between that replace and target
+//     are stacked on top, in order. (This mirrors fireLyricLine's behavior
+//     during real playback.)
+//   - If no replace exists before target, show the single latest append
+//     alone. If no lyric event exists before target at all, clear.
+//   - addedAt is set to now so the age-out timer in _renderLyricDisplay
+//     gives the operator the full LYRIC_LINE_LIFETIME_MS to read it before
+//     it fades — same as any freshly-fired line during playback.
+function syncLyricsToPlayhead(t) {
+  if (typeof automationEvents === 'undefined' || !Array.isArray(automationEvents)) return;
+  const target = Number(t) || 0;
+  const events = automationEvents
+    .filter(e => e && e.type === 'lyric-line' && (e.text || '').trim() && Number(e.t) <= target)
+    .sort((a, b) => Number(a.t) - Number(b.t));
+  if (!events.length) {
+    lyricsState.activeLines = [];
+    _renderLyricDisplay();
+    return;
+  }
+  let startIdx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].mode === 'replace') { startIdx = i; break; }
+  }
+  const burst = startIdx >= 0 ? events.slice(startIdx) : [events[events.length - 1]];
+  const now = Date.now();
+  lyricsState.activeLines = burst.map(e => ({ text: e.text, addedAt: now }));
+  _renderLyricDisplay();
+}
+window.syncLyricsToPlayhead = syncLyricsToPlayhead;
+
 // Keeps the + Lyric button label in sync with the current state:
 //   no lyrics file              → "Fetch Lyrics"
 //   lyrics file, no placements  → "+ Lyric"
@@ -8886,14 +8926,17 @@ function _refreshLyricButtonLabel() {
   if (btn) {
     btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
     const hasLyrics = lyricsState.cachedLines.length > 0 || !!(currentSong && currentSong.lyrics);
+    const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsCursor());
     if (!currentSong) {
       btn.textContent = '+ Lyric';
       btn.classList.add('mode-place');
-    } else if (!hasLyrics) {
+    } else if (!hasLyrics || remaining === 0) {
+      // Nothing to place — either lyrics file is empty / all-headers, or the
+      // operator has already placed every line. Either way, the useful action
+      // is to re-open the editor and paste again.
       btn.textContent = 'Fetch Lyrics';
       btn.classList.add('mode-fetch');
     } else {
-      const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsCursor());
       btn.textContent = `+ Lyric (${remaining})`;
       btn.classList.add('mode-place');
     }
@@ -9087,7 +9130,6 @@ function openLyricsModal(mode = 'initial') {
   } else {
     els.lyricsModalStatus.innerHTML = `No lyrics file yet. Use Google / Ultimate Guitar / AZLyrics on the left to open a search in a new window, then paste the result here (one line per displayed line).`;
   }
-  els.lyricsModalFetching.style.display = 'none';
   // Wire the search links to point at THIS song's title + artist.
   // target=_blank opens each in a new tab so Bill can copy from there
   // and switch back to paste into the textarea below.
