@@ -4810,7 +4810,23 @@ function clickOutputNode() {
   return (st && st.stripGain) ? st.stripGain : masterGainNode;
 }
 
+// Output-latency compensation for the click. Media element currentTime is
+// (approximately) the AUDIBLE position, but an oscillator scheduled at ctx
+// time T emerges from the device outputLatency later — so uncompensated
+// clicks trail the music by the device latency (small on speakers, larger
+// through the XR18's USB path). We pull every click earlier by
+// audioCtx.outputLatency, plus an ear-calibratable trim:
+//   localStorage 'simpleStem.clickTrimMs'  (positive = clicks later,
+//   negative = earlier; default 0).
+function clickSchedulingOffsetSec() {
+  let trim = 0;
+  try { trim = (parseFloat(localStorage.getItem('simpleStem.clickTrimMs')) || 0) / 1000; } catch (e) {}
+  const out = (audioCtx && (audioCtx.outputLatency || audioCtx.baseLatency)) || 0;
+  return -out + trim;
+}
+
 function fireClickAt(when, downbeat) {
+  when = Math.max(audioCtx.currentTime, when + clickSchedulingOffsetSec());
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'triangle';
@@ -4896,8 +4912,23 @@ function setupClickTrack() {
     try { initAudioCtx(); } catch (e) {}
     const pos = clickPlayheadPos();
     const turningOn = !clickStateAt(pos);
+    // Turning ON mid-beat quantizes the on-point UP to the next tracked
+    // beat, so the click enters cleanly ON the beat instead of starting
+    // at whatever instant the button was pressed (Bill 2026-07-07).
+    // Turning OFF stays immediate — silence never sounds wrong.
+    let evT = Math.round(pos * 1000) / 1000;
+    if (turningOn) {
+      const g = getClickGrid();
+      if (g && g.beats && g.beats.length) {
+        const k = gridLowerBound(g.beats, pos + 0.02);
+        if (k < g.beats.length) evT = Math.round((g.beats[k] - 0.002) * 1000) / 1000;
+      } else if (g && g.period > 0) {
+        const n = Math.ceil((pos + 0.02 - g.phase) / g.period);
+        evT = Math.round((g.phase + n * g.period - 0.002) * 1000) / 1000;
+      }
+    }
     automationEvents.push({
-      t: Math.round(pos * 1000) / 1000,
+      t: evT,
       type: turningOn ? 'click-on' : 'click-off',
       label: '',
       fired: true,
@@ -4907,7 +4938,9 @@ function setupClickTrack() {
     try { renderAutomationLane(); } catch (e) {}
     updateClickButton();
     clickLastScheduledBeat = -1;
-    showToast(`Click track ${turningOn ? 'ON' : 'OFF'} from ${pos.toFixed(1)}s — action set into the song`);
+    showToast(turningOn
+      ? `Click track ON at the next beat (${evT.toFixed(1)}s) — action set into the song`
+      : `Click track OFF from ${evT.toFixed(1)}s — action set into the song`);
   });
   const syncBtn = document.getElementById('midi-btn-midi-sync');
   if (syncBtn) syncBtn.addEventListener('click', () => {

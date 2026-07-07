@@ -35,12 +35,15 @@ The clock and count-in buttons live ON the Other channel strip — clock on
 the left of the label, count-in on the right — because the click IS that
 strip's audio.
 
-1. **Clock button** — toggles the click track from the playhead, and
-   records it: each press drops a `click track on` / `click track off`
-   ACTION into the song at the playhead (markers `⏱+` / `⏱−` on the yellow
-   lane, deletable like any action, persisted via SAVE / song-end
-   auto-save). On replay the click plays exactly where you set it. The
-   button lights whenever the click is ON at the playhead.
+1. **Clock button** — toggles the click track, and records it: each press
+   drops a `click track on` / `click track off` ACTION into the song
+   (markers `⏱+` / `⏱−` on the yellow lane, deletable like any action,
+   persisted via SAVE / song-end auto-save). Turning ON quantizes the
+   on-point to the NEXT tracked beat, so the click always enters cleanly
+   on the beat; turning OFF is immediate. On replay the click plays
+   exactly where you set it. GREEN flashing on the beat = ready to press
+   (and visual proof the tracker is locked); YELLOW flashing = click ON at
+   the playhead.
 2. **Count-in button (hash)** — extends the click track to 4 grid beats
    BEFORE each click-on point, and arms the song-start count-in (4 clicks
    projected back from the first real downbeat). Saved per song.
@@ -73,6 +76,12 @@ retired the next day in favor of the click on/off action model above.
 - The grid assumes 4/4 for downbeat accents (every 4th grid beat, from the
   phase anchor). Odd meters still click every beat — only the accent
   placement is 4/4.
+- Clicks are scheduled early by the reported audio output latency so they
+  line up with what you HEAR, not with the internal timeline (~23 ms on
+  speakers, more via XR18 USB). If your ear says they're still off, trim
+  in the DevTools console: `localStorage.setItem('simpleStem.clickTrimMs',
+  '15')` pushes clicks 15 ms later (negative = earlier); takes effect
+  immediately.
 - The scheduler runs on a 60 ms timer with a 0.3 s look-ahead (1.5 s when the
   tab is hidden). A hidden AND silent tab is eventually throttled by Chrome
   to one tick a minute — irrelevant during use (playback makes the page
