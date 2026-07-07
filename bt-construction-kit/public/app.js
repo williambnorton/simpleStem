@@ -5073,7 +5073,8 @@ function startClickScheduler() {
           if (clickBeatAudible(beatT, gridLocalPeriod(g, beatT))) {
             const delay = (beatT - st.pos) / (st.rate || 1);
             if (delay >= -0.01) {
-              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), k % 4 === 0); }
+              const down = ((k - (g.downbeat || 0)) % 4 + 4) % 4 === 0;
+              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), down); }
               catch (e) {}
             }
           }
@@ -5089,7 +5090,8 @@ function startClickScheduler() {
           if (clickBeatAudible(beatT, period)) {
             const delay = (beatT - st.pos) / (st.rate || 1);
             if (delay >= -0.01) {
-              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), idx % 4 === 0); }
+              const down = ((idx - (g.downbeat || 0)) % 4 + 4) % 4 === 0;
+              try { fireClickAt(audioCtx.currentTime + Math.max(delay, 0), down); }
               catch (e) {}
             }
           }

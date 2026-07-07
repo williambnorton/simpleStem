@@ -301,13 +301,111 @@ async function setWaveformStems(sources) {
   // Everything click-related (whole-song click, section click/count-in,
   // MIDI clock) consumes window.songBeatGrid so all four stay in lockstep
   // with the audio the operator is actually hearing.
-  window.songBeatGrid = buildBeatGridDP() || buildBeatGrid(window.songOnsetTimes);
+  window.songBeatGrid = chooseBeatGrid(window.songOnsetTimes);
   if (window.songBeatGrid) {
     const g = window.songBeatGrid;
     console.log(`[visualizer] beat grid: ${g.bpm.toFixed(1)} bpm, phase ${g.phase.toFixed(3)}s, ` +
-                `${g.beats ? g.beats.length + ' tracked beats' : 'fixed grid'}, ` +
-                `score ${g.score.toFixed(1)} (${g.source})`);
+                `${g.beats ? g.beats.length + ' beats' : 'no beats'}, downbeat +${g.downbeat || 0}, ` +
+                `score ${(g.score || 0).toFixed(1)} (${g.source})`);
   }
+}
+
+// Grid selection (Bill 2026-07-07: "I want the entire song to be the basis
+// of the click track pulses instead of spot creating it each time").
+// PRIMARY: the rigid whole-song least-squares grid — one (period, phase)
+// fitted against every onset in the song and projected forward from t=0.
+// Steady by construction; studio recordings live here. FALLBACK: the DP
+// drift tracker, kept ONLY when the rigid grid measurably fails to explain
+// the whole song (live recordings whose tempo genuinely moves — a rigid
+// grid there is off the beat for most of the track). Both candidates are
+// scored the same way, proximity-weighted over every onset, and the rigid
+// grid wins any tie by a wide margin (80% of the DP score is enough).
+function chooseBeatGrid(onsets) {
+  const dur = waveformDuration || 0;
+  const rigid = buildBeatGrid(onsets);
+  if (rigid && dur > 0) {
+    rigid.beats = rigidBeatsFromFit(rigid, dur);
+    rigid.score = beatsScore(rigid.beats, onsets);
+  }
+  let dp = buildBeatGridDP();
+  if (dp) {
+    dp.beats = smoothBeats(dp.beats);
+    dp.score = beatsScore(dp.beats, onsets);
+  }
+  let grid;
+  if (rigid && rigid.beats && (!dp || rigid.score >= 0.8 * dp.score)) {
+    grid = rigid;
+    grid.source = (grid.source === 'bpm-only') ? 'bpm-only' : 'rigid-lsq';
+  } else {
+    grid = dp || rigid;
+  }
+  if (grid && grid.beats && grid.beats.length) grid.downbeat = downbeatOffset(grid.beats);
+  return grid;
+}
+
+// Proximity-weighted fit quality: how well does this beat list explain the
+// song's onsets? Same metric for both grid candidates.
+function beatsScore(beats, onsets) {
+  if (!beats || !beats.length || !onsets || !onsets.length) return 0;
+  const TOL = 0.07;
+  let score = 0;
+  for (const t of onsets) {
+    let lo = 0, hi = beats.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (beats[m] < t) lo = m + 1; else hi = m; }
+    const dR = lo < beats.length ? Math.abs(beats[lo] - t) : 1e9;
+    const dL = lo > 0 ? Math.abs(beats[lo - 1] - t) : 1e9;
+    const d = Math.min(dL, dR);
+    if (d < TOL) score += 1 - d / TOL;
+  }
+  return score;
+}
+
+// Materialize the rigid fit as explicit beat times covering the WHOLE song,
+// projected back to the first beat at/after t=0.
+function rigidBeatsFromFit(fit, duration) {
+  const beats = [];
+  let t = fit.phase % fit.period;
+  if (t < 0) t += fit.period;
+  for (; t <= duration + 0.001; t += fit.period) beats.push(t);
+  return beats;
+}
+
+// Savitzky-Golay-style linear smoothing of DP beat times (±8 beats): keeps
+// slow genuine tempo drift, kills the beat-to-beat jitter that made the
+// click "speed up and slow down" on sparse intros.
+function smoothBeats(beats) {
+  if (!beats || beats.length < 9) return beats;
+  const out = beats.slice();
+  const W = 8;
+  for (let i = 0; i < beats.length; i++) {
+    const a = Math.max(0, i - W), b = Math.min(beats.length - 1, i + W);
+    let sn = 0, st = 0, snn = 0, snt = 0, m = 0;
+    for (let j = a; j <= b; j++) { sn += j; st += beats[j]; snn += j * j; snt += j * beats[j]; m++; }
+    const den = m * snn - sn * sn;
+    if (den) {
+      const slope = (m * snt - sn * st) / den;
+      const inter = (st - slope * sn) / m;
+      out[i] = inter + slope * i;
+    }
+  }
+  return out;
+}
+
+// Which of the 4 beat positions is beat 1 of the measure? Sum the song's
+// onset-envelope energy at beats k ≡ r (mod 4) and take the strongest —
+// the accent structure of the whole song picks its own downbeat.
+function downbeatOffset(beats) {
+  if (!onsetEnv || !onsetEnvHopSec || !beats.length) return 0;
+  const sums = [0, 0, 0, 0];
+  for (let k = 0; k < beats.length; k++) {
+    const i = Math.round(beats[k] / onsetEnvHopSec);
+    if (i >= 1 && i < onsetEnv.length - 1) {
+      sums[k % 4] += Math.max(onsetEnv[i - 1], onsetEnv[i], onsetEnv[i + 1]);
+    }
+  }
+  let best = 0;
+  for (let r = 1; r < 4; r++) if (sums[r] > sums[best]) best = r;
+  return best;
 }
 
 // Dynamic-programming beat tracker (Ellis-style). A single global
