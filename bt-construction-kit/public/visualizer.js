@@ -245,6 +245,9 @@ async function setWaveformStems(sources) {
   window.songBeatGrid = null;
   onsetEnv = null;
   onsetEnvHopSec = 0;
+  drumsEnv = null;
+  drumsLowEnv = null;
+  beatFitEnvName = 'mix';
 
   const ac = (window.appAudioCtx) || new (window.AudioContext || window.webkitAudioContext)();
   const entries = Object.entries(sources || {});
@@ -270,7 +273,7 @@ async function setWaveformStems(sources) {
       if (requestId !== stemPeaksRequestId) return;  // newer song loaded
       if (!waveformDuration) waveformDuration = buf.duration;
       stemPeaks.set(key, computePeaks(buf, PEAK_BUCKETS));
-      accumulateOnsetEnvelope(buf);
+      accumulateOnsetEnvelope(buf, key);
     } catch (e) {
       console.warn('[visualizer] peaks failed for', key, url, e.message);
     }
@@ -306,7 +309,7 @@ async function setWaveformStems(sources) {
     const g = window.songBeatGrid;
     console.log(`[visualizer] beat grid: ${g.bpm.toFixed(1)} bpm, phase ${g.phase.toFixed(3)}s, ` +
                 `${g.beats ? g.beats.length + ' beats' : 'no beats'}, downbeat +${g.downbeat || 0}, ` +
-                `score ${(g.score || 0).toFixed(1)} (${g.source})`);
+                `score ${(g.score || 0).toFixed(1)} (${g.source}, fit: ${beatFitEnvName})`);
   }
 }
 
@@ -395,12 +398,17 @@ function smoothBeats(beats) {
 // onset-envelope energy at beats k ≡ r (mod 4) and take the strongest —
 // the accent structure of the whole song picks its own downbeat.
 function downbeatOffset(beats) {
-  if (!onsetEnv || !onsetEnvHopSec || !beats.length) return 0;
+  // The KICK owns beat 1. Total-mix energy picks the snare (beats 2/4) on
+  // most rock recordings — Bill heard exactly that on Long Hard Ride. Use
+  // the low-passed drums envelope when available; fall back to the drums
+  // stem, then the mix.
+  const env = drumsLowEnv || drumsEnv || onsetEnv;
+  if (!env || !onsetEnvHopSec || !beats.length) return 0;
   const sums = [0, 0, 0, 0];
   for (let k = 0; k < beats.length; k++) {
     const i = Math.round(beats[k] / onsetEnvHopSec);
-    if (i >= 1 && i < onsetEnv.length - 1) {
-      sums[k % 4] += Math.max(onsetEnv[i - 1], onsetEnv[i], onsetEnv[i + 1]);
+    if (i >= 1 && i < env.length - 1) {
+      sums[k % 4] += Math.max(env[i - 1], env[i], env[i + 1]);
     }
   }
   let best = 0;
@@ -417,20 +425,21 @@ function downbeatOffset(beats) {
 // follow the band's drift. Consumers get {beats: [...]} plus the median
 // period/phase fields for back-compat.
 function buildBeatGridDP() {
-  if (!onsetEnv || !onsetEnvHopSec) return null;
-  const hop = onsetEnvHopSec, N = onsetEnv.length;
+  const srcEnv = (beatFitEnvName === 'drums' && drumsEnv) ? drumsEnv : onsetEnv;
+  if (!srcEnv || !onsetEnvHopSec) return null;
+  const hop = onsetEnvHopSec, N = srcEnv.length;
   if (N < 200) return null;
   const hint = Number(window.songBpmHint);
   const bpm0 = (isFinite(hint) && hint >= 40 && hint <= 260) ? hint : 120;
   // Onset strength: rectified 2-frame rise, normalized to mean 1.
   const LAG = 2;
   let max = 0;
-  for (let i = 0; i < N; i++) if (onsetEnv[i] > max) max = onsetEnv[i];
+  for (let i = 0; i < N; i++) if (srcEnv[i] > max) max = srcEnv[i];
   if (!max) return null;
   const O = new Float32Array(N);
   let sum = 0;
   for (let i = LAG; i < N; i++) {
-    const r = (onsetEnv[i] - onsetEnv[i - LAG]) / max;
+    const r = (srcEnv[i] - srcEnv[i - LAG]) / max;
     if (r > 0) { O[i] = r; sum += r; }
   }
   if (!sum) return null;
@@ -559,10 +568,13 @@ function buildBeatGrid(onsets) {
 // fitted beat grid wandered audibly off the music (Bill 2026-07-07: "the
 // click does not sound like it is sync'd"). This one is 512 samples per
 // frame (~10.7 ms at 48 kHz), max-combined across stems during decode.
-let onsetEnv = null;
+let onsetEnv = null;        // all stems combined (fallback + m4a sources)
 let onsetEnvHopSec = 0;
+let drumsEnv = null;        // drums stem alone — the beat-fit anchor
+let drumsLowEnv = null;     // drums low-passed (~150 Hz) — the KICK, for downbeats
+let beatFitEnvName = 'mix'; // which envelope the grid was fitted against
 
-function accumulateOnsetEnvelope(buf) {
+function accumulateOnsetEnvelope(buf, key) {
   const HOP = 512;
   const n = Math.floor(buf.length / HOP);
   if (n < 4) return;
@@ -585,10 +597,34 @@ function accumulateOnsetEnvelope(buf) {
       if (peak > onsetEnv[i]) onsetEnv[i] = peak;
     }
   }
+  // The drums stem gets two dedicated envelopes: full-band (grid fitting —
+  // a guitar strum a hair ahead of the kick can no longer drag the phase)
+  // and low-passed (the kick drum, which owns the downbeat).
+  if (key === 'drums') {
+    drumsEnv = new Float32Array(n);
+    drumsLowEnv = new Float32Array(n);
+    const data = buf.getChannelData(0);
+    const a = 1 - Math.exp(-2 * Math.PI * 150 / buf.sampleRate);  // one-pole LPF @ ~150 Hz
+    let y = 0;
+    for (let i = 0; i < n; i++) {
+      let peak = 0, lowPeak = 0;
+      const start = i * HOP, end = start + HOP;
+      for (let j = start; j < end; j++) {
+        const x = data[j];
+        const v = Math.abs(x);
+        if (v > peak) peak = v;
+        y += a * (x - y);
+        const lv = Math.abs(y);
+        if (lv > lowPeak) lowPeak = lv;
+      }
+      drumsEnv[i] = peak;
+      drumsLowEnv[i] = lowPeak;
+    }
+  }
 }
 
-function computeOnsetTimesHighRes() {
-  const env = onsetEnv, hop = onsetEnvHopSec, N = env.length;
+function computeOnsetTimesHighRes(env) {
+  const hop = onsetEnvHopSec, N = env.length;
   let max = 0;
   for (let i = 0; i < N; i++) if (env[i] > max) max = env[i];
   if (!max) return null;
@@ -615,9 +651,17 @@ function computeOnsetTimesHighRes() {
 }
 
 function computeOnsetTimes() {
+  // Prefer the isolated drums stem: its onsets ARE the beat. Fall back to
+  // the combined envelope when there's no drums stem (backing/drum-machine
+  // m4a) or the drums are too sparse to trust (brushes, acoustic tunes).
+  if (drumsEnv && onsetEnvHopSec > 0) {
+    const hi = computeOnsetTimesHighRes(drumsEnv);
+    const need = Math.max(24, (waveformDuration || 60) / 3);
+    if (hi && hi.length >= need) { beatFitEnvName = 'drums'; return hi; }
+  }
   if (onsetEnv && onsetEnvHopSec > 0) {
-    const hi = computeOnsetTimesHighRes();
-    if (hi) return hi;
+    const hi = computeOnsetTimesHighRes(onsetEnv);
+    if (hi) { beatFitEnvName = 'mix'; return hi; }
   }
   if (!stemPeaks.size || !waveformDuration) return null;
   // Build a combined peaks envelope using max-of-stems (mute/solo state

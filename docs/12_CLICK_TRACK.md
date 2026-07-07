@@ -73,9 +73,12 @@ retired the next day in favor of the click on/off action model above.
 
 ## Gotchas
 
-- The grid assumes 4/4 for downbeat accents (every 4th grid beat, from the
-  phase anchor). Odd meters still click every beat — only the accent
-  placement is 4/4.
+- On stems songs the grid is fitted to the DRUMS STEM's onsets (a guitar
+  strum can't drag the phase off the kick), and beat 1 of each measure is
+  chosen by where the low-passed drums envelope — the kick — lands.
+  Backing tracks and drum-machine sources fit against the whole mix.
+- The grid assumes 4/4 for downbeat accents. Odd meters still click every
+  beat — only the accent placement is 4/4.
 - Clicks are scheduled early by the reported audio output latency so they
   line up with what you HEAR, not with the internal timeline (~23 ms on
   speakers, more via XR18 USB). If your ear says they're still off, trim
