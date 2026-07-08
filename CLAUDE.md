@@ -566,6 +566,28 @@ respect them or update this list.
   `meta.favorite` through `PUT /api/song/:base/favorite` and mutate
   the in-memory `mergedLibrary` variant so the other surfaces update
   on the next render.
+- **Lyrics overlay follows the playhead in BOTH directions.** During
+  real playback, `fireLyricLine` pushes each `lyric-line` event onto
+  `lyricsState.activeLines` as its timestamp is crossed and the render
+  loop fades them after `LYRIC_LINE_LIFETIME_MS`. When the operator
+  SCRUBS (clicks/drags the visualizer, calls `seekAllAudioTo`),
+  `syncLyricsToPlayhead(seconds)` reconstructs what the overlay would
+  show at that instant: it finds the most-recent lyric-line `replace`
+  event at or before the target and stacks any `append` events between
+  that `replace` and the target on top of it, then paints the overlay
+  with fresh `addedAt` timestamps so the operator gets the full
+  read-window before the auto-fade kicks in. Scrubbing to a time
+  before the first lyric clears the overlay. The visualizer's single
+  `seekAllAudioTo` choke-point is the only place that fires this — any
+  new seek path must call it, not raw `currentTime =` writes.
+- **`+ Lyric` button falls back to "Fetch Lyrics" whenever `remaining
+  === 0`.** The label used to read `+ Lyric (0)` when the operator had
+  placed every cached line, and clicking it popped a confirm ("All N
+  lyric lines have been placed. Re-open the editor?"). Now the same
+  0-remaining state — whether from an empty/all-headers lyrics file or
+  from placing every line — shows the "Fetch Lyrics" label with the
+  `mode-fetch` style AND clicks straight into the editor (no confirm),
+  matching the visual/behavior of a song that never had lyrics at all.
 
 ## Git & sync
 

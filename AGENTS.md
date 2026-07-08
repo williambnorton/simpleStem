@@ -39,14 +39,16 @@ Copied here so you can't miss them; the source of truth is `CLAUDE.md`.
 
 ## Currently in-flight (be careful editing these areas)
 
-As of 2026-07-02:
+As of 2026-07-08:
 
 | Area | Files | Status |
 |---|---|---|
 | **Gig Builder** | `bt-construction-kit/public/app.js` (bottom IIFE, look for `initGigBuilder`), `server.js` `POST /api/gig-builder/build`, `styles.css` (`.gb-*` classes) | Shipped, tested, working. Ripping out legacy library-row checkbox column + ghost `+N` batch flow + template picker is still todo — see task #134 in the task list. |
 | **Backing tracks** | `server.js` `BACKING_TRACKS_DIR`, matcher `normalizeForMatch`, manifest at `BACKING_TRACKS/manifest.json` | Shipped. Live-version noise stripping + shared-file assignments + persistent manifest all working. See task #130 for optional polish (mostly done). |
 | **Per-song playback mode** | `PUT /api/song/:base/playback-mode`, client `refreshBackingTrackPick`, `playback_mode` field on `metadata.json` | Shipped. Defaults to `6STEMS`. Auto-engages the remembered mode on song load. |
+| **Lyrics overlay + scrub-sync** | `app.js` `syncLyricsToPlayhead`, `_refreshLyricButtonLabel`, `onLyricTap`; `visualizer.js` `seekAllAudioTo` calls the sync hook | Shipped 2026-07-08. `openLyricsModal` crash on stale `lyricsModalFetching` ref is fixed (task #140); scrub-sync mirrors playback lyric behavior into any seek (task #141); `+ Lyric` label + click behavior fall back to "Fetch Lyrics" whenever `remaining === 0` (task #142). See CLAUDE.md > "Player UI conventions" for the invariant. |
 | **KBM logic-restem macro** | Pending edit on the user's Keyboard Maestro side. Server emits `simpleStem_StemDir` + six explicit file paths. Macro needs updating to consume them. | See task list #131 discussion. |
+| **Wicked Game Live load wedge (open)** | `bt-construction-kit/public/app.js` click-gate prefetcher, likely also `visualizer.js` decode race | Reproducible on 2026-07-08 regression: clicking the Live variant fires "no stems responded after 3s" AND collapses the player entirely AND wedges the Chrome renderer for ~45 s afterward. Server-side stems are fine (206 in 4 ms, `mp42`, moov-first). See `REGRESSION_RESULTS_2026-07-08.md` BUG-01/02/03. Suspected sibling of task #137 (stems-health 35 s spike). |
 
 The task list (visible to Claude in this repo's driver) has full context on each. If you're picking up work, ask which task ID you're on before you touch code.
 
