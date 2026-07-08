@@ -7671,33 +7671,35 @@ async function togglePlayPause() {
     els.btnPlay.innerHTML = `<i data-lucide="hash"></i>`;
     els.btnPlay.disabled = true;
     try {
-      const bpm = (currentSong && currentSong.practiceBpm) || 120;
-      const beatSec = 60 / bpm;
-      // The onset table is computed asynchronously by the visualizer after
-      // song load. If it isn't ready yet, wait for it (up to 3 s) rather
-      // than counting in against t=0 — clicks that don't land on the real
-      // first downbeat are worse than a moment of latency (Bill 2026-07-03).
-      if (!Array.isArray(window.songOnsetTimes) && typeof clickBeatOffsetOverride !== 'number') {
+      // COUNT-IN ANCHORS AT t=0 (Bill 2026-07-08: "play 4 clicks before
+      // starting the song"). The old version anchored on the first
+      // detected downbeat — with the grid now fitted to the DRUMS stem,
+      // songs whose drums enter late (Sweet Home Alabama: ~8 s of guitar
+      // intro) started their audio immediately and buried the 4 clicks
+      // mid-intro. New contract: 4 clicks at the grid tempo, THEN the
+      // song starts, with the first grid beat landing one beat after
+      // click 4. Wait briefly for the beat grid so the tempo is right.
+      if (!window.songBeatGrid) {
         const tWait0 = performance.now();
-        while (!Array.isArray(window.songOnsetTimes) && performance.now() - tWait0 < 3000) {
+        while (!window.songBeatGrid && performance.now() - tWait0 < 3000) {
           await new Promise(r => setTimeout(r, 100));
         }
-        console.log(`[count-in] waited ${(performance.now() - tWait0).toFixed(0)}ms for onset table ` +
-                    `(${Array.isArray(window.songOnsetTimes) ? 'ready' : 'TIMED OUT — falling back to t=0'})`);
+        console.log(`[count-in] waited ${(performance.now() - tWait0).toFixed(0)}ms for beat grid ` +
+                    `(${window.songBeatGrid ? 'ready' : 'TIMED OUT — using practiceBpm'})`);
       }
-      const songFirstBeat = getBeatOffsetSec();     // seconds into audio
+      const g = (typeof getClickGrid === 'function') ? getClickGrid() : null;
+      const beatSec = (g && g.period) || (60 / ((currentSong && currentSong.practiceBpm) || 120));
+      // First grid beat at/after t=0 — usually a fraction of a beat in.
+      const phase = (g && Array.isArray(g.beats) && g.beats.length) ? g.beats[0]
+                  : ((g && g.phase >= 0) ? g.phase % beatSec : 0);
       const countDur      = 4 * beatSec;
-      // How long to delay audio.play() so we have room for all 4 clicks
-      // before the first audible downbeat. Zero when the song's intro is
-      // already at least 4 beats of silence.
-      const preRollSec    = Math.max(0, countDur - songFirstBeat);
+      const preRollSec    = Math.max(0, countDur - phase);
       const audioStartCtx = audioCtx.currentTime + 0.04 + preRollSec;
-      const firstDownbeatCtx = audioStartCtx + songFirstBeat;
+      const firstDownbeatCtx = audioStartCtx + phase;
 
-      console.log(`[count-in] bpm=${bpm}, beatSec=${beatSec.toFixed(3)}, ` +
-        `songFirstBeat=${songFirstBeat.toFixed(3)}s, preRoll=${preRollSec.toFixed(3)}s, ` +
-        `audio starts in ${(audioStartCtx - audioCtx.currentTime).toFixed(3)}s, ` +
-        `downbeat hits in ${(firstDownbeatCtx - audioCtx.currentTime).toFixed(3)}s`);
+      console.log(`[count-in] beatSec=${beatSec.toFixed(3)}, phase=${phase.toFixed(3)}s, ` +
+        `preRoll=${preRollSec.toFixed(3)}s, audio starts in ` +
+        `${(audioStartCtx - audioCtx.currentTime).toFixed(3)}s`);
 
       // Clicks 1..4 land one beat apart, with click 4 exactly one beat
       // before the song's first downbeat. So the player counts

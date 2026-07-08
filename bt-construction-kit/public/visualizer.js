@@ -995,6 +995,16 @@ window.getVizPlayheadOffsetMs = function () { return vizPlayheadOffsetMs; };
 
 function currentPlaybackTime() {
   const offsetSec = (vizPlayheadOffsetMs || 0) / 1000;
+  // Mode-aware (Bill 2026-07-08): when the drum machine or backing track
+  // is the active source, ITS element drives the playhead — the stems are
+  // paused and would pin the needle at the old position.
+  try {
+    const src = (typeof window.activeSourceEl === 'function') ? window.activeSourceEl() : null;
+    if (src && src.src) {
+      if (!src.paused) return Math.max(0, (src.currentTime || 0) - offsetSec);
+      if (src.currentTime > 0 || src.duration > 0) return src.currentTime || 0;
+    }
+  } catch (e) {}
   const els = window.audioElements;
   if (els) {
     for (const k of Object.keys(els)) {
@@ -1017,6 +1027,14 @@ function currentPlaybackTime() {
 }
 
 function seekAllAudioTo(seconds) {
+  // Seek the active non-stems source too (drum machine / backing track),
+  // so clicking the waveform scrubs whatever is actually sounding.
+  try {
+    const src = (typeof window.activeSourceEl === 'function') ? window.activeSourceEl() : null;
+    if (src && src.src) {
+      src.currentTime = Math.max(0, Math.min(seconds, src.duration || seconds));
+    }
+  } catch (e) {}
   const els = window.audioElements;
   if (!els) return;
   for (const k of Object.keys(els)) {
