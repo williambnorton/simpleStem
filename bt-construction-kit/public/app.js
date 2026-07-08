@@ -9762,7 +9762,11 @@ async function onLyricsModalSave() {
     console.log('[lyric] cachedLines populated:', lyricsState.cachedLines.length, 'lines');
     // Loading lyrics is a REPLACE operation (Bill 2026-07-07): the operator
     // is about to re-place lines across the song, and placements from an
-    // earlier pass would double up on screen. Wipe them now.
+    // earlier pass would double up on screen. Wipe them now — INCLUDING the
+    // session placement counters. lyricsCursor() is max(placedCount,
+    // on-disk events), so leaving placedCount alone after a completed pass
+    // made "remaining" stick at 0 and locked the button in Fetch mode
+    // (Bill's 2026-07-08 bug: second fetch couldn't place).
     const stale = automationEvents.filter(e => e.type === 'lyric-line').length;
     if (stale) {
       automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
@@ -9771,6 +9775,11 @@ async function onLyricsModalSave() {
       showToast(`Cleared ${stale} previously placed lyric line${stale === 1 ? '' : 's'} — fresh placement pass`);
       console.log('[lyric] replace-mode: cleared', stale, 'placed lyric-line actions');
     }
+    lyricsState.placedCount = 0;
+    lyricsState.placedStack = [];
+    lyricsState.lastTapAt = 0;
+    lyricsState.activeLines = [];
+    if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
     closeLyricsModal();
   } finally {
     els.lyricsModalSave.disabled = false;
