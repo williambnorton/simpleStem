@@ -2900,15 +2900,16 @@ select {
 .other-click-header { justify-content: space-between; }
 /* Floating timestamp that rides above the timeline thumb. */
 .timeline-bar-wrapper { position: relative; }
+.timeline-bar-wrapper { overflow: visible; }
 .timeline-thumb-time {
   position: absolute;
-  top: -20px;
+  top: 50%;
   left: 0;
-  transform: translateX(-50%);
+  transform: translate(12px, -50%);
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   padding: 1px 6px;
   border-radius: 4px;
@@ -2916,6 +2917,12 @@ select {
   white-space: nowrap;
   z-index: 3;
 }
+.timeline-thumb-time.flip { transform: translate(calc(-100% - 12px), -50%); }
+/* Click trim knob in the action row. */
+.click-trim { display: inline-flex; align-items: center; gap: 3px; }
+.click-trim-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.7; }
+.click-trim-btn { min-width: 20px; padding: 2px 5px; font-weight: 900; }
+.click-trim-val { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 34px; text-align: center; }
 .strip-click-btn {
   width: 28px; height: 28px; padding: 0; flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;

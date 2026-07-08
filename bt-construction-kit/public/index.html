@@ -407,6 +407,12 @@
                    + Click / + Count-in section-flag buttons were retired
                    2026-07-07 in favor of that event model. -->
               <button id="midi-btn-midi-sync" class="midi-toolbar-btn" title="MIDI SYNC: broadcast 24-ppqn MIDI clock to every connected MIDI device while the song plays, tempo-locked to the beat grid × playback rate (SEMI-aware) — keeps loopers in sync with playback. Requires the MIDI sidecar (./performer.sh start).">MIDI Sync</button>
+              <span class="click-trim" id="click-trim-wrap" title="Click timing trim: shifts every click later (+) or earlier (−) in 5 ms steps, ±60 ms. Use it to dial the click dead onto the beat by ear — the value persists on this machine and applies to all songs.">
+                <span class="click-trim-label">CLICK</span>
+                <button id="click-trim-minus" class="midi-toolbar-btn click-trim-btn">−</button>
+                <span id="click-trim-val" class="click-trim-val">0ms</span>
+                <button id="click-trim-plus" class="midi-toolbar-btn click-trim-btn">+</button>
+              </span>
               <!-- Action favorites (#midi-preset-slots) removed per user
                    request 06/2026 -- they weren't getting used and the
                    real estate is better spent on the + Clip button. -->

@@ -4810,19 +4810,29 @@ function clickOutputNode() {
   return (st && st.stripGain) ? st.stripGain : masterGainNode;
 }
 
-// Output-latency compensation for the click. Media element currentTime is
-// (approximately) the AUDIBLE position, but an oscillator scheduled at ctx
-// time T emerges from the device outputLatency later — so uncompensated
-// clicks trail the music by the device latency (small on speakers, larger
-// through the XR18's USB path). We pull every click earlier by
-// audioCtx.outputLatency, plus an ear-calibratable trim:
+// Click timing trim. The automatic outputLatency compensation tried here
+// earlier made clicks land ~20 ms EARLY (Bill, Another Brick in the Wall)
+// — Chrome's media clock already accounts for device latency, so the
+//'compensation' was a double-subtract. Removed. What remains is the
+// manual trim knob beneath the visualizer (±5 ms steps, persisted):
 //   localStorage 'simpleStem.clickTrimMs'  (positive = clicks later,
-//   negative = earlier; default 0).
+//   negative = earlier; default 0). Read live on every click.
 function clickSchedulingOffsetSec() {
   let trim = 0;
   try { trim = (parseFloat(localStorage.getItem('simpleStem.clickTrimMs')) || 0) / 1000; } catch (e) {}
-  const out = (audioCtx && (audioCtx.outputLatency || audioCtx.baseLatency)) || 0;
-  return -out + trim;
+  return trim;
+}
+
+function clickTrimMs() {
+  try { return Math.round(parseFloat(localStorage.getItem('simpleStem.clickTrimMs')) || 0); } catch (e) { return 0; }
+}
+
+function setClickTrimMs(v) {
+  v = Math.max(-60, Math.min(60, Math.round(v)));
+  try { localStorage.setItem('simpleStem.clickTrimMs', String(v)); } catch (e) {}
+  const el = document.getElementById('click-trim-val');
+  if (el) el.textContent = (v > 0 ? '+' : '') + v + 'ms';
+  return v;
 }
 
 function fireClickAt(when, downbeat) {
@@ -4947,6 +4957,12 @@ function setupClickTrack() {
     midiSyncOn = !midiSyncOn;
     syncBtn.classList.toggle('active', midiSyncOn);
   });
+  // Click trim knob: ±5 ms steps, ±60 ms range, persisted, applied live.
+  const tMinus = document.getElementById('click-trim-minus');
+  const tPlus = document.getElementById('click-trim-plus');
+  if (tMinus) tMinus.addEventListener('click', () => setClickTrimMs(clickTrimMs() - 5));
+  if (tPlus) tPlus.addEventListener('click', () => setClickTrimMs(clickTrimMs() + 5));
+  setClickTrimMs(clickTrimMs());
   startClickScheduler();
 }
 
@@ -4994,6 +5010,7 @@ function updateTimelineTimeUI(t) {
     tt.textContent = formatTimeMMSS(t);
     const pct = dur > 0 ? Math.min(100, Math.max(0, (t / dur) * 100)) : 0;
     tt.style.left = pct + '%';
+    tt.classList.toggle('flip', pct > 82);
   }
 }
 

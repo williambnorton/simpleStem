@@ -79,12 +79,12 @@ retired the next day in favor of the click on/off action model above.
   Backing tracks and drum-machine sources fit against the whole mix.
 - The grid assumes 4/4 for downbeat accents. Odd meters still click every
   beat — only the accent placement is 4/4.
-- Clicks are scheduled early by the reported audio output latency so they
-  line up with what you HEAR, not with the internal timeline (~23 ms on
-  speakers, more via XR18 USB). If your ear says they're still off, trim
-  in the DevTools console: `localStorage.setItem('simpleStem.clickTrimMs',
-  '15')` pushes clicks 15 ms later (negative = earlier); takes effect
-  immediately.
+- **CLICK − / + trim** (beneath the visualizer, next to MIDI Sync): shifts
+  every click later (+) or earlier (−) in 5 ms steps, ±60 ms, persisted per
+  machine, applied live. Use it to dial the click dead onto the beat by ear
+  — typically needed through the XR18's USB path. (The earlier automatic
+  output-latency compensation made clicks ~20 ms early and was removed —
+  Chrome's playback clock already accounts for device latency.)
 - The scheduler runs on a 60 ms timer with a 0.3 s look-ahead (1.5 s when the
   tab is hidden). A hidden AND silent tab is eventually throttled by Chrome
   to one tick a minute — irrelevant during use (playback makes the page
