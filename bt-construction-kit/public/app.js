@@ -4179,12 +4179,14 @@ async function onMakeGigFromSelection() {
     setlists.push({ title: `Set ${setlists.length + 1}`, songs: bases.slice(i, i + per).map(b => ({ song_base: b })) });
   }
   const d = new Date();
-  const title = `Gig ${d.getMonth() + 1}/${d.getDate()} ` +
+  const suggested = `Gig ${d.getMonth() + 1}/${d.getDate()} ` +
     `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  const title = prompt(`Name the new gig (${bases.length} songs, ${numSets} set${numSets === 1 ? '' : 's'}):`, suggested);
+  if (!title || !title.trim()) return;   // cancelled — selection stays
   try {
     const res = await fetch('/api/gigs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, setlists }),
+      body: JSON.stringify({ title: title.trim(), setlists }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'create failed');
@@ -4193,7 +4195,7 @@ async function onMakeGigFromSelection() {
     const picker = document.getElementById('gig-picker');
     if (picker) picker.value = data.slug;
     loadActiveGig(data.slug);
-    showToast(`Gig "${title}": ${bases.length} songs in ${setlists.length} set${setlists.length === 1 ? '' : 's'} — rename with the pencil`);
+    showToast(`Gig "${title.trim()}": ${bases.length} songs in ${setlists.length} set${setlists.length === 1 ? '' : 's'}`);
   } catch (e) {
     showToast(`Couldn't create gig: ${e.message}`);
   }
@@ -4208,13 +4210,16 @@ function onAddSetlistFromSelection() {
     showToast('Pick a real gig first — built-in lists are read-only');
     return;
   }
+  const slTitle = prompt(`Name the new setlist (${bases.length} songs, added to "${activeGig.title}"):`,
+    `Set ${activeGig.setlists.length + 1}`);
+  if (!slTitle || !slTitle.trim()) return;   // cancelled — selection stays
   activeGig.setlists.push({
-    title: `Set ${activeGig.setlists.length + 1}`,
+    title: slTitle.trim(),
     songs: bases.map(b => ({ song_base: b })),
   });
   scheduleGigSave();
   clearLibrarySelection();
-  showToast(`Added Set ${activeGig.setlists.length} (${bases.length} songs) to "${activeGig.title}"`);
+  showToast(`Added "${slTitle.trim()}" (${bases.length} songs) to "${activeGig.title}"`);
 }
 
 function applyFilters() {
