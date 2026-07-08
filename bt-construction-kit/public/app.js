@@ -15,6 +15,7 @@ let filteredLibrary = []; // filtered view of mergedLibrary
 // empty set = no tag filtering. Singers: UNchecked names (all checked by
 // default). Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
 let libraryTagFilters = new Set();
+let libraryKnownTags = new Set();   // tags ever seen — new ones default to CHECKED
 let librarySingersOff = new Set();
 let libraryTempoFilters = new Set();
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
@@ -815,8 +816,11 @@ const LAST_SONG_BASE_KEY      = 'simpleStem.lastSongBase';
 
 function setupGigSidebar() {
   document.getElementById('gig-new-btn').addEventListener('click', openGigTemplatePicker);
-  const gffBtn = document.getElementById('gig-from-filter-btn');
-  if (gffBtn) gffBtn.addEventListener('click', onGigFromFilter);
+  const mkGigBtn = document.getElementById('lfb-make-gig');
+  if (mkGigBtn) mkGigBtn.addEventListener('click', onMakeGigFromSelection);
+  const addSetBtn = document.getElementById('lfb-add-setlist');
+  if (addSetBtn) addSetBtn.addEventListener('click', onAddSetlistFromSelection);
+  setupLibrarySelectAll();
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
   const renameBtn = document.getElementById('gig-rename-btn');
@@ -3556,6 +3560,7 @@ function renderLibrary() {
       if (!songBaseForBatch) return;   // unstemmed song can't be batched
       if (checkbox.checked) batchSelectedBases.add(songBaseForBatch);
       else batchSelectedBases.delete(songBaseForBatch);
+      if (typeof syncLibrarySelectAll === 'function') syncLibrarySelectAll();
       // Re-render the gig sidebar so ghost rows reflect the new batch.
       // Click any of the green + buttons on those ghosts to commit them
       // all into the active setlist and clear the checkboxes.
@@ -4062,8 +4067,13 @@ function renderLibraryFilterBar() {
     const lead = (sv.singer_lead || '').trim();
     if (lead) singers.add(lead.charAt(0).toUpperCase() + lead.slice(1));
   }
+  // First draw (and any newly appearing tag): default CHECKED, so nothing
+  // is filtered out until the operator unchecks something (Bill 2026-07-08).
+  for (const t of [...tagVocab, '__none__']) {
+    if (!libraryKnownTags.has(t)) { libraryKnownTags.add(t); libraryTagFilters.add(t); }
+  }
   // Drop stale filter state that no longer exists in the library.
-  for (const t of [...libraryTagFilters]) if (t !== '__none__' && !tagVocab.has(t)) libraryTagFilters.delete(t);
+  for (const t of [...libraryTagFilters]) if (t !== '__none__' && !tagVocab.has(t)) { libraryTagFilters.delete(t); libraryKnownTags.delete(t); }
   for (const nm of [...librarySingersOff]) if (![...singers].some(x => x.toLowerCase() === nm)) librarySingersOff.delete(nm);
 
   const chip = (group, value, label, checked) =>
@@ -4105,31 +4115,112 @@ function renderLibraryFilterBar() {
   });
 }
 
-// New gig from the FILTERED library list — the list-plus button next to
-// the Gig picker. No dialogs: auto-named, rename inline afterwards.
-async function onGigFromFilter() {
-  const bases = filteredLibrary
-    .map(m => { const v = m.variants.find(x => x.type === 'stems'); return v && v.folderName; })
-    .filter(Boolean);
-  if (!bases.length) { showToast('No songs in the filtered list'); return; }
+// ── Selection → gig/setlist (buttons in the filter bar) ─────────────────
+// The selection is the checked rows (batchSelectedBases), ordered as the
+// library currently shows them; selected songs that a filter has since
+// hidden ride along at the end so nothing silently drops.
+function selectedStemBasesInLibraryOrder() {
+  const bases = [];
+  for (const m of filteredLibrary) {
+    const v = m.variants.find(x => x.type === 'stems');
+    if (v && v.folderName && batchSelectedBases.has(v.folderName)) bases.push(v.folderName);
+  }
+  for (const b of batchSelectedBases) if (b && !bases.includes(b)) bases.push(b);
+  return bases;
+}
+
+function clearLibrarySelection() {
+  batchSelectedBases.clear();
+  renderLibrary();
+  if (typeof renderGigSidebar === 'function') renderGigSidebar();
+  syncLibrarySelectAll();
+}
+
+// Select-all checkbox atop the Set column: selects every song now listed;
+// if ANY songs are selected, it clears the selection instead.
+function setupLibrarySelectAll() {
+  const cb = document.getElementById('library-select-all');
+  if (!cb) return;
+  cb.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (batchSelectedBases.size) {
+      batchSelectedBases.clear();
+    } else {
+      for (const m of filteredLibrary) {
+        const v = m.variants.find(x => x.type === 'stems');
+        if (v && v.folderName) batchSelectedBases.add(v.folderName);
+      }
+    }
+    renderLibrary();
+    if (typeof renderGigSidebar === 'function') renderGigSidebar();
+    syncLibrarySelectAll();
+  });
+}
+
+function syncLibrarySelectAll() {
+  const cb = document.getElementById('library-select-all');
+  if (!cb) return;
+  const total = filteredLibrary.reduce((n, m) => n + (m.variants.some(x => x.type === 'stems') ? 1 : 0), 0);
+  cb.checked = total > 0 && batchSelectedBases.size >= total;
+  cb.indeterminate = batchSelectedBases.size > 0 && !cb.checked;
+}
+
+// "Make Gig from selection": new gig, selection split into balanced
+// setlists of 15-20 songs (aiming at ~17). Clears the selection.
+async function onMakeGigFromSelection() {
+  const bases = selectedStemBasesInLibraryOrder();
+  if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
+  // Aim for 15-20 songs per set, hard-capped at the gig contract's 4
+  // setlists (server rejects more). Selections beyond 80 songs get four
+  // bigger sets rather than a rejected save.
+  let numSets = Math.max(1, Math.round(bases.length / 17.5));
+  if (numSets > 4) { numSets = 4; showToast(`${bases.length} songs — a gig holds max 4 setlists, so sets will exceed 20 songs`); }
+  const per = Math.ceil(bases.length / numSets);
+  const setlists = [];
+  for (let i = 0; i < bases.length; i += per) {
+    setlists.push({ title: `Set ${setlists.length + 1}`, songs: bases.slice(i, i + per).map(b => ({ song_base: b })) });
+  }
   const d = new Date();
-  const title = `Filtered ${d.getMonth() + 1}/${d.getDate()} ` +
+  const title = `Gig ${d.getMonth() + 1}/${d.getDate()} ` +
     `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
   try {
     const res = await fetch('/api/gigs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, setlists: [{ title: 'Set 1', songs: bases.map(b => ({ song_base: b })) }] }),
+      body: JSON.stringify({ title, setlists }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'create failed');
+    clearLibrarySelection();
     await refreshGigList();
     const picker = document.getElementById('gig-picker');
     if (picker) picker.value = data.slug;
     loadActiveGig(data.slug);
-    showToast(`Gig "${title}" created with ${bases.length} song${bases.length === 1 ? '' : 's'} — rename it with the pencil`);
+    showToast(`Gig "${title}": ${bases.length} songs in ${setlists.length} set${setlists.length === 1 ? '' : 's'} — rename with the pencil`);
   } catch (e) {
     showToast(`Couldn't create gig: ${e.message}`);
   }
+}
+
+// "Add setlist from selection": appends one setlist with the selection to
+// the CURRENT gig. Clears the selection.
+function onAddSetlistFromSelection() {
+  const bases = selectedStemBasesInLibraryOrder();
+  if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
+  if (!activeGig || !activeGig.slug || activeGig.synthetic || activeGig.readOnly) {
+    showToast('Pick a real gig first — built-in lists are read-only');
+    return;
+  }
+  if (activeGig.setlists.length >= 4) {
+    showToast(`"${activeGig.title}" already has 4 setlists — that's the max per gig`);
+    return;
+  }
+  activeGig.setlists.push({
+    title: `Set ${activeGig.setlists.length + 1}`,
+    songs: bases.map(b => ({ song_base: b })),
+  });
+  scheduleGigSave();
+  clearLibrarySelection();
+  showToast(`Added Set ${activeGig.setlists.length} (${bases.length} songs) to "${activeGig.title}"`);
 }
 
 function applyFilters() {
@@ -4183,8 +4274,10 @@ function applyFilters() {
     const svBar = song.variants.find(v => v.type === 'stems');
     const songTags = (svBar && Array.isArray(svBar.tags)) ? svBar.tags : [];
     const songReadiness = (svBar && svBar.readiness) || '';
+    // All tag chips start CHECKED (= nothing filtered); unchecking a chip
+    // hides that tag's songs. Before the bar has initialized, no filtering.
     let matchesTagBar = true;
-    if (libraryTagFilters.size) {
+    if (libraryKnownTags.size) {
       matchesTagBar = [...libraryTagFilters].some(t =>
         t === '__none__'
           ? (songTags.length === 0 && !songReadiness)
@@ -4211,6 +4304,7 @@ function applyFilters() {
   els.countLabel.textContent = `Found ${filteredLibrary.length} tracks matching filters`;
   applyLibrarySort();
   renderLibrary();
+  if (typeof syncLibrarySelectAll === 'function') syncLibrarySelectAll();
 }
 
 // Initialize Web Audio graph
@@ -10653,6 +10747,7 @@ async function cacheStatusRefresh() {
     }
     if (dirty) {
       mergedLibrary = mergeByTitleArtist(songLibrary);
+      try { renderLibraryFilterBar(); } catch (e) {}
       mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
       applyFilters();
     }

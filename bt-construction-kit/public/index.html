@@ -95,7 +95,6 @@
             <select id="gig-picker" class="glass-select" title="Switch to a different gig"></select>
             <button id="gig-rename-btn" class="btn-icon" title="Rename this gig"><i data-lucide="pencil"></i></button>
             <button id="gig-new-btn" class="btn-icon" title="Create a new gig"><i data-lucide="plus"></i></button>
-            <button id="gig-from-filter-btn" class="btn-icon" title="New gig from the current FILTERED library list (use the checkboxes next to Song Library to reduce the list first)"><i data-lucide="list-plus"></i></button>
             <button id="gig-dup-btn" class="btn-icon" title="Duplicate this gig (copies all setlists)"><i data-lucide="copy"></i></button>
             <button id="gig-del-btn" class="btn-icon" title="Delete this gig" disabled><i data-lucide="trash-2"></i></button>
           </div>
@@ -790,6 +789,10 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
                  list-plus button next to the Gig picker turns the
                  reduced list into a new gig. -->
             <div id="library-filter-bar" class="library-filter-bar"></div>
+            <div class="lfb-actions">
+              <button id="lfb-make-gig" class="lfb-action-btn" title="Create a new gig from the SELECTED songs (check rows, or use the select-all box atop the Set column). Songs are split into setlists of 15-20 each. Clears the selection afterwards.">Make Gig from selection</button>
+              <button id="lfb-add-setlist" class="lfb-action-btn" title="Append one new setlist containing the SELECTED songs to the current gig. Clears the selection afterwards.">Add setlist from selection</button>
+            </div>
 
             <!-- Search + Paste URL moved to the LEFT sidebar (top). They
                  belong next to the gig/setlist picker since the primary
@@ -810,7 +813,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
           
           <div class="library-wrapper list-mode" id="library-container">
             <div class="song-table-header">
-              <div class="col-select" style="width: 45px; cursor: default;">Set</div>
+              <div class="col-select" style="width: 45px;"><input type="checkbox" id="library-select-all" title="Select every song now listed in the library. If any songs are selected, this clears the selection instead."></div>
               <div class="col-title" data-sort="title">Song Title <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-tags" title="Tags + readiness — click a row's tag cell to pick">Tags</div>
