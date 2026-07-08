@@ -11,6 +11,12 @@ let mergedLibrary = []; // grouped: one entry per song with .variants array
 // top of a practice gig, click +, all 10 join the setlist + precache.
 const batchSelectedBases = new Set();
 let filteredLibrary = []; // filtered view of mergedLibrary
+// Library filter bar state (Bill 2026-07-07). Tags: checked values —
+// empty set = no tag filtering. Singers: UNchecked names (all checked by
+// default). Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
+let libraryTagFilters = new Set();
+let librarySingersOff = new Set();
+let libraryTempoFilters = new Set();
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let setlist = []; // Array of song items in setlist
 let currentSong = null;
@@ -809,6 +815,8 @@ const LAST_SONG_BASE_KEY      = 'simpleStem.lastSongBase';
 
 function setupGigSidebar() {
   document.getElementById('gig-new-btn').addEventListener('click', openGigTemplatePicker);
+  const gffBtn = document.getElementById('gig-from-filter-btn');
+  if (gffBtn) gffBtn.addEventListener('click', onGigFromFilter);
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
   const renameBtn = document.getElementById('gig-rename-btn');
@@ -3186,6 +3194,7 @@ async function fetchLibrary() {
     mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
 
     filteredLibrary = [...mergedLibrary];
+    try { renderLibraryFilterBar(); } catch (e) { console.warn('[filter-bar]', e); }
 
     // Heal stale "failed to load" markers on songs that now have valid
     // cached stems. Stops greyed rows from sticking after a successful
@@ -4032,6 +4041,97 @@ async function openSongMenu(base, merged) {
 }
 
 // Client Side Search and Filters
+// ── Library filter bar ───────────────────────────────────────────────────
+// Checkbox chips right of the "Song Library" title: every tag/readiness
+// value that exists in the library (plus 'none'), every lead singer (all
+// checked by default — unchecking hides that singer's songs), and the two
+// tempo categories (Upbeat > 110 bpm, Savory ≤ 110; a song tagged Upbeat/
+// Savory overrides its BPM). Checking boxes narrows filteredLibrary live;
+// the list-plus button by the Gig picker turns the narrowed list into a
+// new gig.
+function renderLibraryFilterBar() {
+  const bar = document.getElementById('library-filter-bar');
+  if (!bar) return;
+  const tagVocab = new Set();
+  const singers = new Set();
+  for (const m of mergedLibrary) {
+    const sv = m.variants.find(v => v.type === 'stems');
+    if (!sv) continue;
+    if (Array.isArray(sv.tags)) sv.tags.forEach(t => { if (t) tagVocab.add(t); });
+    if (sv.readiness) tagVocab.add(sv.readiness);
+    const lead = (sv.singer_lead || '').trim();
+    if (lead) singers.add(lead.charAt(0).toUpperCase() + lead.slice(1));
+  }
+  // Drop stale filter state that no longer exists in the library.
+  for (const t of [...libraryTagFilters]) if (t !== '__none__' && !tagVocab.has(t)) libraryTagFilters.delete(t);
+  for (const nm of [...librarySingersOff]) if (![...singers].some(x => x.toLowerCase() === nm)) librarySingersOff.delete(nm);
+
+  const chip = (group, value, label, checked) =>
+    `<label class="lfb-chip ${checked ? 'checked' : ''}" data-group="${group}" data-value="${value.replace(/"/g, '&quot;')}">` +
+    `<input type="checkbox" ${checked ? 'checked' : ''}>${label}</label>`;
+
+  let html = '';
+  const tagList = [...tagVocab].sort((a, b) => a.localeCompare(b));
+  html += '<span class="lfb-group"><span class="lfb-group-label">Tags</span>';
+  for (const t of tagList) html += chip('tag', t, t, libraryTagFilters.has(t));
+  html += chip('tag', '__none__', 'none', libraryTagFilters.has('__none__'));
+  html += '</span>';
+  const singerList = [...singers].sort((a, b) => a.localeCompare(b));
+  if (singerList.length) {
+    html += '<span class="lfb-group"><span class="lfb-group-label">Singers</span>';
+    for (const nm of singerList) html += chip('singer', nm.toLowerCase(), nm, !librarySingersOff.has(nm.toLowerCase()));
+    html += '</span>';
+  }
+  html += '<span class="lfb-group"><span class="lfb-group-label">Tempo</span>';
+  html += chip('tempo', 'upbeat', 'Upbeat', libraryTempoFilters.has('upbeat'));
+  html += chip('tempo', 'savory', 'Savory', libraryTempoFilters.has('savory'));
+  html += '</span>';
+  bar.innerHTML = html;
+
+  bar.querySelectorAll('.lfb-chip').forEach(el => {
+    const input = el.querySelector('input');
+    input.addEventListener('change', () => {
+      const group = el.dataset.group, value = el.dataset.value;
+      if (group === 'tag') {
+        if (input.checked) libraryTagFilters.add(value); else libraryTagFilters.delete(value);
+      } else if (group === 'singer') {
+        if (input.checked) librarySingersOff.delete(value); else librarySingersOff.add(value);
+      } else if (group === 'tempo') {
+        if (input.checked) libraryTempoFilters.add(value); else libraryTempoFilters.delete(value);
+      }
+      el.classList.toggle('checked', input.checked);
+      applyFilters();
+    });
+  });
+}
+
+// New gig from the FILTERED library list — the list-plus button next to
+// the Gig picker. No dialogs: auto-named, rename inline afterwards.
+async function onGigFromFilter() {
+  const bases = filteredLibrary
+    .map(m => { const v = m.variants.find(x => x.type === 'stems'); return v && v.folderName; })
+    .filter(Boolean);
+  if (!bases.length) { showToast('No songs in the filtered list'); return; }
+  const d = new Date();
+  const title = `Filtered ${d.getMonth() + 1}/${d.getDate()} ` +
+    `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  try {
+    const res = await fetch('/api/gigs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, setlists: [{ title: 'Set 1', songs: bases.map(b => ({ song_base: b })) }] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'create failed');
+    await refreshGigList();
+    const picker = document.getElementById('gig-picker');
+    if (picker) picker.value = data.slug;
+    loadActiveGig(data.slug);
+    showToast(`Gig "${title}" created with ${bases.length} song${bases.length === 1 ? '' : 's'} — rename it with the pencil`);
+  } catch (e) {
+    showToast(`Couldn't create gig: ${e.message}`);
+  }
+}
+
 function applyFilters() {
   const query = els.search.value.toLowerCase().trim();
   const format = document.querySelector('.filter-btn.active').id;
@@ -4079,7 +4179,33 @@ function applyFilters() {
       });
     }
 
-    return matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips;
+    // Filter bar: tags / singers / tempo (Bill 2026-07-07).
+    const svBar = song.variants.find(v => v.type === 'stems');
+    const songTags = (svBar && Array.isArray(svBar.tags)) ? svBar.tags : [];
+    const songReadiness = (svBar && svBar.readiness) || '';
+    let matchesTagBar = true;
+    if (libraryTagFilters.size) {
+      matchesTagBar = [...libraryTagFilters].some(t =>
+        t === '__none__'
+          ? (songTags.length === 0 && !songReadiness)
+          : (songTags.includes(t) || songReadiness === t));
+    }
+    let matchesSinger = true;
+    const leadBar = (svBar && svBar.singer_lead) ? String(svBar.singer_lead).trim().toLowerCase() : '';
+    if (leadBar && librarySingersOff.has(leadBar)) matchesSinger = false;
+    let matchesTempo = true;
+    if (libraryTempoFilters.size) {
+      const bpmBar = song.practiceBpm || 0;
+      const tagUp = songTags.some(t => /^upbeat$/i.test(t));
+      const tagSav = songTags.some(t => /^savou?ry$/i.test(t));
+      const isUp = tagUp || (!tagSav && bpmBar > 110);
+      const isSav = tagSav || (!tagUp && bpmBar > 0 && bpmBar <= 110);
+      matchesTempo = (libraryTempoFilters.has('upbeat') && isUp) ||
+                     (libraryTempoFilters.has('savory') && isSav);
+    }
+
+    return matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips &&
+           matchesTagBar && matchesSinger && matchesTempo;
   });
   
   els.countLabel.textContent = `Found ${filteredLibrary.length} tracks matching filters`;
@@ -13355,7 +13481,7 @@ function setupMidiUI() {
     // players, not transient automation, and the user wants them sticky
     // across CLEAR and INIT.
     if (automationEvents.length === 0) return;
-    if (!confirm(`Clear all ${automationEvents.length} action(s) on this song's timeline? (Section markers will be kept.)`)) return;
+    const clearedN = automationEvents.length;
     automationEvents = [];
     // Also rewind the lyrics tap-along state so the next + Lyric press
     // starts from the first cached line. The cached lyrics file (text +
@@ -13378,6 +13504,7 @@ function setupMidiUI() {
       // saveAutomationForSong reads the current automationSections at send
       // time, so they ride along untouched.
       await saveAutomationForSong(automationCurrentBase, []);
+      showToast(`Cleared ${clearedN} action${clearedN === 1 ? '' : 's'} (sections kept)`);
     } catch (err) {
       alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old data.`);
     }

@@ -95,6 +95,7 @@
             <select id="gig-picker" class="glass-select" title="Switch to a different gig"></select>
             <button id="gig-rename-btn" class="btn-icon" title="Rename this gig"><i data-lucide="pencil"></i></button>
             <button id="gig-new-btn" class="btn-icon" title="Create a new gig"><i data-lucide="plus"></i></button>
+            <button id="gig-from-filter-btn" class="btn-icon" title="New gig from the current FILTERED library list (use the checkboxes next to Song Library to reduce the list first)"><i data-lucide="list-plus"></i></button>
             <button id="gig-dup-btn" class="btn-icon" title="Duplicate this gig (copies all setlists)"><i data-lucide="copy"></i></button>
             <button id="gig-del-btn" class="btn-icon" title="Delete this gig" disabled><i data-lucide="trash-2"></i></button>
           </div>
@@ -782,6 +783,13 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <h2>Song Library</h2>
               <span class="sub" id="library-count-label">Loading library...</span>
             </div>
+
+            <!-- Filter bar (Bill 2026-07-07): tag / singer / tempo
+                 checkboxes, populated from the loaded library by
+                 renderLibraryFilterBar(). Reduces the list live; the
+                 list-plus button next to the Gig picker turns the
+                 reduced list into a new gig. -->
+            <div id="library-filter-bar" class="library-filter-bar"></div>
 
             <!-- Search + Paste URL moved to the LEFT sidebar (top). They
                  belong next to the gig/setlist picker since the primary
