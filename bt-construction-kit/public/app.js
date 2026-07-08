@@ -829,7 +829,7 @@ function setupGigSidebar() {
     if (e.target.value) loadActiveGig(e.target.value);
   });
   document.getElementById('gig-add-setlist-btn').addEventListener('click', () => {
-    if (!activeGig || activeGig.setlists.length >= 4) return;
+    if (!activeGig) return;
     activeGig.setlists.push({ title: `Set ${activeGig.setlists.length + 1}`, songs: [] });
     renderGigSidebar();
     scheduleGigSave();
@@ -1669,7 +1669,7 @@ function renderGigSidebar() {
   const ro = !!activeGig.readOnly;
   dupBtn.disabled = ro || synthetic;
   delBtn.disabled = ro || synthetic;
-  addBtn.disabled = ro || synthetic || activeGig.setlists.length >= 4;
+  addBtn.disabled = ro || synthetic;
   const renameBtn = document.getElementById('gig-rename-btn');
   if (renameBtn) {
     renameBtn.disabled = ro || synthetic;
@@ -4170,11 +4170,9 @@ function syncLibrarySelectAll() {
 async function onMakeGigFromSelection() {
   const bases = selectedStemBasesInLibraryOrder();
   if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
-  // Aim for 15-20 songs per set, hard-capped at the gig contract's 4
-  // setlists (server rejects more). Selections beyond 80 songs get four
-  // bigger sets rather than a rejected save.
-  let numSets = Math.max(1, Math.round(bases.length / 17.5));
-  if (numSets > 4) { numSets = 4; showToast(`${bases.length} songs — a gig holds max 4 setlists, so sets will exceed 20 songs`); }
+  // 15-20 songs per set (~45-90 min) is a GUIDELINE, not a limit — big
+  // selections simply produce more sets.
+  const numSets = Math.max(1, Math.round(bases.length / 17.5));
   const per = Math.ceil(bases.length / numSets);
   const setlists = [];
   for (let i = 0; i < bases.length; i += per) {
@@ -4208,10 +4206,6 @@ function onAddSetlistFromSelection() {
   if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
   if (!activeGig || !activeGig.slug || activeGig.synthetic || activeGig.readOnly) {
     showToast('Pick a real gig first — built-in lists are read-only');
-    return;
-  }
-  if (activeGig.setlists.length >= 4) {
-    showToast(`"${activeGig.title}" already has 4 setlists — that's the max per gig`);
     return;
   }
   activeGig.setlists.push({

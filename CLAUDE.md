@@ -230,7 +230,7 @@ the file layout follows it.
 
 ```
 Gig            (1)
- └─ Setlist    (1–4 per gig, ordered, sequential in time)
+ └─ Setlist    (typically 1–4 per gig — a guideline, not a limit; ordered, sequential in time)
      └─ Song   (1+ per setlist, ordered, sequential in time)
          └─ Stems + synchronized timeline (BPM, key, MIDI automation)
 ```

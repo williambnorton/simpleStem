@@ -6281,7 +6281,9 @@ function validateGig(body) {
   if (!body || typeof body !== 'object') return 'body required';
   if (!body.title || typeof body.title !== 'string') return 'title required';
   if (!Array.isArray(body.setlists)) return 'setlists must be an array';
-  if (body.setlists.length > 4) return 'a gig can have at most 4 setlists';
+  // Setlist count is a GUIDELINE, not a limit (Bill 2026-07-08): a typical
+  // gig has 1-4 sets of 15-20 songs (~45-90 min each), but the server
+  // accepts any count.
   for (const sl of body.setlists) {
     if (!sl || typeof sl !== 'object') return 'each setlist must be an object';
     if (typeof sl.title !== 'string') return 'each setlist needs a title';
