@@ -33,3 +33,6 @@ SETLISTS/registry.json
 # Local-only binaries that shouldn't be tracked
 rem-*.tar.gz
 *.tar.gz
+
+__pycache__/
+*.pyc
