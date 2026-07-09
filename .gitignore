@@ -36,3 +36,6 @@ rem-*.tar.gz
 
 __pycache__/
 *.pyc
+
+__pycache__/
+*.pyc
