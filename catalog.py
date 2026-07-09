@@ -112,6 +112,10 @@ def pick_stem_files(files_in_folder):
         if f'{name}.m4a' in fset: return f'{name}.m4a'
         if f'{name}.wav' in fset: return f'{name}.wav'
         return None
+    # Task #150: six canonical stems only. `rhythm` (bass+drums) and
+    # `source` (source.wav) are used internally elsewhere but were leaking
+    # into currentSong.stems on the client. Keep this in lockstep with
+    # server.js scanStems.
     return {
         'vocals': pick('vocals'),
         'drums':  pick('drums'),
@@ -119,8 +123,6 @@ def pick_stem_files(files_in_folder):
         'guitar': pick('guitar'),
         'piano':  pick('piano'),
         'other':  pick('other'),
-        'rhythm': pick('bass+drums'),
-        'source': pick('source'),
     }
 
 

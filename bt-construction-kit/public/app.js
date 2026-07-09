@@ -3280,6 +3280,17 @@ async function fetchLibrary() {
 // otherwise the first m4a. BPM/Key/Duration are inherited from primary.
 function mergeByTitleArtist(rawSongs) {
   const norm = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // Task #150 (defensive): older CATALOG.json rows may still carry
+  // `rhythm` and `source` keys. Strip them here so currentSong.stems
+  // consistently exposes only the six mixable stems.
+  const SIX_STEMS = ['vocals','drums','bass','guitar','piano','other'];
+  for (const s of rawSongs) {
+    if (s && s.stems && typeof s.stems === 'object') {
+      const clean = {};
+      for (const k of SIX_STEMS) if (k in s.stems) clean[k] = s.stems[k];
+      s.stems = clean;
+    }
+  }
   const groups = new Map();
   for (const s of rawSongs) {
     const key = `${norm(s.title)}|${norm(s.artist)}`;
@@ -13028,11 +13039,11 @@ function endStemDucking() {
   }
 }
 
-// Play a CUSTOM_LOOPS sample in parallel with the backing track. Each
-// firing gets its own Audio element wired into the master gain bus so
-// it inherits the master volume + obeys master mute. We don't loop
-// (one-shot for now); the element self-destructs when it ends so an
-// armful of fires doesn't accumulate stale nodes.
+// Play a CUSTOM_LOOPS sample. Bill 2026-07-09: this is now a full
+// PAUSE → CLIP → RESUME sequence, not a ducking overlay. When the clip
+// fires, whatever transport was running (stems, drum machine, or backing
+// track) pauses; the clip plays through the master gain bus; on the
+// clip's `ended` event, if we paused a source we resume it.
 function firePlayClip(e) {
   const file = e && e.clip;
   if (!file) { console.warn('[play-clip] no clip selected'); return; }
@@ -13041,6 +13052,29 @@ function firePlayClip(e) {
   // device's headroom does, so a soft hot clip will clip at the top.
   const boostDb = (e && Number(e.boost)) || 0;
   const boostGain = Math.pow(10, boostDb / 20);
+  // Snapshot which transport (if any) is currently playing so we can
+  // resume it after the clip. We pause the ACTIVE source only — no
+  // sense unpausing the stem elements if the drum machine was running.
+  let resumeFn = null;
+  try {
+    if (drumMachineActive && drumMachineEl && !drumMachineEl.paused) {
+      drumMachineEl.pause();
+      resumeFn = () => { try { drumMachineEl.play().catch(() => {}); } catch (er) {} };
+    } else if (backingTrackActive && backingTrackEl && !backingTrackEl.paused) {
+      backingTrackEl.pause();
+      resumeFn = () => { try { backingTrackEl.play().catch(() => {}); } catch (er) {} };
+    } else if (isPlaying) {
+      const active = Object.values(audioElements).filter(ae => audioHasSrc(ae));
+      active.forEach(ae => { try { ae.pause(); } catch (er) {} });
+      isPlaying = false;
+      try { if (els && els.btnPlay) els.btnPlay.innerHTML = `<i data-lucide="play"></i>`; } catch (er) {}
+      resumeFn = () => {
+        try {
+          if (typeof togglePlayPause === 'function' && !isPlaying) togglePlayPause();
+        } catch (er) {}
+      };
+    }
+  } catch (er) { console.warn('[play-clip] pause-master failed:', er); }
   try {
     if (!audioCtx) initAudioCtx();
     const a = new Audio('/api/audio/custom-loop/' + encodeURIComponent(file));
@@ -13067,18 +13101,21 @@ function firePlayClip(e) {
     const onEnded = () => {
       if (endedFired) return;
       endedFired = true;
-      endStemDucking();
       try { a.removeAttribute('src'); a.load(); } catch (er) {}
+      if (resumeFn) { const r = resumeFn; resumeFn = null; r(); }
     };
     a.addEventListener('ended', onEnded);
     a.addEventListener('error', onEnded);
-    startStemDucking();
     a.play().catch(er => {
       console.warn('[play-clip] play failed:', er);
-      // Play failed → release the ducking slot we just took.
+      // Play failed → resume whatever we paused so the operator isn't
+      // left with a silent transport.
       onEnded();
     });
-  } catch (er) { console.warn('[play-clip] fire failed:', er); }
+  } catch (er) {
+    console.warn('[play-clip] fire failed:', er);
+    if (resumeFn) resumeFn();
+  }
 }
 
 // Apply a fade level to a stem: level 0 = mute on + fader 0, level n in

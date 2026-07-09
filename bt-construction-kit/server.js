@@ -489,6 +489,12 @@ async function scanStems() {
       if (filesInFolder.includes(`${name}.wav`)) return `${name}.wav`;
       return null;
     };
+    // Task #150: the six canonical demucs stems only. The legacy `rhythm`
+    // (bass+drums combined) and `source` (raw 48kHz wav) leaked into the
+    // client's `currentSong.stems` dict and drifted the shape away from
+    // ARCHITECTURE.md's contract. `source.wav` is still used internally
+    // (see `representativeFile` below and `logic-restem` emitters) — that
+    // path reads the file directly from disk, not from this dict.
     const stems = {
       vocals: pickStem('vocals'),
       drums:  pickStem('drums'),
@@ -496,8 +502,6 @@ async function scanStems() {
       guitar: pickStem('guitar'),
       piano:  pickStem('piano'),
       other:  pickStem('other'),
-      rhythm: pickStem('bass+drums'),
-      source: pickStem('source'),
     };
 
     // Logic Pro project bundle (.logicx is a directory). When present, the
@@ -629,7 +633,11 @@ async function scanStems() {
       practiceBpm = meta.practiceBpm;
       originalBpm = meta.originalBpm;
       key = meta.key;
-      const representativeFile = stems.source || stems.drums || stems.bass || stems.vocals || stems.other;
+      // Task #150: `stems` no longer carries source/rhythm — probe source.wav
+      // by name here as the highest-fidelity fallback, then any actual stem.
+      const filesLower = filesInFolder.map(f => f.toLowerCase());
+      const sourceWav = filesInFolder[filesLower.indexOf('source.wav')] || null;
+      const representativeFile = sourceWav || stems.drums || stems.bass || stems.vocals || stems.other;
       if (representativeFile) {
         duration = getAudioDuration(path.join(folderPath, representativeFile));
       }
@@ -3404,6 +3412,72 @@ app.post('/api/precache/library', (req, res) => {
   setImmediate(precacheAllDrumPatterns);
   setImmediate(precacheAllBackingTracks);
 });
+
+// Auto-prune stale gigs (Bill 2026-07-09). GIGS/*.json files whose file
+// mtime is older than 72 hours get moved to GIGS/_pruned/<slug>.json so
+// the sidebar isn't crowded with old drafts, gig aftermath, and forgotten
+// mpb_sync outputs. The move is REVERSIBLE — Bill can `mv` back from
+// _pruned/ any time; nothing is destroyed.
+//
+// EXCEPTION: gigs whose title starts with '*' are permanent — used to
+// pin long-running gigs (e.g. "*Sunday Practice") that Bill wants to
+// keep around regardless of edit age.
+//
+// Interpretation note: "older than 72 hours" here means file mtime. If
+// Bill re-orders a gig or saves any edit, mtime resets and the 72h
+// clock starts over. A gig that hasn't been touched in 3 days gets
+// tidied.
+const GIG_STALE_MS = 72 * 60 * 60 * 1000;
+const GIGS_PRUNED_DIR = path.join(GIGS_DIR, '_pruned');
+async function pruneStaleGigs({ trigger } = {}) {
+  const t0 = Date.now();
+  let scanned = 0, pinned = 0, moved = 0, kept = 0, errs = 0;
+  const movedSlugs = [];
+  try {
+    let names;
+    try { names = await fsp.readdir(GIGS_DIR); } catch (e) { return; }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      scanned++;
+      const src = path.join(GIGS_DIR, name);
+      let stat = null;
+      try { stat = await fsp.stat(src); } catch (e) { errs++; continue; }
+      if (!stat.isFile()) continue;
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs < GIG_STALE_MS) { kept++; continue; }
+      // Check the '*'-prefix exemption. Read the gig JSON just for its
+      // title — cheap, and we already have a hardened async reader.
+      let title = '';
+      try {
+        const txt = await fsp.readFile(src, 'utf8');
+        const gig = JSON.parse(txt);
+        title = String(gig && gig.title || '');
+      } catch (e) { errs++; continue; }
+      if (title.trim().startsWith('*')) { pinned++; continue; }
+      try {
+        await fsp.mkdir(GIGS_PRUNED_DIR, { recursive: true });
+        const dst = path.join(GIGS_PRUNED_DIR, name);
+        await fsp.rename(src, dst);
+        moved++;
+        movedSlugs.push(name.replace(/\.json$/, ''));
+        try { invalidateCachedFile(src); } catch (e) {}
+      } catch (e) {
+        console.warn(`[gig-prune] rename failed for ${name}:`, e.message);
+        errs++;
+      }
+    }
+  } finally {
+    const ms = Date.now() - t0;
+    if (moved || errs) {
+      console.log(`[gig-prune] ${trigger || 'run'}: scanned=${scanned} kept=${kept} pinned=${pinned} moved=${moved} errs=${errs} (${ms}ms) → ${GIGS_PRUNED_DIR}`);
+      if (movedSlugs.length) console.log(`[gig-prune] moved: ${movedSlugs.join(', ')}`);
+    }
+  }
+}
+setImmediate(() => pruneStaleGigs({ trigger: 'boot' }));
+registerTrackedInterval('gig-prune', 6 * 60 * 60 * 1000,
+  () => pruneStaleGigs({ trigger: '6h' }),
+  { label: 'Prune stale gigs', folder: 'gigs', initialDelayMs: 6 * 60 * 60 * 1000 });
 // Clip-only trigger documented in clip_librarian/README.md.
 app.post('/api/precache/custom-loops', (req, res) => {
   res.status(202).json({ status: 'started' });

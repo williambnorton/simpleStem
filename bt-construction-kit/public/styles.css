@@ -403,6 +403,26 @@ select {
   font-weight: 400;
 }
 
+/* Build stamp — needs to be at-a-glance visible so Bill can name the
+   running build during debug. Live-updates via checkVersion() from
+   /api/version. Bill 2026-07-09. */
+.brand-version {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #f1f5f9;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  white-space: nowrap;
+}
+.brand-version:empty { display: none; }
+
 /* Track title in player — strong dark, no neon gradient that disappears on white */
 .track-title { color: var(--text-main) !important; -webkit-text-fill-color: var(--text-main) !important; background: none !important; }
 .track-artist { color: var(--text-muted) !important; }
