@@ -1533,8 +1533,13 @@ async function onGigRename() {
   const nameEl = document.getElementById('gig-side-name');
   if (nameEl) nameEl.textContent = activeGig.title;
   // persistActiveGig PUTs the gig; the server renames the slug when the
-  // title changed (renamed_from) and we re-point the picker there.
+  // title changed (renamed_from) and we re-point the picker there. When the
+  // slug DOESN'T change (e.g. adding "*" as a prune-exemption marker — the
+  // gigSlug regex strips it — Bill 2026-07-09), persistActiveGig won't hit
+  // its renamed_from branch, so we still need to refresh the picker so its
+  // <option> labels track the new title.
   await persistActiveGig();
+  try { await refreshGigList(); } catch (e) {}
   renderGigSidebar();
 }
 
