@@ -17,7 +17,9 @@ let filteredLibrary = []; // filtered view of mergedLibrary
 let libraryTagFilters = new Set();
 let libraryKnownTags = new Set();   // tags ever seen — new ones default to CHECKED
 let librarySingersOff = new Set();
-let libraryTempoFilters = new Set();
+// Default CHECKED (Bill 2026-07-09): both tempo chips start on, so nothing
+// is filtered out until the operator unchecks one.
+let libraryTempoFilters = new Set(['upbeat', 'savory']);
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let setlist = []; // Array of song items in setlist
 let currentSong = null;
@@ -4057,23 +4059,34 @@ async function openSongMenu(base, merged) {
 function renderLibraryFilterBar() {
   const bar = document.getElementById('library-filter-bar');
   if (!bar) return;
-  const tagVocab = new Set();
+  // Case-insensitive tag vocabulary (Bill 2026-07-09): "tbd" and "TBD"
+  // collapse into a single chip. Key is lowercased; value keeps the
+  // first-seen display casing so the UI still shows how humans wrote it.
+  const tagVocab = new Map();
+  const seedTag = (raw) => {
+    if (!raw) return;
+    const s = String(raw).trim();
+    if (!s) return;
+    const lc = s.toLowerCase();
+    if (!tagVocab.has(lc)) tagVocab.set(lc, s);
+  };
   const singers = new Set();
   for (const m of mergedLibrary) {
     const sv = m.variants.find(v => v.type === 'stems');
     if (!sv) continue;
-    if (Array.isArray(sv.tags)) sv.tags.forEach(t => { if (t) tagVocab.add(t); });
-    if (sv.readiness) tagVocab.add(sv.readiness);
+    if (Array.isArray(sv.tags)) sv.tags.forEach(seedTag);
+    if (sv.readiness) seedTag(sv.readiness);
     const lead = (sv.singer_lead || '').trim();
     if (lead) singers.add(lead.charAt(0).toUpperCase() + lead.slice(1));
   }
   // First draw (and any newly appearing tag): default CHECKED, so nothing
   // is filtered out until the operator unchecks something (Bill 2026-07-08).
-  for (const t of [...tagVocab, '__none__']) {
-    if (!libraryKnownTags.has(t)) { libraryKnownTags.add(t); libraryTagFilters.add(t); }
+  // Everything below deals in lowercase tag keys.
+  for (const lc of [...tagVocab.keys(), '__none__']) {
+    if (!libraryKnownTags.has(lc)) { libraryKnownTags.add(lc); libraryTagFilters.add(lc); }
   }
   // Drop stale filter state that no longer exists in the library.
-  for (const t of [...libraryTagFilters]) if (t !== '__none__' && !tagVocab.has(t)) { libraryTagFilters.delete(t); libraryKnownTags.delete(t); }
+  for (const lc of [...libraryTagFilters]) if (lc !== '__none__' && !tagVocab.has(lc)) { libraryTagFilters.delete(lc); libraryKnownTags.delete(lc); }
   for (const nm of [...librarySingersOff]) if (![...singers].some(x => x.toLowerCase() === nm)) librarySingersOff.delete(nm);
 
   const chip = (group, value, label, checked) =>
@@ -4081,9 +4094,9 @@ function renderLibraryFilterBar() {
     `<input type="checkbox" ${checked ? 'checked' : ''}>${label}</label>`;
 
   let html = '';
-  const tagList = [...tagVocab].sort((a, b) => a.localeCompare(b));
+  const tagList = [...tagVocab.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   html += '<span class="lfb-group"><span class="lfb-group-label">Tags</span>';
-  for (const t of tagList) html += chip('tag', t, t, libraryTagFilters.has(t));
+  for (const [lc, display] of tagList) html += chip('tag', lc, display, libraryTagFilters.has(lc));
   html += chip('tag', '__none__', 'none', libraryTagFilters.has('__none__'));
   html += '</span>';
   const singerList = [...singers].sort((a, b) => a.localeCompare(b));
@@ -4093,8 +4106,8 @@ function renderLibraryFilterBar() {
     html += '</span>';
   }
   html += '<span class="lfb-group"><span class="lfb-group-label">Tempo</span>';
-  html += chip('tempo', 'upbeat', 'Upbeat', libraryTempoFilters.has('upbeat'));
-  html += chip('tempo', 'savory', 'Savory', libraryTempoFilters.has('savory'));
+  html += chip('tempo', 'upbeat', 'Upbeat (>110bpm)', libraryTempoFilters.has('upbeat'));
+  html += chip('tempo', 'savory', 'Savory (≤110bpm)', libraryTempoFilters.has('savory'));
   html += '</span>';
   bar.innerHTML = html;
 
@@ -4277,10 +4290,14 @@ function applyFilters() {
     // hides that tag's songs. Before the bar has initialized, no filtering.
     let matchesTagBar = true;
     if (libraryKnownTags.size) {
+      // Tag filters live in lowercase; compare against lowercased song tags
+      // + readiness so "tbd" and "TBD" collapse into one match (Bill 2026-07-09).
+      const songTagsLC = songTags.map(t => String(t).toLowerCase());
+      const readinessLC = String(songReadiness || '').toLowerCase();
       matchesTagBar = [...libraryTagFilters].some(t =>
         t === '__none__'
           ? (songTags.length === 0 && !songReadiness)
-          : (songTags.includes(t) || songReadiness === t));
+          : (songTagsLC.includes(t) || readinessLC === t));
     }
     let matchesSinger = true;
     const leadBar = (svBar && svBar.singer_lead) ? String(svBar.singer_lead).trim().toLowerCase() : '';
