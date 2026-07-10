@@ -580,6 +580,16 @@ respect them or update this list.
   before the first lyric clears the overlay. The visualizer's single
   `seekAllAudioTo` choke-point is the only place that fires this — any
   new seek path must call it, not raw `currentTime =` writes.
+- **Timeline actions NEVER auto-save (2026-07-10).** The song-end
+  auto-save is retired. SAVE is the only commit — it persists ALL
+  actions including placed lyric lines to `metadata.json`. CLEAR wipes
+  every action (including lyrics) but KEEPS the `init` event and section
+  markers, and persists the wipe. INIT replaces only the previous `init`
+  event (never touches other actions — the old wipe-everything INIT ate
+  a full lyrics pass) and is in-memory until SAVE. The count-in toggle
+  also rides SAVE now. The only other persistence path is a CONFIRMED
+  lyrics replace (saving new lyrics over existing ones prompts first,
+  then wipes + persists the stale lyric-line placements).
 - **`+ Lyric` button falls back to "Fetch Lyrics" whenever `remaining
   === 0`.** The label used to read `+ Lyric (0)` when the operator had
   placed every cached line, and clicking it popped a confirm ("All N
