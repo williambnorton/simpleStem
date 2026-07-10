@@ -268,6 +268,36 @@ const GIGS_LOCAL_MIRROR     = path.join(os.homedir(), '.simpleStem-catalog', 'GI
 try { fs.mkdirSync(SETLISTS_LOCAL_MIRROR, { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(GIGS_LOCAL_MIRROR,     { recursive: true }); } catch (e) {}
 bootTrace('config', 'EXIT', `root=${SIMPLE_STEM_ROOT} version=${BOOT_VERSION}`);
+
+// ── Activity log (Bill 2026-07-09) ──────────────────────────────────────
+// In-memory ring buffer of "things happening" — surfaced in the portal's
+// new Activity pane so the operator can see live signal (ingest, renders,
+// precache passes, gig prune, boot, MPB sync) without tailing the log.
+// Wired into a handful of existing emit sites via logActivity() — new
+// features that want to appear here just call the helper.
+const ACTIVITY_LOG = [];
+const ACTIVITY_LOG_MAX = 400;
+let _activitySeq = 0;
+function logActivity(level, category, message, meta) {
+  const entry = {
+    seq: ++_activitySeq,
+    ts: new Date().toISOString(),
+    level: level || 'info',       // 'info' | 'ok' | 'warn' | 'error'
+    category: category || 'sys',  // 'boot' | 'ingest' | 'render' | 'cache' | 'gig' | 'catalog' | 'mpb' | 'sys'
+    message: String(message || ''),
+    meta: meta || null,
+  };
+  ACTIVITY_LOG.push(entry);
+  if (ACTIVITY_LOG.length > ACTIVITY_LOG_MAX) ACTIVITY_LOG.splice(0, ACTIVITY_LOG.length - ACTIVITY_LOG_MAX);
+  // Also emit to console at the matching level so the perf-server.log
+  // stays the primary source of truth.
+  const line = `[activity:${entry.category}] ${entry.message}`;
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
+  return entry;
+}
+logActivity('info', 'boot', `server booted version=${BOOT_VERSION}`, { version: BOOT_VERSION });
 // Drive-side authoritative catalog (Librarian writes; Performer reads).
 // When present + fresh, the portal uses this as the library source instead
 // of walking STEMS/ and M4A/ directories, which avoids Drive stalls.
@@ -2372,9 +2402,14 @@ async function precacheAllStemsM4a(opts) {
         }
       } catch (e) { cacheJobState.failed++; }
     });
-    console.log(`[stem precache] done — ${cacheJobState.done} folders, copied ${cacheJobState.copied}, skipped ${cacheJobState.skipped}, failed ${cacheJobState.failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+    const dur = Math.round((Date.now()-t0)/1000);
+    console.log(`[stem precache] done — ${cacheJobState.done} folders, copied ${cacheJobState.copied}, skipped ${cacheJobState.skipped}, failed ${cacheJobState.failed} (${dur}s)`);
+    logActivity(cacheJobState.failed ? 'warn' : 'ok', 'cache',
+      `stem precache (${opts && opts.trigger || 'run'}): ${cacheJobState.done}/${cacheJobState.total} folders, copied ${cacheJobState.copied}, skipped ${cacheJobState.skipped}, failed ${cacheJobState.failed} in ${dur}s`,
+      { trigger: opts && opts.trigger, done: cacheJobState.done, total: cacheJobState.total, copied: cacheJobState.copied, skipped: cacheJobState.skipped, failed: cacheJobState.failed, durationSec: dur });
   } catch (e) {
     console.warn('[stem precache] failed:', e.message);
+    logActivity('error', 'cache', `stem precache failed: ${e.message}`);
   } finally {
     cacheJobState.running = false;
     cacheJobState.finishedAt = new Date().toISOString();
@@ -3469,8 +3504,10 @@ async function pruneStaleGigs({ trigger } = {}) {
   } finally {
     const ms = Date.now() - t0;
     if (moved || errs) {
-      console.log(`[gig-prune] ${trigger || 'run'}: scanned=${scanned} kept=${kept} pinned=${pinned} moved=${moved} errs=${errs} (${ms}ms) → ${GIGS_PRUNED_DIR}`);
-      if (movedSlugs.length) console.log(`[gig-prune] moved: ${movedSlugs.join(', ')}`);
+      const msg = `${trigger || 'run'}: scanned=${scanned} kept=${kept} pinned=${pinned} moved=${moved} errs=${errs} (${ms}ms)`;
+      logActivity(errs ? 'warn' : 'info', 'gig',
+        movedSlugs.length ? `gig prune ${msg} → ${movedSlugs.join(', ')}` : `gig prune ${msg}`,
+        { trigger, scanned, kept, pinned, moved, errs, movedSlugs });
     }
   }
 }
@@ -3602,10 +3639,24 @@ app.post('/api/enqueue', (req, res) => {
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
       '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n';
     fs.writeFileSync(file, plist);
+    logActivity('info', 'ingest', `webloc queued: ${path.basename(file)}`, { url });
     res.json({ ok: true, queued: path.basename(file) });
   } catch (e) {
+    logActivity('error', 'ingest', `enqueue failed: ${e.message}`, { url });
     res.status(500).json({ error: e.message });
   }
+});
+
+// Activity feed (Bill 2026-07-09) — see logActivity() near BOOT_VERSION.
+// Client polls with ?since=<seq> to get only new entries; returns the full
+// tail (up to 200 rows) when since is omitted or 0.
+app.get('/api/activity', (req, res) => {
+  const since = Math.max(0, parseInt(req.query.since, 10) || 0);
+  const entries = since > 0
+    ? ACTIVITY_LOG.filter(e => e.seq > since)
+    : ACTIVITY_LOG.slice(-200);
+  const latestSeq = ACTIVITY_LOG.length ? ACTIVITY_LOG[ACTIVITY_LOG.length - 1].seq : 0;
+  res.json({ ok: true, entries, latestSeq, bufferSize: ACTIVITY_LOG.length });
 });
 
 // ── Failed-renders triage ──────────────────────────────────────────────────

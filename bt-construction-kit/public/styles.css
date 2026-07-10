@@ -3019,6 +3019,86 @@ select {
   border-color: transparent;
   color: #fff;
 }
+/* Click-timing ± that live in the Other strip corners (Bill 2026-07-09).
+   Small, subtle, monospaced — they don't compete with the clock/count-in
+   toggles between them. Show current offset as a tooltip; the transport
+   readout is retired. */
+.strip-click-trim {
+  min-width: 20px; height: 22px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(0,0,0,0.15); border-radius: 4px;
+  background: rgba(0,0,0,0.03); color: inherit; cursor: pointer;
+  font: 700 12px ui-monospace, 'SF Mono', Menlo, monospace;
+  line-height: 1; flex: 0 0 auto;
+  transition: background 90ms ease-out;
+}
+.strip-click-trim:hover { background: rgba(0,0,0,0.09); }
+.strip-click-trim-minus { margin-right: 2px; }
+.strip-click-trim-plus  { margin-left: 2px; }
+
+/* ── Activity log pane (Bill 2026-07-09) ───────────────────────────────
+   Screen-wide feed of system events sitting under the Song Library. */
+.activity-section {
+  margin-top: 12px;
+  padding: 10px 14px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.activity-header {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 6px;
+}
+.activity-title {
+  margin: 0; font-size: 14px; font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--text-main);
+}
+.activity-sub {
+  font-size: 11px; color: var(--text-muted); opacity: 0.75;
+}
+.activity-clear-btn {
+  margin-left: auto;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.activity-clear-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-main); }
+.activity-log {
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px; line-height: 1.5;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: 78px 62px 1fr;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
+  color: var(--text-main);
+}
+.activity-row:last-child { border-bottom: 0; }
+.activity-ts { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.activity-cat {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #7c4dff;
+}
+.activity-row.level-ok    .activity-cat { color: #1d8f4f; }
+.activity-row.level-warn  .activity-cat { color: #c58718; }
+.activity-row.level-error .activity-cat { color: #c92c2c; }
+.activity-row.level-error { background: rgba(201, 44, 44, 0.06); }
+.activity-msg { word-break: break-word; }
+.activity-empty {
+  padding: 8px 0; color: var(--text-muted); font-style: italic; text-align: center;
+}
 /* Clock button states: GREEN = ready to press (flashes to the beat while
    the song plays, proving the grid is locked), YELLOW = click track ON at
    the playhead (flashes to the beat too). */
@@ -3288,26 +3368,45 @@ select {
 
 /* Detailed Song Library Listing */
 .library-section {
-  border-radius: 16px;
-  padding: 24px;
+  border-radius: 12px;
+  padding: 12px 14px 10px;
 }
 
 .library-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
+.library-header .title-area { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .library-header h2 {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  margin: 0;
 }
 
 .library-header .sub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
 }
+
+/* Filter pane sits under the header on its own surface (Bill 2026-07-09).
+   Distinct from the Song Library itself so the chips + Make Gig / Add
+   setlist buttons read as a discrete controls area. */
+.library-filter-pane {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+}
+.library-filter-pane .library-filter-bar { flex: 1; margin: 0; }
 
 .library-view-toggles {
   display: flex;

@@ -703,19 +703,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
 
-  // Count-in toggle. State is per-song; flips immediately and saves to
-  // metadata.json so the next play of this song honors it.
+  // Count-in toggle. State is per-song; flips immediately in memory and
+  // rides the next explicit SAVE (no auto-save — Bill 2026-07-10; saving
+  // here would silently persist any unsaved timeline actions too).
   const countInBtn = document.getElementById('btn-count-in-toggle');
-  if (countInBtn) countInBtn.addEventListener('click', async () => {
+  if (countInBtn) countInBtn.addEventListener('click', () => {
     if (!automationCurrentBase) return;
     automationCountIn = !automationCountIn;
     refreshCountInButton();
     markAutomationDirty();
-    try {
-      await saveAutomationForSong(automationCurrentBase, automationEvents);
-    } catch (e) {
-      console.warn('[count-in] save failed:', e);
-    }
   });
   // Pre-fetch the drum-loops index so library rows can show drum-loop chips
   // immediately on first render. (Drum Loops tab uses the same data — no
@@ -5084,6 +5080,14 @@ function setClickTrimMs(v) {
   try { localStorage.setItem('simpleStem.clickTrimMs', String(v)); } catch (e) {}
   const el = document.getElementById('click-trim-val');
   if (el) el.textContent = (v > 0 ? '+' : '') + v + 'ms';
+  // The ± buttons now live on the Other strip corners and have no visible
+  // readout; surface the current trim in their tooltip so hovering shows it
+  // (Bill 2026-07-09).
+  const label = (v > 0 ? '+' : '') + v + 'ms';
+  const minus = document.getElementById('click-trim-minus');
+  const plus  = document.getElementById('click-trim-plus');
+  if (minus) minus.title = `Click timing (currently ${label}): shift every click 5ms EARLIER. ±60ms range. Persists per machine.`;
+  if (plus)  plus.title  = `Click timing (currently ${label}): shift every click 5ms LATER. ±60ms range. Persists per machine.`;
   return v;
 }
 
@@ -5209,11 +5213,20 @@ function setupClickTrack() {
     midiSyncOn = !midiSyncOn;
     syncBtn.classList.toggle('active', midiSyncOn);
   });
-  // Click trim knob: ±5 ms steps, ±60 ms range, persisted, applied live.
-  const tMinus = document.getElementById('click-trim-minus');
-  const tPlus = document.getElementById('click-trim-plus');
-  if (tMinus) tMinus.addEventListener('click', () => setClickTrimMs(clickTrimMs() - 5));
-  if (tPlus) tPlus.addEventListener('click', () => setClickTrimMs(clickTrimMs() + 5));
+  // Click trim: ±5 ms steps, ±60 ms range, persisted, applied live. The ±
+  // buttons sit on the Other strip header corners. Handled via document-level
+  // delegation so they keep working even if the strip DOM gets re-rendered,
+  // and each press toasts the new value — the strip has no readout, and a
+  // press with zero feedback reads as a dead button (Bill 2026-07-10).
+  document.addEventListener('click', (e) => {
+    if (!e.target || !e.target.closest) return;
+    const minus = e.target.closest('#click-trim-minus');
+    const plus  = e.target.closest('#click-trim-plus');
+    if (!minus && !plus) return;
+    const v = setClickTrimMs(clickTrimMs() + (plus ? 5 : -5));
+    const dir = v === 0 ? 'on the beat' : (v > 0 ? 'later' : 'earlier');
+    showToast(`Click timing: ${(v > 0 ? '+' : '')}${v}ms (${dir})`);
+  });
   setClickTrimMs(clickTrimMs());
   startClickScheduler();
 }
@@ -7463,13 +7476,8 @@ function startSyncLoop() {
 
 // Synchronized ended coordinate wraps to solve the stutter loop
 function handleMasterTrackEnded() {
-  // Auto-save the timeline if the user accumulated actions during this play
-  // and didn't hit SAVE ACTIONS. The user explicitly asked for end-of-song
-  // auto-save in addition to the manual button.
-  if (automationCurrentBase && automationDirty) {
-    saveAutomationForSong(automationCurrentBase, automationEvents)
-      .catch(err => console.warn('[automation] auto-save on song end failed:', err));
-  }
+  // Song-end auto-save retired (Bill 2026-07-10): actions never auto-save.
+  // The ● unsaved dot stays lit until the user hits SAVE.
   const activeTracks = Object.keys(audioElements).filter(k => audioHasSrc(audioElements[k]));
 
   if (isLooping) {
@@ -9272,8 +9280,39 @@ async function onLyricTap(e) {
   if (cur >= lyricsState.cachedLines.length) {
     // Nothing left to place — either the lyrics file returned 0 usable
     // lines (Wicked Game hit this: all-bracket / whitespace file) or every
-    // line has already been dropped. Skip the confirm and drop straight
-    // into the editor so Bill can paste again.
+    // line has already been dropped.
+    //
+    // If lyric-line events are ALREADY scattered on the visualizer, this
+    // click is destructive: pressing Fetch Lyrics means the operator is
+    // about to redo the pass. Confirm before wiping the placed events so
+    // a real pass isn't destroyed by a stray click (Bill 2026-07-10).
+    if (typeof lyricsHasPlacedActions === 'function' && lyricsHasPlacedActions()) {
+      if (!confirm('Do you want to replace the current lyrics?')) return;
+      // Wipe placed lyric-line events and persist. Mirrors the wipe branch
+      // in onLyricsModalSave (Bill 2026-07-07 replace-mode logic): keeps
+      // sections + init + non-lyric events, drops just the lyric-lines.
+      const stale = automationEvents.filter(e => e.type === 'lyric-line').length;
+      automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
+      try { markAutomationDirty(); } catch (er) {}
+      try { renderAutomationLane(); } catch (er) {}
+      if (typeof automationCurrentBase !== 'undefined' && automationCurrentBase) {
+        try { await saveAutomationForSong(automationCurrentBase, automationEvents); }
+        catch (er) { console.warn('[lyric] fetch-replace wipe persist failed:', er); }
+      }
+      lyricsState.placedCount = 0;
+      lyricsState.placedStack = [];
+      lyricsState.lastTapAt = 0;
+      lyricsState.activeLines = [];
+      if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
+      // One-shot flag: onLyricsModalSave's own "replace with the pasted
+      // lyrics?" confirm should skip once — the operator just consented
+      // at click time; asking again on Save would be double-jeopardy.
+      lyricsState._replaceConfirmed = true;
+      if (stale && typeof showToast === 'function') {
+        showToast(`Cleared ${stale} placed lyric line${stale === 1 ? '' : 's'} — paste new lyrics to start fresh`);
+      }
+      console.log('[lyric] fetch-replace: cleared', stale, 'placed lyric-line actions');
+    }
     openLyricsModal(lyricsState.cachedLines.length ? 'edit' : 'initial');
     return;
   }
@@ -9768,6 +9807,26 @@ async function onLyricsModalSave() {
   if (!base) return;
   const text = (els.lyricsModalPaste.value || '').trim();
   if (!text) { alert('Paste lyrics first or hit Fetch.'); return; }
+  // Saving new lyrics is a REPLACE operation: it overwrites the saved
+  // lyrics AND wipes every placed lyric-line action so the operator can
+  // re-place. If the song already has lyrics, verify the intent first
+  // (Bill 2026-07-10 — a full placement pass is real work; never destroy
+  // one without asking).
+  const placedNow = (Array.isArray(automationEvents) ? automationEvents : [])
+    .filter(e => e.type === 'lyric-line').length;
+  const hadLyrics = !!(currentSong.lyrics && String(currentSong.lyrics).trim());
+  if (hadLyrics || placedNow) {
+    // One-shot bypass: if the operator already consented to the replace
+    // when they clicked Fetch Lyrics (see onLyricTap), don't ask again.
+    if (lyricsState._replaceConfirmed) {
+      lyricsState._replaceConfirmed = false;
+    } else {
+      const parts = [];
+      if (hadLyrics) parts.push('saved lyrics');
+      if (placedNow) parts.push(`${placedNow} lyric line${placedNow === 1 ? '' : 's'} placed on the timeline`);
+      if (!confirm(`This song already has ${parts.join(' and ')}.\n\nReplace with the pasted lyrics? The placed lyric lines will be cleared so you can re-place them.`)) return;
+    }
+  }
   els.lyricsModalSave.disabled = true;
   try {
     // Save BOTH to metadata.json (existing path, populates lyrics_chunks)
@@ -9807,6 +9866,15 @@ async function onLyricsModalSave() {
       automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
       markAutomationDirty();
       try { renderAutomationLane(); } catch (e) {}
+      // Persist the wipe now. The operator just CONFIRMED the replace, and
+      // with the song-end auto-save retired an unsaved in-memory wipe would
+      // resurrect the stale placements (tied to the OLD lyrics) on the next
+      // load. Other unsaved actions ride along — acceptable for a confirmed
+      // destructive op; the alternative is stale-lyric zombies.
+      if (automationCurrentBase) {
+        try { await saveAutomationForSong(automationCurrentBase, automationEvents); }
+        catch (er) { console.warn('[lyric] persisting lyric-line wipe failed:', er); }
+      }
       showToast(`Cleared ${stale} previously placed lyric line${stale === 1 ? '' : 's'} — fresh placement pass`);
       console.log('[lyric] replace-mode: cleared', stale, 'placed lyric-line actions');
     }
@@ -10888,9 +10956,10 @@ let automationLastTime    = 0;    // for forward-only event firing
 let automationDispatchTimer = null;
 let automationEditingIdx  = null; // null = adding; otherwise index into events
 let automationCurrentBase = null; // which song's events we're showing
-// In-memory edits no longer auto-save. The user explicitly commits via SAVE
-// ACTIONS or the song-end auto-save. `automationDirty` tracks whether the
-// current in-memory state differs from what's persisted in metadata.json.
+// In-memory edits NEVER auto-save (Bill 2026-07-10: the song-end auto-save
+// is retired). The user explicitly commits via the SAVE button; CLEAR and a
+// confirmed lyrics-replace also persist their own wipe. `automationDirty`
+// tracks whether the current in-memory state differs from metadata.json.
 let automationDirty       = false;
 let automationLastSavedJSON = '[]';  // canonical snapshot to compare against
 
@@ -13355,23 +13424,18 @@ function setupMidiUI() {
     closeMidiModal();
   });
 
-  // INIT — snapshot the current mixer state as a single 'init' event at t=0
-  // and CLEAR every other automation event on the timeline. This is the
-  // "fresh start with the song-opening mix" the user wanted: tweak faders
-  // to taste, hit INIT, song starts with that mix every time. A block 'I'
-  // marker renders at the left edge to indicate the saved initial state.
+  // INIT — snapshot the current mixer state as a single 'init' event at t=0.
+  // It ONLY replaces the previous 'init' event; every other action on the
+  // timeline — lyric lines, click on/off, MIDI, fades — is left untouched.
+  // (Bill 2026-07-10: the old INIT wiped the whole timeline and ate a full
+  // Tainted Love lyrics pass. Never again — lyrics/actions are only removed
+  // by CLEAR or by a confirmed lyrics replace.) A block 'I' marker renders
+  // at the left edge to indicate the saved initial state. Like every other
+  // edit, INIT is in-memory until the user hits SAVE.
   const initBtn = document.getElementById('midi-btn-init-state');
   if (initBtn) {
     initBtn.addEventListener('click', () => {
       if (!automationCurrentBase) return;
-      // INIT wipes the timeline's automation events (V0, D6, M4P12, etc.)
-      // and replaces them with a single 'init' event holding the current
-      // mixer snapshot. Section markers (Intro/Verse/Chorus/etc.) are
-      // PRESERVED — they describe song structure, independent of automation.
-      const hasEvents = automationEvents.length > 0;
-      if (hasEvents) {
-        if (!confirm(`INIT will clear all ${automationEvents.length} action(s) on the timeline (section markers stay) and replace them with the current mixer state. Continue?`)) return;
-      }
       const STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
       const state = {};
       for (const stem of STEMS) {
@@ -13380,10 +13444,15 @@ function setupMidiUI() {
         const muted = mixerState.muted[stem];
         state[stem] = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
       }
-      automationEvents = [{ t: 0, type: 'init', state, fired: false }];
+      const hadInit = automationEvents.some(e => e.type === 'init');
+      automationEvents = automationEvents.filter(e => e.type !== 'init');
+      automationEvents.unshift({ t: 0, type: 'init', state, fired: false });
       automationSelectedIdx = null;
       renderAutomationLane();
       markAutomationDirty();
+      showToast(hadInit
+        ? 'INIT state updated from the current mix — hit SAVE to persist'
+        : 'INIT state captured from the current mix — hit SAVE to persist');
     });
   }
 
@@ -13576,6 +13645,8 @@ function setupMidiUI() {
     if (!automationCurrentBase) return;
     try {
       await saveAutomationForSong(automationCurrentBase, automationEvents);
+      const n = automationEvents.length;
+      showToast(`Saved ${n} action${n === 1 ? '' : 's'} (incl. lyrics) to the song`);
     } catch (err) {
       alert(`Save failed: ${err.message}`);
     }
@@ -13640,13 +13711,15 @@ function setupMidiUI() {
 
   document.getElementById('midi-btn-clear-actions').addEventListener('click', async () => {
     if (!automationCurrentBase) return;
-    // CLEAR wipes ACTION events only. Section markers (Intro/Verse/Chorus/
-    // etc.) are intentionally preserved — they're structural cues for the
-    // players, not transient automation, and the user wants them sticky
-    // across CLEAR and INIT.
-    if (automationEvents.length === 0) return;
-    const clearedN = automationEvents.length;
-    automationEvents = [];
+    // CLEAR wipes ACTION events (including placed lyric lines) but KEEPS the
+    // 'init' event at the front of the timeline (Bill 2026-07-10: removing
+    // the INIT state requires a re-stem; CLEAR must not touch it). Section
+    // markers (Intro/Verse/Chorus/etc.) are also preserved — structural
+    // cues for the players, not transient automation.
+    const kept = automationEvents.filter(e => e.type === 'init');
+    const clearedN = automationEvents.length - kept.length;
+    if (clearedN === 0) return;
+    automationEvents = kept;
     // Also rewind the lyrics tap-along state so the next + Lyric press
     // starts from the first cached line. The cached lyrics file (text +
     // chunks) stays — only the placement cursor + overlay state reset.
@@ -13666,9 +13739,10 @@ function setupMidiUI() {
     markAutomationDirty();
     try {
       // saveAutomationForSong reads the current automationSections at send
-      // time, so they ride along untouched.
-      await saveAutomationForSong(automationCurrentBase, []);
-      showToast(`Cleared ${clearedN} action${clearedN === 1 ? '' : 's'} (sections kept)`);
+      // time, so they ride along untouched. The kept 'init' event (if any)
+      // is persisted back to the front of the file.
+      await saveAutomationForSong(automationCurrentBase, automationEvents);
+      showToast(`Cleared ${clearedN} action${clearedN === 1 ? '' : 's'} (INIT + sections kept)`);
     } catch (err) {
       alert(`Clear-save failed: ${err.message}. Local state cleared but disk still has old data.`);
     }
@@ -15451,4 +15525,91 @@ async function setupAiSetlistBuilder() {
   window.__od = od;   // debug/testing handle
   const lat = $('od-latency');
   if (lat) lat.addEventListener('change', () => { try { localStorage.setItem('simpleStem.odLatencyMs', lat.value); } catch (e) {} });
+})();
+
+// ── Activity log poller (Bill 2026-07-09) ─────────────────────────────
+// Polls /api/activity every 3s (or 8s when the tab is hidden) and paints
+// the newest events at the top of the #activity-log pane below the Song
+// Library. Uses the seq cursor to fetch only new rows after the first
+// full-buffer paint.
+(function initActivityLog() {
+  const log = document.getElementById('activity-log');
+  const sub = document.getElementById('activity-sub');
+  const clr = document.getElementById('activity-clear');
+  if (!log) return;
+  // Local view state — a browser-side "hidden until this seq" so clear-view
+  // can hide older rows without touching the server buffer.
+  let hiddenBelowSeq = 0;
+  let latestSeq = 0;
+  const rows = new Map();  // seq -> DOM element (newest first insertion)
+
+  const fmtTime = (iso) => {
+    try {
+      const d = new Date(iso);
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    } catch (e) { return '??:??:??'; }
+  };
+
+  const render = () => {
+    if (!rows.size) {
+      log.innerHTML = '<div class="activity-empty">no activity yet</div>';
+      if (sub) sub.textContent = 'waiting for first event…';
+      return;
+    }
+    const visible = [...rows.entries()].filter(([seq]) => seq > hiddenBelowSeq);
+    if (!visible.length) {
+      log.innerHTML = '<div class="activity-empty">view cleared — new events will appear here</div>';
+      if (sub) sub.textContent = `${rows.size} row(s) hidden`;
+      return;
+    }
+    visible.sort((a, b) => b[0] - a[0]);
+    log.innerHTML = '';
+    for (const [, el] of visible) log.appendChild(el);
+    if (sub) sub.textContent = `${visible.length} recent event(s) · newest first`;
+  };
+
+  const addEntry = (e) => {
+    if (!e || rows.has(e.seq)) return;
+    const row = document.createElement('div');
+    row.className = 'activity-row level-' + (e.level || 'info');
+    row.innerHTML =
+      `<span class="activity-ts">${fmtTime(e.ts)}</span>` +
+      `<span class="activity-cat">${(e.category || 'sys').replace(/[<>&]/g, '')}</span>` +
+      `<span class="activity-msg"></span>`;
+    row.querySelector('.activity-msg').textContent = e.message || '';
+    rows.set(e.seq, row);
+    if (rows.size > 400) {
+      // Trim oldest so the DOM doesn't grow forever.
+      const oldest = [...rows.keys()].sort((a, b) => a - b)[0];
+      rows.delete(oldest);
+    }
+    if (e.seq > latestSeq) latestSeq = e.seq;
+  };
+
+  const poll = async () => {
+    try {
+      const r = await fetch(`/api/activity?since=${latestSeq}`, { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (Array.isArray(j.entries) && j.entries.length) {
+        for (const e of j.entries) addEntry(e);
+        render();
+      } else if (!rows.size && !latestSeq) {
+        // First poll returned empty — render the empty state so the pane
+        // doesn't look broken.
+        render();
+      }
+    } catch (e) { /* server may be restarting */ }
+  };
+
+  clr?.addEventListener('click', () => { hiddenBelowSeq = latestSeq; render(); });
+
+  poll();
+  const tick = () => { poll(); scheduleNext(); };
+  const scheduleNext = () => {
+    const ms = document.hidden ? 8000 : 3000;
+    setTimeout(tick, ms);
+  };
+  scheduleNext();
 })();

@@ -407,12 +407,12 @@
                    + Click / + Count-in section-flag buttons were retired
                    2026-07-07 in favor of that event model. -->
               <button id="midi-btn-midi-sync" class="midi-toolbar-btn" title="MIDI SYNC: broadcast 24-ppqn MIDI clock to every connected MIDI device while the song plays, tempo-locked to the beat grid × playback rate (SEMI-aware) — keeps loopers in sync with playback. Requires the MIDI sidecar (./performer.sh start).">MIDI Sync</button>
-              <span class="click-trim" id="click-trim-wrap" title="Click timing trim: shifts every click later (+) or earlier (−) in 5 ms steps, ±60 ms. Use it to dial the click dead onto the beat by ear — the value persists on this machine and applies to all songs.">
-                <span class="click-trim-label">CLICK</span>
-                <button id="click-trim-minus" class="midi-toolbar-btn click-trim-btn">−</button>
-                <span id="click-trim-val" class="click-trim-val">0ms</span>
-                <button id="click-trim-plus" class="midi-toolbar-btn click-trim-btn">+</button>
-              </span>
+              <!-- Click trim ± + readout moved onto the OTHER strip corners
+                   (Bill 2026-07-09). The `-` sits at the top-left of the
+                   Other strip header, `+` at the top-right, so the click
+                   timing lives next to the click on/off toggle that already
+                   lives there. -->
+              <span id="click-trim-val" style="display:none">0ms</span>
               <!-- Action favorites (#midi-preset-slots) removed per user
                    request 06/2026 -- they weren't getting used and the
                    real estate is better spent on the + Clip button. -->
@@ -420,11 +420,11 @@
             <div class="automation-toolbar" id="midi-lane-toolbar">
               <span id="midi-lane-counter" class="midi-lane-counter" title="Actions on this song's timeline">0</span>
               <span id="midi-lane-dirty" class="midi-lane-dirty" style="display:none;" title="Unsaved changes">●</span>
-              <button id="midi-btn-init-state" class="midi-toolbar-btn" title="Capture the current mixer state as the song's initial state — also clears every other action on the timeline">INIT</button>
+              <button id="midi-btn-init-state" class="midi-toolbar-btn" title="Capture the current mixer state as the song's initial state. Replaces only the previous INIT — all other actions (lyrics, clicks, MIDI) stay. Hit SAVE to persist.">INIT</button>
               <button id="midi-btn-accept-candidates" class="midi-toolbar-btn" title="Drop a section marker at every auto-detected boundary (the faint ticks on the lane). Quick way to rough-in all sections; relabel/move/delete as needed.">ACCEPT</button>
               <button id="midi-btn-next-unsectioned" class="midi-toolbar-btn" title="Jump to the next library song that has zero saved sections — for working through the library in one sitting.">NEXT ▶</button>
-              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions to the song's metadata (auto-saves at song end)">SAVE</button>
-              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline">CLEAR</button>
+              <button id="midi-btn-save-actions" class="midi-toolbar-btn primary" title="Save all timeline actions — including placed lyric lines — to the song's metadata so it always plays back this way. Nothing auto-saves; this button is the only commit.">SAVE</button>
+              <button id="midi-btn-clear-actions" class="midi-toolbar-btn danger" title="Remove every action on this song's timeline, including placed lyric lines. The INIT state and section markers are kept.">CLEAR</button>
             </div>
           </div>
           
@@ -705,7 +705,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <!-- Other Channel -->
               <div class="channel-strip other-strip">
                 <div class="fader-container">
-                  <div class="channel-header other-click-header"><button id="btn-click-toggle" class="strip-click-btn hover-glow" title="CLICK TRACK on/off from the playhead. Toggling drops a 'click track on' / 'click track off' action into the song at the playhead, so the click replays with the song. Click audio plays on THIS strip (ch 6) — fader/mute/solo/routing apply."><i data-lucide="alarm-clock"></i></button><span class="channel-name">Other</span><button id="btn-count-in-toggle" class="strip-click-btn hover-glow" title="COUNT-IN: extend the click track to 4 beats BEFORE each click-track-on point (and before the song's first downbeat at song start), so the band comes in together. Saved per song."><i data-lucide="hash"></i></button></div>
+                  <div class="channel-header other-click-header"><button id="click-trim-minus" class="strip-click-trim strip-click-trim-minus hover-glow" title="Click timing: shift every click 5ms EARLIER. ±60ms range. Persists per machine.">−</button><button id="btn-click-toggle" class="strip-click-btn hover-glow" title="CLICK TRACK on/off from the playhead. Toggling drops a 'click track on' / 'click track off' action into the song at the playhead, so the click replays with the song. Click audio plays on THIS strip (ch 6) — fader/mute/solo/routing apply."><i data-lucide="alarm-clock"></i></button><span class="channel-name">Other</span><button id="btn-count-in-toggle" class="strip-click-btn hover-glow" title="COUNT-IN: extend the click track to 4 beats BEFORE each click-track-on point (and before the song's first downbeat at song start), so the band comes in together. Saved per song."><i data-lucide="hash"></i></button><button id="click-trim-plus" class="strip-click-trim strip-click-trim-plus hover-glow" title="Click timing: shift every click 5ms LATER. ±60ms range. Persists per machine.">+</button></div>
                   <div class="fader-track">
                     <input type="range" id="fader-other" class="vertical-slider" min="0" max="1" step="0.01" value="0.8">
                   </div>
@@ -782,32 +782,23 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <h2>Song Library</h2>
               <span class="sub" id="library-count-label">Loading library...</span>
             </div>
+            <div id="queue-status" class="queue-status"></div>
+            <div class="library-view-toggles">
+              <button id="btn-list-view" class="view-btn active" title="List View"><i data-lucide="list"></i></button>
+              <button id="btn-grid-view" class="view-btn" title="Grid View"><i data-lucide="layout-grid"></i></button>
+            </div>
+          </div>
 
-            <!-- Filter bar (Bill 2026-07-07): tag / singer / tempo
-                 checkboxes, populated from the loaded library by
-                 renderLibraryFilterBar(). Reduces the list live; the
-                 list-plus button next to the Gig picker turns the
-                 reduced list into a new gig. -->
+          <!-- Filter pane (Bill 2026-07-09) — split out from the header
+               into its own bordered surface. Holds the tag / singer /
+               tempo chips + the two prominent "Make Gig / Add setlist"
+               action buttons. renderLibraryFilterBar() populates
+               #library-filter-bar in place. -->
+          <div class="library-filter-pane">
             <div id="library-filter-bar" class="library-filter-bar"></div>
             <div class="lfb-actions">
               <button id="lfb-make-gig" class="lfb-action-btn lfb-action-btn-primary" title="Create a new gig from the SELECTED songs (check rows, or use the select-all box atop the Set column). Songs are split into setlists of 15-20 each. Clears the selection afterwards.">Make Gig<br>from selection</button>
               <button id="lfb-add-setlist" class="lfb-action-btn lfb-action-btn-primary" title="Append one new setlist containing the SELECTED songs to the current gig. Clears the selection afterwards.">Add setlist<br>from selection</button>
-            </div>
-
-            <!-- Search + Paste URL moved to the LEFT sidebar (top). They
-                 belong next to the gig/setlist picker since the primary
-                 use of the app is "find a song to play". -->
-
-
-            <!-- Loop-from-URL panel now lives in the Drum Loops tab below.
-                 setupUrlLoopPanel() looks up the same IDs wherever they sit
-                 in the DOM, so the relocation is purely cosmetic. -->
-
-            <div id="queue-status" class="queue-status"></div>
-
-            <div class="library-view-toggles">
-              <button id="btn-list-view" class="view-btn active" title="List View"><i data-lucide="list"></i></button>
-              <button id="btn-grid-view" class="view-btn" title="Grid View"><i data-lucide="layout-grid"></i></button>
             </div>
           </div>
           
@@ -834,6 +825,19 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- Activity log pane (Bill 2026-07-09) — screen-wide timestamped
+             feed of system events (ingest, renders, cache passes, gig
+             prune, boot). Polls /api/activity every 3s and paints
+             newest-first. -->
+        <section class="activity-section glass">
+          <div class="activity-header">
+            <h3 class="activity-title">Activity</h3>
+            <span class="activity-sub" id="activity-sub">waiting for first event…</span>
+            <button id="activity-clear" class="activity-clear-btn" title="Clear the visible list (server keeps its buffer)">clear view</button>
+          </div>
+          <div class="activity-log" id="activity-log"></div>
         </section>
         </section><!-- /tab-pane:library -->
 
