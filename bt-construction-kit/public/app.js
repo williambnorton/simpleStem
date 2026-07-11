@@ -976,71 +976,82 @@ function setupGigSidebar() {
         return (hit && hit.m && hit.m.title) ? String(hit.m.title) : String(song && (song.title || song.song_base || ''));
       };
 
-      // Step 1 — ORDER all songs so consecutive songs share the property
-      // that's being grouped on. Chunking preserves that order.
-      let ordered;
-      if (method === 'byState') {
-        const rank = { 'InTheCan': 0, 'InRehearsal': 1, 'TBD': 2, 'unstated': 3 };
-        ordered = allSongs.slice().sort((a, b) => (rank[stateOf(a)] ?? 9) - (rank[stateOf(b)] ?? 9));
+      // Even-split helper: split N items into ceil(N/MAX) chunks whose sizes
+      // differ by at most 1 (larger chunks come first). 25 songs → [13,12]
+      // instead of [15,10]; 46 → [12,12,11,11]. Bill 2026-07-11: "spread
+      // across the setlists" — balanced beats maxed-out-then-trickle.
+      const evenChunks = (arr, max) => {
+        const N = arr.length;
+        if (!N) return [];
+        const parts = Math.max(1, Math.ceil(N / max));
+        const base = Math.floor(N / parts);
+        const extras = N % parts;
+        const out = [];
+        let i = 0;
+        for (let p = 0; p < parts; p++) {
+          const size = base + (p < extras ? 1 : 0);
+          out.push(arr.slice(i, i + size));
+          i += size;
+        }
+        return out;
+      };
+
+      let rebuilt;
+      if (method === 'byState' || method === 'bySinger') {
+        // Bucket-then-chunk-INSIDE-bucket (Bill 2026-07-11): no chunk can
+        // span two buckets. Each chunk's title is the bucket label + a
+        // counter suffix so titles honestly reflect contents.
+        const getLabel = method === 'byState' ? stateOf : singerOf;
+        const bucketOrder = (method === 'byState')
+          ? ['InTheCan', 'InRehearsal', 'TBD', 'unstated']
+          : ['Bill', 'Dan', 'Matt', 'JD', 'Joanna', 'Mark', 'Unassigned'];
+        // Group songs by their bucket label, keeping encounter order within
+        // each bucket (byLex-style secondary sort by title for stability).
+        const buckets = new Map();
+        for (const s of allSongs) {
+          const lbl = getLabel(s);
+          if (!buckets.has(lbl)) buckets.set(lbl, []);
+          buckets.get(lbl).push(s);
+        }
+        for (const arr of buckets.values()) {
+          arr.sort((a, b) => titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase()));
+        }
+        // Emit buckets in the canonical order, then any unknown labels
+        // alphabetically at the end.
+        const remaining = new Set(buckets.keys());
+        const orderedLabels = [];
+        for (const k of bucketOrder) if (buckets.has(k)) { orderedLabels.push(k); remaining.delete(k); }
+        for (const k of [...remaining].sort()) orderedLabels.push(k);
+        rebuilt = [];
+        for (const lbl of orderedLabels) {
+          const chunks = evenChunks(buckets.get(lbl), MAX_SPLIT_SONGS);
+          chunks.forEach((chunk, idx) => {
+            const title = idx === 0 ? lbl : `${lbl}${idx + 1}`;
+            rebuilt.push({ title, songs: chunk });
+          });
+        }
       } else if (method === 'byTempo') {
         // BPM ascending — 0 (unknown) sinks to the top so operator sees
         // the missing-metadata songs before the tempo curve begins.
-        ordered = allSongs.slice().sort((a, b) => bpmOf(a) - bpmOf(b));
-      } else if (method === 'bySinger') {
-        const rank = { Bill: 0, Dan: 1, Matt: 2, JD: 3, Joanna: 4, Mark: 5, Unassigned: 6 };
-        ordered = allSongs.slice().sort((a, b) => {
-          const ra = rank[singerOf(a)] ?? 9;
-          const rb = rank[singerOf(b)] ?? 9;
-          return ra - rb || titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase());
-        });
-      } else {
-        // byLex
-        ordered = allSongs.slice().sort((a, b) => titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase()));
-      }
-
-      // Step 2 — Chunk into ≤MAX_SPLIT_SONGS.
-      const chunks = [];
-      for (let i = 0; i < ordered.length; i += MAX_SPLIT_SONGS) {
-        chunks.push(ordered.slice(i, i + MAX_SPLIT_SONGS));
-      }
-
-      // Step 3 — Name each chunk from its actual content. The rules are
-      // per-method: byTempo uses BPM range, byState/bySinger use unique
-      // group labels joined with '/' plus a counter suffix when repeated,
-      // byLex uses first-letter range.
-      const stateCounter = {};
-      const singerCounter = {};
-      const rebuilt = chunks.map(chunk => {
-        let title = '';
-        if (method === 'byTempo') {
+        const ordered = allSongs.slice().sort((a, b) => bpmOf(a) - bpmOf(b));
+        rebuilt = evenChunks(ordered, MAX_SPLIT_SONGS).map(chunk => {
           const bpms = chunk.map(bpmOf);
           const min = Math.min(...bpms), max = Math.max(...bpms);
-          title = (min === max)
+          const title = (min === max)
             ? `${min}bpm`
             : (min === 0 ? `≤${max}bpm` : `${min}-${max}bpm`);
-        } else if (method === 'byLex') {
+          return { title, songs: chunk };
+        });
+      } else {
+        // byLex — alphabetize + even-split, name by first-letter range.
+        const ordered = allSongs.slice().sort((a, b) => titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase()));
+        rebuilt = evenChunks(ordered, MAX_SPLIT_SONGS).map(chunk => {
           const first = titleOf(chunk[0]).toUpperCase().charAt(0) || 'A';
           const last  = titleOf(chunk[chunk.length - 1]).toUpperCase().charAt(0) || 'Z';
-          title = (first === last) ? first : `${first}-${last}`;
-        } else if (method === 'byState' || method === 'bySinger') {
-          const getLabel = method === 'byState' ? stateOf : singerOf;
-          const counters = method === 'byState' ? stateCounter : singerCounter;
-          // Unique labels in encounter order.
-          const uniq = [];
-          const seen = new Set();
-          for (const s of chunk) {
-            const lbl = getLabel(s);
-            if (!seen.has(lbl)) { seen.add(lbl); uniq.push(lbl); }
-          }
-          // Bump each label's counter; suffix numbers only when >1 chunk.
-          const parts = uniq.map(lbl => {
-            counters[lbl] = (counters[lbl] || 0) + 1;
-            return counters[lbl] > 1 ? `${lbl}${counters[lbl]}` : lbl;
-          });
-          title = parts.join('/');
-        }
-        return { title: title || '(unnamed)', songs: chunk };
-      });
+          const title = (first === last) ? first : `${first}-${last}`;
+          return { title, songs: chunk };
+        });
+      }
 
       activeGig.setlists = rebuilt;
       renderGigSidebar();
