@@ -20,6 +20,34 @@ let librarySingersOff = new Set();
 // Default CHECKED (Bill 2026-07-09): both tempo chips start on, so nothing
 // is filtered out until the operator unchecks one.
 let libraryTempoFilters = new Set(['upbeat', 'savory']);
+
+// Filter chip state persists across reloads (Bill 2026-07-10). The four
+// sets above are the source of truth; localStorage holds the last-seen
+// arrays. Restore runs before the first library render so chips paint in
+// the state Bill left them in.
+const LIB_FILTER_STORAGE_KEY = 'simpleStem.libraryFilters.v1';
+function _loadLibraryFiltersFromStorage() {
+  try {
+    const raw = localStorage.getItem(LIB_FILTER_STORAGE_KEY);
+    if (!raw) return;
+    const j = JSON.parse(raw);
+    if (Array.isArray(j.tagFilters))    libraryTagFilters   = new Set(j.tagFilters);
+    if (Array.isArray(j.knownTags))     libraryKnownTags    = new Set(j.knownTags);
+    if (Array.isArray(j.singersOff))    librarySingersOff   = new Set(j.singersOff);
+    if (Array.isArray(j.tempoFilters))  libraryTempoFilters = new Set(j.tempoFilters);
+  } catch (e) { /* corrupt storage — fall back to defaults */ }
+}
+function _saveLibraryFiltersToStorage() {
+  try {
+    localStorage.setItem(LIB_FILTER_STORAGE_KEY, JSON.stringify({
+      tagFilters:   [...libraryTagFilters],
+      knownTags:    [...libraryKnownTags],
+      singersOff:   [...librarySingersOff],
+      tempoFilters: [...libraryTempoFilters],
+    }));
+  } catch (e) {}
+}
+_loadLibraryFiltersFromStorage();
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let setlist = []; // Array of song items in setlist
 let currentSong = null;
@@ -3471,6 +3499,19 @@ function librarySortValue(m, key) {
     case 'key':      return (m.key || '').toLowerCase();
     case 'singer':   return (stems && stems.singer_lead || '').toLowerCase();
     case 'drum':     return (stems && stems.drum_pattern || '').toLowerCase();
+    case 'plays': {
+      const p = (stems && stems.play_count) || m.play_count || 0;
+      return Number(p) || 0;
+    }
+    case 'lastplayed': {
+      // "days since last played", inverted so the DEFAULT ascending click
+      // puts least-recently-played (∞ / never) at the top — Bill's spec
+      // 2026-07-10. Second click reverses to most-recently-played first.
+      const lastAt = stems && stems.last_played_at;
+      if (!lastAt) return -Number.MAX_SAFE_INTEGER;
+      const days = Math.max(0, Math.floor((Date.now() - new Date(lastAt).getTime()) / 86400000));
+      return -days;
+    }
     default:         return (m.title || '').toLowerCase();
   }
 }
@@ -3809,6 +3850,22 @@ function renderLibrary() {
       playsCell.title = `Last played: ${new Date(stemsForPlays.last_played_at).toLocaleString()}`;
     }
 
+    // Last-played (days ago) — Bill 2026-07-10. Never-played renders as
+    // "∞" so operator's eye lands on the songs that need attention. The
+    // exact timestamp lives in the tooltip so hovering shows the wall-clock.
+    const lastCell = document.createElement('div');
+    lastCell.className = 'song-lastplayed-cell';
+    const lastAt = (stemsForPlays && stemsForPlays.last_played_at) || null;
+    if (lastAt) {
+      const days = Math.max(0, Math.floor((Date.now() - new Date(lastAt).getTime()) / 86400000));
+      lastCell.textContent = `${days}d`;
+      lastCell.title = `Last played: ${new Date(lastAt).toLocaleString()}`;
+    } else {
+      lastCell.textContent = '∞';
+      lastCell.title = 'Never played';
+      lastCell.classList.add('never-played');
+    }
+
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
@@ -3819,6 +3876,7 @@ function renderLibrary() {
     row.appendChild(singerCell);
     row.appendChild(drumCell);
     row.appendChild(playsCell);
+    row.appendChild(lastCell);
     row.appendChild(actionCell);
 
     // Row click default: load the preferred variant (-V-G m4a usually) into
@@ -4046,16 +4104,28 @@ async function openSongMenu(base, merged) {
       return;
     }
     clearTimeout(armTimer);
+    const url = `/api/song/${encodeURIComponent(base)}`;
     try {
-      const r = await fetch(`/api/song/${encodeURIComponent(base)}`, {
+      const r = await fetch(url, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm: base })   // server still requires this
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'failed');
+      let d = null;
+      try { d = await r.json(); } catch (er) { d = { error: `bad JSON from server (status ${r.status})` }; }
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
       close();
       fetchLibrary();
-    } catch (e) { alert(`Delete failed: ${e.message}`); }
+    } catch (e) {
+      // "Failed to fetch" is a TypeError from the fetch() layer itself —
+      // server crashed, connection refused, or Chrome aborted the request
+      // before it landed. Surface enough detail that the operator can
+      // check ./performer.sh status / tail perf-server.log without guessing.
+      const isNetErr = (e && e.name === 'TypeError');
+      const detail = isNetErr
+        ? `Server didn't respond (TypeError: ${e.message}).\n\nURL: ${url}\nFolder: ${base}\n\nThe server may have crashed. Check "./performer.sh status" and the tail of .run/perf-server.log for a timestamped error, then try again.`
+        : `${e.message}\n\nURL: ${url}`;
+      alert(`Delete failed:\n\n${detail}`);
+    }
   });
 }
 
@@ -4100,6 +4170,10 @@ function renderLibraryFilterBar() {
   // Drop stale filter state that no longer exists in the library.
   for (const lc of [...libraryTagFilters]) if (lc !== '__none__' && !tagVocab.has(lc)) { libraryTagFilters.delete(lc); libraryKnownTags.delete(lc); }
   for (const nm of [...librarySingersOff]) if (![...singers].some(x => x.toLowerCase() === nm)) librarySingersOff.delete(nm);
+  // Persist the (possibly newly-seeded) filter state — new tags default to
+  // CHECKED, so this snapshots them so the next reload doesn't re-toggle
+  // them into whatever the fresh-tag default is.
+  _saveLibraryFiltersToStorage();
 
   const chip = (group, value, label, checked) =>
     `<label class="lfb-chip ${checked ? 'checked' : ''}" data-group="${group}" data-value="${value.replace(/"/g, '&quot;')}">` +
@@ -4135,6 +4209,9 @@ function renderLibraryFilterBar() {
         if (input.checked) libraryTempoFilters.add(value); else libraryTempoFilters.delete(value);
       }
       el.classList.toggle('checked', input.checked);
+      // Persist the chip state so a reload brings back the same filter
+      // configuration (Bill 2026-07-10).
+      _saveLibraryFiltersToStorage();
       applyFilters();
     });
   });

@@ -3452,7 +3452,7 @@ select {
 
 .song-table-header {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 180px 55px 70px 52px 85px 75px 50px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 180px 55px 70px 52px 85px 75px 50px 55px 55px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-dim);
@@ -3486,7 +3486,7 @@ select {
 
 .song-row {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 180px 55px 70px 52px 85px 75px 50px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 180px 55px 70px 52px 85px 75px 50px 55px 55px;
   align-items: center;
   padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -7135,6 +7135,22 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   color: var(--text-muted);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+/* Last-played column (Bill 2026-07-10). Days since last play, "∞" when
+   never. Same monospace/tabular treatment as Plays for aligned columns. */
+.col-lastplayed { cursor: pointer; user-select: none; }
+.song-lastplayed-cell {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.song-lastplayed-cell.never-played {
+  color: #c58718;
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* Per-row tags pulldown — Bill's spec 2026-06-30. Click the cell's
