@@ -233,13 +233,11 @@ function installAudioInstrumentation(channel, audioEl) {
   audioEl.addEventListener('play',    pushState);
   audioEl.addEventListener('pause',   pushState);
   audioEl.addEventListener('ended',   pushState);
-  // The 'playing' event fires when audio is ACTUALLY producing output.
-  // If we get here for ANY stem, the song is healthy — clear any sticky
-  // failed marker that a prior load timeout left behind. This catches
-  // the case where the user hits Play after a transient failure
-  // (gesture, network blip, etc.) and the row was still showing as grey.
-  // Also — debounced per song-load — bump the server-side play_count
-  // so the library "Plays" column reflects what actually got listened to.
+  // The 'playing' event now only clears sticky failed markers — the play
+  // COUNT increment moved onto the Play button (see maybeCountPlayFromBeginning
+  // called by togglePlayPause). This avoids the pause+resume double-count
+  // Bill flagged 2026-07-10 and lets counts fire before Chrome flakes on
+  // the media stream.
   audioEl.addEventListener('playing', () => {
     pushState();
     try {
@@ -250,34 +248,60 @@ function installAudioInstrumentation(channel, audioEl) {
           if (typeof renderLibrary === 'function') renderLibrary();
           if (typeof renderGigSidebar === 'function') renderGigSidebar();
         }
-        // Per-song debounce — 6 stems all firing 'playing' on one
-        // load must produce ONE increment. _playCountedFor tracks the
-        // last base we counted; it resets when the song changes.
-        if (base && window._playCountedFor !== base) {
-          window._playCountedFor = base;
-          fetch(`/api/song/${encodeURIComponent(base)}/play`, { method: 'POST' })
-            .then(r => r.json())
-            .then(j => {
-              if (j && j.ok && typeof currentSong !== 'undefined' && currentSong) {
-                currentSong.play_count = j.play_count;
-                currentSong.last_played_at = j.last_played_at;
-                // Patch mergedLibrary so the column updates on next render.
-                try {
-                  const mm = (window.mergedLibrary || []).find(x => {
-                    const sv = x.variants && x.variants.find(v => v.type === 'stems');
-                    return sv && sv.folderName === base;
-                  });
-                  if (mm) mm.play_count = j.play_count;
-                } catch (e) {}
-                if (typeof renderLibrary === 'function') renderLibrary();
-              }
-            })
-            .catch(() => {});
-        }
       }
     } catch (e) {}
   });
 }
+
+// Fired from togglePlayPause when the operator is about to start playback.
+// Only counts as a play when the source's playhead is at (or very near)
+// the beginning of the song — pause/resume/stop-and-play cycles must not
+// inflate the count. Patches mergedLibrary's stems VARIANT so the library
+// row row-render picks up the new play_count and last_played_at without
+// waiting for the next full library refresh (Bill 2026-07-10).
+const _PLAY_COUNT_BEGIN_THRESHOLD_SEC = 1.0;
+function maybeCountPlayFromBeginning(sourceEl) {
+  try {
+    if (!currentSong) return;
+    const base = currentSong.folderName || currentSong.base;
+    if (!base) return;
+    const ct = (sourceEl && Number.isFinite(sourceEl.currentTime)) ? sourceEl.currentTime : 0;
+    if (ct >= _PLAY_COUNT_BEGIN_THRESHOLD_SEC) {
+      // Mid-song resume — Bill's spec: don't count pause+resume as a play.
+      console.log('[playcount] skip — currentTime', ct.toFixed(2), 's, not at beginning');
+      return;
+    }
+    fetch(`/api/song/${encodeURIComponent(base)}/play`, { method: 'POST' })
+      .then(r => r.json())
+      .then(j => {
+        if (!j || !j.ok) return;
+        if (currentSong && (currentSong.folderName || currentSong.base) === base) {
+          currentSong.play_count = j.play_count;
+          currentSong.last_played_at = j.last_played_at;
+        }
+        // Patch mergedLibrary — BOTH the merged row's play_count/last_played_at
+        // AND the stems VARIANT's, since renderLibrary reads the variant first.
+        try {
+          const mm = (window.mergedLibrary || []).find(x => {
+            const sv = x.variants && x.variants.find(v => v.type === 'stems');
+            return sv && sv.folderName === base;
+          });
+          if (mm) {
+            mm.play_count = j.play_count;
+            mm.last_played_at = j.last_played_at;
+            const sv = mm.variants && mm.variants.find(v => v.type === 'stems');
+            if (sv) {
+              sv.play_count = j.play_count;
+              sv.last_played_at = j.last_played_at;
+            }
+          }
+        } catch (e) {}
+        if (typeof renderLibrary === 'function') renderLibrary();
+      })
+      .catch(() => {});
+  } catch (e) {}
+}
+window.maybeCountPlayFromBeginning = maybeCountPlayFromBeginning;
 
 // ─── TOAST (non-blocking transient UI message) ────────────────────────────
 // Bill's contract: cache-first means failures CAN'T be modals or spinners
@@ -859,6 +883,38 @@ function setupGigSidebar() {
     activeGig.setlists.push({ title: `Set ${activeGig.setlists.length + 1}`, songs: [] });
     renderGigSidebar();
     scheduleGigSave();
+  });
+  // Split: any setlist with >MAX_SPLIT_SONGS songs gets sliced into
+  // sequential chunks, first chunk keeps the original title, later chunks
+  // read "(part N)". Preserves song order. Bill 2026-07-10.
+  const MAX_SPLIT_SONGS = 15;
+  document.getElementById('gig-split-btn').addEventListener('click', () => {
+    if (!activeGig) return;
+    if (activeGig.synthetic || activeGig.readOnly) return;
+    const setlists = Array.isArray(activeGig.setlists) ? activeGig.setlists : [];
+    let splitCount = 0;
+    const rebuilt = [];
+    for (const sl of setlists) {
+      const songs = Array.isArray(sl.songs) ? sl.songs : [];
+      if (songs.length <= MAX_SPLIT_SONGS) { rebuilt.push(sl); continue; }
+      const base = sl.title || `Set ${rebuilt.length + 1}`;
+      for (let i = 0, part = 1; i < songs.length; i += MAX_SPLIT_SONGS, part++) {
+        rebuilt.push({
+          ...sl,
+          title: part === 1 ? base : `${base} (part ${part})`,
+          songs: songs.slice(i, i + MAX_SPLIT_SONGS),
+        });
+        if (part > 1) splitCount++;
+      }
+    }
+    if (!splitCount) {
+      if (typeof showToast === 'function') showToast('Every setlist is already ≤ 15 songs — nothing to split.');
+      return;
+    }
+    activeGig.setlists = rebuilt;
+    renderGigSidebar();
+    scheduleGigSave();
+    if (typeof showToast === 'function') showToast(`Split added ${splitCount} new setlist${splitCount === 1 ? '' : 's'} — all setlists ≤ ${MAX_SPLIT_SONGS} songs.`);
   });
 
   refreshGigList().then(initialSlug => {
@@ -1676,6 +1732,7 @@ function renderGigSidebar() {
   const countEl = document.getElementById('gig-side-count');
   const setlistsEl = document.getElementById('gig-setlists');
   const addBtn = document.getElementById('gig-add-setlist-btn');
+  const splitBtn = document.getElementById('gig-split-btn');
   const dupBtn = document.getElementById('gig-dup-btn');
   const delBtn = document.getElementById('gig-del-btn');
   if (!nameEl || !setlistsEl) return;
@@ -1685,6 +1742,7 @@ function renderGigSidebar() {
     countEl.textContent = '0';
     setlistsEl.innerHTML = '<div class="setlist-side-hint">No gig loaded. Hit + to create one.</div>';
     addBtn.disabled = true;
+    if (splitBtn) splitBtn.disabled = true;
     dupBtn.disabled = true;
     delBtn.disabled = true;
     return;
@@ -1701,6 +1759,16 @@ function renderGigSidebar() {
   dupBtn.disabled = ro || synthetic;
   delBtn.disabled = ro || synthetic;
   addBtn.disabled = ro || synthetic;
+  if (splitBtn) {
+    // Only enable Split when at least one setlist has more than 15 songs.
+    const hasOverflow = (activeGig.setlists || []).some(sl => (sl.songs || []).length > 15);
+    splitBtn.disabled = ro || synthetic || !hasOverflow;
+    splitBtn.title = (ro || synthetic)
+      ? 'Built-in gigs can’t be split'
+      : (hasOverflow
+        ? 'Split any setlist longer than 15 songs into 15-song chunks.'
+        : 'All setlists already have ≤ 15 songs.');
+  }
   const renameBtn = document.getElementById('gig-rename-btn');
   if (renameBtn) {
     renameBtn.disabled = ro || synthetic;
@@ -7709,15 +7777,23 @@ async function togglePlayPause() {
   // engaged source; returning to the six-stem mix is an explicit click on
   // the 6 STEMS pill (or disengaging the drum/backing pill).
   if (drumMachineActive && drumMachineEl) {
-    if (drumMachineEl.paused) drumMachineEl.play().catch(e => console.warn('[transport] drum play failed:', e));
-    else drumMachineEl.pause();
+    if (drumMachineEl.paused) {
+      maybeCountPlayFromBeginning(drumMachineEl);
+      drumMachineEl.play().catch(e => console.warn('[transport] drum play failed:', e));
+    } else {
+      drumMachineEl.pause();
+    }
     updateModePills();
     updateTransportIcon();
     return;
   }
   if (backingTrackActive && backingTrackEl) {
-    if (backingTrackEl.paused) backingTrackEl.play().catch(e => console.warn('[transport] backing play failed:', e));
-    else backingTrackEl.pause();
+    if (backingTrackEl.paused) {
+      maybeCountPlayFromBeginning(backingTrackEl);
+      backingTrackEl.play().catch(e => console.warn('[transport] backing play failed:', e));
+    } else {
+      backingTrackEl.pause();
+    }
     updateModePills();
     updateTransportIcon();
     return;
@@ -7897,6 +7973,9 @@ async function togglePlayPause() {
   }
 
   const masterTime = masterAe0.currentTime;
+  // Bump play_count + last_played_at only when we're starting from the
+  // beginning; pause+resume mid-song does NOT count (Bill 2026-07-10).
+  maybeCountPlayFromBeginning(masterAe0);
   activeElements.forEach(ae => {
     ae.currentTime = masterTime;
     ae.play().catch(err => console.warn('[audio.play] rejected:', err, 'src=', ae.src));
@@ -9361,34 +9440,16 @@ async function onLyricTap(e) {
     //
     // If lyric-line events are ALREADY scattered on the visualizer, this
     // click is destructive: pressing Fetch Lyrics means the operator is
-    // about to redo the pass. Confirm before wiping the placed events so
-    // a real pass isn't destroyed by a stray click (Bill 2026-07-10).
+    // about to redo the pass. Confirm intent BEFORE opening the editor.
+    //
+    // IMPORTANT (Bill 2026-07-10): don't wipe anything yet. If the operator
+    // cancels the editor after confirming here, the placed lyrics should
+    // still be there — the wipe only happens in onLyricsModalSave when
+    // new lyrics are actually committed. We just mark the intent with a
+    // one-shot flag so the save path knows not to double-confirm.
     if (typeof lyricsHasPlacedActions === 'function' && lyricsHasPlacedActions()) {
       if (!confirm('Do you want to replace the current lyrics?')) return;
-      // Wipe placed lyric-line events and persist. Mirrors the wipe branch
-      // in onLyricsModalSave (Bill 2026-07-07 replace-mode logic): keeps
-      // sections + init + non-lyric events, drops just the lyric-lines.
-      const stale = automationEvents.filter(e => e.type === 'lyric-line').length;
-      automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
-      try { markAutomationDirty(); } catch (er) {}
-      try { renderAutomationLane(); } catch (er) {}
-      if (typeof automationCurrentBase !== 'undefined' && automationCurrentBase) {
-        try { await saveAutomationForSong(automationCurrentBase, automationEvents); }
-        catch (er) { console.warn('[lyric] fetch-replace wipe persist failed:', er); }
-      }
-      lyricsState.placedCount = 0;
-      lyricsState.placedStack = [];
-      lyricsState.lastTapAt = 0;
-      lyricsState.activeLines = [];
-      if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
-      // One-shot flag: onLyricsModalSave's own "replace with the pasted
-      // lyrics?" confirm should skip once — the operator just consented
-      // at click time; asking again on Save would be double-jeopardy.
       lyricsState._replaceConfirmed = true;
-      if (stale && typeof showToast === 'function') {
-        showToast(`Cleared ${stale} placed lyric line${stale === 1 ? '' : 's'} — paste new lyrics to start fresh`);
-      }
-      console.log('[lyric] fetch-replace: cleared', stale, 'placed lyric-line actions');
     }
     openLyricsModal(lyricsState.cachedLines.length ? 'edit' : 'initial');
     return;
@@ -9783,6 +9844,13 @@ function openLyricsModal(mode = 'initial') {
 function closeLyricsModal() {
   const m = els.lyricsModal || document.getElementById('lyrics-modal');
   if (m) m.style.display = 'none';
+  // Clear the "user consented to replace at click time" one-shot flag.
+  // If they Cancelled without saving, the flag must NOT persist to the
+  // next open — otherwise a totally unrelated later Save would silently
+  // wipe placements (Bill 2026-07-10). closeLyricsModal runs on both
+  // Save success and Cancel, so the Save-path has already used the flag
+  // by the time this fires.
+  lyricsState._replaceConfirmed = false;
 }
 
 // Live counter — recomputes the displayed-line count as Bill types or

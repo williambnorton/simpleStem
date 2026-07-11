@@ -113,6 +113,12 @@
           <button id="gig-add-setlist-btn" class="setlist-side-toggle" disabled>
             <i data-lucide="plus"></i> <span>Add a setlist</span>
           </button>
+          <!-- Split (Bill 2026-07-10): walks setlists and redistributes so
+               each has at most 15 songs. Splits keep original song order;
+               overflow lands in "(part 2)" copies inserted right after. -->
+          <button id="gig-split-btn" class="setlist-side-toggle" disabled title="Split any setlist longer than 15 songs into 15-song chunks. First chunk keeps its title; extras get '(part 2)', '(part 3)' etc.">
+            <i data-lucide="scissors"></i> <span>Split</span>
+          </button>
           <div class="setlist-side-hint" id="gig-side-hint"></div>
         </div>
       </section>
