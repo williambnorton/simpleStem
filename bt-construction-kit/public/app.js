@@ -939,11 +939,16 @@ function setupGigSidebar() {
       // in mergedLibrary so we can read readiness / practiceBpm / singer /
       // title. Songs the library doesn't know about pass through as their
       // raw row.
+      // NOTE (Bill 2026-07-11 bug): mergedLibrary is a MODULE-SCOPE `let`,
+      // not `window.mergedLibrary`. Reading window.mergedLibrary returned
+      // undefined and every song fell into 'unstated' / '0bpm' / 'Unassigned'.
+      const src = (typeof mergedLibrary !== 'undefined' && Array.isArray(mergedLibrary)) ? mergedLibrary : [];
       const lookup = new Map();
-      for (const m of (window.mergedLibrary || [])) {
+      for (const m of src) {
         const sv = m.variants && m.variants.find(v => v.type === 'stems');
         if (sv && sv.folderName) lookup.set(sv.folderName, { m, sv });
       }
+      console.log(`[split-${method}] lookup built with ${lookup.size} entries; song count=${allSongs.length}`);
       const resolve = (song) => {
         const base = song && (song.song_base || song.slug || song.folderName);
         return base ? (lookup.get(base) || null) : null;
