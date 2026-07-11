@@ -918,9 +918,11 @@ function setupGigSidebar() {
   });
 
   // Split methods (Bill 2026-07-10) — one click rearranges every song in
-  // the gig into a new setlist layout keyed on the chosen dimension, then
-  // caps each group at MAX_SPLIT_SONGS. All four methods flatten first,
-  // group, then chunk. Persists via scheduleGigSave.
+  // the gig into a new setlist layout ordered by the chosen dimension,
+  // then caps each chunk at MAX_SPLIT_SONGS. Each resulting setlist gets
+  // a title derived from the ACTUAL contents of that chunk (BPM range,
+  // state counter, singer boundary, alphabetical range) — Bill 2026-07-11:
+  // "the setlist title should be adjusted to match the songs you placed".
   document.querySelectorAll('.gig-split-method-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (!activeGig || activeGig.synthetic || activeGig.readOnly) return;
@@ -933,86 +935,112 @@ function setupGigSidebar() {
         if (typeof showToast === 'function') showToast('This gig has no songs to rearrange.');
         return;
       }
-      // Resolve the merged library row for each song so we can read
-      // readiness / BPM / singer / title. Setlist rows carry song_base
-      // (or slug) — match against the stems variant's folderName.
+      // Lookup: setlist entries carry song_base/slug/folderName; find each
+      // in mergedLibrary so we can read readiness / practiceBpm / singer /
+      // title. Songs the library doesn't know about pass through as their
+      // raw row.
       const lookup = new Map();
       for (const m of (window.mergedLibrary || [])) {
         const sv = m.variants && m.variants.find(v => v.type === 'stems');
         if (sv && sv.folderName) lookup.set(sv.folderName, { m, sv });
       }
-      const bucketOf = (song) => {
+      const resolve = (song) => {
         const base = song && (song.song_base || song.slug || song.folderName);
-        const hit = base ? lookup.get(base) : null;
-        if (method === 'byState') {
-          const r = hit && hit.sv && hit.sv.readiness ? String(hit.sv.readiness) : 'none';
-          const canon = /inthecan/i.test(r) ? 'InTheCan'
-                     : /rehearse|rehearsal/i.test(r) ? 'Rehearse'
-                     : /tbd/i.test(r) ? 'TBD'
-                     : 'none';
-          return canon;
-        }
+        return base ? (lookup.get(base) || null) : null;
+      };
+      const stateOf = (song) => {
+        const hit = resolve(song);
+        const r = hit && hit.sv && hit.sv.readiness ? String(hit.sv.readiness) : '';
+        if (/inthecan/i.test(r)) return 'InTheCan';
+        if (/rehearse|rehearsal/i.test(r)) return 'InRehearsal';
+        if (/tbd/i.test(r)) return 'TBD';
+        return 'unstated';
+      };
+      const bpmOf = (song) => {
+        const hit = resolve(song);
+        return hit && hit.m ? Number(hit.m.practiceBpm || 0) : 0;
+      };
+      const singerOf = (song) => {
+        const hit = resolve(song);
+        const s = hit && hit.sv && hit.sv.singer_lead ? String(hit.sv.singer_lead).trim() : '';
+        if (!s) return 'Unassigned';
+        return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+      };
+      const titleOf = (song) => {
+        const hit = resolve(song);
+        return (hit && hit.m && hit.m.title) ? String(hit.m.title) : String(song && (song.title || song.song_base || ''));
+      };
+
+      // Step 1 — ORDER all songs so consecutive songs share the property
+      // that's being grouped on. Chunking preserves that order.
+      let ordered;
+      if (method === 'byState') {
+        const rank = { 'InTheCan': 0, 'InRehearsal': 1, 'TBD': 2, 'unstated': 3 };
+        ordered = allSongs.slice().sort((a, b) => (rank[stateOf(a)] ?? 9) - (rank[stateOf(b)] ?? 9));
+      } else if (method === 'byTempo') {
+        // BPM ascending — 0 (unknown) sinks to the top so operator sees
+        // the missing-metadata songs before the tempo curve begins.
+        ordered = allSongs.slice().sort((a, b) => bpmOf(a) - bpmOf(b));
+      } else if (method === 'bySinger') {
+        const rank = { Bill: 0, Dan: 1, Matt: 2, JD: 3, Joanna: 4, Mark: 5, Unassigned: 6 };
+        ordered = allSongs.slice().sort((a, b) => {
+          const ra = rank[singerOf(a)] ?? 9;
+          const rb = rank[singerOf(b)] ?? 9;
+          return ra - rb || titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase());
+        });
+      } else {
+        // byLex
+        ordered = allSongs.slice().sort((a, b) => titleOf(a).toLowerCase().localeCompare(titleOf(b).toLowerCase()));
+      }
+
+      // Step 2 — Chunk into ≤MAX_SPLIT_SONGS.
+      const chunks = [];
+      for (let i = 0; i < ordered.length; i += MAX_SPLIT_SONGS) {
+        chunks.push(ordered.slice(i, i + MAX_SPLIT_SONGS));
+      }
+
+      // Step 3 — Name each chunk from its actual content. The rules are
+      // per-method: byTempo uses BPM range, byState/bySinger use unique
+      // group labels joined with '/' plus a counter suffix when repeated,
+      // byLex uses first-letter range.
+      const stateCounter = {};
+      const singerCounter = {};
+      const rebuilt = chunks.map(chunk => {
+        let title = '';
         if (method === 'byTempo') {
-          const bpm = hit && hit.m ? (hit.m.practiceBpm || 0) : 0;
-          return bpm > 110 ? 'Upbeat (>110 BPM)' : (bpm > 0 ? 'Savory (≤110 BPM)' : 'Unknown tempo');
-        }
-        if (method === 'bySinger') {
-          const s = hit && hit.sv && hit.sv.singer_lead ? String(hit.sv.singer_lead).trim() : '';
-          if (!s) return 'Unassigned';
-          return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-        }
-        // byLex — one big bucket sorted alphabetically, then chunk into 15s
-        return '__lex__';
-      };
-      const orderKey = (song) => {
-        const base = song && (song.song_base || song.slug || song.folderName);
-        const hit = base ? lookup.get(base) : null;
-        return (hit && hit.m && hit.m.title ? hit.m.title : (song && (song.title || song.song_base || ''))) .toLowerCase();
-      };
-
-      // Assign each song to its bucket, preserving encounter order within
-      // a bucket (byLex sorts inside).
-      const buckets = new Map();
-      for (const s of allSongs) {
-        const b = bucketOf(s);
-        if (!buckets.has(b)) buckets.set(b, []);
-        buckets.get(b).push(s);
-      }
-      if (method === 'byLex') {
-        buckets.get('__lex__').sort((a, b) => orderKey(a).localeCompare(orderKey(b)));
-      }
-      // Preferred bucket order per method so setlists appear in a sensible
-      // sequence rather than insertion order.
-      const bucketOrder = (method === 'byState')
-        ? ['InTheCan','Rehearse','TBD','none']
-        : (method === 'byTempo')
-        ? ['Upbeat (>110 BPM)','Savory (≤110 BPM)','Unknown tempo']
-        : (method === 'bySinger')
-        ? ['Bill','Dan','Matt','JD','Joanna','Mark','Unassigned']
-        : ['__lex__'];
-      const remaining = new Set(buckets.keys());
-      const ordered = [];
-      for (const k of bucketOrder) if (buckets.has(k)) { ordered.push(k); remaining.delete(k); }
-      for (const k of [...remaining].sort()) ordered.push(k);
-
-      const rebuilt = [];
-      let created = 0;
-      for (const key of ordered) {
-        const songs = buckets.get(key) || [];
-        if (!songs.length) continue;
-        const title = key === '__lex__' ? 'A–Z' : key;
-        for (let i = 0, part = 1; i < songs.length; i += MAX_SPLIT_SONGS, part++) {
-          rebuilt.push({
-            title: part === 1 ? title : `${title} (part ${part})`,
-            songs: songs.slice(i, i + MAX_SPLIT_SONGS),
+          const bpms = chunk.map(bpmOf);
+          const min = Math.min(...bpms), max = Math.max(...bpms);
+          title = (min === max)
+            ? `${min}bpm`
+            : (min === 0 ? `≤${max}bpm` : `${min}-${max}bpm`);
+        } else if (method === 'byLex') {
+          const first = titleOf(chunk[0]).toUpperCase().charAt(0) || 'A';
+          const last  = titleOf(chunk[chunk.length - 1]).toUpperCase().charAt(0) || 'Z';
+          title = (first === last) ? first : `${first}-${last}`;
+        } else if (method === 'byState' || method === 'bySinger') {
+          const getLabel = method === 'byState' ? stateOf : singerOf;
+          const counters = method === 'byState' ? stateCounter : singerCounter;
+          // Unique labels in encounter order.
+          const uniq = [];
+          const seen = new Set();
+          for (const s of chunk) {
+            const lbl = getLabel(s);
+            if (!seen.has(lbl)) { seen.add(lbl); uniq.push(lbl); }
+          }
+          // Bump each label's counter; suffix numbers only when >1 chunk.
+          const parts = uniq.map(lbl => {
+            counters[lbl] = (counters[lbl] || 0) + 1;
+            return counters[lbl] > 1 ? `${lbl}${counters[lbl]}` : lbl;
           });
-          created++;
+          title = parts.join('/');
         }
-      }
+        return { title: title || '(unnamed)', songs: chunk };
+      });
+
       activeGig.setlists = rebuilt;
       renderGigSidebar();
       scheduleGigSave();
-      if (typeof showToast === 'function') showToast(`Rearranged into ${created} setlist${created === 1 ? '' : 's'} by ${method}.`);
+      if (typeof showToast === 'function') showToast(`Rearranged into ${rebuilt.length} setlist${rebuilt.length === 1 ? '' : 's'} by ${method}.`);
     });
   });
 
