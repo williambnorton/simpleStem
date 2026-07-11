@@ -917,6 +917,105 @@ function setupGigSidebar() {
     if (typeof showToast === 'function') showToast(`Split added ${splitCount} new setlist${splitCount === 1 ? '' : 's'} — all setlists ≤ ${MAX_SPLIT_SONGS} songs.`);
   });
 
+  // Split methods (Bill 2026-07-10) — one click rearranges every song in
+  // the gig into a new setlist layout keyed on the chosen dimension, then
+  // caps each group at MAX_SPLIT_SONGS. All four methods flatten first,
+  // group, then chunk. Persists via scheduleGigSave.
+  document.querySelectorAll('.gig-split-method-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!activeGig || activeGig.synthetic || activeGig.readOnly) return;
+      const method = btn.dataset.method;
+      const allSongs = [];
+      for (const sl of (activeGig.setlists || [])) {
+        for (const s of (sl.songs || [])) allSongs.push(s);
+      }
+      if (!allSongs.length) {
+        if (typeof showToast === 'function') showToast('This gig has no songs to rearrange.');
+        return;
+      }
+      // Resolve the merged library row for each song so we can read
+      // readiness / BPM / singer / title. Setlist rows carry song_base
+      // (or slug) — match against the stems variant's folderName.
+      const lookup = new Map();
+      for (const m of (window.mergedLibrary || [])) {
+        const sv = m.variants && m.variants.find(v => v.type === 'stems');
+        if (sv && sv.folderName) lookup.set(sv.folderName, { m, sv });
+      }
+      const bucketOf = (song) => {
+        const base = song && (song.song_base || song.slug || song.folderName);
+        const hit = base ? lookup.get(base) : null;
+        if (method === 'byState') {
+          const r = hit && hit.sv && hit.sv.readiness ? String(hit.sv.readiness) : 'none';
+          const canon = /inthecan/i.test(r) ? 'InTheCan'
+                     : /rehearse|rehearsal/i.test(r) ? 'Rehearse'
+                     : /tbd/i.test(r) ? 'TBD'
+                     : 'none';
+          return canon;
+        }
+        if (method === 'byTempo') {
+          const bpm = hit && hit.m ? (hit.m.practiceBpm || 0) : 0;
+          return bpm > 110 ? 'Upbeat (>110 BPM)' : (bpm > 0 ? 'Savory (≤110 BPM)' : 'Unknown tempo');
+        }
+        if (method === 'bySinger') {
+          const s = hit && hit.sv && hit.sv.singer_lead ? String(hit.sv.singer_lead).trim() : '';
+          if (!s) return 'Unassigned';
+          return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+        }
+        // byLex — one big bucket sorted alphabetically, then chunk into 15s
+        return '__lex__';
+      };
+      const orderKey = (song) => {
+        const base = song && (song.song_base || song.slug || song.folderName);
+        const hit = base ? lookup.get(base) : null;
+        return (hit && hit.m && hit.m.title ? hit.m.title : (song && (song.title || song.song_base || ''))) .toLowerCase();
+      };
+
+      // Assign each song to its bucket, preserving encounter order within
+      // a bucket (byLex sorts inside).
+      const buckets = new Map();
+      for (const s of allSongs) {
+        const b = bucketOf(s);
+        if (!buckets.has(b)) buckets.set(b, []);
+        buckets.get(b).push(s);
+      }
+      if (method === 'byLex') {
+        buckets.get('__lex__').sort((a, b) => orderKey(a).localeCompare(orderKey(b)));
+      }
+      // Preferred bucket order per method so setlists appear in a sensible
+      // sequence rather than insertion order.
+      const bucketOrder = (method === 'byState')
+        ? ['InTheCan','Rehearse','TBD','none']
+        : (method === 'byTempo')
+        ? ['Upbeat (>110 BPM)','Savory (≤110 BPM)','Unknown tempo']
+        : (method === 'bySinger')
+        ? ['Bill','Dan','Matt','JD','Joanna','Mark','Unassigned']
+        : ['__lex__'];
+      const remaining = new Set(buckets.keys());
+      const ordered = [];
+      for (const k of bucketOrder) if (buckets.has(k)) { ordered.push(k); remaining.delete(k); }
+      for (const k of [...remaining].sort()) ordered.push(k);
+
+      const rebuilt = [];
+      let created = 0;
+      for (const key of ordered) {
+        const songs = buckets.get(key) || [];
+        if (!songs.length) continue;
+        const title = key === '__lex__' ? 'A–Z' : key;
+        for (let i = 0, part = 1; i < songs.length; i += MAX_SPLIT_SONGS, part++) {
+          rebuilt.push({
+            title: part === 1 ? title : `${title} (part ${part})`,
+            songs: songs.slice(i, i + MAX_SPLIT_SONGS),
+          });
+          created++;
+        }
+      }
+      activeGig.setlists = rebuilt;
+      renderGigSidebar();
+      scheduleGigSave();
+      if (typeof showToast === 'function') showToast(`Rearranged into ${created} setlist${created === 1 ? '' : 's'} by ${method}.`);
+    });
+  });
+
   refreshGigList().then(initialSlug => {
     // Fall back to whatever the picker landed on if refreshGigList didn't
     // return a slug — e.g. the live fetch failed but the warm cache painted
@@ -1769,6 +1868,11 @@ function renderGigSidebar() {
         ? 'Split any setlist longer than 15 songs into 15-song chunks.'
         : 'All setlists already have ≤ 15 songs.');
   }
+  // Split method buttons follow the same edit-permission rules as Split.
+  const hasAnySongs = (activeGig.setlists || []).some(sl => (sl.songs || []).length > 0);
+  document.querySelectorAll('.gig-split-method-btn').forEach(b => {
+    b.disabled = ro || synthetic || !hasAnySongs;
+  });
   const renameBtn = document.getElementById('gig-rename-btn');
   if (renameBtn) {
     renameBtn.disabled = ro || synthetic;

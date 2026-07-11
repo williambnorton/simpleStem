@@ -113,9 +113,18 @@
           <button id="gig-add-setlist-btn" class="setlist-side-toggle" disabled>
             <i data-lucide="plus"></i> <span>Add a setlist</span>
           </button>
-          <!-- Split (Bill 2026-07-10): walks setlists and redistributes so
-               each has at most 15 songs. Splits keep original song order;
-               overflow lands in "(part 2)" copies inserted right after. -->
+          <!-- Split method row (Bill 2026-07-10). Rearrange songs across
+               setlists by a chosen dimension, then chunk each group to ≤15
+               so nothing overflows. -->
+          <div class="gig-split-methods" id="gig-split-methods">
+            <button class="gig-split-method-btn" data-method="byState"  title="Group by readiness — one setlist per InTheCan / Rehearse / TBD / none, then chunk to ≤15.">byState</button>
+            <button class="gig-split-method-btn" data-method="byTempo"  title="Group by tempo — Upbeat (>110 BPM) and Savory (≤110 BPM), then chunk to ≤15.">byTempo</button>
+            <button class="gig-split-method-btn" data-method="byLex"    title="Alphabetize all songs by title, then chunk to ≤15 per setlist.">byLex</button>
+            <button class="gig-split-method-btn" data-method="bySinger" title="Group by lead singer — one setlist per Bill / Dan / Matt / JD / Joanna / unassigned, then chunk to ≤15.">bySinger</button>
+          </div>
+          <!-- Split (Bill 2026-07-10): keeps the original song order across
+               setlists and just chunks anything over 15 songs into "(part 2)"
+               copies inserted right after the original. -->
           <button id="gig-split-btn" class="setlist-side-toggle" disabled title="Split any setlist longer than 15 songs into 15-song chunks. First chunk keeps its title; extras get '(part 2)', '(part 3)' etc.">
             <i data-lucide="scissors"></i> <span>Split</span>
           </button>

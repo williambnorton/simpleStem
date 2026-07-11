@@ -7136,6 +7136,30 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* Split methods row (Bill 2026-07-10). Four compact buttons above the
+   Split button, each rearranges gig songs across setlists differently. */
+.gig-split-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+.gig-split-method-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 6px;
+  background: rgba(124, 77, 255, 0.10);
+  border: 1px solid rgba(124, 77, 255, 0.35);
+  color: #5b21b6;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.gig-split-method-btn:hover:not(:disabled) { background: rgba(124, 77, 255, 0.22); }
+.gig-split-method-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Last-played column (Bill 2026-07-10). Days since last play, "∞" when
    never. Same monospace/tabular treatment as Plays for aligned columns. */
 .col-lastplayed { cursor: pointer; user-select: none; }
