@@ -3443,6 +3443,7 @@ async function fetchLibrary() {
     // (STEMS folder + M4A variants). Keyed by lowercase "title|artist".
     mergedLibrary = mergeByTitleArtist(songLibrary);
     mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
+    window.mergedLibrary = mergedLibrary;   // voice control + split methods read this
 
     filteredLibrary = [...mergedLibrary];
     try { renderLibraryFilterBar(); } catch (e) { console.warn('[filter-bar]', e); }
@@ -11151,6 +11152,7 @@ async function cacheStatusRefresh() {
     }
     if (dirty) {
       mergedLibrary = mergeByTitleArtist(songLibrary);
+      window.mergedLibrary = mergedLibrary;
       try { renderLibraryFilterBar(); } catch (e) {}
       mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
       applyFilters();

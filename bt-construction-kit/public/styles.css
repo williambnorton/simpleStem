@@ -2938,6 +2938,29 @@ select {
   z-index: 3;
 }
 .timeline-thumb-time.flip { transform: translate(calc(-100% - 12px), -50%); }
+/* HOLODECK mic button states: green pulsing halo = listening, solid
+   yellow = ready to press, red = no microphone / no speech engine. */
+#btn-holodeck.hd-ready {
+  background: rgba(241, 196, 15, 0.85);
+  border-color: #f1c40f;
+  color: #201a00;
+}
+#btn-holodeck.hd-nomic {
+  background: rgba(231, 76, 60, 0.85);
+  border-color: #e74c3c;
+  color: #fff;
+}
+#btn-holodeck.hd-listening {
+  background: var(--color-green, #27ae60);
+  border-color: transparent;
+  color: #fff;
+  animation: hdHalo 1.2s ease-in-out infinite;
+}
+@keyframes hdHalo {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.75); }
+  50%      { box-shadow: 0 0 0 11px rgba(39, 174, 96, 0); }
+}
+
 /* HOLODECK floating command-help panel. */
 .holodeck-help {
   position: fixed;

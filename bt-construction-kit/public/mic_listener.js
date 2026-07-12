@@ -308,30 +308,72 @@
     showStatus(`Searching: ${q}`);
   }
   function libraryLoad(q) {
-    librarySearch(q);
-    setTimeout(() => clickQ('.song-row'), 350);
+    const m = bestSongMatch(q);
+    if (!m) { tts(`No song matching ${q}.`); return; }
+    const v = m.variants.find(x => x.type === 'stems') || m.variants[0];
+    showStatus(`Loaded: ${m.title}`);
+    try { window.loadSong(v); } catch (e) { console.warn('[HOLODECK] load failed:', e); }
   }
   // "Play <song name>" — filter the library to the query, then click the
   // first row's play button (the .play-row-btn — that's the codepath in
   // app.js that calls loadSong with { autoplay: true }). If no row
   // appears after the search, fall back to a TTS "not found" reply so
   // the operator hears the failure mode.
-  function libraryPlay(q) {
-    librarySearch(q);
-    setTimeout(() => {
-      const row = document.querySelector('.song-list-body .song-row');
-      if (!row) { tts(`No song matching ${q}.`); return; }
-      const playBtn = row.querySelector('.play-row-btn');
-      if (playBtn) {
-        playBtn.click();
-        const titleEl = row.querySelector('.song-title-cell span');
-        const heard = titleEl ? titleEl.textContent.trim() : q;
-        showStatus(`▶ Playing: ${heard}`);
-      } else {
-        // Older builds without per-row play button: fall back to row click.
-        row.click();
+  // Fuzzy song matching against the whole library (Bill 2026-07-12:
+  // "HOLODECK play friend of the devil"). Exact-substring via the search
+  // box was brittle against recognizer output — plurals, dropped words,
+  // trailing music bleed. Score every song by normalized title/artist
+  // similarity, and if nothing clears the bar, retry with trailing words
+  // trimmed (bleed rides at the END of the transcript).
+  function bestSongMatch(q) {
+    const lib = window.mergedLibrary || [];
+    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const score = (qn) => {
+      if (!qn) return null;
+      const qTokens = qn.split(' ').filter(t => t.length > 1);
+      let best = null, bestScore = 0;
+      for (const m of lib) {
+        const titleN = norm(m.title);
+        const hay = titleN + ' ' + norm(m.artist);
+        let sc = 0;
+        if (titleN === qn) sc = 100;
+        else if (titleN.startsWith(qn) || qn.startsWith(titleN)) sc = 80;
+        else if (hay.includes(qn)) sc = 60;
+        else if (qTokens.length) {
+          // Token match with prefix tolerance so plurals and small
+          // inflections still hit ("friends" ~ "friend").
+          const hayWords = hay.split(' ');
+          let hit = 0;
+          for (const t of qTokens) {
+            if (hayWords.some(w => w === t || (t.length > 3 && w.startsWith(t.slice(0, -1))) || (w.length > 3 && t.startsWith(w)))) hit++;
+          }
+          sc = 45 * hit / qTokens.length;
+        }
+        if (sc > bestScore) { bestScore = sc; best = m; }
       }
-    }, 400);
+      return bestScore >= 40 ? { song: best, score: bestScore } : null;
+    };
+    let qn = norm(q);
+    for (let drops = 0; drops < 4 && qn; drops++) {
+      const hit = score(qn);
+      if (hit) return hit.song;
+      qn = qn.split(' ').slice(0, -1).join(' ');   // trim trailing bleed
+    }
+    return null;
+  }
+
+  function libraryPlay(q) {
+    const m = bestSongMatch(q);
+    if (!m) { tts(`No song matching ${q}.`); return; }
+    const v = m.variants.find(x => x.type === 'stems') || m.variants[0];
+    showStatus(`▶ Playing: ${m.title}`);
+    tts(`Playing ${m.title}.`);
+    Promise.resolve(window.loadSong(v)).then(() => {
+      setTimeout(() => {
+        const playing = (typeof window.clickPlaybackState === 'function') && window.clickPlaybackState().playing;
+        if (!playing) clickById('btn-play-pause');
+      }, 700);
+    }).catch((e) => { console.warn('[HOLODECK] libraryPlay load failed:', e); });
   }
 
   function switchToGig(slug) {
@@ -819,6 +861,24 @@
   // keep it in BOTH states (Bill 2026-07-12) — only the first line
   // changes to reflect listening state.
   let micBtnBaseTitle = null;
+  let micAvailable = null;   // null = unknown, true/false from enumerateDevices
+
+  // Button state colors (Bill 2026-07-12): GREEN pulsing halo while
+  // listening, solid YELLOW when a mic is available and ready to press,
+  // RED when no microphone (or no speech engine) exists.
+  async function updateMicAvailability() {
+    try {
+      const SRok = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+      if (!SRok || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        micAvailable = false;
+      } else {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        micAvailable = devs.some(d => d.kind === 'audioinput');
+      }
+    } catch (e) { micAvailable = false; }
+    setMicButtonState(listening);
+  }
+
   function setMicButtonState(active) {
     const btn = document.getElementById('btn-holodeck');
     if (!btn) return;
@@ -827,6 +887,9 @@
       micBtnBaseTitle = t.includes('\n') ? t.slice(t.indexOf('\n')) : '';
     }
     btn.classList.toggle('active', active);
+    btn.classList.toggle('hd-listening', active);
+    btn.classList.toggle('hd-ready', !active && micAvailable !== false);
+    btn.classList.toggle('hd-nomic', !active && micAvailable === false);
     btn.title = (active
       ? 'HOLODECK IS LISTENING — click to stop. Say "HOLODECK, list commands" (or right-click here) for the full list.'
       : 'Click to start HOLODECK voice control — then say "HOLODECK, <command>". Right-click here for the command list.')
@@ -931,6 +994,12 @@
       console.warn('[HOLODECK] mic button not found; voice control unavailable');
       return;
     }
+    updateMicAvailability();
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', updateMicAvailability);
+      }
+    } catch (e) {}
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const el = document.getElementById('holodeck-help');
