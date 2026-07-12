@@ -48,12 +48,24 @@
   // Find a fuzzy wake word. Returns the command text AFTER it, or null.
   // Tolerance: distance ≤2 for words ~8 letters, ≤3 for ≥10 (mis-hearings
   // like "hahaloduck"). Also tries joining adjacent words ("halo deck").
+  // Explicit mis-hearing aliases the recognizer actually produces for
+  // "holodeck" (Bill 2026-07-12: it heard "holiday"). Alias wakes are
+  // treated as LIBERAL wakes: if what follows doesn't parse as a
+  // command, HOLODECK stays quiet instead of speaking over the band —
+  // so a lyric containing "holiday" can't trigger a spoken complaint.
+  const WAKE_ALIASES = new Set(['holiday', 'holidays', 'holodex', 'holodesk',
+    'holladeck', 'haladeck', 'hollandeck', 'holideck', 'melodic']);
+
   function fuzzyWakeRest(transcript) {
     const words = transcript.split(/\s+/);
     for (let i = 0; i < words.length; i++) {
       for (const span of [1, 2]) {
         if (i + span > words.length) continue;
         const joined = words.slice(i, i + span).join('').toLowerCase().replace(/[^a-z]/g, '');
+        if (WAKE_ALIASES.has(joined)) {
+          return words.slice(i + span).join(' ')
+            .replace(/^[,\s]+/, '').replace(/[.,!?]+$/, '').trim().toLowerCase();
+        }
         if (joined.length < 6 || joined.length > 14) continue;
         // Best distance over the whole token AND its 7-9 letter substrings,
         // so stutter-prefixed mis-hearings like "hahaloduck" (which merely
@@ -109,6 +121,8 @@
 
   let recognition = null;
   let audioCtx = null;
+  let commandMode = false;      // wake-word-only utterance latches this on
+  let pendingPlay = null;       // { timer, raw } — bare "play" awaiting a song title
   let analyser = null;
   let mediaStream = null;
   let meterRAF = 0;
@@ -681,10 +695,24 @@
     }
   }
 
+  // A pending bare-"play" consumes the next phrase as its song title —
+  // unless that phrase parses as a real command in its own right.
+  function consumePendingPlay(q, raw) {
+    clearTimeout(pendingPlay.timer);
+    pendingPlay = null;
+    const asCommand = q.toLowerCase();
+    for (const c of COMMANDS) {
+      if (c.re.source === '^play (?:me |the song )?(.+)$') continue;
+      if (asCommand.match(c.re)) { dispatch(asCommand, raw); return; }
+    }
+    logRecognition('cmd', raw, 'play ' + asCommand, '≈ split play + title');
+    dispatch('play ' + asCommand, raw);
+  }
+
   // Dispatch returns one of 'ok', 'err'. raw is the original transcript
   // (with wake word) so the console can show what HOLODECK actually heard,
   // not just the stripped command.
-  function dispatch(command, raw) {
+  function dispatch(command, raw, opts) {
     for (const c of COMMANDS) {
       const m = command.match(c.re);
       if (m) {
@@ -734,11 +762,15 @@
     const canon = phoneticCommand(command);
     if (canon && canon !== command) {
       logRecognition('cmd', raw || command, canon, '≈ phonetic match');
-      return dispatch(canon, raw || command);
+      return dispatch(canon, raw || command, opts);
     }
+    logRecognition('unk', raw || command, command, '✗ no matching command');
+    // Liberal wakes and command-mode phrases that parse to nothing stay
+    // QUIET — a lyric containing "holiday" (or band banter in command
+    // mode) must not make HOLODECK talk over the band.
+    if (opts && opts.quietUnknown) return 'err';
     showStatus(`✗ Unknown: "${command}"`, 3500, true);
     flashCommand('✗ ' + command, 'unk');
-    logRecognition('unk', raw || command, command, '✗ no matching command');
     // Spoken feedback so the operator knows the failure was at parse,
     // not at recognition. Kept short so it doesn't step on the band.
     try { tts(`I didn't understand "${command}".`); } catch (e) {}
@@ -821,6 +853,8 @@
 
   function stopListening() {
     listening = false;
+    commandMode = false;
+    if (pendingPlay) { clearTimeout(pendingPlay.timer); pendingPlay = null; }
     try { recognition && recognition.stop(); } catch (e) {}
     try { mediaStream && mediaStream.getTracks().forEach(t => t.stop()); } catch (e) {}
     try { audioCtx && audioCtx.close(); } catch (e) {}
@@ -852,6 +886,7 @@
       // operator can see what HOLODECK is actually hearing. The wake-word
       // filter is only the gate that decides whether to ACT on a phrase.
       let command = null;
+      let liberal = false;
       if (WAKE.test(transcript)) {
         command = transcript
           .replace(WAKE, '')
@@ -860,22 +895,69 @@
           .trim()
           .toLowerCase();
       } else {
-        // Liberal wake: accept near-misses like "hahaloduck"/"halo deck".
+        // Liberal wake: near-misses ("hahaloduck", "halo deck") and known
+        // recognizer aliases ("holiday").
         command = fuzzyWakeRest(transcript);
-        if (command === null) {
+        if (command !== null) {
+          liberal = true;
+          console.log('[HOLODECK] liberal wake accepted from:', transcript);
+        } else if (commandMode) {
+          // COMMAND MODE: every phrase is a command, no wake word needed.
+          command = transcript.replace(/[.,!?]+$/, '').trim().toLowerCase();
+          liberal = true;
+        } else if (pendingPlay) {
+          // A bare "play" is waiting for its song title — this phrase IS
+          // the title (the recognizer split "holodeck play / <song>").
+          const q = transcript.replace(/[.,!?]+$/, '').trim();
+          clearInterim();
+          consumePendingPlay(q, transcript);
+          continue;
+        } else {
           clearInterim();
           logRecognition('nowake', transcript, null, '○ no wake word');
           continue;
         }
-        console.log('[HOLODECK] fuzzy wake accepted from:', transcript);
       }
       clearInterim();
       if (!command) {
-        showStatus('HOLODECK heard you. Awaiting command...');
-        logRecognition('nowake', transcript, null, '○ wake word only');
+        // Liberal/alias wakes with nothing after them (a lyric ending in
+        // "holiday", a mis-hearing mid-banter) must NOT flip modes.
+        if (liberal) {
+          logRecognition('nowake', transcript, null, '○ liberal wake, no command — ignored');
+          continue;
+        }
+        // EXACT wake word alone → COMMAND MODE (Bill 2026-07-12): every
+        // phrase from here on is treated as a command, until the mic
+        // button is clicked (which stops listening entirely).
+        commandMode = true;
+        setConsoleState('● command mode', 'on');
+        showStatus('🎤 COMMAND MODE — every phrase is a command until you click the mic', 6000);
+        flashCommand('COMMAND MODE ON', 'cmd');
+        logRecognition('cmd', transcript, null, '● command mode ON');
         continue;
       }
-      dispatch(command, transcript);
+      // Bare "play" often means the song title is still in the operator's
+      // mouth — the recognizer finalized early. Hold it briefly; the next
+      // phrase becomes the title, or the bare play fires on timeout.
+      if (/^play$/.test(command) && !pendingPlay) {
+        const rawT = transcript;
+        pendingPlay = {
+          raw: rawT,
+          timer: setTimeout(() => {
+            pendingPlay = null;
+            dispatch('play', rawT);
+          }, 1600),
+        };
+        showStatus('play … (waiting for a song title)', 1800);
+        continue;
+      }
+      if (pendingPlay) {
+        // Another command arrived while play was pending: if it's a real
+        // command, run it instead of misreading it as a title.
+        clearTimeout(pendingPlay.timer);
+        pendingPlay = null;
+      }
+      dispatch(command, transcript, { quietUnknown: liberal });
     }
   }
 
@@ -1056,6 +1138,7 @@
       ['sound check', 'run the sound check'],
       ['list commands / help', 'open this panel'],
       ['close help', 'close this panel'],
+      ['(say just) "holodeck"', 'COMMAND MODE: every phrase is a command — no wake word needed — until you click the mic'],
     ]],
   ];
 

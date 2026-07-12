@@ -2939,7 +2939,11 @@ select {
 }
 .timeline-thumb-time.flip { transform: translate(calc(-100% - 12px), -50%); }
 /* HOLODECK mic button states: green pulsing halo = listening, solid
-   yellow = ready to press, red = no microphone / no speech engine. */
+   yellow = ready to press, red = no microphone / no speech engine.
+   transition:none — the theme's 'transition: all .3s' was smearing state
+   flips and made the active state look weak/delayed. State changes snap. */
+#btn-holodeck.hd-ready, #btn-holodeck.hd-nomic,
+#btn-holodeck.hd-listening, #btn-holodeck.active { transition: none !important; }
 #btn-holodeck.hd-ready {
   background: rgba(241, 196, 15, 0.85);
   border: 2px solid #f1c40f;
@@ -2951,14 +2955,22 @@ select {
   color: #fff;
 }
 #btn-holodeck.hd-listening {
-  background: var(--color-green, #27ae60);
-  border: 2px solid #00e676;
+  background: #00c853;
+  border: 3px solid #00e676;
   color: #fff;
-  animation: hdHalo 1.2s ease-in-out infinite;
+  position: relative;
+  z-index: 5;
+  animation: hdHalo 0.9s ease-in-out infinite;
 }
 @keyframes hdHalo {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.75); }
-  50%      { box-shadow: 0 0 0 11px rgba(39, 174, 96, 0); }
+  0%, 100% {
+    box-shadow: 0 0 6px 2px rgba(0, 230, 118, 0.95), 0 0 0 0 rgba(0, 230, 118, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px 6px rgba(0, 230, 118, 1), 0 0 0 14px rgba(0, 230, 118, 0);
+    transform: scale(1.14);
+  }
 }
 
 /* HOLODECK floating command-help panel. */
@@ -6945,16 +6957,27 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 #btn-holodeck {
   position: relative;
 }
+/* ACTIVE = LISTENING: unmistakable green with a blinking halo (Bill
+   2026-07-12). This legacy !important block used to paint the active
+   state a faint yellow, which silently overrode every attempt to style
+   the listening state — the yellow is now the READY (inactive) color
+   on .hd-ready, and active is loud green. */
 #btn-holodeck.active {
-  background: rgba(241, 196, 15, 0.25) !important;
-  border-color: var(--color-yellow) !important;
-  color: var(--color-yellow) !important;
-  box-shadow: 0 0 8px rgba(241, 196, 15, 0.5) inset;
-  animation: holodeck-pulse 1.6s ease-in-out infinite;
+  background: #00c853 !important;
+  border: 3px solid #00e676 !important;
+  color: #fff !important;
+  z-index: 5;
+  animation: holodeck-pulse 0.9s ease-in-out infinite;
 }
 @keyframes holodeck-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(241, 196, 15, 0.5) inset; }
-  50%      { box-shadow: 0 0 18px rgba(241, 196, 15, 0.85) inset; }
+  0%, 100% {
+    box-shadow: 0 0 6px 2px rgba(0, 230, 118, 0.95), 0 0 0 0 rgba(0, 230, 118, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px 6px rgba(0, 230, 118, 1), 0 0 0 14px rgba(0, 230, 118, 0);
+    transform: scale(1.14);
+  }
 }
 .holodeck-meter {
   width: 36px;
