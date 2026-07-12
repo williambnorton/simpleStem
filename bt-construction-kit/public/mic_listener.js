@@ -17,6 +17,96 @@
 (function () {
   const WAKE = /\b(holodeck|holo deck|holo-deck)\b/i;
 
+  // --- liberal recognition helpers (Bill 2026-07-12) --------------------
+  // "ah hahaloduck paws now" must land as HOLODECK pause. Two layers:
+  // a fuzzy wake-word detector (edit distance over single words and
+  // adjacent-word joins) and a phonetic closest-command pass that runs
+  // when exact + windowed matching both fail.
+  function lev(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+
+  // Consonant skeleton: strip everything but the consonant bones so
+  // "paws" ≡ "pause" ≡ "pos" (all → "ps").
+  function phonKey(str) {
+    return String(str || '').toLowerCase()
+      .replace(/[^a-z]/g, '')
+      .replace(/[aeiouhwy]/g, '')
+      .replace(/(.)\1+/g, '$1');
+  }
+
+  // Find a fuzzy wake word. Returns the command text AFTER it, or null.
+  // Tolerance: distance ≤2 for words ~8 letters, ≤3 for ≥10 (mis-hearings
+  // like "hahaloduck"). Also tries joining adjacent words ("halo deck").
+  function fuzzyWakeRest(transcript) {
+    const words = transcript.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      for (const span of [1, 2]) {
+        if (i + span > words.length) continue;
+        const joined = words.slice(i, i + span).join('').toLowerCase().replace(/[^a-z]/g, '');
+        if (joined.length < 6 || joined.length > 14) continue;
+        // Best distance over the whole token AND its 7-9 letter substrings,
+        // so stutter-prefixed mis-hearings like "hahaloduck" (which merely
+        // CONTAINS a near-"holodeck") still wake it.
+        let best = lev(joined, 'holodeck');
+        for (let L = 7; L <= 9 && best > 2; L++) {
+          for (let a = 0; a + L <= joined.length && best > 2; a++) {
+            const d = lev(joined.slice(a, a + L), 'holodeck');
+            if (d < best) best = d;
+          }
+        }
+        if (best <= 2) {
+          return words.slice(i + span).join(' ')
+            .replace(/^[,\s]+/, '').replace(/[.,!?]+$/, '').trim().toLowerCase();
+        }
+      }
+    }
+    return null;
+  }
+
+  // Fixed phrases eligible for phonetic rescue (no free-text arguments).
+  const PHONETIC_CANON = [
+    'pause', 'stop', 'play', 'next', 'restart', 'count in',
+    'click on', 'click off', 'loop section', 'stop looping',
+    'sound check', 'undo', 'tempo up', 'tempo down', 'reset tempo',
+    'pitch up', 'pitch down', 'reset pitch', 'list commands', 'close help',
+    'favorite this',
+  ];
+
+  // Closest-sounding canonical command for a failed transcript, or null.
+  // Compares consonant skeletons of every 1-3 word window against each
+  // canon phrase; accepts only near-identical skeletons.
+  function phoneticCommand(command) {
+    const words = command.split(/\s+/).filter(Boolean);
+    let best = null, bestD = 99, bestLen = 0;
+    for (let i = 0; i < words.length; i++) {
+      for (let n = 1; n <= 3 && i + n <= words.length; n++) {
+        const win = words.slice(i, i + n).join(' ');
+        const wk = phonKey(win);
+        if (!wk) continue;
+        for (const canon of PHONETIC_CANON) {
+          const ck = phonKey(canon);
+          const d = lev(wk, ck);
+          const tol = ck.length >= 4 ? 1 : 0;
+          if (d <= tol && (d < bestD || (d === bestD && ck.length > bestLen))) {
+            best = canon; bestD = d; bestLen = ck.length;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   let recognition = null;
   let audioCtx = null;
   let analyser = null;
@@ -639,6 +729,13 @@
         }
       }
     }
+    // Phonetic last resort: closest-sounding fixed command ("paws now"
+    // → pause). Re-enters dispatch with the clean canonical phrase.
+    const canon = phoneticCommand(command);
+    if (canon && canon !== command) {
+      logRecognition('cmd', raw || command, canon, '≈ phonetic match');
+      return dispatch(canon, raw || command);
+    }
     showStatus(`✗ Unknown: "${command}"`, 3500, true);
     flashCommand('✗ ' + command, 'unk');
     logRecognition('unk', raw || command, command, '✗ no matching command');
@@ -754,17 +851,24 @@
       // Log everything, including phrases without the wake word, so the
       // operator can see what HOLODECK is actually hearing. The wake-word
       // filter is only the gate that decides whether to ACT on a phrase.
-      if (!WAKE.test(transcript)) {
-        clearInterim();
-        logRecognition('nowake', transcript, null, '○ no wake word');
-        continue;
+      let command = null;
+      if (WAKE.test(transcript)) {
+        command = transcript
+          .replace(WAKE, '')
+          .replace(/^[,\s]+/, '')
+          .replace(/[.,!?]+$/, '')
+          .trim()
+          .toLowerCase();
+      } else {
+        // Liberal wake: accept near-misses like "hahaloduck"/"halo deck".
+        command = fuzzyWakeRest(transcript);
+        if (command === null) {
+          clearInterim();
+          logRecognition('nowake', transcript, null, '○ no wake word');
+          continue;
+        }
+        console.log('[HOLODECK] fuzzy wake accepted from:', transcript);
       }
-      const command = transcript
-        .replace(WAKE, '')
-        .replace(/^[,\s]+/, '')
-        .replace(/[.,!?]+$/, '')
-        .trim()
-        .toLowerCase();
       clearInterim();
       if (!command) {
         showStatus('HOLODECK heard you. Awaiting command...');

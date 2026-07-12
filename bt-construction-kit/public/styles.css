@@ -2942,17 +2942,17 @@ select {
    yellow = ready to press, red = no microphone / no speech engine. */
 #btn-holodeck.hd-ready {
   background: rgba(241, 196, 15, 0.85);
-  border-color: #f1c40f;
+  border: 2px solid #f1c40f;
   color: #201a00;
 }
 #btn-holodeck.hd-nomic {
   background: rgba(231, 76, 60, 0.85);
-  border-color: #e74c3c;
+  border: 2px solid #e74c3c;
   color: #fff;
 }
 #btn-holodeck.hd-listening {
   background: var(--color-green, #27ae60);
-  border-color: transparent;
+  border: 2px solid #00e676;
   color: #fff;
   animation: hdHalo 1.2s ease-in-out infinite;
 }
