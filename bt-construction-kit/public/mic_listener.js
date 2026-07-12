@@ -456,11 +456,17 @@
     // here only for readability — each regex is anchored ^...$, so they
     // do not overlap.
     { re: new RegExp('^play (?:me |the song )?(.+)$'), fn: (m) => libraryPlay(m[1]) },
-    { re: new RegExp('^play$'),         fn: () => clickById('btn-play-pause') },
-    { re: new RegExp('^pause$'),        fn: () => clickById('btn-play-pause') },
-    { re: new RegExp('^stop$'),         fn: () => clickById('btn-stop') },
-    { re: new RegExp('^next( song)?$'), fn: () => clickById('btn-go-next') },
-    { re: new RegExp('^restart( song)?$'), fn: () => seekTo(0) },
+    // Bare transport verbs are 'fuzzy': they also match when the phrase
+    // arrives padded with music bleed ("...holodeck pause [lyric words]").
+    // pause/play check the transport state so a mis-toggled play-pause
+    // button can't do the opposite of what was asked.
+    { re: new RegExp('^play$'),  fuzzy: true, fn: () => transportIntent('play') },
+    { re: new RegExp('^(?:pause|paws|paus)(?: it| the song| song| playback| the music| music)?$'),
+      fuzzy: true, fn: () => transportIntent('pause') },
+    { re: new RegExp('^stop(?: it| the song| song| playback| the music| music)?$'),
+      fuzzy: true, fn: () => clickById('btn-stop') },
+    { re: new RegExp('^next( song)?$'), fuzzy: true, fn: () => clickById('btn-go-next') },
+    { re: new RegExp('^restart( song)?$'), fuzzy: true, fn: () => seekTo(0) },
 
     // Sections
     { re: new RegExp('^jump to ' + SEC + '$'),     fn: (m) => seekToSection(m[1]) },
@@ -479,9 +485,15 @@
                                                   fn: (m) => nudgeFader(m[1], m[2] === 'up' ? 0.1 : -0.1) },
 
     // Click / count-in
-    { re: new RegExp('^click on$'),  fn: () => clickById('btn-click-toggle') },
-    { re: new RegExp('^click off$'), fn: () => clickById('btn-click-toggle') },
-    { re: new RegExp('^count in$'),  fn: () => clickById('btn-count-in-toggle') },
+    { re: new RegExp('^click on$'),  fuzzy: true, fn: () => clickById('btn-click-toggle') },
+    { re: new RegExp('^click off$'), fuzzy: true, fn: () => clickById('btn-click-toggle') },
+    { re: new RegExp('^count in$'),  fuzzy: true, fn: () => clickById('btn-count-in-toggle') },
+
+    // Help panel
+    { re: new RegExp('^(?:list|show)(?: me)?(?: the| all)? commands$|^help$|^what can i say$'),
+      fuzzy: true, fn: () => showCommandHelp() },
+    { re: new RegExp('^(?:close|hide)(?: the)? (?:commands|help|command list)$'),
+      fuzzy: true, fn: () => hideCommandHelp() },
 
     // Speed / pitch
     { re: new RegExp('^tempo up$'),       fn: () => nudgeSpeed( 0.05) },
@@ -523,6 +535,20 @@
     { re: new RegExp('^what changed since (.+)$'),                      fn: (m) => diffSnapshot(m[1]) },
   ];
 
+  // Transport intents that respect the CURRENT state, so "pause" while
+  // already paused can't start playback via the shared toggle button.
+  function transportIntent(kind) {
+    const playing = (typeof window.clickPlaybackState === 'function')
+      ? !!window.clickPlaybackState().playing : null;
+    if (kind === 'pause') {
+      if (playing === false) { tts('Already paused.'); return; }
+      clickById('btn-play-pause');
+    } else if (kind === 'play') {
+      if (playing === true) { tts('Already playing.'); return; }
+      clickById('btn-play-pause');
+    }
+  }
+
   // Dispatch returns one of 'ok', 'err'. raw is the original transcript
   // (with wake word) so the console can show what HOLODECK actually heard,
   // not just the stripped command.
@@ -542,6 +568,33 @@
           logRecognition('unk', raw || command, command, '✗ ' + e.message);
         }
         return 'ok';
+      }
+    }
+    // Fuzzy fallback (Bill 2026-07-12: "pause"/"stop" failed while music
+    // played). With the band sounding, the recognizer pads the phrase
+    // with lyric bleed — "holodeck pause oh baby" — so anchored regexes
+    // miss. Retry the FUZZY-flagged commands (short, unambiguous verbs)
+    // against the leading and trailing 1-3 words of the transcript.
+    const words = command.split(/\s+/);
+    if (words.length > 1) {
+      for (let n = Math.min(3, words.length - 1); n >= 1; n--) {
+        for (const piece of [words.slice(0, n).join(' '), words.slice(-n).join(' ')]) {
+          for (const c of COMMANDS) {
+            if (!c.fuzzy) continue;
+            const m = piece.match(c.re);
+            if (m) {
+              try {
+                c.fn(m);
+                showStatus(`✓ ${piece} (from "${command}")`);
+                flashCommand('✓ ' + piece, 'cmd');
+                logRecognition('cmd', raw || command, piece, '✓ fuzzy match');
+              } catch (e) {
+                logRecognition('unk', raw || command, piece, '✗ ' + e.message);
+              }
+              return 'ok';
+            }
+          }
+        }
       }
     }
     showStatus(`✗ Unknown: "${command}"`, 3500, true);
@@ -762,11 +815,113 @@
     const m = document.getElementById('holodeck-mic-level');
     if (m) m.style.transform = `scaleX(${level})`;
   }
+  // The button's title from index.html carries the full command list;
+  // keep it in BOTH states (Bill 2026-07-12) — only the first line
+  // changes to reflect listening state.
+  let micBtnBaseTitle = null;
   function setMicButtonState(active) {
     const btn = document.getElementById('btn-holodeck');
     if (!btn) return;
+    if (micBtnBaseTitle === null) {
+      const t = btn.title || '';
+      micBtnBaseTitle = t.includes('\n') ? t.slice(t.indexOf('\n')) : '';
+    }
     btn.classList.toggle('active', active);
-    btn.title = active ? 'HOLODECK is listening (click to stop)' : 'Click to start HOLODECK voice control';
+    btn.title = (active
+      ? 'HOLODECK IS LISTENING — click to stop. Say "HOLODECK, list commands" (or right-click here) for the full list.'
+      : 'Click to start HOLODECK voice control — then say "HOLODECK, <command>". Right-click here for the command list.')
+      + micBtnBaseTitle;
+  }
+
+  // --- floating command help panel ---------------------------------------
+  // Opened by voice ("HOLODECK, list commands" / "help") or by
+  // right-clicking the mic button. Closed by voice ("HOLODECK, close
+  // help"), the X, or Esc.
+  const COMMAND_HELP = [
+    ['Transport', [
+      ['play', 'start playback (no-op if already playing)'],
+      ['pause', 'pause playback (no-op if already paused)'],
+      ['stop', 'stop — rewinds and arms at the top'],
+      ['next / next song', 'skip to the next setlist song'],
+      ['restart', 'jump back to the beginning'],
+      ['play <song name>', 'search the library and play the top match'],
+    ]],
+    ['Sections', [
+      ['jump to <section> / go to <section>', 'seek to intro, verse, chorus, bridge, solo, outro, pre, tag, break or hook'],
+      ['loop section', 'engage the LOOPER on the current section'],
+      ['stop looping', 'disengage the LOOPER'],
+    ]],
+    ['Mixer (stems: vocals, drums, bass, guitar, piano, other)', [
+      ['mute <stem> / unmute <stem>', 'strip mute on/off'],
+      ['solo <stem> / unsolo <stem>', 'strip solo on/off'],
+      ['boost <stem> [five|ten]', 'engage the +5 or +10 dB boost'],
+      ['<stem> up / <stem> down', 'nudge the fader by 10%'],
+    ]],
+    ['Click track', [
+      ['click on / click off', 'toggle the click track at the playhead (records the action)'],
+      ['count in', 'arm/disarm the 4-beat count-in'],
+    ]],
+    ['Tempo & pitch', [
+      ['tempo up / tempo down', 'nudge playback speed ±5%'],
+      ['reset tempo', 'back to 1.00×'],
+      ['pitch up / pitch down [half]', 'shift pitch a half step'],
+      ['reset pitch', 'back to 0'],
+    ]],
+    ['Library', [
+      ['find <text> / search <text>', 'filter the library'],
+      ['load <song>', 'load the top match without playing'],
+      ['favorite this / star this', 'toggle the star on the active song'],
+    ]],
+    ['Gigs', [
+      ['switch to <bill|matt|dan|jd> songs', 'load a singer pseudo-gig'],
+      ['switch to round robin / favorites / recents', 'load that pseudo-gig'],
+    ]],
+    ['Queries (spoken reply)', [
+      ["what's the key", 'speaks the active song\'s key'],
+      ["what's the tempo", 'speaks the BPM'],
+      ['who sings this', 'speaks the lead singer'],
+    ]],
+    ['Snapshots & misc', [
+      ['save this as <name> / snapshot as <name>', 'save the mixer state under a name'],
+      ['restore <name>', 'recall a named snapshot'],
+      ['undo / go back', 'restore the previous snapshot'],
+      ['what changed since <name>', 'speaks the diff'],
+      ['sound check', 'run the sound check'],
+      ['list commands / help', 'open this panel'],
+      ['close help', 'close this panel'],
+    ]],
+  ];
+
+  function showCommandHelp() {
+    let el = document.getElementById('holodeck-help');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'holodeck-help';
+      el.className = 'holodeck-help';
+      let html = '<div class="hh-header"><span class="hh-title">HOLODECK commands — say "HOLODECK, …"</span>' +
+                 '<button class="hh-close" id="hh-close" type="button" title="Close (or say: HOLODECK, close help)">×</button></div>' +
+                 '<div class="hh-body">';
+      for (const [group, items] of COMMAND_HELP) {
+        html += `<div class="hh-group"><div class="hh-group-title">${group}</div>`;
+        for (const [say, does] of items) {
+          html += `<div class="hh-row"><span class="hh-say">${say}</span><span class="hh-does">${does}</span></div>`;
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      el.innerHTML = html;
+      document.body.appendChild(el);
+      el.querySelector('#hh-close').addEventListener('click', hideCommandHelp);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hideCommandHelp();
+      });
+    }
+    el.style.display = '';
+  }
+
+  function hideCommandHelp() {
+    const el = document.getElementById('holodeck-help');
+    if (el) el.style.display = 'none';
   }
 
   // --- init -------------------------------------------------------------
@@ -776,6 +931,12 @@
       console.warn('[HOLODECK] mic button not found; voice control unavailable');
       return;
     }
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const el = document.getElementById('holodeck-help');
+      if (el && el.style.display !== 'none') hideCommandHelp();
+      else showCommandHelp();
+    });
     btn.addEventListener('click', () => {
       if (listening) stopListening();
       else startListening();
