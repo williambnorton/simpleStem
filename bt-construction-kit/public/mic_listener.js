@@ -89,6 +89,7 @@
   // Fixed phrases eligible for phonetic rescue (no free-text arguments).
   const PHONETIC_CANON = [
     'pause', 'stop', 'play', 'next', 'restart', 'count in',
+    'volume up', 'volume down',
     'click on', 'click off', 'loop section', 'stop looping',
     'sound check', 'undo', 'tempo up', 'tempo down', 'reset tempo',
     'pitch up', 'pitch down', 'reset pitch', 'list commands', 'close help',
@@ -630,6 +631,13 @@
     { re: new RegExp('^'        + STEM + ' (up|down)$'),
                                                   fn: (m) => nudgeFader(m[1], m[2] === 'up' ? 0.1 : -0.1) },
 
+    // Master volume: half-way semantics (Bill 2026-07-12). "volume up"
+    // moves half-way to 100% (33 → 66); "volume down" moves half-way to
+    // 0 (66 → 33). Drives the master-vol slider UI element itself, so
+    // the pct label, gain, and persistence all follow the normal path.
+    { re: new RegExp('^volume up$'),   fuzzy: true, fn: () => masterVolumeHalf(+1) },
+    { re: new RegExp('^volume down$'), fuzzy: true, fn: () => masterVolumeHalf(-1) },
+
     // Click / count-in
     { re: new RegExp('^click on$'),  fuzzy: true, fn: () => clickById('btn-click-toggle') },
     { re: new RegExp('^click off$'), fuzzy: true, fn: () => clickById('btn-click-toggle') },
@@ -680,6 +688,17 @@
     { re: new RegExp('^restore (.+)$'),                                 fn: (m) => restoreSnapshot(m[1]) },
     { re: new RegExp('^what changed since (.+)$'),                      fn: (m) => diffSnapshot(m[1]) },
   ];
+
+  // Half-way master volume stepper: up = v + (1-v)/2, down = v/2.
+  function masterVolumeHalf(dir) {
+    const slider = document.getElementById('master-vol');
+    if (!slider) return;
+    const v = parseFloat(slider.value) || 0;
+    const nv = dir > 0 ? Math.min(1, v + (1 - v) / 2) : Math.max(0, v / 2);
+    slider.value = String(Math.round(nv * 100) / 100);
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    showStatus(`Volume ${Math.round(nv * 100)}%`);
+  }
 
   // Transport intents that respect the CURRENT state, so "pause" while
   // already paused can't start playback via the shared toggle button.
@@ -1099,6 +1118,10 @@
       ['jump to <section> / go to <section>', 'seek to intro, verse, chorus, bridge, solo, outro, pre, tag, break or hook'],
       ['loop section', 'engage the LOOPER on the current section'],
       ['stop looping', 'disengage the LOOPER'],
+    ]],
+    ['Master volume', [
+      ['volume up', 'half-way louder toward 100% (33% → 66%)'],
+      ['volume down', 'half-way down toward 0% (66% → 33%)'],
     ]],
     ['Mixer (stems: vocals, drums, bass, guitar, piano, other)', [
       ['mute <stem> / unmute <stem>', 'strip mute on/off'],
