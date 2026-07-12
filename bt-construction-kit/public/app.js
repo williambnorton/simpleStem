@@ -13422,9 +13422,21 @@ function firePlayClip(e) {
   // Snapshot which transport (if any) is currently playing so we can
   // resume it after the clip. We pause the ACTIVE source only — no
   // sense unpausing the stem elements if the drum machine was running.
+  //
+  // EXCEPTION (Bill 2026-07-11): pre-roll semantics. A clip whose event
+  // time is at or before ~0.05s is a "before the song starts" clip and is
+  // handled by the dedicated pre-roll block in togglePlayPause — the clip
+  // plays, THEN stems play. If firePlayClip pauses the newly-started
+  // stems from an atZeroNow dispatcher tick, the resume kicks them from
+  // currentTime≈0 which the dispatcher can misread and re-fire the same
+  // clip event, producing the loop at 00:00 Bill saw. Skip the pause
+  // logic entirely for pre-roll clips — just play the audio and be done.
+  const isPreRollClip = e && typeof e.t === 'number' && e.t <= 0.05;
   let resumeFn = null;
   try {
-    if (drumMachineActive && drumMachineEl && !drumMachineEl.paused) {
+    if (isPreRollClip) {
+      // no-op — let the pre-roll block own transport control at t=0.
+    } else if (drumMachineActive && drumMachineEl && !drumMachineEl.paused) {
       drumMachineEl.pause();
       resumeFn = () => { try { drumMachineEl.play().catch(() => {}); } catch (er) {} };
     } else if (backingTrackActive && backingTrackEl && !backingTrackEl.paused) {
