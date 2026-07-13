@@ -2973,6 +2973,30 @@ select {
   }
 }
 
+/* The listening ring: a steady glowing green annulus around the mic
+   button with a bright arc orbiting it. Injected/removed by
+   setMicButtonState — a real element, immune to theme !important rules. */
+#btn-holodeck { overflow: visible; }
+#btn-holodeck .hd-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 3px solid rgba(0, 230, 118, 0.65);
+  background: conic-gradient(from 0deg,
+    rgba(0, 255, 136, 0) 0deg,
+    rgba(0, 255, 136, 0) 250deg,
+    rgba(0, 255, 136, 0.85) 310deg,
+    #00ff88 340deg,
+    rgba(0, 255, 136, 0) 360deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  filter: drop-shadow(0 0 7px #00ff88);
+  animation: hdOrbit 1.1s linear infinite;
+  pointer-events: none;
+  z-index: 7;
+}
+@keyframes hdOrbit { to { transform: rotate(360deg); } }
+
 /* HOLODECK "did you mean" suggestion panel — big tap targets, auto-hides. */
 .holodeck-suggest {
   position: fixed;

@@ -1216,6 +1216,18 @@
     btn.classList.toggle('hd-listening', active);
     btn.classList.toggle('hd-ready', !active && micAvailable !== false);
     btn.classList.toggle('hd-nomic', !active && micAvailable === false);
+    // GLOWING GREEN LIGHT CIRCLING THE ICON while listening (Bill
+    // 2026-07-12, emphatic). A dedicated ring ELEMENT — steady glowing
+    // green annulus + a bright arc orbiting the button — so no theme
+    // rule can wash it out.
+    let ring = btn.querySelector('.hd-ring');
+    if (active && !ring) {
+      ring = document.createElement('span');
+      ring.className = 'hd-ring';
+      btn.appendChild(ring);
+    } else if (!active && ring) {
+      ring.remove();
+    }
     btn.title = (active
       ? 'HOLODECK IS LISTENING — click to stop. Say "HOLODECK, list commands" (or right-click here) for the full list.'
       : 'Click to start HOLODECK voice control — then say "HOLODECK, <command>". Right-click here for the command list.')
