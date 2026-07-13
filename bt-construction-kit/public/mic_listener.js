@@ -54,7 +54,57 @@
   // command, HOLODECK stays quiet instead of speaking over the band —
   // so a lyric containing "holiday" can't trigger a spoken complaint.
   const WAKE_ALIASES = new Set(['holiday', 'holidays', 'holodex', 'holodesk',
-    'holladeck', 'haladeck', 'hollandeck', 'holideck', 'melodic']);
+    'holladeck', 'haladeck', 'hollandeck', 'holideck', 'melodic',
+    'hollowdeck', 'halodeck', 'holedeck', 'holydeck', 'huladeck',
+    'holidek', 'polodeck', 'colodeck', 'holodack', 'holoduck']);
+
+  // --- training store (Bill 2026-07-12) ----------------------------------
+  // Learned wake aliases and heard-phrase → command mappings, persisted.
+  // Tapping a suggestion button confirms the system's guess and reinforces
+  // it; after 2 confirmations of the same heard phrase, it auto-executes
+  // without asking.
+  const TRAIN_KEY = 'holodeck.training.v1';
+  let training = { aliases: {}, phrases: {} };
+  try {
+    const t = JSON.parse(localStorage.getItem(TRAIN_KEY) || 'null');
+    if (t && typeof t === 'object') training = { aliases: t.aliases || {}, phrases: t.phrases || {} };
+  } catch (e) {}
+  function saveTraining() {
+    try { localStorage.setItem(TRAIN_KEY, JSON.stringify(training)); } catch (e) {}
+  }
+  function trainWakeAlias(token) {
+    if (!token || token === 'holodeck' || WAKE_ALIASES.has(token)) return;
+    training.aliases[token] = (training.aliases[token] || 0) + 1;
+    saveTraining();
+    console.log('[HOLODECK] learned wake alias:', token);
+  }
+  function trainPhrase(heard, canon) {
+    const key = heard.toLowerCase().trim();
+    if (!key || key === canon) return;
+    const cur = training.phrases[key];
+    training.phrases[key] = { canon, count: (cur && cur.canon === canon ? cur.count : 0) + 1 };
+    saveTraining();
+    console.log('[HOLODECK] trained:', key, '→', canon, '×' + training.phrases[key].count);
+  }
+
+  let lastWakeToken = null;   // which token woke us — feeds alias training
+
+  // WEAK wake: a word merely in the neighborhood of "holodeck" (distance
+  // ≤ 4, h/c-initial, 6-13 letters). Never executes anything — only opens
+  // the tappable suggestion panel so the operator can confirm-and-train.
+  function weakWakeRest(transcript) {
+    const words = transcript.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i].toLowerCase().replace(/[^a-z]/g, '');
+      if (w.length < 6 || w.length > 13 || !/^[hc]/.test(w)) continue;
+      if (lev(w, 'holodeck') <= 4) {
+        lastWakeToken = w;
+        return words.slice(i + 1).join(' ')
+          .replace(/^[,\s]+/, '').replace(/[.,!?]+$/, '').trim().toLowerCase();
+      }
+    }
+    return null;
+  }
 
   function fuzzyWakeRest(transcript) {
     const words = transcript.split(/\s+/);
@@ -62,7 +112,8 @@
       for (const span of [1, 2]) {
         if (i + span > words.length) continue;
         const joined = words.slice(i, i + span).join('').toLowerCase().replace(/[^a-z]/g, '');
-        if (WAKE_ALIASES.has(joined)) {
+        if (WAKE_ALIASES.has(joined) || training.aliases[joined]) {
+          lastWakeToken = joined;
           return words.slice(i + span).join(' ')
             .replace(/^[,\s]+/, '').replace(/[.,!?]+$/, '').trim().toLowerCase();
         }
@@ -78,6 +129,7 @@
           }
         }
         if (best <= 2) {
+          lastWakeToken = joined;
           return words.slice(i + span).join(' ')
             .replace(/^[,\s]+/, '').replace(/[.,!?]+$/, '').trim().toLowerCase();
         }
@@ -95,6 +147,55 @@
     'pitch up', 'pitch down', 'reset pitch', 'list commands', 'close help',
     'favorite this',
   ];
+
+  // Ranked candidate commands for the suggestion panel: phonetic-skeleton
+  // distance (weighted) + raw edit distance against every fixed phrase.
+  function rankCandidates(phrase) {
+    const scored = [];
+    for (const canon of PHONETIC_CANON) {
+      const d = lev(phonKey(phrase), phonKey(canon)) * 2 + lev(phrase, canon) * 0.5;
+      scored.push({ canon, d });
+    }
+    scored.sort((a, b) => a.d - b.d);
+    return scored.slice(0, 4).map(x => x.canon);
+  }
+
+  // Tappable "did you mean" panel. Tapping a button executes the command
+  // AND trains: the heard phrase maps to that command (auto-executes after
+  // 2 confirmations) and a nonstandard wake token becomes a learned alias.
+  function showSuggestions(heard, raw, wakeToken) {
+    const cands = rankCandidates(heard);
+    const learned = training.phrases[heard.toLowerCase().trim()];
+    if (learned && !cands.includes(learned.canon)) cands.unshift(learned.canon);
+    else if (learned) { cands.splice(cands.indexOf(learned.canon), 1); cands.unshift(learned.canon); }
+    let el = document.getElementById('holodeck-suggest');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'holodeck-suggest';
+      el.className = 'holodeck-suggest';
+      document.body.appendChild(el);
+    }
+    el.innerHTML = `
+      <div class="hs-heard">Heard: “${heard}” — did you mean:</div>
+      <div class="hs-btns">
+        ${cands.slice(0, 4).map(c => `<button class="hs-btn" data-canon="${c}" type="button">${c}</button>`).join('')}
+        <button class="hs-btn hs-dismiss" type="button">✗ none</button>
+      </div>`;
+    el.style.display = '';
+    clearTimeout(el._h);
+    el._h = setTimeout(() => { el.style.display = 'none'; }, 10000);
+    el.querySelectorAll('.hs-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        el.style.display = 'none';
+        if (b.classList.contains('hs-dismiss')) return;
+        const canon = b.dataset.canon;
+        trainPhrase(heard, canon);
+        trainWakeAlias(wakeToken);
+        logRecognition('cmd', raw || heard, canon, '✓ confirmed by tap (trained)');
+        dispatch(canon, raw || heard);
+      });
+    });
+  }
 
   // Closest-sounding canonical command for a failed transcript, or null.
   // Compares consonant skeletons of every 1-3 word window against each
@@ -783,7 +884,18 @@
       logRecognition('cmd', raw || command, canon, '≈ phonetic match');
       return dispatch(canon, raw || command, opts);
     }
+    // Learned phrase? Confirmed twice = auto-execute and keep reinforcing.
+    const learned = training.phrases[command.toLowerCase().trim()];
+    if (learned && learned.count >= 2) {
+      training.phrases[command.toLowerCase().trim()].count++;
+      saveTraining();
+      logRecognition('cmd', raw || command, learned.canon, '✓ learned phrase');
+      return dispatch(learned.canon, raw || command, opts);
+    }
     logRecognition('unk', raw || command, command, '✗ no matching command');
+    // Offer the tappable candidate panel — the operator's tap trains the
+    // mapping (Bill 2026-07-12).
+    try { showSuggestions(command, raw || command, lastWakeToken); } catch (e) {}
     // Liberal wakes and command-mode phrases that parse to nothing stay
     // QUIET — a lyric containing "holiday" (or band banter in command
     // mode) must not make HOLODECK talk over the band.
@@ -932,6 +1044,15 @@
           consumePendingPlay(q, transcript);
           continue;
         } else {
+          // WEAK wake: something in the neighborhood of "holodeck" plus a
+          // short phrase → offer the tappable suggestions, execute nothing.
+          const weakRest = weakWakeRest(transcript);
+          if (weakRest && weakRest.split(/\s+/).length <= 4) {
+            clearInterim();
+            logRecognition('nowake', transcript, weakRest, '○ weak wake — suggestions offered');
+            try { showSuggestions(weakRest, transcript, lastWakeToken); } catch (e) {}
+            continue;
+          }
           clearInterim();
           logRecognition('nowake', transcript, null, '○ no wake word');
           continue;

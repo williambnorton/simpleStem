@@ -2973,6 +2973,36 @@ select {
   }
 }
 
+/* HOLODECK "did you mean" suggestion panel — big tap targets, auto-hides. */
+.holodeck-suggest {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 22, 28, 0.97);
+  color: #e8eaf0;
+  border: 1px solid rgba(0, 230, 118, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  padding: 10px 14px;
+  z-index: 10001;
+  max-width: 640px;
+}
+.hs-heard { font-size: 12px; opacity: 0.85; margin-bottom: 8px; }
+.hs-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.hs-btn {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 230, 118, 0.6);
+  background: rgba(0, 200, 83, 0.18);
+  color: #7fd6a4;
+  cursor: pointer;
+}
+.hs-btn:hover { background: #00c853; color: #fff; }
+.hs-btn.hs-dismiss { border-color: rgba(255,255,255,0.25); background: transparent; color: #aab; }
+
 /* HOLODECK floating command-help panel. */
 .holodeck-help {
   position: fixed;
