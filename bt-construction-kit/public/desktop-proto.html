@@ -114,7 +114,7 @@
 
   /* hover peek */
   #peek {
-    position: fixed; display: none; z-index: 70; max-width: 280px;
+    position: fixed; display: none; z-index: 70; max-width: 330px;
     background: rgba(18,22,30,.97); border: 1px solid rgba(127,214,164,.4);
     border-radius: 10px; padding: 9px 12px; font-size: 11px;
     box-shadow: 0 10px 30px rgba(0,0,0,.5); pointer-events: none;
@@ -665,6 +665,36 @@ stage 2 fills metadata → tagged folder out</div>`;
   }
   return '';
 }
+function fmtBytes(n) {
+  if (n == null) return '';
+  if (n === 0) return '0 B ⚠ EMPTY';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+// Honest peek: after the instant summary, fetch the REAL directory
+// listing (full path + byte sizes) and swap it in if still hovering.
+let peekSeq = 0;
+async function enrichFolderPeek(seq) {
+  try {
+    const realBase = (folderSong && folderSong.folderName) || '';
+    const title = folderTitle || folderName.replace(/_/g, ' ');
+    const j = await fetch('/api/desktop/inspect?base=' + encodeURIComponent(realBase) +
+                          '&title=' + encodeURIComponent(title)).then(r => r.json());
+    if (seq !== peekSeq || peek.style.display === 'none') return;
+    if (!j.ok) {
+      peek.innerHTML = `<h4>📁 ${folderName}</h4><div class="pk">NOT ON DISK YET — queued or still
+rendering (or Drive hasn't synced it to
+this machine). Watch the portal queue.
+searched: ${j.path || 'STEMS/'}</div>`;
+      return;
+    }
+    const rows = (j.files || []).map(f =>
+      `${f.name.padEnd(22).slice(0, 22)} ${fmtBytes(f.size)}`).join('\n');
+    peek.innerHTML = `<h4>📁 ${folderName}</h4>
+<div class="pk">${j.path}\n\n${rows || '(empty directory)'}\n\nmatched: ${j.how}</div>`;
+  } catch (e) {}
+}
 desk.addEventListener('pointerover', (e) => {
   const el = e.target.closest('.obj');
   if (!el || drag) return;
@@ -676,9 +706,12 @@ desk.addEventListener('pointerover', (e) => {
     if (!html) return;
     peek.innerHTML = html;
     const r = el.getBoundingClientRect();
-    peek.style.left = Math.min(innerWidth - 300, r.right + 10) + 'px';
+    peek.style.left = Math.min(innerWidth - 340, r.right + 10) + 'px';
     peek.style.top = Math.max(8, r.top) + 'px';
     peek.style.display = 'block';
+    if (o === folder || o.kind === 'folder' || o.kind === 'building') {
+      enrichFolderPeek(++peekSeq);
+    }
   }, 350);
 });
 desk.addEventListener('pointerout', (e) => {
