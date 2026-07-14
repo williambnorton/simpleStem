@@ -57,7 +57,7 @@
 </style>
 </head>
 <body>
-<div id="hint">Drag the <b>YouTube URL</b> onto the <b>Stemcutter</b> · double-click any folder to peek inside · this desk is a grammar demo — nothing real is processed</div>
+<div id="hint">Drag the <b>YouTube URL chip</b> onto the <b>Stemcutter</b> for the demo — or drop a REAL <b>.webloc / YouTube link from Finder or another window</b> on it to queue an actual render · double-click folders to peek</div>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 
 <script>
@@ -203,6 +203,53 @@ function dragKind() {
 function overlaps(a, b) {
   const r1 = a.getBoundingClientRect(), r2 = b.getBoundingClientRect();
   return !(r1.right < r2.left + 20 || r1.left > r2.right - 20 || r1.bottom < r2.top + 20 || r1.top > r2.bottom - 20);
+}
+
+/* ── REAL OS drag-and-drop onto the Stemcutter ────────────────────────── */
+// Dropping a .webloc from Finder (or a link dragged from any browser
+// window) on the Stemcutter queues a REAL render: the URL is extracted
+// and POSTed to /api/enqueue, which writes a webloc into INCOMING_WEBLOC
+// for the Librarian — the actual pipeline, not the demo. preventDefault
+// everywhere stops Chrome's default behavior of navigating to the song.
+addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const over = overlapsPoint(stemcutter.el, e.clientX, e.clientY);
+  stemcutter.el.classList.toggle('legal', over);
+});
+addEventListener('dragleave', () => stemcutter.el.classList.remove('legal'));
+addEventListener('drop', async (e) => {
+  e.preventDefault();
+  stemcutter.el.classList.remove('legal');
+  if (!overlapsPoint(stemcutter.el, e.clientX, e.clientY)) return;
+  let url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split('\n')[0].trim();
+  if (!url && e.dataTransfer.files && e.dataTransfer.files.length) {
+    const f = e.dataTransfer.files[0];
+    const text = await f.text();
+    const m = text.match(/<string>(https?:[^<]+)<\/string>/) || text.match(/^URL=(.+)$/m);
+    if (m) url = m[1].trim();
+    else { hint(`Couldn't read a URL out of <b>${f.name}</b> — binary webloc? Try dragging the link itself.`); S.thunk(); return; }
+  }
+  if (!/^https?:/.test(url)) { hint('No URL in that drop.'); S.thunk(); return; }
+  stemcutter.el.classList.add('working'); S.saw(true);
+  hint(`Queueing <b>${url.slice(0, 60)}…</b> for a REAL render…`);
+  try {
+    const r = await fetch('/api/enqueue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const j = await r.json();
+    stemcutter.el.classList.remove('working'); S.saw(false);
+    if (!r.ok) { hint(`✗ ${j.error || 'enqueue failed'}`); S.thunk(); return; }
+    S.chime();
+    hint(`✓ REALLY queued as <b>${j.queued}</b> — the Librarian ingests it and this laptop renders the stems (~20 min). Watch the queue in the <a href="/" style="color:#7fd6a4">portal</a>.`);
+  } catch (err) {
+    stemcutter.el.classList.remove('working'); S.saw(false);
+    hint(`✗ enqueue failed: ${err.message}`); S.thunk();
+  }
+});
+function overlapsPoint(el, x, y) {
+  const r = el.getBoundingClientRect();
+  return x >= r.left - 24 && x <= r.right + 24 && y >= r.top - 24 && y <= r.bottom + 24;
 }
 
 /* ── The machines do their thing ──────────────────────────────────────── */

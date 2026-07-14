@@ -116,7 +116,11 @@ promoted to the whole pipeline.
 ## Prototype
 
 `bt-construction-kit/public/desktop-proto.html` — self-contained demo of
-the core loop you described: drag the YouTube URL chip onto the
+the core loop you described. **The Stemcutter is REAL**: drop an actual
+`.webloc` from Finder (or drag a YouTube link from another window) onto it
+and the URL is extracted and POSTed to `/api/enqueue` — a genuine webloc
+lands in `INCOMING_WEBLOC/` and the pipeline renders it. The demo chip
+shows the rest of the grammar: drag the YouTube URL chip onto the
 **Stemcutter** → it saws → a **BackingTrack folder** pops out (open it:
 m4a stems + an empty metadata card) → drag that folder onto the **Tagger**
 → checkboxes tick → metadata card fills (bpm, key, sections, mix trims,
