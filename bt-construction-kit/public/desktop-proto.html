@@ -685,14 +685,17 @@ desk.addEventListener('dblclick', async (e) => {
   if (o === folder || o.kind === 'folder' || o.kind === 'building') {
     showCard();
     try {
+      // Use the REAL on-disk folder name from the library row — the desk
+      // folder's display name is a title slug and won't match STEMS/.
+      const realBase = (folderSong && folderSong.folderName) || folderName;
       const r = await fetch('/api/desktop/reveal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base: folderName }),
+        body: JSON.stringify({ base: realBase }),
       });
       const j = await r.json();
       hint(j.exact
-        ? `📂 Finder opened on the real <b>${folderName}</b> folder.`
-        : `📂 Finder opened on <b>STEMS/</b> — this demo folder isn't on disk (real songs open exactly).`);
+        ? `📂 Finder opened on <b>STEMS/${realBase}</b> — the real folder.`
+        : `📂 Finder opened on <b>STEMS/</b> — this song isn't on disk yet (still rendering, or demo-only).`);
     } catch (err) { hint('Finder open failed: ' + err.message); }
   } else if (o.kind === 'machine' && !e.altKey) {
     document.getElementById('card-body').innerHTML =
