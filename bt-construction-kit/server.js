@@ -5912,6 +5912,23 @@ app.post('/api/desktop/reveal', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Sound Desktop: resolve a YouTube URL to its real title/author via the
+// oEmbed endpoint (no API key). Proxied server-side because the browser
+// can't CORS it. 5s bound; failures return ok:false rather than erroring.
+app.get('/api/desktop/oembed', async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: 'need url' });
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url), { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return res.json({ ok: false });
+    const j = await r.json();
+    res.json({ ok: true, title: j.title || '', author: j.author_name || '' });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 app.post('/api/midi/clock', async (req, res) => {
   try {
     const r = await sidecarFetch('/clock', {

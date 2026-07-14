@@ -72,6 +72,24 @@
     white-space: nowrap;
   }
 
+  /* the LIBRARY's drawer: slides open to accept a tagged folder */
+  .lib-art { position: relative; display: inline-block; }
+  .lib-drawer {
+    position: absolute; left: 50%; bottom: -16px; width: 78px; height: 22px;
+    transform: translateX(-50%) translateY(-10px) scaleY(0);
+    transform-origin: top center;
+    background: linear-gradient(#7c8ba0, #4a5665);
+    border: 2px solid #2c3542; border-radius: 3px;
+    transition: transform .45s cubic-bezier(.3,1.3,.5,1);
+    z-index: 2;
+  }
+  .lib-drawer::after {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%,-50%);
+    width: 20px; height: 5px; background: #20262f; border-radius: 2px;
+  }
+  .lib-drawer.out { transform: translateX(-50%) translateY(0) scaleY(1); }
+
   /* aggregates: two machines standing together; the second one's lid opens */
   .agg-arts { display: flex; align-items: flex-end; justify-content: center; gap: 2px; font-size: 54px; }
   .agg-arts .stage2 { position: relative; display: inline-block; }
@@ -176,21 +194,50 @@ place('url', `<div class="art">🔗</div><div class="label">youtube.com/…dQw4<
 
 const stemcutter = machineDef('stemcutter', '🎰', 'STEMCUTTER', 'URL slot · saws songs into stems', W*0.30, H*0.12, ['url'], 'stemcut');
 const tagger     = machineDef('tagger', '🗳️', 'TAGGER', 'folder tray · fills the metadata card', W*0.60, H*0.12, ['folder-raw'], 'tag');
-const library    = machineDef('library', '🗄️', 'LIBRARY', '356 song folders · claude.md + git each', W*0.60, H*0.60, ['folder-tagged'], 'shelve');
+const library    = machineDef('library', '<span class="lib-art">🗄️<span class="lib-drawer"></span></span>', 'LIBRARY', 'loading your library…', W*0.60, H*0.60, ['folder-tagged'], 'shelve');
 const amp        = machineDef('amp', '🎛️', 'THE AMP', 'drop anything playable', W*0.30, H*0.60, ['folder-raw','folder-tagged'], 'play');
+
+/* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
+let realLib = [];        // /api/library songs
+let realSong = null;     // the song the demo chip represents
+async function loadRealLibrary() {
+  try {
+    const j = await fetch('/api/library').then(r => r.json());
+    realLib = (j.songs || j || []).filter(x => x && x.title);
+    const stemsSongs = realLib.filter(x => x.type === 'stems');
+    realSong = stemsSongs[Math.floor(Math.random() * stemsSongs.length)] || null;
+    library.el.querySelector('.sub').textContent = `${realLib.length} song folders · claude.md + git each`;
+    if (realSong) {
+      const chip = document.getElementById('url');
+      chip.querySelector('.label').textContent = realSong.title.slice(0, 22);
+      chip.querySelector('.sub').textContent = 'from YOUR library — drag me';
+    }
+  } catch (e) { console.warn('[desk] library load failed:', e); }
+}
+loadRealLibrary();
+function findRealSong(title) {
+  const t = String(title || '').toLowerCase();
+  return realLib.find(x => x.title && (t.includes(x.title.toLowerCase()) || x.title.toLowerCase().includes(t))) || null;
+}
+function fmtDur(sec) { if (!sec || !isFinite(sec)) return '—'; const m = Math.floor(sec / 60), s2 = Math.round(sec % 60); return `${m}:${String(s2).padStart(2, '0')}`; }
 
 /* ── the folder document ──────────────────────────────────────────────── */
 let folder = null, folderStage = null, folderName = 'Never_Gonna_Give_You_Up';
+let folderSong = null;   // the REAL library row behind this folder, if any
 const META_EMPTY = `<span class="meta-k">bpm</span>: <span class="empty">—</span>  <span class="meta-k">key</span>: <span class="empty">—</span>
 <span class="meta-k">title/artist</span>: <span class="empty">—</span>
 <span class="meta-k">sections</span>: <span class="empty">[ empty — place breaks here ]</span>
 <span class="meta-k">stem mix trims</span>: <span class="empty">—</span>
 <span class="meta-k">plays</span>: <span class="empty">—</span>  <span class="meta-k">last played</span>: <span class="empty">—</span>`;
-const META_FULL = `<span class="meta-k">bpm</span>: 122.4   <span class="meta-k">key</span>: E major
-<span class="meta-k">title/artist</span>: Never Gonna Give You Up — Rick Astley
-<span class="meta-k">sections</span>: intro 0:00 · verse 0:19 · chorus 0:43 · …
-<span class="meta-k">stem mix trims</span>: vocals −2 dB · piano −4 dB
-<span class="meta-k">plays</span>: 0   <span class="meta-k">last played</span>: never`;
+function metaFull() {
+  const sg = folderSong;
+  if (!sg) return `<span class="meta-k">status</span>: <span class="empty">still rendering — real metadata lands when the pipeline finishes (watch the portal queue)</span>`;
+  return `<span class="meta-k">bpm</span>: ${sg.practiceBpm || sg.bpm || '—'}   <span class="meta-k">key</span>: ${sg.key || '—'}
+<span class="meta-k">title/artist</span>: ${sg.title} — ${sg.artist || '—'}
+<span class="meta-k">duration</span>: ${fmtDur(sg.duration_sec || sg.duration)}   <span class="meta-k">singer</span>: ${sg.singer_lead || '—'}
+<span class="meta-k">sections</span>: ${Array.isArray(sg.sections) && sg.sections.length ? sg.sections.length + ' placed' : '—'}
+<span class="meta-k">plays</span>: ${sg.plays != null ? sg.plays : '—'}   <span class="meta-k">last played</span>: ${sg.lastPlayedAt ? String(sg.lastPlayedAt).slice(0, 10) : '—'}`;
+}
 function folderCard() {
   const tagged = folderStage !== 'raw';
   return `<h3>📁 ${folderName}</h3>
@@ -198,7 +245,7 @@ function folderCard() {
 🎵 guitar.m4a  piano.m4a  other.m4a
 🎼 source.wav
 📄 metadata.json ${tagged ? '' : '<span class="empty">(empty — feed me to the TAGGER)</span>'}
-${tagged ? META_FULL : META_EMPTY}
+${tagged ? metaFull() : META_EMPTY}
 📝 claude.md <span class="empty">— standing instructions for this song</span>
 📒 runlog.md <span class="empty">— what each machine noticed, for next time</span>
 <span class="gitbadge">⎇ git: ${tagged ? '2 commits (stemcut, tagged)' : '1 commit (stemcut)'}</span></div>`;
@@ -273,8 +320,9 @@ function taggerShow(machine, done) {
   setTimeout(() => {
     machine.el.classList.remove('working'); S.chime();
     folderStage = 'tagged';
-    folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
-    hint('Metadata filled (peek!). Shelve it: drag the folder into the <b>LIBRARY</b>.');
+    const bpmTxt = folderSong ? `${folderSong.practiceBpm || folderSong.bpm || '—'} bpm · ${folderSong.key || '—'}` : 'awaiting render';
+    folder.el.querySelector('.sub').textContent = `metadata filled ✓ ${bpmTxt}`;
+    hint('Metadata filled from YOUR library (peek!). Shelve it: drag the folder into the <b>LIBRARY</b>.');
     showCard();
     if (done) done();
   }, 1800);
@@ -416,20 +464,24 @@ function popFolderOutOfAggregate(agg) {
 /* ── machines run ─────────────────────────────────────────────────────── */
 function runMachine(m, o) {
   S.drop();
+  const demoName = realSong ? realSong.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') : 'New_Song';
   if (m.work === 'stemcut') {
     o.el.remove(); objects.splice(objects.indexOf(o), 1);
-    stemcutShow(m, 'Never_Gonna_Give_You_Up');
+    folderSong = realSong;
+    stemcutShow(m, demoName);
   } else if (m.work === 'aggregate') {
     o.el.remove(); objects.splice(objects.indexOf(o), 1);
+    folderSong = realSong;
     const [a, b] = m.parts;
-    stemcutShow(Object.assign({}, a, { el: m.el, x: m.el.offsetLeft, y: m.el.offsetTop }), 'Never_Gonna_Give_You_Up', () => {
+    stemcutShow(Object.assign({}, a, { el: m.el, x: m.el.offsetLeft, y: m.el.offsetTop }), demoName, () => {
       folder.kind = 'building';
       feedFolderIntoStage2(m, () => {
         m.el.classList.add('working'); S.ticks(8);
         setTimeout(() => {
           m.el.classList.remove('working');
           folderStage = 'tagged';
-          folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
+          const bt = folderSong ? `${folderSong.practiceBpm || folderSong.bpm || '—'} bpm · ${folderSong.key || '—'}` : 'awaiting render';
+          folder.el.querySelector('.sub').textContent = `metadata filled ✓ ${bt}`;
           popFolderOutOfAggregate(m);
         }, 1800);
       });
@@ -437,14 +489,29 @@ function runMachine(m, o) {
   } else if (m.work === 'tag') {
     taggerShow(m);
   } else if (m.work === 'shelve') {
-    S.chime();
-    folder.el.style.transition = 'all .6s';
-    folder.el.style.left = (m.el.offsetLeft + 30) + 'px'; folder.el.style.top = (m.el.offsetTop + 30) + 'px';
-    folder.el.style.transform = 'scale(.3)'; folder.el.style.opacity = '0';
-    setTimeout(() => folder.el.remove(), 650);
-    m.el.querySelector('.sub').textContent = '357 song folders · claude.md + git each';
-    folderStage = 'shelved';
-    hint('Shelved — claude.md + runlog.md + git ride along in every song folder. Refresh to run the loop again.');
+    // THE DRAWER: the cabinet slides its drawer open, the folder settles
+    // into it, and the drawer closes with a clunk.
+    const drawer = m.el.querySelector('.lib-drawer');
+    drawer.classList.add('out'); S.whoosh();
+    hint('The <b>LIBRARY</b> opens a drawer for the new song…');
+    const dr = drawer.getBoundingClientRect();
+    setTimeout(() => {
+      folder.el.style.transition = 'all .8s cubic-bezier(.4,.2,.5,1)';
+      folder.el.style.left = (dr.x + dr.width / 2 - 37) + 'px';
+      folder.el.style.top = (dr.y - 40) + 'px';
+      setTimeout(() => {
+        folder.el.style.top = (dr.y - 14) + 'px';
+        folder.el.style.transform = 'scale(.18)'; folder.el.style.opacity = '0';
+      }, 800);
+    }, 480);
+    setTimeout(() => {
+      drawer.classList.remove('out');
+      folder.el.remove();
+      S.latch(); S.chime();
+      m.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders · claude.md + git each`;
+      folderStage = 'shelved';
+      hint(`<b>${folderName}</b> filed — drawer closed. claude.md + runlog.md + git ride along in every song folder. Refresh to run the loop again.`);
+    }, 2100);
   } else if (m.work === 'play') {
     const t = ac().currentTime; [164.8, 207.6, 246.9, 329.6].forEach(f => tone(f, t, 1.2, 'sine', .06));
     hint('🔊 The <b>Amp</b> plays whatever lands on it.');
@@ -476,7 +543,17 @@ addEventListener('drop', async (e) => {
   }
   if (!/^https?:/.test(url)) { hint('No URL in that drop.'); S.thunk(); return; }
   const vid = url.match(/[?&]v=([\w-]+)/) || url.match(/youtu\.be\/([\w-]+)/);
-  const name = dropName || (vid ? vid[1] : 'New_Song');
+  let name = dropName || (vid ? vid[1] : 'New_Song');
+  // Resolve the REAL title (oEmbed via the server) so the folder is named
+  // after the actual song, and match it against the library for real
+  // metadata in the Tagger stage.
+  try {
+    const oe = await fetch('/api/desktop/oembed?url=' + encodeURIComponent(url)).then(r => r.json());
+    if (oe && oe.ok && oe.title) {
+      name = oe.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 40);
+      folderSong = findRealSong(oe.title);
+    } else folderSong = null;
+  } catch (e) { folderSong = null; }
   try {
     const r = await fetch('/api/enqueue', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

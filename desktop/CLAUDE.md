@@ -117,6 +117,14 @@ pointer theatrics.
 - 2026-07-12 (aggregates): keep stage machines' state on the AGGREGATE
   element (classList working/lid) — reusing the hidden originals' els
   breaks getBoundingClientRect for the chip flights.
+- 2026-07-14 (real data): the desk boots from /api/library — the demo
+  chip is a RANDOM REAL SONG, the Tagger card shows that song's actual
+  bpm/key/singer/duration, and pasted URLs resolve their true title via
+  GET /api/desktop/oembed (server-side YouTube oEmbed proxy, 5s bound).
+  Songs not yet in the library show "still rendering" honestly. The
+  LIBRARY is a cabinet with a real DRAWER (.lib-drawer) that slides open
+  to accept a tagged folder and closes with a latch — shelving is now
+  rule-2 containment you can SEE.
 - 2026-07-12 (inspection layer): /api/desktop/reveal must spawn `open`
   with an ARG ARRAY (never a shell string) and clamp to safeSongDir —
   it's a shell-adjacent endpoint on the gig machine. The prototype has
