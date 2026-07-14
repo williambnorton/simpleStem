@@ -5898,17 +5898,71 @@ app.post('/api/midi/send', async (req, res) => {
 // on the Mac, so `open` works). Restricted to STEMS song dirs via
 // safeSongDir; unknown/missing base falls back to the STEMS root so the
 // desk's double-click always lands somewhere sensible.
-app.post('/api/desktop/reveal', (req, res) => {
+// Resolution order (Bill 2026-07-14: "open the recently created folder,
+// not the general STEMS parent"): exact base -> title match against the
+// STEMS directory names (newest match wins) -> the newest STEMS folder if
+// it was modified in the last 30 min (a just-queued render) -> STEMS root.
+// All directory reads are ASYNC (fs.promises) with a 3 s bound — never a
+// sync Drive read on the event loop (house policy).
+app.post('/api/desktop/reveal', async (req, res) => {
   try {
     const base = String((req.body && req.body.base) || '').trim();
-    let target = null;
+    const title = String((req.body && req.body.title) || '').trim();
+    const stemsRoot = path.join(SIMPLE_STEM_ROOT, 'STEMS');
+    let target = null, how = 'root';
     if (base) {
       const s = safeSongDir(base);
-      if (s && fs.existsSync(s.dir)) target = s.dir;
+      if (s && fs.existsSync(s.dir)) { target = s.dir; how = 'exact'; }
     }
-    if (!target) target = path.join(SIMPLE_STEM_ROOT, 'STEMS');
+    if (!target && title) {
+      const scan = (async () => {
+        const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const tn = norm(title);
+        const tokens = title.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+        const entries = await fs.promises.readdir(stemsRoot, { withFileTypes: true });
+        let best = null, bestScore = 0, bestMt = 0;
+        for (const e of entries) {
+          if (!e.isDirectory()) continue;
+          const en = norm(e.name);
+          let score = 0;
+          if (tn.length > 5 && (en.includes(tn) || tn.includes(en))) score = 100;
+          else if (tokens.length) {
+            let hit = 0;
+            const lower = e.name.toLowerCase();
+            for (const w of tokens) if (lower.includes(w)) hit++;
+            if (hit >= Math.max(2, Math.ceil(tokens.length * 0.6))) score = hit;
+          }
+          if (!score) continue;
+          let mt = 0;
+          try { mt = (await fs.promises.stat(path.join(stemsRoot, e.name))).mtimeMs; } catch (er) {}
+          if (score > bestScore || (score === bestScore && mt > bestMt)) {
+            best = e.name; bestScore = score; bestMt = mt;
+          }
+        }
+        return best;
+      })();
+      const best = await Promise.race([scan, new Promise(r => setTimeout(() => r(null), 3000))]);
+      if (best) { target = path.join(stemsRoot, best); how = 'title-match'; }
+    }
+    if (!target) {
+      const newestScan = (async () => {
+        const entries = await fs.promises.readdir(stemsRoot, { withFileTypes: true });
+        let newest = null, nm = 0;
+        for (const e of entries) {
+          if (!e.isDirectory()) continue;
+          try {
+            const mt = (await fs.promises.stat(path.join(stemsRoot, e.name))).mtimeMs;
+            if (mt > nm) { nm = mt; newest = e.name; }
+          } catch (er) {}
+        }
+        return (newest && Date.now() - nm < 30 * 60 * 1000) ? newest : null;
+      })();
+      const newest = await Promise.race([newestScan, new Promise(r => setTimeout(() => r(null), 3000))]);
+      if (newest) { target = path.join(stemsRoot, newest); how = 'newest'; }
+    }
+    if (!target) target = stemsRoot;
     require('child_process').spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
-    res.json({ ok: true, opened: target, exact: !!(base && target.endsWith(base)) });
+    res.json({ ok: true, opened: target, how, exact: how !== 'root' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

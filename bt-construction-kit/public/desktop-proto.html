@@ -224,6 +224,7 @@ function fmtDur(sec) { if (!sec || !isFinite(sec)) return '—'; const m = Math.
 /* ── the folder document ──────────────────────────────────────────────── */
 let folder = null, folderStage = null, folderName = 'Never_Gonna_Give_You_Up';
 let folderSong = null;   // the REAL library row behind this folder, if any
+let folderTitle = null;  // human title (oEmbed or library) — reveal uses it to find the dir
 const META_EMPTY = `<span class="meta-k">bpm</span>: <span class="empty">—</span>  <span class="meta-k">key</span>: <span class="empty">—</span>
 <span class="meta-k">title/artist</span>: <span class="empty">—</span>
 <span class="meta-k">sections</span>: <span class="empty">[ empty — place breaks here ]</span>
@@ -475,11 +476,11 @@ function runMachine(m, o) {
   const demoName = realSong ? realSong.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') : 'New_Song';
   if (m.work === 'stemcut') {
     o.el.remove(); objects.splice(objects.indexOf(o), 1);
-    folderSong = realSong;
+    folderSong = realSong; folderTitle = realSong && realSong.title;
     stemcutShow(m, demoName);
   } else if (m.work === 'aggregate') {
     o.el.remove(); objects.splice(objects.indexOf(o), 1);
-    folderSong = realSong;
+    folderSong = realSong; folderTitle = realSong && realSong.title;
     const [a, b] = m.parts;
     stemcutShow(Object.assign({}, a, { el: m.el, x: m.el.offsetLeft, y: m.el.offsetTop }), demoName, () => {
       folder.kind = 'building';
@@ -560,8 +561,9 @@ addEventListener('drop', async (e) => {
     if (oe && oe.ok && oe.title) {
       name = oe.title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 40);
       folderSong = findRealSong(oe.title);
-    } else folderSong = null;
-  } catch (e) { folderSong = null; }
+      folderTitle = oe.title;
+    } else { folderSong = null; folderTitle = null; }
+  } catch (e) { folderSong = null; folderTitle = null; }
   try {
     const r = await fetch('/api/enqueue', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -698,12 +700,15 @@ desk.addEventListener('dblclick', async (e) => {
       const realBase = (folderSong && folderSong.folderName) || folderName;
       const r = await fetch('/api/desktop/reveal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base: realBase }),
+        body: JSON.stringify({ base: realBase, title: folderTitle || folderName.replace(/_/g, ' ') }),
       });
       const j = await r.json();
-      hint(j.exact
-        ? `📂 Finder opened on <b>STEMS/${realBase}</b> — the real folder.`
-        : `📂 Finder opened on <b>STEMS/</b> — this song isn't on disk yet (still rendering, or demo-only).`);
+      const opened = (j.opened || '').split('/').pop();
+      hint(j.how === 'exact' || j.how === 'title-match'
+        ? `📂 Finder opened on <b>STEMS/${opened}</b> — the song's folder.`
+        : j.how === 'newest'
+        ? `📂 Finder opened on <b>STEMS/${opened}</b> — the most recently created folder (your fresh render).`
+        : `📂 Finder opened on <b>STEMS/</b> — couldn't match this folder to a song on disk yet.`);
     } catch (err) { hint('Finder open failed: ' + err.message); }
   } else if (o.kind === 'machine' && !e.altKey) {
     document.getElementById('card-body').innerHTML =
