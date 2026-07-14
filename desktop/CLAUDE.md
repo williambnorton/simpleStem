@@ -125,6 +125,15 @@ pointer theatrics.
   LIBRARY is a cabinet with a real DRAWER (.lib-drawer) that slides open
   to accept a tagged folder and closes with a latch — shelving is now
   rule-2 containment you can SEE.
+- 2026-07-14 (real-mouse gestures): the drag engine must NOT apply
+  .dragging (pointer-events:none) on pointerDOWN — real mice fire
+  down/up pairs for clicks and button-2 downs before contextmenu, and
+  losing hit-testing retargets the rest of the gesture at <body>:
+  dblclick resolved to body (handler bailed) and contextmenu skipped our
+  preventDefault (browser menu appeared). Rules: ignore non-left buttons
+  in the drag engine, and add .dragging only on the first MOVE.
+  Synthetic element-targeted events mask this class of bug — simulate
+  the full down/move/up/contextmenu sequence when testing gestures.
 - 2026-07-12 (inspection layer): /api/desktop/reveal must spawn `open`
   with an ARG ARRAY (never a shell string) and clamp to safeSongDir —
   it's a shell-adjacent endpoint on the gig machine. The prototype has

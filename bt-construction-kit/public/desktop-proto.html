@@ -331,6 +331,9 @@ function taggerShow(machine, done) {
 /* ── drag engine ──────────────────────────────────────────────────────── */
 let drag = null;
 desk.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;   // right/middle press must NOT start a drag
+                                // (it stole pointer-events and broke the
+                                // context menu + dblclick with real mice)
   const el = e.target.closest('.obj');
   if (!el) return;
   const o = objects.find(x => x.el === el);
@@ -339,12 +342,17 @@ desk.addEventListener('pointerdown', (e) => {
   if (o.kind === 'machine' && !(e.ctrlKey || e.metaKey)) return;   // machines move only with ⌃
   drag = { o, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false,
            machineDrag: o.kind === 'machine' };
-  el.classList.add('dragging');
   S.pickup();
 });
 desk.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  drag.moved = true;
+  if (!drag.moved) {
+    // The .dragging class (pointer-events:none) goes on only once the
+    // pointer actually MOVES — a stationary press must keep normal hit
+    // testing so click/dblclick/contextmenu still target the object.
+    drag.moved = true;
+    drag.o.el.classList.add('dragging');
+  }
   drag.o.el.style.left = (e.clientX - drag.dx) + 'px';
   drag.o.el.style.top = (e.clientY - drag.dy) + 'px';
   for (const m of machines) {
