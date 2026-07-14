@@ -5894,6 +5894,24 @@ app.post('/api/midi/send', async (req, res) => {
 // MIDI clock control — the sidecar owns the 24-ppqn clock thread; the
 // portal just tells it start/bpm/stop. Body: { action: 'start'|'bpm'|'stop',
 // bpm?, port? }. Broadcasts to all outputs unless `port` narrows it.
+// Sound Desktop: reveal a song folder in the REAL Finder (the server runs
+// on the Mac, so `open` works). Restricted to STEMS song dirs via
+// safeSongDir; unknown/missing base falls back to the STEMS root so the
+// desk's double-click always lands somewhere sensible.
+app.post('/api/desktop/reveal', (req, res) => {
+  try {
+    const base = String((req.body && req.body.base) || '').trim();
+    let target = null;
+    if (base) {
+      const s = safeSongDir(base);
+      if (s && fs.existsSync(s.dir)) target = s.dir;
+    }
+    if (!target) target = path.join(SIMPLE_STEM_ROOT, 'STEMS');
+    require('child_process').spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
+    res.json({ ok: true, opened: target, exact: !!(base && target.endsWith(base)) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/midi/clock', async (req, res) => {
   try {
     const r = await sidecarFetch('/clock', {

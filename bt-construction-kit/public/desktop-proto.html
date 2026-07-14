@@ -93,12 +93,37 @@
   #card .empty { opacity: .45; font-style: italic; }
   #card .close { position: absolute; top: 8px; right: 10px; cursor: pointer; opacity: .6; }
   .gitbadge { font-size: 10px; color: #e8a33d; }
+
+  /* hover peek */
+  #peek {
+    position: fixed; display: none; z-index: 70; max-width: 280px;
+    background: rgba(18,22,30,.97); border: 1px solid rgba(127,214,164,.4);
+    border-radius: 10px; padding: 9px 12px; font-size: 11px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); pointer-events: none;
+  }
+  #peek h4 { font-size: 11px; color: #7fd6a4; margin-bottom: 4px; }
+  #peek .pk { font: 10px/1.6 Menlo, monospace; white-space: pre-wrap; opacity: .9; }
+
+  /* right-click action menu */
+  #ctx {
+    position: fixed; display: none; z-index: 80; min-width: 190px;
+    background: rgba(24,28,38,.98); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 10px; padding: 5px; box-shadow: 0 14px 40px rgba(0,0,0,.55);
+  }
+  #ctx .mi {
+    padding: 7px 12px; border-radius: 7px; cursor: pointer; font-size: 12px;
+  }
+  #ctx .mi:hover { background: #1d8f4f; color: #fff; }
+  #ctx .sep { height: 1px; background: rgba(255,255,255,.12); margin: 4px 6px; }
+  #ctx .mi.user::before { content: '★ '; color: #f1c40f; }
 </style>
 </head>
 <body>
 <div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>⌃control-drag one machine onto another</b> to build an aggregate · 🎤 for voice building</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
+<div id="peek"></div>
+<div id="ctx"></div>
 
 <script>
 /* ── sounds ───────────────────────────────────────────────────────────── */
@@ -519,7 +544,132 @@ micBtn.addEventListener('click', () => {
   try { rec.start(); listening = true; micBtn.classList.add('on'); hint('🎤 Voice builder on — say: <b>connect stemcutter to tagger</b>'); }
   catch (e) { hint('Mic failed: ' + e.message); }
 });
-window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates };
+/* ── HOVER PEEK · DOUBLE-CLICK OPEN · RIGHT-CLICK ACTIONS ─────────────────
+   Universal object behaviors (Bill 2026-07-12):
+   - hover exposes the object temporarily: a peek popover of what's inside
+   - double-click opens for detailed examination/editing: folders open the
+     REAL Finder on the song folder (server-side `open`), machines open
+     their spec card
+   - right-click lists the object's actions: Quick Look, Edit…, plus any
+     user-created actions (persisted; "Add action…" grows the list)      */
+const peek = document.getElementById('peek');
+const ctx = document.getElementById('ctx');
+let peekTimer = null;
+
+function objectAt(el) { return objects.find(o => o.el === el); }
+function peekContent(o) {
+  if (o.kind === 'url') return `<h4>🔗 URL</h4><div class="pk">https://www.youtube.com/watch?v=dQw4</div>`;
+  if (o === folder || o.kind === 'folder' || o.kind === 'building') {
+    const tagged = folderStage === 'tagged';
+    return `<h4>📁 ${folderName}</h4><div class="pk">vocals.m4a  drums.m4a  bass.m4a
+guitar.m4a  piano.m4a  other.m4a
+source.wav · metadata.json ${tagged ? '✓ filled (122 bpm, E major)' : '(empty)'}
+claude.md · runlog.md · ⎇ git</div>`;
+  }
+  if (o.work === 'aggregate') return `<h4>${o.label}</h4><div class="pk">aggregate machine
+intake: URL → stage 1 cuts stems → lid opens →
+stage 2 fills metadata → tagged folder out</div>`;
+  if (o.kind === 'machine') {
+    const io = { stemcut: 'intake: URL\noutput: song folder (6 stems + empty metadata)',
+                 tag: 'intake: raw song folder\noutput: same folder, metadata filled',
+                 shelve: 'intake: tagged song folder\noutput: shelved in the library (terminal)',
+                 play: 'intake: anything playable\noutput: SOUND (terminal)' }[o.work] || '';
+    return `<h4>${o.art} ${o.label}</h4><div class="pk">${io}</div>`;
+  }
+  return '';
+}
+desk.addEventListener('pointerover', (e) => {
+  const el = e.target.closest('.obj');
+  if (!el || drag) return;
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    const o = objectAt(el);
+    if (!o) return;
+    const html = peekContent(o);
+    if (!html) return;
+    peek.innerHTML = html;
+    const r = el.getBoundingClientRect();
+    peek.style.left = Math.min(innerWidth - 300, r.right + 10) + 'px';
+    peek.style.top = Math.max(8, r.top) + 'px';
+    peek.style.display = 'block';
+  }, 350);
+});
+desk.addEventListener('pointerout', (e) => {
+  if (e.target.closest && e.target.closest('.obj')) { clearTimeout(peekTimer); peek.style.display = 'none'; }
+});
+desk.addEventListener('pointerdown', () => { clearTimeout(peekTimer); peek.style.display = 'none'; ctx.style.display = 'none'; });
+
+/* double-click: folders open the REAL Finder; machines open their card */
+desk.addEventListener('dblclick', async (e) => {
+  const el = e.target.closest('.obj');
+  if (!el) return;
+  const o = objectAt(el);
+  if (!o) return;
+  if (o === folder || o.kind === 'folder' || o.kind === 'building') {
+    showCard();
+    try {
+      const r = await fetch('/api/desktop/reveal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base: folderName }),
+      });
+      const j = await r.json();
+      hint(j.exact
+        ? `📂 Finder opened on the real <b>${folderName}</b> folder.`
+        : `📂 Finder opened on <b>STEMS/</b> — this demo folder isn't on disk (real songs open exactly).`);
+    } catch (err) { hint('Finder open failed: ' + err.message); }
+  } else if (o.kind === 'machine' && !e.altKey) {
+    document.getElementById('card-body').innerHTML =
+      `<h3>${o.work === 'aggregate' ? '' : o.art + ' '}${o.label}</h3><div class="file">${peekContent(o).replace(/<[^>]+>/g, ' ').trim()}
+
+Editable in round three: the machine's claude.md
+(its standing instructions) will live here.</div>`;
+    card.style.display = 'block'; S.riffle();
+  }
+});
+
+/* right-click: the object's action menu */
+const ACT_KEY = 'desk.actions.v1';
+function userActions(kindKey) {
+  try { return (JSON.parse(localStorage.getItem(ACT_KEY) || '{}')[kindKey]) || []; } catch (e) { return []; }
+}
+function addUserAction(kindKey, name) {
+  const all = (() => { try { return JSON.parse(localStorage.getItem(ACT_KEY) || '{}'); } catch (e) { return {}; } })();
+  (all[kindKey] = all[kindKey] || []).push(name);
+  localStorage.setItem(ACT_KEY, JSON.stringify(all));
+}
+function kindKeyOf(o) { return o.kind === 'machine' ? 'machine:' + (o.work || 'x') : o.kind === 'url' ? 'url' : 'folder'; }
+desk.addEventListener('contextmenu', (e) => {
+  const el = e.target.closest('.obj');
+  if (!el) return;
+  e.preventDefault();
+  const o = objectAt(el);
+  if (!o) return;
+  const kk = kindKeyOf(o);
+  const items = [];
+  items.push({ label: '👁 Quick Look', run: () => { peek.innerHTML = peekContent(o); peek.style.left = e.clientX + 'px'; peek.style.top = e.clientY + 'px'; peek.style.display = 'block'; S.riffle(); setTimeout(() => peek.style.display = 'none', 2500); } });
+  if (o.kind === 'folder' || o === folder || o.kind === 'building') {
+    items.push({ label: '📂 Edit in Finder…', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
+    items.push({ label: '🔊 Audition', run: () => { S.chime(); hint('(real desk: plays 3 s of the mix)'); } });
+  }
+  if (o.kind === 'machine') {
+    if (o.accepts && o.accepts.includes('url')) items.push({ label: '▶ Run with the URL chip', run: () => { const chip = objects.find(x => x.kind === 'url'); if (chip) runMachine(o, chip); else hint('URL chip is gone — refresh.'); } });
+    if (o.work === 'aggregate') items.push({ label: '🔧 Take apart', run: () => disassemble(o) });
+    items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
+  }
+  const ua = userActions(kk);
+  if (ua.length) items.push({ sep: true });
+  for (const name of ua) items.push({ label: name, user: true, run: () => hint(`★ ran your action “<b>${name}</b>” on ${o.label || o.id} — (round three: user actions bind to voice + scripts)`) });
+  items.push({ sep: true });
+  items.push({ label: '＋ Add action…', run: () => { const n = prompt('Name the new action for this kind of object:'); if (n && n.trim()) { addUserAction(kk, n.trim()); hint(`★ “<b>${n.trim()}</b>” added — right-click again to see it.`); } } });
+  ctx.innerHTML = items.map((it, i) => it.sep ? '<div class="sep"></div>' : `<div class="mi ${it.user ? 'user' : ''}" data-i="${i}">${it.label}</div>`).join('');
+  ctx.style.left = Math.min(innerWidth - 210, e.clientX) + 'px';
+  ctx.style.top = Math.min(innerHeight - 40 * items.length, e.clientY) + 'px';
+  ctx.style.display = 'block';
+  ctx.querySelectorAll('.mi').forEach(mi => mi.addEventListener('click', () => { ctx.style.display = 'none'; items[+mi.dataset.i].run(); }));
+});
+addEventListener('keydown', (e) => { if (e.key === 'Escape') { ctx.style.display = 'none'; peek.style.display = 'none'; } });
+
+window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates, peekContent, userActions };
 </script>
 </body>
 </html>

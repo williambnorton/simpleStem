@@ -81,6 +81,26 @@ watch downloads with <machine>         → rule-3 watcher install by voice
 what does <machine> do                 → speak its intake/output
 ```
 
+## Universal object interactions (Bill 2026-07-12)
+
+Every desk object obeys the same three inspection gestures — new machines
+and nouns MUST implement all three:
+
+- **Hover** (350 ms) exposes the object temporarily: a peek popover of
+  what's inside (folder: file list + metadata state; machine: intake →
+  output; aggregate: its chain). Disappears on mouse-out or any press.
+- **Double-click** opens for detailed examination and EDITING: folders
+  open the REAL Finder on the song's directory via
+  `POST /api/desktop/reveal {base}` (server-side `open`, restricted to
+  STEMS via safeSongDir; unknown demo folders fall back to the STEMS
+  root). Machines open their spec card (round three: the machine's own
+  claude.md edits live there).
+- **Right-click** lists the object's available actions: Quick Look,
+  Edit in Finder…/Spec card, Audition, machine verbs (Run with URL, Take
+  apart), then the USER-CREATED actions (starred), then "＋ Add action…".
+  User actions persist per object-kind in localStorage `desk.actions.v1`;
+  round three binds them to voice phrases and real scripts.
+
 ## Debug handle
 
 `window.__desk = { makeAggregate, disassemble, voiceCommand, machines(),
@@ -97,3 +117,8 @@ pointer theatrics.
 - 2026-07-12 (aggregates): keep stage machines' state on the AGGREGATE
   element (classList working/lid) — reusing the hidden originals' els
   breaks getBoundingClientRect for the chip flights.
+- 2026-07-12 (inspection layer): /api/desktop/reveal must spawn `open`
+  with an ARG ARRAY (never a shell string) and clamp to safeSongDir —
+  it's a shell-adjacent endpoint on the gig machine. The prototype has
+  two dblclick listeners (legacy card + new reveal); consolidate when
+  the desk graduates out of prototype.
