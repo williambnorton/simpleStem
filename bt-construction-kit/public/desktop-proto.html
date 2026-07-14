@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>simpleStem — Sound Desktop prototype</title>
 <style>
-  /* ── The desk ─────────────────────────────────────────────────────── */
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
   html, body { height: 100%; }
   body {
@@ -16,35 +15,75 @@
     position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
     background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15);
     padding: 6px 14px; border-radius: 9px; font-size: 12px; z-index: 50;
-    transition: opacity .4s;
+    max-width: 80vw; text-align: center;
   }
-  #hint b { color: #7fd6a4; }
-  .obj {
-    position: absolute; width: 120px; text-align: center; cursor: grab;
-    transition: transform .15s;
+  #hint b, #hint a { color: #7fd6a4; }
+  #mic {
+    position: fixed; top: 8px; right: 12px; z-index: 55; font-size: 20px;
+    background: rgba(0,0,0,.5); border: 2px solid #f1c40f; border-radius: 50%;
+    width: 40px; height: 40px; cursor: pointer; color: #fff;
   }
+  #mic.on { border-color: #00e676; background: #00c853; animation: micpulse 1s infinite; }
+  @keyframes micpulse { 50% { box-shadow: 0 0 0 8px rgba(0,230,118,0); } 0%,100% { box-shadow: 0 0 0 0 rgba(0,230,118,.6); } }
+  .obj { position: absolute; width: 130px; text-align: center; cursor: grab; transition: transform .15s; }
   .obj:active { cursor: grabbing; }
   .obj .art { font-size: 52px; line-height: 1.1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.5)); pointer-events: none; }
   .obj .label { margin-top: 3px; font-size: 11px; font-weight: 700; letter-spacing: .3px;
     background: rgba(0,0,0,.4); border-radius: 6px; padding: 2px 6px; display: inline-block; pointer-events: none; }
   .obj .sub { font-size: 10px; opacity: .6; pointer-events: none; }
   .machine .art { font-size: 64px; }
-  .machine.hot { animation: hum 1s ease-in-out infinite; }
   .machine.legal { transform: scale(1.16); }
   .machine.legal .label { background: #1d8f4f; color: #fff; }
   .machine.illegal { filter: grayscale(1) brightness(.6); }
   .machine.working .art { animation: shake .12s linear infinite; }
+  .machine.aggtarget { outline: 2px dashed #f1c40f; outline-offset: 8px; border-radius: 14px; }
   @keyframes shake { 25% { transform: rotate(-3deg);} 75% { transform: rotate(3deg);} }
-  @keyframes hum { 50% { transform: scale(1.03); } }
   .badge { position: absolute; top: -4px; right: 10px; font-size: 16px; }
   .dragging { opacity: .85; z-index: 40; pointer-events: none; transform: scale(1.05); }
   .bounce { animation: bounce .45s; }
   @keyframes bounce { 0%{transform:translateX(0)} 25%{transform:translateX(-14px)} 55%{transform:translateX(11px)} 80%{transform:translateX(-6px)} 100%{transform:translateX(0)} }
   .pop { animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
   @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-  /* card = folder contents viewer */
+
+  /* ── sliced folder (three horizontal bands of the 📁 glyph) ─────────── */
+  .folder-art { position: relative; width: 74px; height: 62px; margin: 0 auto; }
+  .folder-art .slice { position: absolute; left: 0; width: 100%; overflow: hidden; font-size: 54px; line-height: 62px; }
+  .folder-art .slice span { display: block; }
+  .folder-art .s1 { top: 0; height: 21px; }
+  .folder-art .s2 { top: 21px; height: 20px; } .folder-art .s2 span { transform: translateY(-21px); }
+  .folder-art .s3 { top: 41px; height: 21px; } .folder-art .s3 span { transform: translateY(-41px); }
+  .slicing .s1 { animation: cutL .55s ease-in-out infinite; }
+  .slicing .s3 { animation: cutR .55s ease-in-out infinite; }
+  @keyframes cutL { 0%,100% { transform: translateX(0);} 50% { transform: translateX(-16px);} }
+  @keyframes cutR { 0%,100% { transform: translateX(0);} 50% { transform: translateX(16px);} }
+  .folder-art .face {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    font-size: 22px; padding-top: 14px; z-index: 2;
+  }
+  .dancing .face { display: flex; }
+  .dancing { animation: rockdance .5s ease-in-out infinite; transform-origin: 50% 90%; }
+  @keyframes rockdance { 0%,100% { transform: rotate(-9deg) scale(1.06);} 50% { transform: rotate(9deg) scale(1.06);} }
+
+  /* flying file chips */
+  .chip {
+    position: fixed; z-index: 45; font: 10px/1 Menlo, monospace; pointer-events: none;
+    background: rgba(0,0,0,.65); border: 1px solid #7fd6a4; color: #7fd6a4;
+    border-radius: 6px; padding: 3px 6px; transition: all .8s cubic-bezier(.3,.7,.4,1);
+    white-space: nowrap;
+  }
+
+  /* aggregates: two machines standing together; the second one's lid opens */
+  .agg-arts { display: flex; align-items: flex-end; justify-content: center; gap: 2px; font-size: 54px; }
+  .agg-arts .stage2 { position: relative; display: inline-block; }
+  .agg-arts .lid {
+    position: absolute; top: -6px; left: 8px; right: 8px; height: 12px;
+    background: linear-gradient(#5a6a7d, #38434f); border-radius: 4px 4px 0 0;
+    transform-origin: left bottom; transition: transform .5s; z-index: 3;
+  }
+  .agg-arts .lid.open { transform: rotate(-95deg); }
+
   #card {
-    position: fixed; right: 18px; top: 60px; width: 320px; display: none;
+    position: fixed; right: 18px; top: 60px; width: 330px; display: none;
     background: rgba(18,22,30,.97); border: 1px solid rgba(255,255,255,.18);
     border-radius: 12px; padding: 14px; z-index: 60; box-shadow: 0 16px 44px rgba(0,0,0,.5);
   }
@@ -57,11 +96,12 @@
 </style>
 </head>
 <body>
-<div id="hint">Drag the <b>YouTube URL chip</b> onto the <b>Stemcutter</b> for the demo — or drop a REAL <b>.webloc / YouTube link from Finder or another window</b> on it to queue an actual render · double-click folders to peek</div>
+<div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>⌃control-drag one machine onto another</b> to build an aggregate · 🎤 for voice building</div>
+<button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 
 <script>
-/* ── Sound: every action has a voice (tiny WebAudio sketches) ─────────── */
+/* ── sounds ───────────────────────────────────────────────────────────── */
 let AC = null;
 function ac() { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); return AC; }
 function tone(f, t, dur, type, gain) {
@@ -72,19 +112,23 @@ function tone(f, t, dur, type, gain) {
   o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + .05);
 }
 const S = {
-  pickup:  () => tone(520, ac().currentTime, .09),
-  legal:   () => tone(760, ac().currentTime, .12),
-  drop:    () => { const t = ac().currentTime; tone(660, t, .1); tone(880, t + .09, .16); },
-  thunk:   () => tone(110, ac().currentTime, .18, 'square', .18),
-  saw:     (on) => { if (on) { S._saw = setInterval(() => tone(200 + Math.random()*140, ac().currentTime, .06, 'sawtooth', .05), 70); } else clearInterval(S._saw); },
-  ticks:   (n) => { for (let i = 0; i < n; i++) tone(1400, ac().currentTime + i * .16, .04, 'square', .08); },
-  chime:   () => { const t = ac().currentTime; [659.25, 830.6, 987.8].forEach((f, i) => tone(f, t + i * .12, .5, 'sine', .1)); }, // E major — the song's key
-  riffle:  () => { for (let i = 0; i < 4; i++) tone(300 + i * 120, ac().currentTime + i * .07, .05, 'triangle', .07); },
+  pickup: () => tone(520, ac().currentTime, .09),
+  legal:  () => tone(760, ac().currentTime, .12),
+  drop:   () => { const t = ac().currentTime; tone(660, t, .1); tone(880, t + .09, .16); },
+  thunk:  () => tone(110, ac().currentTime, .18, 'square', .18),
+  saw:    (on) => { if (on) { S._saw = setInterval(() => tone(200 + Math.random()*140, ac().currentTime, .06, 'sawtooth', .05), 70); } else clearInterval(S._saw); },
+  ticks:  (n) => { for (let i = 0; i < n; i++) tone(1400, ac().currentTime + i * .16, .04, 'square', .08); },
+  whoosh: () => { const t = ac().currentTime; for (let i = 0; i < 6; i++) tone(900 - i * 110, t + i * .05, .07, 'sine', .06); },
+  chime:  () => { const t = ac().currentTime; [659.25, 830.6, 987.8].forEach((f, i) => tone(f, t + i * .12, .5, 'sine', .1)); },
+  dance:  () => { const t = ac().currentTime; [523, 659, 784, 659, 523, 659, 784, 1046].forEach((f, i) => tone(f, t + i * .22, .18, 'triangle', .09)); },
+  riffle: () => { for (let i = 0; i < 4; i++) tone(300 + i * 120, ac().currentTime + i * .07, .05, 'triangle', .07); },
+  latch:  () => { const t = ac().currentTime; tone(300, t, .1, 'square', .12); tone(450, t + .12, .14, 'square', .12); },
 };
 
-/* ── The objects on the desk ──────────────────────────────────────────── */
+/* ── desk objects ─────────────────────────────────────────────────────── */
 const desk = document.body;
-const objects = [];   // {el, kind, accepts?, x, y}
+const objects = [];
+let machines = [];
 function place(id, html, x, y, kind, cls) {
   const el = document.createElement('div');
   el.className = 'obj ' + (cls || '');
@@ -95,37 +139,24 @@ function place(id, html, x, y, kind, cls) {
   objects.push(o);
   return o;
 }
+function machineDef(id, art, label, sub, x, y, accepts, work) {
+  const m = place(id, `<div class="art">${art}</div><div class="label">${label}</div><div class="sub">${sub}</div>`, x, y, 'machine', 'machine');
+  m.accepts = accepts; m.work = work; m.art = art; m.label = label;
+  machines.push(m);
+  return m;
+}
 const W = innerWidth, H = innerHeight;
 
-/* nouns */
 place('url', `<div class="art">🔗</div><div class="label">youtube.com/…dQw4</div><div class="sub">a URL — drag me</div>`, 60, H*0.18, 'url');
 
-/* machines (verbs) */
-const stemcutter = place('stemcutter',
-  `<div class="art">🎰</div><div class="label">STEMCUTTER</div><div class="sub">URL slot · saws songs into stems</div>`,
-  W*0.32, H*0.14, 'machine', 'machine');
-stemcutter.accepts = ['url'];
+const stemcutter = machineDef('stemcutter', '🎰', 'STEMCUTTER', 'URL slot · saws songs into stems', W*0.30, H*0.12, ['url'], 'stemcut');
+const tagger     = machineDef('tagger', '🗳️', 'TAGGER', 'folder tray · fills the metadata card', W*0.60, H*0.12, ['folder-raw'], 'tag');
+const library    = machineDef('library', '🗄️', 'LIBRARY', '356 song folders · claude.md + git each', W*0.60, H*0.60, ['folder-tagged'], 'shelve');
+const amp        = machineDef('amp', '🎛️', 'THE AMP', 'drop anything playable', W*0.30, H*0.60, ['folder-raw','folder-tagged'], 'play');
 
-const tagger = place('tagger',
-  `<div class="art">🗳️</div><div class="label">TAGGER</div><div class="sub">folder tray · fills the metadata card</div>`,
-  W*0.62, H*0.14, 'machine', 'machine');
-tagger.accepts = ['folder-raw'];
-
-const library = place('library',
-  `<div class="art">🗄️</div><div class="label">LIBRARY</div><div class="sub">356 song folders · claude.md + git each</div>`,
-  W*0.62, H*0.62, 'machine', 'machine');
-library.accepts = ['folder-tagged'];
-
-const amp = place('amp',
-  `<div class="art">🎛️</div><div class="label">THE AMP</div><div class="sub">drop anything playable</div>`,
-  W*0.32, H*0.62, 'machine', 'machine');
-amp.accepts = ['folder-raw', 'folder-tagged'];
-
-/* ── Folder state (the demo's one document) ───────────────────────────── */
-let folder = null;           // the BackingTrack folder object once it exists
-let folderStage = null;      // 'raw' | 'tagged' | 'shelved'
-const META_EMPTY = `<span class="meta-k">bpm</span>: <span class="empty">—</span>
-<span class="meta-k">key</span>: <span class="empty">—</span>
+/* ── the folder document ──────────────────────────────────────────────── */
+let folder = null, folderStage = null, folderName = 'Never_Gonna_Give_You_Up';
+const META_EMPTY = `<span class="meta-k">bpm</span>: <span class="empty">—</span>  <span class="meta-k">key</span>: <span class="empty">—</span>
 <span class="meta-k">title/artist</span>: <span class="empty">—</span>
 <span class="meta-k">sections</span>: <span class="empty">[ empty — place breaks here ]</span>
 <span class="meta-k">stem mix trims</span>: <span class="empty">—</span>
@@ -135,10 +166,9 @@ const META_FULL = `<span class="meta-k">bpm</span>: 122.4   <span class="meta-k"
 <span class="meta-k">sections</span>: intro 0:00 · verse 0:19 · chorus 0:43 · …
 <span class="meta-k">stem mix trims</span>: vocals −2 dB · piano −4 dB
 <span class="meta-k">plays</span>: 0   <span class="meta-k">last played</span>: never`;
-
 function folderCard() {
   const tagged = folderStage !== 'raw';
-  return `<h3>📁 BackingTrack — Never_Gonna_Give_You_Up</h3>
+  return `<h3>📁 ${folderName}</h3>
   <div class="file">🎵 vocals.m4a  drums.m4a  bass.m4a
 🎵 guitar.m4a  piano.m4a  other.m4a
 🎼 source.wav
@@ -150,15 +180,92 @@ ${tagged ? META_FULL : META_EMPTY}
 }
 const card = document.getElementById('card');
 function showCard() { document.getElementById('card-body').innerHTML = folderCard(); card.style.display = 'block'; S.riffle(); }
+function hint(t) { document.getElementById('hint').innerHTML = t; }
+function center(el) { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }
 
-/* ── Drag engine with the grammar rules ───────────────────────────────── */
+/* ── THE STEMCUT SHOW ─────────────────────────────────────────────────────
+   1. a folder named after the song pops out beside the machine
+   2. file chips FLY from the machine into the folder, one by one
+   3. the folder is sliced apart and reassembled while Demucs "works"
+   4. done: the folder stands tall and dances with a smile for 5 s
+   5. only then does it become draggable                                  */
+function stemcutShow(machine, name, done) {
+  folderName = name;
+  machine.el.classList.add('working'); S.saw(true);
+  const fx = machine.x - 10, fy = machine.y + 180;
+  folder = place('folder',
+    `<div class="art folder-art slicing">
+       <div class="slice s1"><span>📁</span></div>
+       <div class="slice s2"><span>📁</span></div>
+       <div class="slice s3"><span>📁</span></div>
+       <div class="face">😄</div>
+     </div>
+     <div class="label">${name}</div><div class="sub">building… 0/7 files</div>`,
+    fx, fy, 'building', 'pop');
+  folderStage = 'raw';
+  hint(`The <b>Stemcutter</b> is sawing <b>${name}</b> — stems are flying into the folder…`);
+  const files = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a','source.wav'];
+  const from = center(machine.el);
+  files.forEach((f, i) => {
+    setTimeout(() => {
+      const chip = document.createElement('div');
+      chip.className = 'chip'; chip.textContent = '🎵 ' + f;
+      chip.style.left = from.x + 'px'; chip.style.top = from.y + 'px';
+      desk.appendChild(chip);
+      const to = center(folder.el);
+      requestAnimationFrame(() => {
+        chip.style.left = (to.x - 20) + 'px'; chip.style.top = to.y + 'px';
+        chip.style.opacity = '0'; chip.style.transform = 'scale(.5)';
+      });
+      S.whoosh();
+      setTimeout(() => chip.remove(), 850);
+      folder.el.querySelector('.sub').textContent = `building… ${i + 1}/7 files`;
+    }, 400 + i * 420);
+  });
+  const workMs = 400 + files.length * 420 + 900;
+  setTimeout(() => {
+    machine.el.classList.remove('working'); S.saw(false);
+    const artEl = folder.el.querySelector('.folder-art');
+    artEl.classList.remove('slicing');
+    // THE DANCE: stands tall, rocks with a smile for 5 s
+    artEl.classList.add('dancing');
+    folder.el.querySelector('.sub').textContent = '6 stems cut! 🎉';
+    S.chime(); S.dance();
+    hint(`<b>${name}</b> is done — look at that happy folder. 5 seconds of joy, then it's yours to drag.`);
+    setTimeout(() => {
+      artEl.classList.remove('dancing');
+      folder.kind = 'folder';                 // NOW it's draggable
+      folder.el.querySelector('.sub').textContent = '6 stems + empty metadata — drag me';
+      hint(`Drag <b>${name}</b> onto the <b>TAGGER</b> (or double-click to peek inside).`);
+      if (done) done();
+    }, 5000);
+  }, workMs);
+}
+
+function taggerShow(machine, done) {
+  machine.el.classList.add('working'); S.ticks(8);
+  hint('The <b>Tagger</b> is ticking its checkboxes… (bpm · key · sections · mix trims · plays)');
+  setTimeout(() => {
+    machine.el.classList.remove('working'); S.chime();
+    folderStage = 'tagged';
+    folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
+    hint('Metadata filled (peek!). Shelve it: drag the folder into the <b>LIBRARY</b>.');
+    showCard();
+    if (done) done();
+  }, 1800);
+}
+
+/* ── drag engine ──────────────────────────────────────────────────────── */
 let drag = null;
 desk.addEventListener('pointerdown', (e) => {
   const el = e.target.closest('.obj');
   if (!el) return;
   const o = objects.find(x => x.el === el);
-  if (!o || o.kind === 'machine') return;          // machines are furniture (v1)
-  drag = { o, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false };
+  if (!o) return;
+  if (o.kind === 'building') return;                       // mid-show: hands off
+  if (o.kind === 'machine' && !(e.ctrlKey || e.metaKey)) return;   // machines move only with ⌃
+  drag = { o, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false,
+           machineDrag: o.kind === 'machine' };
   el.classList.add('dragging');
   S.pickup();
 });
@@ -167,14 +274,18 @@ desk.addEventListener('pointermove', (e) => {
   drag.moved = true;
   drag.o.el.style.left = (e.clientX - drag.dx) + 'px';
   drag.o.el.style.top = (e.clientY - drag.dy) + 'px';
-  // type plates: light legal targets, grey illegal ones (rule 4)
-  for (const m of [stemcutter, tagger, library, amp]) {
+  for (const m of machines) {
+    if (m === drag.o) continue;
     const hit = overlaps(drag.o.el, m.el);
-    const legal = m.accepts.includes(dragKind());
-    m.el.classList.toggle('legal', hit && legal);
-    m.el.classList.toggle('illegal', hit && !legal);
-    if (hit && legal && !m._toned) { m._toned = true; S.legal(); }
-    if (!hit) m._toned = false;
+    if (drag.machineDrag) {
+      m.el.classList.toggle('aggtarget', hit);
+    } else {
+      const legal = m.accepts.includes(dragKind());
+      m.el.classList.toggle('legal', hit && legal);
+      m.el.classList.toggle('illegal', hit && !legal);
+      if (hit && legal && !m._toned) { m._toned = true; S.legal(); }
+      if (!hit) m._toned = false;
+    }
   }
 });
 desk.addEventListener('pointerup', () => {
@@ -182,14 +293,15 @@ desk.addEventListener('pointerup', () => {
   const o = drag.o;
   o.el.classList.remove('dragging');
   let handled = false;
-  for (const m of [stemcutter, tagger, library, amp]) {
-    m.el.classList.remove('legal', 'illegal');
-    if (!handled && overlaps(o.el, m.el)) {
-      if (m.accepts.includes(dragKind())) { runMachine(m, o); handled = true; }
-      else { o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500); S.thunk(); handled = true; }
-    }
+  for (const m of [...machines]) {
+    m.el.classList.remove('legal', 'illegal', 'aggtarget');
+    if (handled || m === o || !overlaps(o.el, m.el)) continue;
+    if (drag.machineDrag) { makeAggregate(o, m); handled = true; }
+    else if (m.accepts.includes(dragKind())) { runMachine(m, o); handled = true; }
+    else { o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500); S.thunk(); handled = true; }
   }
-  if (!drag.moved && o === folder) showCard();     // click = peek
+  if (drag.machineDrag) { o.x = o.el.offsetLeft; o.y = o.el.offsetTop; }
+  if (!drag.moved && o === folder) showCard();
   drag = null;
 });
 desk.addEventListener('dblclick', (e) => {
@@ -205,94 +317,209 @@ function overlaps(a, b) {
   return !(r1.right < r2.left + 20 || r1.left > r2.right - 20 || r1.bottom < r2.top + 20 || r1.top > r2.bottom - 20);
 }
 
-/* ── REAL OS drag-and-drop onto the Stemcutter ────────────────────────── */
-// Dropping a .webloc from Finder (or a link dragged from any browser
-// window) on the Stemcutter queues a REAL render: the URL is extracted
-// and POSTed to /api/enqueue, which writes a webloc into INCOMING_WEBLOC
-// for the Librarian — the actual pipeline, not the demo. preventDefault
-// everywhere stops Chrome's default behavior of navigating to the song.
+/* ── AGGREGATES: the machine that builds machines ─────────────────────────
+   ⌃control-drag machine A onto machine B (or say "connect A to B").
+   The two machines latch together into ONE aggregate standing side by
+   side. Feeding the aggregate runs A; A's output folder flies up, B's lid
+   opens, the folder drops in, B runs, and the finished folder pops out. */
+let aggregates = [];
+function makeAggregate(a, b) {
+  if (a.aggregate || b.aggregate) { hint('Aggregates of aggregates — round three. Take this one apart first.'); S.thunk(); return; }
+  if (!(a.work === 'stemcut' && b.work === 'tag')) {
+    hint(`<b>${a.label}→${b.label}</b> isn't a legal chain yet: the demo wires STEMCUTTER→TAGGER. (The grammar: A's output type must match B's intake.)`);
+    S.thunk(); return;
+  }
+  a.el.style.display = 'none'; b.el.style.display = 'none';
+  machines = machines.filter(m => m !== a && m !== b);
+  const agg = place('agg_' + Date.now(),
+    `<div class="agg-arts"><span class="stage1">${a.art}</span><span class="stage2"><span class="lid"></span>${b.art}</span></div>
+     <div class="label">${a.label} → ${b.label}</div>
+     <div class="sub">aggregate · feed it a URL</div>`,
+    b.x - 40, b.y, 'machine', 'machine');
+  agg.el.style.width = '190px';
+  agg.accepts = a.accepts; agg.work = 'aggregate'; agg.parts = [a, b];
+  agg.label = a.label + '→' + b.label;
+  machines.push(agg); aggregates.push(agg);
+  S.latch(); S.chime();
+  hint(`Built <b>${agg.label}</b> — one machine now. Feed it the URL chip (or a real .webloc). ⌥option-double-click to take it apart.`);
+  agg.el.addEventListener('dblclick', (e) => { if (e.altKey) disassemble(agg); });
+  return agg;
+}
+function disassemble(agg) {
+  const [a, b] = agg.parts;
+  a.el.style.display = ''; b.el.style.display = '';
+  a.el.style.left = (agg.el.offsetLeft - 80) + 'px'; a.x = agg.el.offsetLeft - 80;
+  b.el.style.left = (agg.el.offsetLeft + 120) + 'px'; b.x = agg.el.offsetLeft + 120;
+  a.el.style.top = b.el.style.top = agg.el.offsetTop + 'px'; a.y = b.y = agg.el.offsetTop;
+  machines = machines.filter(m => m !== agg).concat([a, b]);
+  aggregates = aggregates.filter(x => x !== agg);
+  agg.el.remove();
+  S.thunk(); hint(`Took <b>${agg.label}</b> apart — two machines again.`);
+}
+function feedFolderIntoStage2(agg, done) {
+  const lid = agg.el.querySelector('.lid');
+  const stage2 = agg.el.querySelector('.stage2');
+  lid.classList.add('open'); S.whoosh();
+  hint(`The <b>${agg.label}</b> aggregate opens its second machine — the folder climbs in…`);
+  const to = stage2.getBoundingClientRect();
+  folder.el.style.transition = 'all .9s cubic-bezier(.4,.2,.5,1)';
+  folder.el.style.left = (to.x - 20) + 'px';
+  folder.el.style.top = (to.y - 90) + 'px';
+  setTimeout(() => {
+    folder.el.style.top = (to.y - 10) + 'px';
+    folder.el.style.transform = 'scale(.15)'; folder.el.style.opacity = '0';
+  }, 900);
+  setTimeout(() => {
+    lid.classList.remove('open');
+    folder.el.style.display = 'none';
+    done();
+  }, 1700);
+}
+function popFolderOutOfAggregate(agg) {
+  folder.el.style.transition = 'none';
+  folder.el.style.display = '';
+  folder.el.style.left = (agg.el.offsetLeft + 30) + 'px';
+  folder.el.style.top = (agg.el.offsetTop + 170) + 'px';
+  folder.el.style.transform = ''; folder.el.style.opacity = '';
+  folder.el.classList.add('pop');
+  const artEl = folder.el.querySelector('.folder-art');
+  artEl.classList.add('dancing'); S.dance();
+  hint(`<b>${folderName}</b> came out the far end tagged — one drop, whole pipeline. 🎉`);
+  setTimeout(() => { artEl.classList.remove('dancing'); folder.kind = 'folder'; }, 5000);
+}
+
+/* ── machines run ─────────────────────────────────────────────────────── */
+function runMachine(m, o) {
+  S.drop();
+  if (m.work === 'stemcut') {
+    o.el.remove(); objects.splice(objects.indexOf(o), 1);
+    stemcutShow(m, 'Never_Gonna_Give_You_Up');
+  } else if (m.work === 'aggregate') {
+    o.el.remove(); objects.splice(objects.indexOf(o), 1);
+    const [a, b] = m.parts;
+    stemcutShow(Object.assign({}, a, { el: m.el, x: m.el.offsetLeft, y: m.el.offsetTop }), 'Never_Gonna_Give_You_Up', () => {
+      folder.kind = 'building';
+      feedFolderIntoStage2(m, () => {
+        m.el.classList.add('working'); S.ticks(8);
+        setTimeout(() => {
+          m.el.classList.remove('working');
+          folderStage = 'tagged';
+          folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
+          popFolderOutOfAggregate(m);
+        }, 1800);
+      });
+    });
+  } else if (m.work === 'tag') {
+    taggerShow(m);
+  } else if (m.work === 'shelve') {
+    S.chime();
+    folder.el.style.transition = 'all .6s';
+    folder.el.style.left = (m.el.offsetLeft + 30) + 'px'; folder.el.style.top = (m.el.offsetTop + 30) + 'px';
+    folder.el.style.transform = 'scale(.3)'; folder.el.style.opacity = '0';
+    setTimeout(() => folder.el.remove(), 650);
+    m.el.querySelector('.sub').textContent = '357 song folders · claude.md + git each';
+    folderStage = 'shelved';
+    hint('Shelved — claude.md + runlog.md + git ride along in every song folder. Refresh to run the loop again.');
+  } else if (m.work === 'play') {
+    const t = ac().currentTime; [164.8, 207.6, 246.9, 329.6].forEach(f => tone(f, t, 1.2, 'sine', .06));
+    hint('🔊 The <b>Amp</b> plays whatever lands on it.');
+  }
+}
+
+/* ── REAL OS drops on any URL-accepting machine ───────────────────────── */
 addEventListener('dragover', (e) => {
   e.preventDefault();
-  const over = overlapsPoint(stemcutter.el, e.clientX, e.clientY);
-  stemcutter.el.classList.toggle('legal', over);
+  for (const m of machines) {
+    if (m.accepts && m.accepts.includes('url')) m.el.classList.toggle('legal', overlapsPoint(m.el, e.clientX, e.clientY));
+  }
 });
-addEventListener('dragleave', () => stemcutter.el.classList.remove('legal'));
+addEventListener('dragleave', () => machines.forEach(m => m.el.classList.remove('legal')));
 addEventListener('drop', async (e) => {
   e.preventDefault();
-  stemcutter.el.classList.remove('legal');
-  if (!overlapsPoint(stemcutter.el, e.clientX, e.clientY)) return;
+  machines.forEach(m => m.el.classList.remove('legal'));
+  const target = machines.find(m => m.accepts && m.accepts.includes('url') && overlapsPoint(m.el, e.clientX, e.clientY));
+  if (!target) return;
   let url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split('\n')[0].trim();
+  let dropName = null;
   if (!url && e.dataTransfer.files && e.dataTransfer.files.length) {
     const f = e.dataTransfer.files[0];
+    dropName = f.name.replace(/\.(webloc|url)$/i, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
     const text = await f.text();
-    const m = text.match(/<string>(https?:[^<]+)<\/string>/) || text.match(/^URL=(.+)$/m);
-    if (m) url = m[1].trim();
-    else { hint(`Couldn't read a URL out of <b>${f.name}</b> — binary webloc? Try dragging the link itself.`); S.thunk(); return; }
+    const m2 = text.match(/<string>(https?:[^<]+)<\/string>/) || text.match(/^URL=(.+)$/m);
+    if (m2) url = m2[1].trim();
+    else { hint(`Couldn't read a URL out of <b>${f.name}</b> — try dragging the link itself.`); S.thunk(); return; }
   }
   if (!/^https?:/.test(url)) { hint('No URL in that drop.'); S.thunk(); return; }
-  stemcutter.el.classList.add('working'); S.saw(true);
-  hint(`Queueing <b>${url.slice(0, 60)}…</b> for a REAL render…`);
+  const vid = url.match(/[?&]v=([\w-]+)/) || url.match(/youtu\.be\/([\w-]+)/);
+  const name = dropName || (vid ? vid[1] : 'New_Song');
   try {
     const r = await fetch('/api/enqueue', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     });
     const j = await r.json();
-    stemcutter.el.classList.remove('working'); S.saw(false);
     if (!r.ok) { hint(`✗ ${j.error || 'enqueue failed'}`); S.thunk(); return; }
-    S.chime();
-    hint(`✓ REALLY queued as <b>${j.queued}</b> — the Librarian ingests it and this laptop renders the stems (~20 min). Watch the queue in the <a href="/" style="color:#7fd6a4">portal</a>.`);
-  } catch (err) {
-    stemcutter.el.classList.remove('working'); S.saw(false);
-    hint(`✗ enqueue failed: ${err.message}`); S.thunk();
-  }
+    hint(`✓ REALLY queued as <b>${j.queued}</b> — pipeline is rendering. The show below is a preview; watch the real queue in the <a href="/">portal</a>.`);
+    if (target.work === 'aggregate') runMachine(target, place('tmpurl', '', -999, -999, 'url'));
+    else stemcutShow(target, name);
+  } catch (err) { hint(`✗ enqueue failed: ${err.message}`); S.thunk(); }
 });
 function overlapsPoint(el, x, y) {
   const r = el.getBoundingClientRect();
   return x >= r.left - 24 && x <= r.right + 24 && y >= r.top - 24 && y <= r.bottom + 24;
 }
 
-/* ── The machines do their thing ──────────────────────────────────────── */
-function hint(t) { document.getElementById('hint').innerHTML = t; }
-function runMachine(m, o) {
-  S.drop();
-  if (m === stemcutter) {
-    o.el.remove(); objects.splice(objects.indexOf(o), 1);
-    m.el.classList.add('working'); S.saw(true);
-    hint('The <b>Stemcutter</b> is sawing… (real life: yt-dlp → Demucs, ~20 min. Demo: 3 s)');
-    setTimeout(() => {
-      m.el.classList.remove('working'); S.saw(false); S.chime();
-      folder = place('folder',
-        `<div class="art">📁<span class="badge">🎵</span></div><div class="label">BackingTrack</div><div class="sub">6 stems + empty metadata</div>`,
-        m.x - 20, m.y + 170, 'folder', 'pop');
-      folderStage = 'raw';
-      hint('A <b>BackingTrack folder</b> slid out. Double-click to peek · drag it onto the <b>TAGGER</b>');
-    }, 3000);
-  } else if (m === tagger) {
-    m.el.classList.add('working'); S.ticks(8);
-    hint('The <b>Tagger</b> is ticking its checkboxes… (bpm · key · sections · mix trims · plays)');
-    setTimeout(() => {
-      m.el.classList.remove('working'); S.chime();
-      folderStage = 'tagged';
-      folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
-      folder.el.querySelector('.badge').textContent = '✅';
-      hint('Metadata filled (peek again!). Now shelve it: drag the folder into the <b>LIBRARY</b>');
-      showCard();
-    }, 1800);
-  } else if (m === library) {
-    S.chime();
-    folder.el.style.transition = 'all .6s'; folder.el.style.left = m.x + 30 + 'px'; folder.el.style.top = m.y + 30 + 'px';
-    folder.el.style.transform = 'scale(.3)'; folder.el.style.opacity = '0';
-    setTimeout(() => folder.el.remove(), 650);
-    m.el.querySelector('.sub').textContent = '357 song folders · claude.md + git each';
-    folderStage = 'shelved';
-    hint('Shelved. In the real Library every song folder carries <b>claude.md</b> (instructions) + <b>runlog.md</b> (what the machines noticed) + its own <b>git history</b>. Refresh the page to run the loop again.');
-  } else if (m === amp) {
-    hint('🔊 The <b>Amp</b> plays whatever lands on it — in the real desk this IS the portal player.');
-    const t = ac().currentTime; [164.8, 207.6, 246.9, 329.6].forEach((f, i) => tone(f, t + i * .0, 1.2, 'sine', .06));
-    o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500);
-  }
+/* ── VOICE BUILDER (the claude.md grammar, live) ──────────────────────────
+   "connect <machine> to <machine>" · "take it apart" · "run the url"
+   See desktop/CLAUDE.md for the full instrumentation grammar.            */
+const micBtn = document.getElementById('mic');
+let rec = null, listening = false;
+function machineByName(word) {
+  word = (word || '').toLowerCase();
+  if (word.includes('stem') || word.includes('cut')) return machines.find(m => m.work === 'stemcut');
+  if (word.includes('tag')) return machines.find(m => m.work === 'tag');
+  if (word.includes('libr')) return machines.find(m => m.work === 'shelve');
+  if (word.includes('amp')) return machines.find(m => m.work === 'play');
+  return null;
 }
+function voiceCommand(text) {
+  text = text.toLowerCase();
+  let m;
+  if ((m = text.match(/connect (?:the )?(\w+) (?:to|and|with) (?:the )?(\w+)/))) {
+    const a = machineByName(m[1]), b = machineByName(m[2]);
+    if (a && b) { makeAggregate(a, b); return true; }
+    hint(`Couldn't find both machines in “${text}”.`); return false;
+  }
+  if (/take (it|.*) apart|disassemble|separate the/.test(text)) {
+    if (aggregates.length) { disassemble(aggregates[aggregates.length - 1]); return true; }
+    hint('No aggregate to take apart.'); return false;
+  }
+  if (/run|feed|start/.test(text) && /url|link|song/.test(text)) {
+    const target = machines.find(mm => mm.work === 'aggregate') || machines.find(mm => mm.work === 'stemcut');
+    const chip = objects.find(oo => oo.kind === 'url');
+    if (target && chip) { runMachine(target, chip); return true; }
+    hint('Nothing to feed — the URL chip is gone. Refresh the desk.'); return false;
+  }
+  hint(`Voice builder heard “${text}” — try: <b>connect stemcutter to tagger</b> · <b>take it apart</b> · <b>run the url</b>`);
+  return false;
+}
+micBtn.addEventListener('click', () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { hint('This browser has no speech engine.'); return; }
+  if (listening) { rec && rec.stop(); listening = false; micBtn.classList.remove('on'); return; }
+  rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US';
+  rec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (!e.results[i].isFinal) continue;
+      const t = e.results[i][0].transcript.trim();
+      if (/holodeck|holiday|hollow deck|halo deck/i.test(t) || true) voiceCommand(t.replace(/holodeck|holiday|hollow deck|halo deck/ig, '').trim());
+    }
+  };
+  rec.onend = () => { if (listening) { try { rec.start(); } catch (e) {} } };
+  try { rec.start(); listening = true; micBtn.classList.add('on'); hint('🎤 Voice builder on — say: <b>connect stemcutter to tagger</b>'); }
+  catch (e) { hint('Mic failed: ' + e.message); }
+});
+window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates };
 </script>
 </body>
 </html>
