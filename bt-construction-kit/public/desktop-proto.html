@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>simpleStem — Sound Desktop prototype</title>
+<style>
+  /* ── The desk ─────────────────────────────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; }
+  body {
+    font: 13px/1.4 -apple-system, 'Helvetica Neue', sans-serif;
+    background: linear-gradient(160deg, #1d2733 0%, #10161f 70%);
+    color: #dfe6ee; overflow: hidden;
+  }
+  #hint {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 6px 14px; border-radius: 9px; font-size: 12px; z-index: 50;
+    transition: opacity .4s;
+  }
+  #hint b { color: #7fd6a4; }
+  .obj {
+    position: absolute; width: 120px; text-align: center; cursor: grab;
+    transition: transform .15s;
+  }
+  .obj:active { cursor: grabbing; }
+  .obj .art { font-size: 52px; line-height: 1.1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.5)); pointer-events: none; }
+  .obj .label { margin-top: 3px; font-size: 11px; font-weight: 700; letter-spacing: .3px;
+    background: rgba(0,0,0,.4); border-radius: 6px; padding: 2px 6px; display: inline-block; pointer-events: none; }
+  .obj .sub { font-size: 10px; opacity: .6; pointer-events: none; }
+  .machine .art { font-size: 64px; }
+  .machine.hot { animation: hum 1s ease-in-out infinite; }
+  .machine.legal { transform: scale(1.16); }
+  .machine.legal .label { background: #1d8f4f; color: #fff; }
+  .machine.illegal { filter: grayscale(1) brightness(.6); }
+  .machine.working .art { animation: shake .12s linear infinite; }
+  @keyframes shake { 25% { transform: rotate(-3deg);} 75% { transform: rotate(3deg);} }
+  @keyframes hum { 50% { transform: scale(1.03); } }
+  .badge { position: absolute; top: -4px; right: 10px; font-size: 16px; }
+  .dragging { opacity: .85; z-index: 40; pointer-events: none; transform: scale(1.05); }
+  .bounce { animation: bounce .45s; }
+  @keyframes bounce { 0%{transform:translateX(0)} 25%{transform:translateX(-14px)} 55%{transform:translateX(11px)} 80%{transform:translateX(-6px)} 100%{transform:translateX(0)} }
+  .pop { animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  /* card = folder contents viewer */
+  #card {
+    position: fixed; right: 18px; top: 60px; width: 320px; display: none;
+    background: rgba(18,22,30,.97); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 12px; padding: 14px; z-index: 60; box-shadow: 0 16px 44px rgba(0,0,0,.5);
+  }
+  #card h3 { font-size: 13px; margin-bottom: 8px; color: #7fd6a4; }
+  #card .file { font: 11px/1.7 Menlo, monospace; white-space: pre-wrap; }
+  #card .meta-k { color: #f1c40f; }
+  #card .empty { opacity: .45; font-style: italic; }
+  #card .close { position: absolute; top: 8px; right: 10px; cursor: pointer; opacity: .6; }
+  .gitbadge { font-size: 10px; color: #e8a33d; }
+</style>
+</head>
+<body>
+<div id="hint">Drag the <b>YouTube URL</b> onto the <b>Stemcutter</b> · double-click any folder to peek inside · this desk is a grammar demo — nothing real is processed</div>
+<div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
+
+<script>
+/* ── Sound: every action has a voice (tiny WebAudio sketches) ─────────── */
+let AC = null;
+function ac() { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); return AC; }
+function tone(f, t, dur, type, gain) {
+  const c = ac(), o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'triangle'; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain || .12, t + .01);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + .05);
+}
+const S = {
+  pickup:  () => tone(520, ac().currentTime, .09),
+  legal:   () => tone(760, ac().currentTime, .12),
+  drop:    () => { const t = ac().currentTime; tone(660, t, .1); tone(880, t + .09, .16); },
+  thunk:   () => tone(110, ac().currentTime, .18, 'square', .18),
+  saw:     (on) => { if (on) { S._saw = setInterval(() => tone(200 + Math.random()*140, ac().currentTime, .06, 'sawtooth', .05), 70); } else clearInterval(S._saw); },
+  ticks:   (n) => { for (let i = 0; i < n; i++) tone(1400, ac().currentTime + i * .16, .04, 'square', .08); },
+  chime:   () => { const t = ac().currentTime; [659.25, 830.6, 987.8].forEach((f, i) => tone(f, t + i * .12, .5, 'sine', .1)); }, // E major — the song's key
+  riffle:  () => { for (let i = 0; i < 4; i++) tone(300 + i * 120, ac().currentTime + i * .07, .05, 'triangle', .07); },
+};
+
+/* ── The objects on the desk ──────────────────────────────────────────── */
+const desk = document.body;
+const objects = [];   // {el, kind, accepts?, x, y}
+function place(id, html, x, y, kind, cls) {
+  const el = document.createElement('div');
+  el.className = 'obj ' + (cls || '');
+  el.id = id; el.innerHTML = html;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  desk.appendChild(el);
+  const o = { el, id, kind, x, y };
+  objects.push(o);
+  return o;
+}
+const W = innerWidth, H = innerHeight;
+
+/* nouns */
+place('url', `<div class="art">🔗</div><div class="label">youtube.com/…dQw4</div><div class="sub">a URL — drag me</div>`, 60, H*0.18, 'url');
+
+/* machines (verbs) */
+const stemcutter = place('stemcutter',
+  `<div class="art">🎰</div><div class="label">STEMCUTTER</div><div class="sub">URL slot · saws songs into stems</div>`,
+  W*0.32, H*0.14, 'machine', 'machine');
+stemcutter.accepts = ['url'];
+
+const tagger = place('tagger',
+  `<div class="art">🗳️</div><div class="label">TAGGER</div><div class="sub">folder tray · fills the metadata card</div>`,
+  W*0.62, H*0.14, 'machine', 'machine');
+tagger.accepts = ['folder-raw'];
+
+const library = place('library',
+  `<div class="art">🗄️</div><div class="label">LIBRARY</div><div class="sub">356 song folders · claude.md + git each</div>`,
+  W*0.62, H*0.62, 'machine', 'machine');
+library.accepts = ['folder-tagged'];
+
+const amp = place('amp',
+  `<div class="art">🎛️</div><div class="label">THE AMP</div><div class="sub">drop anything playable</div>`,
+  W*0.32, H*0.62, 'machine', 'machine');
+amp.accepts = ['folder-raw', 'folder-tagged'];
+
+/* ── Folder state (the demo's one document) ───────────────────────────── */
+let folder = null;           // the BackingTrack folder object once it exists
+let folderStage = null;      // 'raw' | 'tagged' | 'shelved'
+const META_EMPTY = `<span class="meta-k">bpm</span>: <span class="empty">—</span>
+<span class="meta-k">key</span>: <span class="empty">—</span>
+<span class="meta-k">title/artist</span>: <span class="empty">—</span>
+<span class="meta-k">sections</span>: <span class="empty">[ empty — place breaks here ]</span>
+<span class="meta-k">stem mix trims</span>: <span class="empty">—</span>
+<span class="meta-k">plays</span>: <span class="empty">—</span>  <span class="meta-k">last played</span>: <span class="empty">—</span>`;
+const META_FULL = `<span class="meta-k">bpm</span>: 122.4   <span class="meta-k">key</span>: E major
+<span class="meta-k">title/artist</span>: Never Gonna Give You Up — Rick Astley
+<span class="meta-k">sections</span>: intro 0:00 · verse 0:19 · chorus 0:43 · …
+<span class="meta-k">stem mix trims</span>: vocals −2 dB · piano −4 dB
+<span class="meta-k">plays</span>: 0   <span class="meta-k">last played</span>: never`;
+
+function folderCard() {
+  const tagged = folderStage !== 'raw';
+  return `<h3>📁 BackingTrack — Never_Gonna_Give_You_Up</h3>
+  <div class="file">🎵 vocals.m4a  drums.m4a  bass.m4a
+🎵 guitar.m4a  piano.m4a  other.m4a
+🎼 source.wav
+📄 metadata.json ${tagged ? '' : '<span class="empty">(empty — feed me to the TAGGER)</span>'}
+${tagged ? META_FULL : META_EMPTY}
+📝 claude.md <span class="empty">— standing instructions for this song</span>
+📒 runlog.md <span class="empty">— what each machine noticed, for next time</span>
+<span class="gitbadge">⎇ git: ${tagged ? '2 commits (stemcut, tagged)' : '1 commit (stemcut)'}</span></div>`;
+}
+const card = document.getElementById('card');
+function showCard() { document.getElementById('card-body').innerHTML = folderCard(); card.style.display = 'block'; S.riffle(); }
+
+/* ── Drag engine with the grammar rules ───────────────────────────────── */
+let drag = null;
+desk.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.obj');
+  if (!el) return;
+  const o = objects.find(x => x.el === el);
+  if (!o || o.kind === 'machine') return;          // machines are furniture (v1)
+  drag = { o, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false };
+  el.classList.add('dragging');
+  S.pickup();
+});
+desk.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  drag.moved = true;
+  drag.o.el.style.left = (e.clientX - drag.dx) + 'px';
+  drag.o.el.style.top = (e.clientY - drag.dy) + 'px';
+  // type plates: light legal targets, grey illegal ones (rule 4)
+  for (const m of [stemcutter, tagger, library, amp]) {
+    const hit = overlaps(drag.o.el, m.el);
+    const legal = m.accepts.includes(dragKind());
+    m.el.classList.toggle('legal', hit && legal);
+    m.el.classList.toggle('illegal', hit && !legal);
+    if (hit && legal && !m._toned) { m._toned = true; S.legal(); }
+    if (!hit) m._toned = false;
+  }
+});
+desk.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const o = drag.o;
+  o.el.classList.remove('dragging');
+  let handled = false;
+  for (const m of [stemcutter, tagger, library, amp]) {
+    m.el.classList.remove('legal', 'illegal');
+    if (!handled && overlaps(o.el, m.el)) {
+      if (m.accepts.includes(dragKind())) { runMachine(m, o); handled = true; }
+      else { o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500); S.thunk(); handled = true; }
+    }
+  }
+  if (!drag.moved && o === folder) showCard();     // click = peek
+  drag = null;
+});
+desk.addEventListener('dblclick', (e) => {
+  if (folder && e.target.closest('.obj') === folder.el) showCard();
+});
+function dragKind() {
+  if (!drag) return null;
+  if (drag.o.kind === 'url') return 'url';
+  return folderStage === 'raw' ? 'folder-raw' : 'folder-tagged';
+}
+function overlaps(a, b) {
+  const r1 = a.getBoundingClientRect(), r2 = b.getBoundingClientRect();
+  return !(r1.right < r2.left + 20 || r1.left > r2.right - 20 || r1.bottom < r2.top + 20 || r1.top > r2.bottom - 20);
+}
+
+/* ── The machines do their thing ──────────────────────────────────────── */
+function hint(t) { document.getElementById('hint').innerHTML = t; }
+function runMachine(m, o) {
+  S.drop();
+  if (m === stemcutter) {
+    o.el.remove(); objects.splice(objects.indexOf(o), 1);
+    m.el.classList.add('working'); S.saw(true);
+    hint('The <b>Stemcutter</b> is sawing… (real life: yt-dlp → Demucs, ~20 min. Demo: 3 s)');
+    setTimeout(() => {
+      m.el.classList.remove('working'); S.saw(false); S.chime();
+      folder = place('folder',
+        `<div class="art">📁<span class="badge">🎵</span></div><div class="label">BackingTrack</div><div class="sub">6 stems + empty metadata</div>`,
+        m.x - 20, m.y + 170, 'folder', 'pop');
+      folderStage = 'raw';
+      hint('A <b>BackingTrack folder</b> slid out. Double-click to peek · drag it onto the <b>TAGGER</b>');
+    }, 3000);
+  } else if (m === tagger) {
+    m.el.classList.add('working'); S.ticks(8);
+    hint('The <b>Tagger</b> is ticking its checkboxes… (bpm · key · sections · mix trims · plays)');
+    setTimeout(() => {
+      m.el.classList.remove('working'); S.chime();
+      folderStage = 'tagged';
+      folder.el.querySelector('.sub').textContent = 'metadata filled ✓ 122 bpm · E major';
+      folder.el.querySelector('.badge').textContent = '✅';
+      hint('Metadata filled (peek again!). Now shelve it: drag the folder into the <b>LIBRARY</b>');
+      showCard();
+    }, 1800);
+  } else if (m === library) {
+    S.chime();
+    folder.el.style.transition = 'all .6s'; folder.el.style.left = m.x + 30 + 'px'; folder.el.style.top = m.y + 30 + 'px';
+    folder.el.style.transform = 'scale(.3)'; folder.el.style.opacity = '0';
+    setTimeout(() => folder.el.remove(), 650);
+    m.el.querySelector('.sub').textContent = '357 song folders · claude.md + git each';
+    folderStage = 'shelved';
+    hint('Shelved. In the real Library every song folder carries <b>claude.md</b> (instructions) + <b>runlog.md</b> (what the machines noticed) + its own <b>git history</b>. Refresh the page to run the loop again.');
+  } else if (m === amp) {
+    hint('🔊 The <b>Amp</b> plays whatever lands on it — in the real desk this IS the portal player.');
+    const t = ac().currentTime; [164.8, 207.6, 246.9, 329.6].forEach((f, i) => tone(f, t + i * .0, 1.2, 'sine', .06));
+    o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500);
+  }
+}
+</script>
+</body>
+</html>
