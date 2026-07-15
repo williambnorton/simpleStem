@@ -64,12 +64,17 @@
   .dancing { animation: rockdance .5s ease-in-out infinite; transform-origin: 50% 90%; }
   @keyframes rockdance { 0%,100% { transform: rotate(-9deg) scale(1.06);} 50% { transform: rotate(9deg) scale(1.06);} }
 
-  /* flying file chips */
+  /* flying file chips — slow, readable glide (Bill 2026-07-15: "slower
+     so I can see the file name"); the label stays crisp for ~2 s and
+     only fades at the very end of the flight */
   .chip {
-    position: fixed; z-index: 45; font: 10px/1 Menlo, monospace; pointer-events: none;
-    background: rgba(0,0,0,.65); border: 1px solid #7fd6a4; color: #7fd6a4;
-    border-radius: 6px; padding: 3px 6px; transition: all .8s cubic-bezier(.3,.7,.4,1);
+    position: fixed; z-index: 45; font: 12px/1.2 Menlo, monospace; pointer-events: none;
+    background: rgba(0,0,0,.78); border: 1px solid #7fd6a4; color: #a9f0c6;
+    border-radius: 7px; padding: 5px 9px;
+    transition: left 2.2s cubic-bezier(.35,.6,.4,1), top 2.2s cubic-bezier(.35,.6,.4,1),
+                transform 2.2s cubic-bezier(.35,.6,.4,1), opacity .5s ease 1.8s;
     white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4);
   }
 
   /* the LIBRARY's drawer: slides open to accept a tagged folder */
@@ -177,7 +182,7 @@
 </style>
 </head>
 <body>
-<div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>⌃control-drag one machine onto another</b> to build an aggregate · 🎤 for voice building</div>
+<div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>drag one machine onto another</b> to build an aggregate (stems + tags in one step) · 🎤 for voice building</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
 <div class="zone" id="zone-mini" style="left:12px; top:60px; width:240px; height:0;"><span class="zlabel">Mac mini · Librarian (background)</span></div>
 <div class="zone" id="zone-laptop" style="left:0; top:0; width:0; height:0;"><span class="zlabel">This laptop · Performer</span></div>
@@ -469,11 +474,11 @@ function stemcutShow(machine, name, done) {
         chip.style.opacity = '0'; chip.style.transform = 'scale(.5)';
       });
       S.whoosh();
-      setTimeout(() => { chip.remove(); liveSetRow(f, 'done', (4.5 + Math.random() * 3).toFixed(1) + ' MB'); }, 830);
+      setTimeout(() => { chip.remove(); liveSetRow(f, 'done', (4.5 + Math.random() * 3).toFixed(1) + ' MB'); }, 2250);
       folder.el.querySelector('.sub').textContent = `building… ${i + 1}/7 files`;
-    }, 400 + i * 420);
+    }, 400 + i * 800);
   });
-  const workMs = 400 + files.length * 420 + 900;
+  const workMs = 400 + files.length * 800 + 2300;
   setTimeout(() => {
     machine.el.classList.remove('working'); S.saw(false);
     const artEl = folder.el.querySelector('.folder-art');
@@ -518,7 +523,9 @@ desk.addEventListener('pointerdown', (e) => {
   const o = objects.find(x => x.el === el);
   if (!o) return;
   if (o.kind === 'building') return;                       // mid-show: hands off
-  if (o.kind === 'machine' && !(e.ctrlKey || e.metaKey)) return;   // machines move only with ⌃
+  // Machines drag PLAINLY now (Bill 2026-07-15): drop one on another to
+  // build an aggregate, or drop on empty desk to rearrange. A press
+  // without movement is still just a click.
   drag = { o, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop, moved: false,
            machineDrag: o.kind === 'machine' };
   S.pickup();
@@ -759,7 +766,7 @@ function flyChip(from, to, text) {
     chip.style.left = (to.x - 20) + 'px'; chip.style.top = to.y + 'px';
     chip.style.opacity = '0.2';
   });
-  setTimeout(() => chip.remove(), 900);
+  setTimeout(() => chip.remove(), 2500);
 }
 setInterval(pollSystem, 6000);
 pollSystem();

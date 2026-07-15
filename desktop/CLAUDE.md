@@ -12,9 +12,10 @@ Claude should record what it learned.
   Nouns are draggable; a noun mid-transformation (`kind: 'building'`) is
   NOT draggable — the folder becomes grabbable only after its completion
   dance ends.
-- **Machine (verb)**: `{ id, art, label, accepts[], work }`. Machines are
-  furniture; they move (and combine) only with ⌃control-drag.
-- **Aggregate**: two machines latched into one, built by ⌃control-dragging
+- **Machine (verb)**: `{ id, art, label, accepts[], work }`. Machines
+  drag PLAINLY (2026-07-15): drop one on another to aggregate, drop on
+  empty desk to rearrange; a press without movement is still a click.
+- **Aggregate**: two machines latched into one, built by dragging
   machine A onto machine B, or by voice. `accepts` = A's accepts; running
   it chains A's output into B automatically (B's lid opens, the folder
   climbs in). ⌥option-double-click takes an aggregate apart.
@@ -41,6 +42,9 @@ declared next round, not an oversight.
 
 ## The animation contract (what Bill signed off on)
 
+0. FLIGHT PACE: every airborne chip glides for 2.2 s with a 12 px
+   readable label that fades only in the last half-second — the operator
+   must be able to READ what is flying (Bill 2026-07-15).
 1. Drop on Stemcutter → a folder NAMED AFTER THE SONG pops out beside it.
 2. File chips (`vocals.m4a` … `source.wav`) FLY from machine to folder,
    one at a time, with a whoosh; the folder's sub-label counts `n/7`.
