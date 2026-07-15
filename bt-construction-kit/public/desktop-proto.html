@@ -1113,12 +1113,46 @@ desk.addEventListener('dblclick', async (e) => {
         : `📂 Finder opened on <b>STEMS/</b> — couldn't match this folder to a song on disk yet.`);
     } catch (err) { hint('Finder open failed: ' + err.message); }
   } else if (o.kind === 'machine' && !e.altKey) {
+    // Double-click opens the REAL contents of every object (Bill
+    // 2026-07-15): Finder on its directory, or the right app entirely.
+    const openSpecial = async (base, what) => {
+      try {
+        await fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base }) });
+        hint(`📂 Opened <b>${what}</b>.`);
+      } catch (err) { hint('Open failed: ' + err.message); }
+    };
+    const map = {
+      queue:     () => openSpecial('__INCOMING__', 'INCOMING_WEBLOC in Finder'),
+      shelve:    () => openSpecial('', 'the STEMS library in Finder'),
+      stemcut:   () => openSpecial('__QUEUE__', 'STEM_QUEUE (its work orders) in Finder'),
+      aggregate: () => openSpecial('__QUEUE__', 'STEM_QUEUE (its work orders) in Finder'),
+      play:      () => { window.open('/', '_blank'); hint('🎛 Opened the portal — the Amp\'s real face.'); },
+    };
+    const idMap = {
+      robot:   () => { window.open('/librarian.html', '_blank'); hint('🤖 Opened the Librarian dashboard.'); },
+      sheet:   async () => {
+        const j = await fetch('/api/desktop/sheeturl').then(r => r.json()).catch(() => null);
+        if (j && j.ok) { window.open(j.url, '_blank'); hint('📊 Opened the band songlist sheet.'); }
+        else hint('Sheet URL not found (mpb_sync_config.json).');
+      },
+      catalog: () => openSpecial('__CATALOG__', 'CATALOG.json in Finder'),
+      drive:   () => openSpecial('__ROOT__', 'the simpleStem Drive folder in Finder'),
+      gigbind: () => openSpecial('__GIGS__', 'GIGS in Finder'),
+      cache:   () => openSpecial('__CACHE__', '~/.bt-cache in Finder'),
+      xr18:    () => openSpecial('__XR18__', 'X-AIR-Edit (the XR18\'s app)'),
+    };
+    if (idMap[o.id]) { idMap[o.id](); return; }
+    if (map[o.work]) { map[o.work](); return; }
     document.getElementById('card-body').innerHTML =
       `<h3>${o.work === 'aggregate' ? '' : o.art + ' '}${o.label}</h3><div class="file">${peekContent(o).replace(/<[^>]+>/g, ' ').trim()}
 
 Editable in round three: the machine's claude.md
 (its standing instructions) will live here.</div>`;
     card.style.display = 'block'; S.riffle();
+  } else if (o.kind === 'url') {
+    const u = (folderSong && folderSong.source_url) || (realSong && realSong.source_url);
+    if (u) { window.open(u, '_blank'); hint('🔗 Opened the source video.'); }
+    else hint('This chip has no real URL behind it.');
   }
 });
 

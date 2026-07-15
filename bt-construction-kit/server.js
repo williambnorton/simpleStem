@@ -5961,13 +5961,20 @@ app.post('/api/desktop/reveal', async (req, res) => {
     const base = String((req.body && req.body.base) || '').trim();
     const title = String((req.body && req.body.title) || '').trim();
     // Pipeline instruments: fixed special targets for the desk's queue tray.
+    // Every desk object opens its REAL contents (Bill 2026-07-15).
+    // Values are `open` arg arrays: plain dir, -R reveal-file, -a app.
     const SPECIAL = {
-      '__INCOMING__': path.join(SIMPLE_STEM_ROOT, 'INCOMING_WEBLOC'),
-      '__QUEUE__': path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE'),
+      '__INCOMING__': [path.join(SIMPLE_STEM_ROOT, 'INCOMING_WEBLOC')],
+      '__QUEUE__': [path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE')],
+      '__GIGS__': [path.join(SIMPLE_STEM_ROOT, 'GIGS')],
+      '__ROOT__': [SIMPLE_STEM_ROOT],
+      '__CACHE__': [path.join(require('os').homedir(), '.bt-cache')],
+      '__CATALOG__': ['-R', path.join(SIMPLE_STEM_ROOT, 'CATALOG.json')],
+      '__XR18__': ['-a', 'X-AIR-Edit'],
     };
     if (SPECIAL[base]) {
-      require('child_process').spawn('open', [SPECIAL[base]], { detached: true, stdio: 'ignore' }).unref();
-      return res.json({ ok: true, opened: SPECIAL[base], how: 'special', exact: true });
+      require('child_process').spawn('open', SPECIAL[base], { detached: true, stdio: 'ignore' }).unref();
+      return res.json({ ok: true, opened: SPECIAL[base].join(' '), how: 'special', exact: true });
     }
     const { target, how } = await resolveDeskFolder(base, title);
     require('child_process').spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
@@ -6006,6 +6013,20 @@ app.get('/api/desktop/inspect', async (req, res) => {
 // Sound Desktop: resolve a YouTube URL to its real title/author via the
 // oEmbed endpoint (no API key). Proxied server-side because the browser
 // can't CORS it. 5s bound; failures return ok:false rather than erroring.
+// The band's songlist sheet URL for the desk's SHEET object.
+app.get('/api/desktop/sheeturl', (req, res) => {
+  try {
+    for (const cand of [path.join(SIMPLE_STEM_ROOT, 'mpb_sync_config.json'),
+                        path.join(__dirname, '..', 'mpb_sync_config.json')]) {
+      if (fs.existsSync(cand)) {
+        const cfg = JSON.parse(fs.readFileSync(cand, 'utf8'));
+        if (cfg.sheet_id) return res.json({ ok: true, url: 'https://docs.google.com/spreadsheets/d/' + cfg.sheet_id });
+      }
+    }
+    res.json({ ok: false });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 app.get('/api/desktop/oembed', async (req, res) => {
   const url = String(req.query.url || '');
   if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: 'need url' });
