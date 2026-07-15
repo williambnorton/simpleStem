@@ -141,6 +141,16 @@ hits `/api/setlists/:slug`, song expand hits `/api/song/:base/automation`
 (init events filtered out; lyric-line events show with their text).
 Library rows are fetched once into `obLib` for song properties.
 
+Methods + properties (Bill 2026-07-15 round two): `obMethods(spec)` is
+the SINGLE registry of an object's methods — the inspector's buttons and
+the tree's RIGHT-CLICK menu both render from it (menu via `showCtxAt`,
+the extracted reusable ctx renderer, z-index above the browser card).
+Selection also fills `#objb-props`, a full-width bottom strip listing
+ALL properties of the object (songs: the entire library row — lyrics,
+stems, stats included), nulls as ∅, objects JSON-ified, values >160
+chars clipped with click-to-expand. Never curate this list down —
+"all properties" means all.
+
 Real methods wired: gig → open GIGS/ in Finder; setlist → open source
 playlist, `POST /api/precache/setlist/:slug`; song → reveal in Finder,
 favorite toggle (PUT), open source video, open portal; action → “Fire

@@ -119,7 +119,15 @@
   #objb .objb-head { padding: 10px 16px; font: 700 13px -apple-system, sans-serif; color: #7fd6a4;
     border-bottom: 1px solid rgba(255,255,255,.12); display: flex; justify-content: space-between; }
   #objb .objb-head .close { cursor: pointer; opacity: .6; }
-  #objb .objb-panes { display: flex; height: calc(100% - 40px); }
+  #objb .objb-panes { display: flex; height: calc(64% - 40px); }
+  #objb .objb-props { height: 36%; border-top: 1px solid rgba(255,255,255,.14); overflow-y: auto;
+    padding: 8px 16px; font: 11px/1.75 Menlo, monospace; }
+  #objb .objb-props h4 { font: 700 11px -apple-system, sans-serif; color: #f1c40f; letter-spacing: 1px; margin: 2px 0 6px; }
+  .obp-row { display: flex; gap: 12px; border-bottom: 1px dotted rgba(255,255,255,.06); }
+  .obp-row .k { color: #f1c40f; min-width: 170px; flex-shrink: 0; }
+  .obp-row .v { white-space: pre-wrap; word-break: break-word; }
+  .obp-row .v.clip { cursor: pointer; }
+  .obp-row .v.clip::after { content: ' …click to expand'; color: #7fd6a4; opacity: .7; }
   #objb .objb-tree { width: 46%; overflow-y: auto; padding: 10px 6px; border-right: 1px solid rgba(255,255,255,.1);
     font: 12px/1.9 Menlo, monospace; }
   #objb .objb-insp { flex: 1; overflow-y: auto; padding: 14px 16px; font: 12px/1.8 Menlo, monospace; }
@@ -232,7 +240,8 @@
 <div class="zone" id="zone-laptop" style="left:0; top:0; width:0; height:0;"><span class="zlabel">This laptop · Performer</span></div>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 <div id="objb"><div class="objb-head"><span>🧳 OBJECT BROWSER — Gig → Setlist → Song → Sections + Timeline actions</span><span class="close" onclick="objb.style.display='none'">✕</span></div>
-<div class="objb-panes"><div class="objb-tree" id="objb-tree"></div><div class="objb-insp" id="objb-insp"><div class="ob-note">Select an object on the left — its properties and methods appear here.</div></div></div></div>
+<div class="objb-panes"><div class="objb-tree" id="objb-tree"></div><div class="objb-insp" id="objb-insp"><div class="ob-note">Select an object on the left — summary + methods here, ALL properties below. Right-click any object for its methods.</div></div></div>
+<div class="objb-props" id="objb-props"><h4>ALL PROPERTIES</h4><div class="ob-note">nothing selected.</div></div></div>
 <div id="peek"></div>
 <div id="ctx"></div>
 
@@ -1035,6 +1044,15 @@ function obNode(parentEl, spec) {
   row.innerHTML = `<span class="tw">${spec.load || spec.open ? (spec.open ? '▾' : '▸') : ''}</span>${spec.label}`;
   el.appendChild(row); el.appendChild(kids); parentEl.appendChild(el);
   let loaded = false;
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (obSelEl) obSelEl.classList.remove('sel');
+    obSelEl = row; row.classList.add('sel');
+    obInspect(spec);
+    const items = obMethods(spec);
+    if (!items.length) items.push({ label: '(no methods — see properties below)', run: () => {} });
+    showCtxAt(items, e.clientX, e.clientY);
+  });
   row.addEventListener('click', async () => {
     const wasSel = obSelEl === row;
     if (obSelEl) obSelEl.classList.remove('sel');
@@ -1049,6 +1067,50 @@ function obNode(parentEl, spec) {
   });
   return { el, kids };
 }
+function obMethods(spec) {
+  const d = spec.data || {};
+  const items = [];
+  if (spec.type === 'gig') {
+    items.push({ label: '📂 Open GIGS/ in Finder', run: () => openSpecial('__GIGS__', 'GIGS in Finder') });
+  } else if (spec.type === 'setlist') {
+    if (d.source_url) items.push({ label: '🔗 Open source playlist', run: () => window.open(d.source_url, '_blank') });
+    if (d.slug) items.push({ label: '🧰 Precache all stems', run: async () => { const r = await fetch('/api/precache/setlist/' + encodeURIComponent(d.slug), { method: 'POST' }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🧰 precache: ' + r.error : '🧰 precache kicked off for “' + d.title + '”.'); } });
+  } else if (spec.type === 'song') {
+    const r = d.row || {};
+    items.push({ label: '📂 Reveal in Finder', run: () => fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: d.base, title: r.title }) }) });
+    items.push({ label: r.favorite ? '☆ Unfavorite' : '★ Favorite', run: async () => { await fetch('/api/song/' + encodeURIComponent(d.base) + '/favorite', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ favorite: !r.favorite }) }); r.favorite = !r.favorite; hint(r.favorite ? '★ favorited.' : '☆ unfavorited.'); obInspect(spec); } });
+    if (r.source_url) items.push({ label: '🔗 Open source video', run: () => window.open(r.source_url, '_blank') });
+    items.push({ label: '🎛 Open the portal', run: () => window.open('/', '_blank') });
+  } else if (spec.type === 'action') {
+    items.push({ label: '⚡ Fire now (real MIDI)', run: async () => {
+      const ports = { helix: 'helix', logic: 'IAC', xr18: 'XR18' };
+      const body = { port: ports[d.device] || d.device || '', type: d.type, channel: d.channel };
+      if (d.type === 'pc') body.program = d.program; else if (d.type === 'cc') { body.controller = d.controller; body.value = d.value; }
+      const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).catch(e => ({ error: e.message }));
+      hint(r.error ? '⚡ MIDI: ' + r.error : '⚡ sent to the wire.');
+    } });
+  }
+  return items;
+}
+function obAllProps(spec) {
+  const d = spec.data || {};
+  const flat = spec.type === 'song' ? { base: d.base, ...(d.row || {}) } : { ...d };
+  delete flat.row;
+  const box = document.getElementById('objb-props');
+  const rows = Object.keys(flat).map(k => {
+    let v = flat[k];
+    if (v === null || v === undefined) v = '∅';
+    else if (typeof v === 'object') { try { v = JSON.stringify(v, null, 1); } catch (e) { v = String(v); } }
+    else v = String(v);
+    const long = v.length > 160;
+    const short = long ? v.slice(0, 160) : v;
+    return { k, v, short, long };
+  });
+  box.innerHTML = `<h4>ALL PROPERTIES — ${spec.type.toUpperCase()} (${rows.length})</h4>` +
+    (rows.length ? rows.map((r, i) => `<div class="obp-row"><span class="k">${r.k}</span><span class="v ${r.long ? 'clip' : ''}" data-i="${i}">${escHtml(r.short)}</span></div>`).join('') : '<div class="ob-note">no properties.</div>');
+  box.querySelectorAll('.v.clip').forEach(el => el.addEventListener('click', () => { el.classList.remove('clip'); el.textContent = rows[+el.dataset.i].v; }, { once: true }));
+}
+function escHtml(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function obInspect(spec) {
   const insp = document.getElementById('objb-insp');
   const P = (k, v) => v === undefined || v === null || v === '' ? '' : `<div class="ob-prop"><span class="k">${k}</span><span>${v}</span></div>`;
@@ -1057,40 +1119,27 @@ function obInspect(spec) {
   const d = spec.data || {};
   if (spec.type === 'gig') {
     h += `<h3>🗂 ${d.title}</h3>` + P('slug', d.slug) + P('setlists', d.setlist_count) + P('songs', d.song_count) + P('source', d.source) + P('updated', d.updated_at);
-    h += `<div class="ob-methods">` + M('📂 Open GIGS/ in Finder', () => openSpecial('__GIGS__', 'GIGS in Finder')) + `</div>`;
   } else if (spec.type === 'setlist') {
     h += `<h3>📋 ${d.title}</h3>` + P('origin', d.origin) + P('songs', d.count) + P('cached', d.cached_count) + P('synced', d.synced_at) + P('in gig', d.gig);
-    let m = '';
-    if (d.source_url) m += M('🔗 Open source playlist', () => window.open(d.source_url, '_blank'));
-    if (d.slug) m += M('🧰 Precache all stems', async () => { const r = await fetch('/api/precache/setlist/' + encodeURIComponent(d.slug), { method: 'POST' }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🧰 precache: ' + r.error : '🧰 precache kicked off for “' + d.title + '”.'); });
-    h += `<div class="ob-methods">${m}</div>`;
     if (d.origin === 'playlist') h += `<div class="ob-note">playlist-origin: owned by setlist_sync.py — edits would be overwritten.</div>`;
   } else if (spec.type === 'song') {
     const r = d.row || {};
     h += `<h3>🎵 ${r.title || d.base}</h3>` + P('artist', r.artist) + P('folder', d.base) + P('duration', r.duration ? fmtT(r.duration) : '') + P('bpm', r.practiceBpm || r.originalBpm) + P('key', r.key) + P('singer', r.singer_lead) + P('readiness', r.readiness) + P('drum pattern', r.drum_pattern) + P('favorite', r.favorite ? '★ yes' : '☆ no') + P('cached', r.cached === false ? '⚠ NOT CACHED' : '✓ offline-ready');
-    let m = M('📂 Reveal in Finder', () => fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: d.base, title: r.title }) }));
-    m += M(r.favorite ? '☆ Unfavorite' : '★ Favorite', async () => { await fetch('/api/song/' + encodeURIComponent(d.base) + '/favorite', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ favorite: !r.favorite }) }); r.favorite = !r.favorite; hint(r.favorite ? '★ favorited.' : '☆ unfavorited.'); obInspect(spec); });
-    if (r.source_url) m += M('🔗 Open source video', () => window.open(r.source_url, '_blank'));
-    m += M('🎛 Open the portal', () => window.open('/', '_blank'));
-    h += `<div class="ob-methods">${m}</div>`;
   } else if (spec.type === 'section') {
     h += `<h3>🧩 ${d.name || 'Section ' + (d.index + 1)}</h3>` + P('starts', fmtT(d.t || 0)) + P('ends', d.endT ? fmtT(d.endT) : '(song end)') + P('click-in', d.clickIn ? 'yes' : 'no');
     h += `<div class="ob-note">sections are edited on the song's timeline lane in the portal.</div>`;
   } else if (spec.type === 'action') {
     h += `<h3>⚡ ${d.label || (d.device + ' ' + d.type)}</h3>` + P('at', fmtT(d.t || 0)) + P('device', d.device) + P('type', d.type) + P('channel', d.channel) + P('program', d.program) + P('controller', d.controller) + P('value', d.value);
-    h += `<div class="ob-methods">` + M('⚡ Fire now (real MIDI)', async () => {
-      const ports = { helix: 'helix', logic: 'IAC', xr18: 'XR18' };
-      const body = { port: ports[d.device] || d.device || '', type: d.type, channel: d.channel };
-      if (d.type === 'pc') body.program = d.program; else if (d.type === 'cc') { body.controller = d.controller; body.value = d.value; }
-      const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).catch(e => ({ error: e.message }));
-      hint(r.error ? '⚡ MIDI: ' + r.error : '⚡ sent to the wire.');
-    }) + `</div>`;
   } else if (spec.type === 'note') {
     h += `<h3>· empty timeline</h3><div class="ob-note">place sections + actions on this song in the portal; auto-detected candidates snap them for you.</div>`;
   } else {
     h += `<h3>${spec.label}</h3><div class="ob-note">a collection — expand it.</div>`;
   }
+  const mm = obMethods(spec);
+  if (mm.length) h += `<div class="ob-methods">` + mm.map(it => M(it.label, it.run)).join('') + `</div>`;
+  h += `<div class="ob-note">right-click the object in the tree for this same method menu.</div>`;
   insp.innerHTML = h;
+  obAllProps(spec);
 }
 
 function showQueueCard() {
@@ -1501,12 +1550,16 @@ desk.addEventListener('contextmenu', (e) => {
   for (const name of ua) items.push({ label: name, user: true, run: () => hint(`★ ran your action “<b>${name}</b>” on ${o.label || o.id} — (round three: user actions bind to voice + scripts)`) });
   items.push({ sep: true });
   items.push({ label: '＋ Add action…', run: () => { const n = prompt('Name the new action for this kind of object:'); if (n && n.trim()) { addUserAction(kk, n.trim()); hint(`★ “<b>${n.trim()}</b>” added — right-click again to see it.`); } } });
-  ctx.innerHTML = items.map((it, i) => it.sep ? '<div class="sep"></div>' : `<div class="mi ${it.user ? 'user' : ''}" data-i="${i}">${it.label}</div>`).join('');
-  ctx.style.left = Math.min(innerWidth - 210, e.clientX) + 'px';
-  ctx.style.top = Math.min(innerHeight - 40 * items.length, e.clientY) + 'px';
-  ctx.style.display = 'block';
-  ctx.querySelectorAll('.mi').forEach(mi => mi.addEventListener('click', () => { ctx.style.display = 'none'; items[+mi.dataset.i].run(); }));
+  showCtxAt(items, e.clientX, e.clientY);
 });
+function showCtxAt(items, x, y) {
+  ctx.innerHTML = items.map((it, i) => it.sep ? '<div class="sep"></div>' : `<div class="mi ${it.user ? 'user' : ''}" data-i="${i}">${it.label}</div>`).join('');
+  ctx.style.left = Math.min(innerWidth - 210, x) + 'px';
+  ctx.style.top = Math.min(innerHeight - 40 * items.length, y) + 'px';
+  ctx.style.display = 'block';
+  ctx.style.zIndex = 120;
+  ctx.querySelectorAll('.mi').forEach(mi => mi.addEventListener('click', () => { ctx.style.display = 'none'; items[+mi.dataset.i].run(); }));
+}
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { ctx.style.display = 'none'; peek.style.display = 'none'; } });
 
 window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates, peekContent, userActions, resetLayout };

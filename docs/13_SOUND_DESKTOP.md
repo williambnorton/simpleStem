@@ -155,7 +155,10 @@ contract) and its executable methods as buttons: reveal the song folder
 in Finder, toggle favorite, open the source video, precache a whole
 setlist's stems, and fire a timeline MIDI action onto the real wire
 right now. Song timelines load lazily and show placed sections and
-actions (including lyric lines) at their timestamps.
+actions (including lyric lines) at their timestamps. Right-clicking any
+object in the tree pops the same method menu, invokable in place; the
+bottom of the browser is an ALL PROPERTIES strip showing every field
+the selected object carries (long values click to expand).
 
 ## Remembered layout (2026-07-15)
 
