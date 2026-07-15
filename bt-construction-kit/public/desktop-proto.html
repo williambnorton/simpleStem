@@ -243,7 +243,22 @@ function place(id, html, x, y, kind, cls) {
   objects.push(o);
   return o;
 }
+// ── remembered layout (Bill 2026-07-15): machine positions persist in
+// localStorage as VIEWPORT FRACTIONS so they survive reloads + resizes.
+const LAYOUT_KEY = 'desk.layout.v1';
+let savedLayout = {};
+try { savedLayout = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}'); } catch (e) {}
+function rememberPosition(o) {
+  savedLayout[o.id] = { fx: o.x / innerWidth, fy: o.y / innerHeight };
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(savedLayout)); } catch (e) {}
+}
+function resetLayout() { localStorage.removeItem(LAYOUT_KEY); location.reload(); }
 function machineDef(id, art, label, sub, x, y, accepts, work) {
+  const sv = savedLayout[id];
+  if (sv && isFinite(sv.fx) && isFinite(sv.fy)) {
+    x = Math.min(Math.max(sv.fx * innerWidth, 0), innerWidth - 90);
+    y = Math.min(Math.max(sv.fy * innerHeight, 0), innerHeight - 90);
+  }
   const m = place(id, `<div class="art">${art}</div><div class="label">${label}</div><div class="sub">${sub}</div>`, x, y, 'machine', 'machine');
   m.accepts = accepts; m.work = work; m.art = art; m.label = label;
   machines.push(m);
@@ -644,7 +659,11 @@ desk.addEventListener('pointerup', () => {
     else if (m.accepts.includes(dragKind())) { runMachine(m, o); handled = true; }
     else { o.el.classList.add('bounce'); setTimeout(() => o.el.classList.remove('bounce'), 500); S.thunk(); handled = true; }
   }
-  if (drag.machineDrag) { o.x = o.el.offsetLeft; o.y = o.el.offsetTop; redrawWires(); }
+  if (drag.machineDrag) {
+    o.x = o.el.offsetLeft; o.y = o.el.offsetTop;
+    if (!handled && drag.moved) rememberPosition(o);
+    redrawWires();
+  }
   if (!drag.moved && o === folder) showCard();
   drag = null;
 });
@@ -1309,6 +1328,7 @@ desk.addEventListener('contextmenu', (e) => {
     if (o.work === 'stemcut' || o.work === 'aggregate') items.push({ label: '📡 Current render status', run: showQueueCard });
     if (o.work === 'aggregate') items.push({ label: '🔧 Take apart', run: () => disassemble(o) });
     items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
+    items.push({ label: '↺ Reset desk layout', run: () => { if (confirm('Put every machine back in its default spot?')) resetLayout(); } });
   }
   const ua = userActions(kk);
   if (ua.length) items.push({ sep: true });
@@ -1323,7 +1343,7 @@ desk.addEventListener('contextmenu', (e) => {
 });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { ctx.style.display = 'none'; peek.style.display = 'none'; } });
 
-window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates, peekContent, userActions };
+window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates, peekContent, userActions, resetLayout };
 </script>
 </body>
 </html>

@@ -143,6 +143,14 @@ routes to the drummer's wedge). Wires re-anchor when objects are dragged.
 Hover any rig object for its leg of the chain; double-click opens
 X-AIR-Edit, where the real inputs, main bus, and AUX sends live.
 
+## Remembered layout (2026-07-15)
+
+Every machine on the desk can be dragged anywhere and STAYS there —
+positions are stored as viewport fractions in the browser
+(`desk.layout.v1`), so your arrangement survives reloads and window
+resizes. Right-click any machine → "↺ Reset desk layout" to go back to
+the defaults.
+
 ## Open questions for round two
 
 - Does the desk REPLACE the library tab or live beside it? (Suggest:

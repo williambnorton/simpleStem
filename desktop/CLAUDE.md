@@ -130,10 +130,21 @@ same-sign `off` values bow them apart. Rig objects obey all three
 universal gestures; double-click on any of them opens X-AIR-Edit
 (that's where inputs, the main bus, and AUX sends actually live).
 
+## Remembered layout (Bill 2026-07-15)
+
+Machine positions persist in localStorage `desk.layout.v1` as VIEWPORT
+FRACTIONS (`{id: {fx, fy}}`) so a saved layout survives reloads AND
+window resizes. `machineDef` applies the saved spot (clamped into the
+viewport) at boot; a plain machine drag that lands on empty desk saves
+on pointerup (drops that build an aggregate do NOT save — the original
+hides). Dynamic nouns (folders, chips, aggregates) are intentionally
+not persisted. Right-click any machine → "↺ Reset desk layout" (or
+`__desk.resetLayout()`) wipes the store and reloads.
+
 ## Debug handle
 
 `window.__desk = { makeAggregate, disassemble, voiceCommand, machines(),
-aggregates() }` — drive the desk from the console or tests without
+aggregates(), resetLayout }` — drive the desk from the console or tests without
 pointer theatrics.
 
 ## Self-improvement log (append, never rewrite)
