@@ -105,6 +105,31 @@ and nouns MUST implement all three:
   User actions persist per object-kind in localStorage `desk.actions.v1`;
   round three binds them to voice phrases and real scripts.
 
+## The stage rig (Bill 2026-07-15)
+
+The desk also illustrates the PERFORMER'S LIVE AUDIO ARCHITECTURE as
+objects + animated signal wires (SVG `#wires` layer, z between zones and
+objects, redrawn every 1 s and after drags):
+
+```
+MICS 🎤 + INSTRUMENTS 🎸 ──XLR──▶ XR18 🎚️ ──USB 18ch──▶ LOGIC PRO 🎹
+                                   ▲                        │
+THE AMP (portal stems, 18 USB ─────┘◀──── USB Logic mix ────┘
+        returns)                   │
+                                   ├──▶ MAIN L/R 🔊 (front of house)
+                                   └──▶ AUX 1–6 📢 (six monitor wedges)
+```
+
+Wire kinds are color/animation coded: `analog` yellow (XLR), `usb`
+green (faster dash flow), `outs` orange. Each wire is a quadratic
+curve between object centers; wires that share endpoints in opposite
+directions (the XR18↔Logic USB pair) carry a perpendicular `off`
+value — NOTE: because the direction vector negates between A→B and
+B→A, giving the pair OPPOSITE off signs makes the offsets coincide;
+same-sign `off` values bow them apart. Rig objects obey all three
+universal gestures; double-click on any of them opens X-AIR-Edit
+(that's where inputs, the main bus, and AUX sends actually live).
+
 ## Debug handle
 
 `window.__desk = { makeAggregate, disassemble, voiceCommand, machines(),
@@ -143,3 +168,7 @@ pointer theatrics.
   it's a shell-adjacent endpoint on the gig machine. The prototype has
   two dblclick listeners (legacy card + new reveal); consolidate when
   the desk graduates out of prototype.
+- 2026-07-15 (stage rig): perpendicular wire offsets negate with wire
+  direction — an A→B / B→A pair needs SAME-sign `off` values to bow
+  apart, opposite signs silently overlap (labels collide into garble).
+  Verified by reading the rendered <text> x/y attrs, not just the code.

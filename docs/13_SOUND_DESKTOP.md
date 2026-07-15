@@ -129,6 +129,20 @@ each song folder carrying `claude.md` + `runlog.md` + git badges. Illegal
 drops bounce. Every step makes its sound. No real pipeline is wired — it's
 the grammar made touchable.
 
+## The stage rig (2026-07-15)
+
+The desk now also draws the Performer's live audio architecture as an
+animated signal-flow diagram. Four new objects — MICS 🎤, INSTRUMENTS 🎸,
+MAIN L/R 🔊, AUX 1–6 📢 — join the existing XR18 and Logic Pro, wired by
+an SVG layer with flowing dashed strokes: yellow XLR runs from mics and
+instruments into the XR18, a green USB pair loops the 18 channels up to
+Logic Pro's mixer and the mix back down, a green "stems · 18 USB returns"
+run from The Amp (the portal) into the board, and orange output runs fan
+to Main L/R (front of house) and AUX 1–6 (six monitor wedges — the click
+routes to the drummer's wedge). Wires re-anchor when objects are dragged.
+Hover any rig object for its leg of the chain; double-click opens
+X-AIR-Edit, where the real inputs, main bus, and AUX sends live.
+
 ## Open questions for round two
 
 - Does the desk REPLACE the library tab or live beside it? (Suggest:
