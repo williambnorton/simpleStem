@@ -130,6 +130,25 @@ same-sign `off` values bow them apart. Rig objects obey all three
 universal gestures; double-click on any of them opens X-AIR-Edit
 (that's where inputs, the main bus, and AUX sends actually live).
 
+## The Object Browser (Bill 2026-07-15)
+
+Double-click GIG BINDER → `#objb`, the live-use hierarchy AS OBJECTS:
+tree pane (Gigs → embedded setlists → songs → 🧩 sections + ⚡ timeline
+actions; standalone setlists as a second root) + inspector pane
+(selection reveals PROPERTIES, buttons execute real METHODS). Lazy
+loading: gig expand hits `/api/gigs/:slug`, standalone setlist expand
+hits `/api/setlists/:slug`, song expand hits `/api/song/:base/automation`
+(init events filtered out; lyric-line events show with their text).
+Library rows are fetched once into `obLib` for song properties.
+
+Real methods wired: gig → open GIGS/ in Finder; setlist → open source
+playlist, `POST /api/precache/setlist/:slug`; song → reveal in Finder,
+favorite toggle (PUT), open source video, open portal; action → “Fire
+now” builds the same body as app.js `sendMidiNow` (port/type/channel +
+pc program | cc controller/value) and POSTs `/api/midi/send`. Sections
+are read-only here — they're edited on the portal's timeline lane.
+GIGS/-in-Finder stays reachable from the gig inspector button.
+
 ## Remembered layout (Bill 2026-07-15)
 
 Machine positions persist in localStorage `desk.layout.v1` as VIEWPORT

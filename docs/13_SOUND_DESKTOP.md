@@ -143,6 +143,20 @@ routes to the drummer's wedge). Wires re-anchor when objects are dragged.
 Hover any rig object for its leg of the chain; double-click opens
 X-AIR-Edit, where the real inputs, main bus, and AUX sends live.
 
+## The Object Browser (2026-07-15)
+
+Double-click the GIG BINDER and the desk opens an object browser over
+the live-use hierarchy: Gig → Setlist → Song → Sections + timeline
+actions, with standalone setlists (manual and YouTube-synced) as a
+second root. Everything is an OBJECT — click any node and the inspector
+shows its properties (a song shows artist, bpm, key, singer, readiness,
+drum pattern, favorite, and whether it honors the offline-cache
+contract) and its executable methods as buttons: reveal the song folder
+in Finder, toggle favorite, open the source video, precache a whole
+setlist's stems, and fire a timeline MIDI action onto the real wire
+right now. Song timelines load lazily and show placed sections and
+actions (including lyric lines) at their timestamps.
+
 ## Remembered layout (2026-07-15)
 
 Every machine on the desk can be dragged anywhere and STAYS there —
