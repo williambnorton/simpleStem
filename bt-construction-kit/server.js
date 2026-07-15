@@ -5971,6 +5971,7 @@ app.post('/api/desktop/reveal', async (req, res) => {
       '__CACHE__': [path.join(require('os').homedir(), '.bt-cache')],
       '__CATALOG__': ['-R', path.join(SIMPLE_STEM_ROOT, 'CATALOG.json')],
       '__XR18__': ['-a', 'X-AIR-Edit'],
+      '__LOGIC__': ['-a', 'Logic Pro'],
     };
     if (SPECIAL[base]) {
       require('child_process').spawn('open', SPECIAL[base], { detached: true, stdio: 'ignore' }).unref();
@@ -6013,6 +6014,66 @@ app.get('/api/desktop/inspect', async (req, res) => {
 // Sound Desktop: resolve a YouTube URL to its real title/author via the
 // oEmbed endpoint (no API key). Proxied server-side because the browser
 // can't CORS it. 5s bound; failures return ok:false rather than erroring.
+// Sound Desktop: file tree for the CACHE object (depth 2, bounded).
+app.get('/api/desktop/tree', async (req, res) => {
+  try {
+    const root = String(req.query.root || '');
+    const base = root === 'cache' ? path.join(require('os').homedir(), '.bt-cache') : null;
+    if (!base) return res.status(400).json({ error: 'root must be: cache' });
+    const out = await Promise.race([(async () => {
+      const tree = { path: base, dirs: [], files: [], totalBytes: 0, totalFiles: 0 };
+      const top = await fs.promises.readdir(base, { withFileTypes: true });
+      for (const e of top) {
+        if (e.name.startsWith('.')) continue;
+        const p1 = path.join(base, e.name);
+        if (e.isDirectory()) {
+          const d = { name: e.name, dirs: [], files: 0, bytes: 0 };
+          const kids = await fs.promises.readdir(p1, { withFileTypes: true });
+          for (const k of kids.slice(0, 500)) {
+            const p2 = path.join(p1, k.name);
+            if (k.isDirectory()) {
+              let n = 0, b = 0;
+              try {
+                for (const f of await fs.promises.readdir(p2)) {
+                  try { const st = await fs.promises.stat(path.join(p2, f)); if (st.isFile()) { n++; b += st.size; } } catch (er) {}
+                }
+              } catch (er) {}
+              d.dirs.push({ name: k.name, files: n, bytes: b });
+              d.files += n; d.bytes += b;
+            } else {
+              try { const st = await fs.promises.stat(p2); d.files++; d.bytes += st.size; } catch (er) {}
+            }
+          }
+          d.dirs.sort((a, b2) => a.name.localeCompare(b2.name));
+          tree.dirs.push(d);
+          tree.totalFiles += d.files; tree.totalBytes += d.bytes;
+        } else {
+          try { const st = await fs.promises.stat(p1); tree.files.push({ name: e.name, bytes: st.size }); tree.totalFiles++; tree.totalBytes += st.size; } catch (er) {}
+        }
+      }
+      return tree;
+    })(), new Promise((_, rej) => setTimeout(() => rej(new Error('tree timeout')), 8000))]);
+    res.json({ ok: true, tree: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Sound Desktop: drop an audio file on the LOGIC PRO machine — the file
+// is uploaded here, written to LOGIC_INBOX/, and opened IN Logic Pro.
+app.post('/api/desktop/logic-open', express.raw({ type: () => true, limit: '400mb' }), (req, res) => {
+  try {
+    const name = String(req.query.name || 'dropped_audio').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+    if (!/\.(wav|m4a|mp3|aif|aiff|flac|ogg|caf|mid|midi)$/i.test(name)) {
+      return res.status(400).json({ error: 'not an audio/midi file' });
+    }
+    const dir = path.join(SIMPLE_STEM_ROOT, 'LOGIC_INBOX');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, req.body);
+    require('child_process').spawn('open', ['-a', 'Logic Pro', file], { detached: true, stdio: 'ignore' }).unref();
+    res.json({ ok: true, opened: file });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // The band's songlist sheet URL for the desk's SHEET object.
 app.get('/api/desktop/sheeturl', (req, res) => {
   try {

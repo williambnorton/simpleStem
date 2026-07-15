@@ -284,6 +284,7 @@ const drive   = machineDef('drive', '☁️', 'DRIVE', 'syncs everything between
 const gigbind = machineDef('gigbind', '🧳', 'GIG BINDER', 'loading gigs…', W*0.45, H*0.10, [], 'info');
 const cacheOb = machineDef('cache', '🧰', 'CACHE', 'loading cache…', W*0.45, H*0.58, [], 'info');
 const xr18    = machineDef('xr18', '🎚️', 'XR18', '18-ch USB out · the band hears this', W*0.74, H*0.58, [], 'info');
+const logic   = machineDef('logic', '🎹', 'LOGIC PRO', 'drop an audio file — opens IN Logic', W*0.74, H*0.10, ['audio'], 'logic');
 let libState = null, cacheState = null, gigList = null;
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
@@ -829,6 +830,31 @@ function flyChip(from, to, text) {
 setInterval(pollSystem, 6000);
 pollSystem();
 
+// CACHE double-click: an in-desk FILE TREE of ~/.bt-cache (Bill
+// 2026-07-15), scrollable, with per-branch file counts and sizes.
+async function showCacheTree() {
+  document.getElementById('card-body').innerHTML = '<h3>🧰 ~/.bt-cache</h3><div class="file">reading the tree…</div>';
+  card.style.display = 'block'; S.riffle();
+  try {
+    const j = await fetch('/api/desktop/tree?root=cache').then(r => r.json());
+    if (!j.ok) throw new Error(j.error || 'tree failed');
+    const t = j.tree;
+    let txt = `${t.path}\n${t.totalFiles} files · ${fmtBytes(t.totalBytes)}\n\n`;
+    for (const d of t.dirs) {
+      txt += `├─ ${d.name}/  (${d.files} files · ${fmtBytes(d.bytes)})\n`;
+      for (const k of d.dirs.slice(0, 200)) {
+        txt += `│  ├─ ${k.name}/  ${k.files}f · ${fmtBytes(k.bytes)}\n`;
+      }
+      if (d.dirs.length > 200) txt += `│  └─ … ${d.dirs.length - 200} more\n`;
+    }
+    for (const f of (t.files || [])) txt += `├─ ${f.name}  ${fmtBytes(f.bytes)}\n`;
+    document.getElementById('card-body').innerHTML =
+      `<h3>🧰 ~/.bt-cache — the offline contract, on disk</h3><div class="file" style="max-height:62vh;overflow-y:auto">${txt}</div>`;
+  } catch (e) {
+    document.getElementById('card-body').innerHTML = `<h3>🧰 ~/.bt-cache</h3><div class="file">tree failed: ${e.message}</div>`;
+  }
+}
+
 function showQueueCard() {
   const q = qtray._raw || {};
   const li = (arr) => (arr && arr.length) ? arr.map(x => '  ' + String(x.name || x)).join('\n') : '  (none)';
@@ -845,16 +871,34 @@ failed: ${li(q.failed)}</div>`;
 addEventListener('dragover', (e) => {
   e.preventDefault();
   for (const m of machines) {
-    if (m.accepts && m.accepts.includes('url')) m.el.classList.toggle('legal', overlapsPoint(m.el, e.clientX, e.clientY));
+    if (m.accepts && (m.accepts.includes('url') || m.accepts.includes('audio'))) m.el.classList.toggle('legal', overlapsPoint(m.el, e.clientX, e.clientY));
   }
 });
 addEventListener('dragleave', () => machines.forEach(m => m.el.classList.remove('legal')));
 addEventListener('drop', async (e) => {
   e.preventDefault();
   machines.forEach(m => m.el.classList.remove('legal'));
-  const target = machines.find(m => m.accepts && m.accepts.includes('url') && overlapsPoint(m.el, e.clientX, e.clientY));
+  const target = machines.find(m => m.accepts && (m.accepts.includes('url') || m.accepts.includes('audio')) && overlapsPoint(m.el, e.clientX, e.clientY));
   if (!target) return;
   const isTray = target.work === 'queue';
+  // Audio files dropped on LOGIC PRO: upload, then open IN Logic.
+  if (target.work === 'logic') {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f || !/\.(wav|m4a|mp3|aif|aiff|flac|ogg|caf|mid|midi)$/i.test(f.name)) {
+      hint('Drop an AUDIO file on Logic (wav / m4a / mp3 / aif …).'); S.thunk(); return;
+    }
+    target.el.classList.add('working');
+    hint(`Sending <b>${f.name}</b> to Logic Pro… (${fmtBytes(f.size)})`);
+    try {
+      const r = await fetch('/api/desktop/logic-open?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+      const j = await r.json();
+      target.el.classList.remove('working');
+      if (!r.ok) { hint('✗ ' + (j.error || 'failed')); S.thunk(); return; }
+      S.chime();
+      hint(`🎹 <b>${f.name}</b> opened in Logic Pro (saved to LOGIC_INBOX/ on Drive).`);
+    } catch (err) { target.el.classList.remove('working'); hint('✗ ' + err.message); S.thunk(); }
+    return;
+  }
   let url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split('\n')[0].trim();
   let dropName = null;
   if (!url && e.dataTransfer.files && e.dataTransfer.files.length) {
@@ -1020,6 +1064,12 @@ Closing the lid = Flash Cache (offline contract).</div>`;
 work with NO wifi — the absolute contract.
 ${c.done != null ? c.done + '/' + c.total + ' cached · ' + (c.failed || 0) + ' failed' : 'status loading…'}</div>`;
   }
+  if (o.id === 'logic') return `<h4>🎹 LOGIC PRO</h4><div class="pk">The band's DAW — instruments route through
+it into the XR18 (loop overdub captures its
+LOOP bus via BlackHole). Drop a real audio
+file here and it opens IN Logic; drops land
+in Drive's LOGIC_INBOX/ first, so the mini
+sees them too. Double-click opens Logic.</div>`;
   if (o.id === 'xr18') return `<h4>🎚️ BEHRINGER XR18</h4><div class="pk">18-channel USB interface — the AMP's output.
 Each stem routes to its own output pair
 (drummer's wedge gets the click, etc).
@@ -1138,8 +1188,9 @@ desk.addEventListener('dblclick', async (e) => {
       catalog: () => openSpecial('__CATALOG__', 'CATALOG.json in Finder'),
       drive:   () => openSpecial('__ROOT__', 'the simpleStem Drive folder in Finder'),
       gigbind: () => openSpecial('__GIGS__', 'GIGS in Finder'),
-      cache:   () => openSpecial('__CACHE__', '~/.bt-cache in Finder'),
       xr18:    () => openSpecial('__XR18__', 'X-AIR-Edit (the XR18\'s app)'),
+      logic:   () => openSpecial('__LOGIC__', 'Logic Pro'),
+      cache:   showCacheTree,
     };
     if (idMap[o.id]) { idMap[o.id](); return; }
     if (map[o.work]) { map[o.work](); return; }
