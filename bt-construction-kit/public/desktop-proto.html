@@ -111,6 +111,21 @@
   #card .empty { opacity: .45; font-style: italic; }
   #card .close { position: absolute; top: 8px; right: 10px; cursor: pointer; opacity: .6; }
   .gitbadge { font-size: 10px; color: #e8a33d; }
+  /* live worklog rows: each file sparkles in as it is created */
+  .ql-row {
+    font: 11px/1.8 Menlo, monospace;
+    display: flex; justify-content: space-between; gap: 10px;
+    animation: sparkleIn .7s ease-out;
+  }
+  .ql-row .sz { opacity: .7; }
+  .ql-row.fresh { color: #aef7cd; text-shadow: 0 0 8px rgba(0,230,118,.8); }
+  .ql-row .spark { animation: sparkFade 1.4s ease-out forwards; }
+  @keyframes sparkleIn {
+    0% { opacity: 0; transform: translateX(-14px) scale(.7); filter: brightness(2.5); }
+    60% { filter: brightness(1.8); }
+    100% { opacity: 1; transform: none; filter: none; }
+  }
+  @keyframes sparkFade { 0% { opacity: 1; } 100% { opacity: 0; } }
 
   /* hover peek */
   #peek {
@@ -253,6 +268,62 @@ ${tagged ? metaFull() : META_EMPTY}
 }
 const card = document.getElementById('card');
 function showCard() { document.getElementById('card-body').innerHTML = folderCard(); card.style.display = 'block'; S.riffle(); }
+
+/* ── LIVE WORKLOG: the quick-look stays open during stemming and every
+   file sparkles in as it is created (Bill 2026-07-14: "I want to
+   visually see the addition of each piece of work"). Demo runs feed it
+   from the chip schedule; REAL renders feed it by polling
+   /api/desktop/inspect and sparkling in files as they land on disk. */
+const liveRows = new Map();   // name → {el, size}
+function openLiveCard(title) {
+  liveRows.clear();
+  document.getElementById('card-body').innerHTML =
+    `<h3>📁 ${title} — work in progress</h3><div id="live-rows"></div>
+     <div class="file empty" id="live-note">watching for files…</div>`;
+  card.style.display = 'block';
+}
+function liveAddOrUpdate(name, sizeTxt) {
+  const zone = document.getElementById('live-rows');
+  if (!zone) return;
+  let row = liveRows.get(name);
+  if (!row) {
+    const el = document.createElement('div');
+    el.className = 'ql-row fresh';
+    el.innerHTML = `<span>🎵 ${name} <span class="spark">✨</span></span><span class="sz">${sizeTxt || ''}</span>`;
+    zone.appendChild(el);
+    liveRows.set(name, { el, size: sizeTxt });
+    tone(1200 + liveRows.size * 90, ac().currentTime, .12, 'sine', .08);
+    setTimeout(() => el.classList.remove('fresh'), 1600);
+  } else if (sizeTxt && sizeTxt !== row.size) {
+    row.size = sizeTxt;
+    row.el.querySelector('.sz').textContent = sizeTxt;
+    row.el.classList.add('fresh');
+    const sp = document.createElement('span'); sp.className = 'spark'; sp.textContent = ' ✨';
+    row.el.firstChild.appendChild(sp);
+    setTimeout(() => { row.el.classList.remove('fresh'); sp.remove(); }, 1500);
+  }
+}
+let livePollTimer = null;
+function pollRealFolder(title) {
+  clearInterval(livePollTimer);
+  const t0 = Date.now();
+  const note = () => document.getElementById('live-note');
+  livePollTimer = setInterval(async () => {
+    if (Date.now() - t0 > 35 * 60 * 1000) { clearInterval(livePollTimer); return; }
+    try {
+      const j = await fetch('/api/desktop/inspect?base=&title=' + encodeURIComponent(title)).then(r => r.json());
+      if (!j.ok) { if (note()) note().textContent = 'queued — no folder on disk yet…'; return; }
+      if (note()) note().textContent = j.path;
+      for (const f of (j.files || [])) liveAddOrUpdate(f.name, fmtBytes(f.size));
+      const stems = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
+      if (stems.every(nm => liveRows.has(nm))) {
+        clearInterval(livePollTimer);
+        if (note()) note().textContent = j.path + ' — all six stems landed ✓';
+        S.chime();
+      }
+    } catch (e) {}
+  }, 6000);
+}
 function hint(t) { document.getElementById('hint').innerHTML = t; }
 function center(el) { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }
 
@@ -277,6 +348,7 @@ function stemcutShow(machine, name, done) {
     fx, fy, 'building', 'pop');
   folderStage = 'raw';
   hint(`The <b>Stemcutter</b> is sawing <b>${name}</b> — stems are flying into the folder…`);
+  openLiveCard(name);   // quick-look stays open; files sparkle in below
   const files = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a','source.wav'];
   const from = center(machine.el);
   files.forEach((f, i) => {
@@ -291,7 +363,7 @@ function stemcutShow(machine, name, done) {
         chip.style.opacity = '0'; chip.style.transform = 'scale(.5)';
       });
       S.whoosh();
-      setTimeout(() => chip.remove(), 850);
+      setTimeout(() => { chip.remove(); liveAddOrUpdate(f, null); }, 830);
       folder.el.querySelector('.sub').textContent = `building… ${i + 1}/7 files`;
     }, 400 + i * 420);
   });
@@ -571,9 +643,12 @@ addEventListener('drop', async (e) => {
     });
     const j = await r.json();
     if (!r.ok) { hint(`✗ ${j.error || 'enqueue failed'}`); S.thunk(); return; }
-    hint(`✓ REALLY queued as <b>${j.queued}</b> — pipeline is rendering. The show below is a preview; watch the real queue in the <a href="/">portal</a>.`);
+    hint(`✓ REALLY queued as <b>${j.queued}</b> — pipeline is rendering. The show below is a preview; the quick-look will sparkle in the REAL files as they land on disk.`);
     if (target.work === 'aggregate') runMachine(target, place('tmpurl', '', -999, -999, 'url'));
     else stemcutShow(target, name);
+    // Real renders: watch the actual folder and sparkle files in as they
+    // are created (source.wav first, stems as Demucs finishes each).
+    pollRealFolder(folderTitle || name.replace(/_/g, ' '));
   } catch (err) { hint(`✗ enqueue failed: ${err.message}`); S.thunk(); }
 });
 function overlapsPoint(el, x, y) {
