@@ -155,11 +155,32 @@
   #ctx .mi:hover { background: #1d8f4f; color: #fff; }
   #ctx .sep { height: 1px; background: rgba(255,255,255,.12); margin: 4px 6px; }
   #ctx .mi.user::before { content: '★ '; color: #f1c40f; }
+
+  /* machine-role zones: the Librarian's work happens in the background */
+  .zone {
+    position: fixed; z-index: 0; border: 1px dashed rgba(255,255,255,.12);
+    border-radius: 16px; pointer-events: none;
+  }
+  .zone .zlabel {
+    position: absolute; top: 6px; left: 12px;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    opacity: .35; text-transform: uppercase;
+  }
+  #zone-mini { background: rgba(120, 140, 180, .05); }
+  #zone-laptop { background: rgba(0, 200, 120, .04); }
+
+  /* the worklog pane flying into the library on completion */
+  #card.flying {
+    transition: all 1.1s cubic-bezier(.5,.1,.6,1);
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
 <div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>⌃control-drag one machine onto another</b> to build an aggregate · 🎤 for voice building</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
+<div class="zone" id="zone-mini" style="left:12px; top:60px; width:240px; height:0;"><span class="zlabel">Mac mini · Librarian (background)</span></div>
+<div class="zone" id="zone-laptop" style="left:0; top:0; width:0; height:0;"><span class="zlabel">This laptop · Performer</span></div>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 <div id="peek"></div>
 <div id="ctx"></div>
@@ -224,6 +245,18 @@ const amp        = machineDef('amp', '🎛️', 'THE AMP', 'drop anything playab
 // up. Right-click for the flow instruments.
 const qtray = machineDef('qtray', '📥', 'QUEUE', 'connecting…', 60, H*0.55, ['url'], 'queue');
 qtray.el.querySelector('.art').insertAdjacentHTML('beforeend', '<span class="badge" id="q-badge">…</span>');
+
+// Machine-role zones: the URL chip + QUEUE tray live in the Librarian's
+// background strip (the mini does ingest); the machines live in the
+// Performer's zone (this laptop renders and plays).
+(function layoutZones() {
+  const zm = document.getElementById('zone-mini');
+  zm.style.left = '18px'; zm.style.top = (H * 0.10) + 'px';
+  zm.style.width = '215px'; zm.style.height = (H * 0.72) + 'px';
+  const zl = document.getElementById('zone-laptop');
+  zl.style.left = (W * 0.26) + 'px'; zl.style.top = (H * 0.06) + 'px';
+  zl.style.width = (W * 0.52) + 'px'; zl.style.height = (H * 0.80) + 'px';
+})();
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
@@ -291,12 +324,43 @@ const liveRows = new Map();   // name → {el, size, state}
 const EXPECTED_FILES = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a','source.wav'];
 function openLiveCard(title) {
   liveRows.clear();
+  // Header carries the SIMPLE SONG NAME (Bill 2026-07-15), not the slug.
+  const nice = (folderTitle || String(title || '').replace(/_/g, ' ')).replace(/\s*\(.*?\)\s*$/, '').slice(0, 44);
   document.getElementById('card-body').innerHTML =
-    `<h3>📁 ${title} — work in progress</h3><div id="live-rows"></div>
+    `<h3>🎵 ${nice}</h3><div class="file empty" style="margin:-4px 0 8px">stemming in progress…</div>
+     <div id="live-rows"></div>
      <div class="file empty" id="live-note">watching for files…</div>`;
   card.style.display = 'block';
+  card.classList.remove('flying');
+  card.style.transform = ''; card.style.opacity = '';
   // Pre-populate every expected file as WORKING: spinning disk, brown.
   for (const f of EXPECTED_FILES) liveSetRow(f, 'working', null);
+}
+
+// When every file is done: the whole pane flies to the LIBRARY, the
+// drawer opens, the work is filed, the drawer shuts (Bill 2026-07-15).
+function flyWorklogToLibrary() {
+  const lib = machines.find(m => m.work === 'shelve');
+  if (!lib) { card.style.display = 'none'; return; }
+  const drawer = lib.el.querySelector('.lib-drawer');
+  drawer.classList.add('out'); S.whoosh();
+  const r = lib.el.getBoundingClientRect();
+  const cr = card.getBoundingClientRect();
+  card.classList.add('flying');
+  requestAnimationFrame(() => {
+    card.style.transform =
+      `translate(${r.x + r.width / 2 - (cr.x + cr.width / 2)}px, ${r.y + r.height - cr.y}px) scale(.06)`;
+    card.style.opacity = '0.15';
+  });
+  setTimeout(() => {
+    drawer.classList.remove('out');
+    card.style.display = 'none';
+    card.classList.remove('flying');
+    card.style.transform = ''; card.style.opacity = '';
+    S.latch(); S.chime();
+    lib.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders · claude.md + git each`;
+    hint('Filed into the <b>LIBRARY</b> — drawer closed. The song is ready to play.');
+  }, 1300);
 }
 // state: 'working' (💿 spins, bright brown) | 'done' (✓ green bold + size)
 function liveSetRow(name, state, sizeTxt) {
@@ -345,11 +409,23 @@ function pollRealFolder(title) {
         else liveSetRow(nm, 'working', size > 0 ? fmtBytes(size) : null);
       }
       pollRealFolder._last = seen;
+      // A stem finishing is WORK IN FLIGHT: a chip launches from the
+      // Stemcutter across the desk to the worklog pane.
+      for (const [nm, size] of seen) {
+        const row = liveRows.get(nm);
+        if (row && row.state === 'done' && !row._flew) {
+          row._flew = true;
+          const sc2 = machines.find(m => m.work === 'stemcut' || m.work === 'aggregate');
+          const cr = card.getBoundingClientRect();
+          if (sc2 && cr.width) flyChip(center(sc2.el), { x: cr.x + 60, y: cr.y + 60 }, '🎵 ' + nm);
+        }
+      }
       const stems = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
       if (stems.every(nm => liveRows.get(nm) && liveRows.get(nm).state === 'done')) {
         clearInterval(livePollTimer);
         if (note()) note().textContent = j.path + ' — all six stems landed ✓';
         S.chime();
+        setTimeout(flyWorklogToLibrary, 1400);
       }
     } catch (e) {}
   }, 6000);
@@ -657,10 +733,20 @@ async function pollSystem() {
     }
     if (lastQueue) {
       if (depth > lastQueue.depth) S.drop();
+      // Librarian ingested one (incoming shrank): chip crosses from the
+      // background zone into the Performer's zone.
+      if (incoming < lastQueue.incoming && sc) flyChip(center(qtray.el), center(sc.el), '📄 ingested by the Librarian');
       if (!lastQueue.proc && proc && sc) { S.whoosh(); flyChip(center(qtray.el), center(sc.el), '📄 ' + String(proc.name || 'job').slice(0, 18)); }
       if (lastQueue.proc && !proc) S.chime();
+      // Ambient in-flight while a REAL render runs: something visibly
+      // moves every poll so the shaking machine is never doing "nothing".
+      if (proc && sc) {
+        const cr = card.getBoundingClientRect();
+        const dest = (card.style.display === 'block' && cr.width) ? { x: cr.x + 60, y: cr.y + 40 } : center(qtray.el);
+        flyChip(center(sc.el), dest, '⚙ ' + String(proc.phase || 'rendering…').slice(0, 22));
+      }
     }
-    lastQueue = { depth, proc: !!proc };
+    lastQueue = { depth, incoming, proc: !!proc };
     qtray._raw = q;
   } catch (e) {}
 }
