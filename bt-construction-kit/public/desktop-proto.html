@@ -119,6 +119,12 @@
   }
   .ql-row .sz { opacity: .7; }
   .ql-row.fresh { color: #aef7cd; text-shadow: 0 0 8px rgba(0,230,118,.8); }
+  /* stem states: spinning disk + bright brown while Demucs works on it,
+     bold bright green + check + size when complete */
+  .ql-row.working { color: #e8954a; font-weight: 700; }
+  .ql-row.done { color: #00e676; font-weight: 800; }
+  .ql-row .disk { display: inline-block; animation: diskspin .9s linear infinite; }
+  @keyframes diskspin { to { transform: rotate(360deg); } }
   .ql-row .spark { animation: sparkFade 1.4s ease-out forwards; }
   @keyframes sparkleIn {
     0% { opacity: 0; transform: translateX(-14px) scale(.7); filter: brightness(2.5); }
@@ -212,6 +218,13 @@ const tagger     = machineDef('tagger', '🗳️', 'TAGGER', 'folder tray · fil
 const library    = machineDef('library', '<span class="lib-art">🗄️<span class="lib-drawer"></span></span>', 'LIBRARY', 'loading your library…', W*0.60, H*0.60, ['folder-tagged'], 'shelve');
 const amp        = machineDef('amp', '🎛️', 'THE AMP', 'drop anything playable', W*0.30, H*0.60, ['folder-raw','folder-tagged'], 'play');
 
+// THE QUEUE TRAY — the pipeline's pending-work folder, live on the desk.
+// Its badge is the REAL queue depth; its sub-label shows what the runner
+// is doing right now. Chips fly tray → Stemcutter when a job is picked
+// up. Right-click for the flow instruments.
+const qtray = machineDef('qtray', '📥', 'QUEUE', 'connecting…', 60, H*0.55, ['url'], 'queue');
+qtray.el.querySelector('.art').insertAdjacentHTML('beforeend', '<span class="badge" id="q-badge">…</span>');
+
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
 let realSong = null;     // the song the demo chip represents
@@ -274,33 +287,40 @@ function showCard() { document.getElementById('card-body').innerHTML = folderCar
    visually see the addition of each piece of work"). Demo runs feed it
    from the chip schedule; REAL renders feed it by polling
    /api/desktop/inspect and sparkling in files as they land on disk. */
-const liveRows = new Map();   // name → {el, size}
+const liveRows = new Map();   // name → {el, size, state}
+const EXPECTED_FILES = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a','source.wav'];
 function openLiveCard(title) {
   liveRows.clear();
   document.getElementById('card-body').innerHTML =
     `<h3>📁 ${title} — work in progress</h3><div id="live-rows"></div>
      <div class="file empty" id="live-note">watching for files…</div>`;
   card.style.display = 'block';
+  // Pre-populate every expected file as WORKING: spinning disk, brown.
+  for (const f of EXPECTED_FILES) liveSetRow(f, 'working', null);
 }
-function liveAddOrUpdate(name, sizeTxt) {
+// state: 'working' (💿 spins, bright brown) | 'done' (✓ green bold + size)
+function liveSetRow(name, state, sizeTxt) {
   const zone = document.getElementById('live-rows');
   if (!zone) return;
   let row = liveRows.get(name);
   if (!row) {
     const el = document.createElement('div');
-    el.className = 'ql-row fresh';
-    el.innerHTML = `<span>🎵 ${name} <span class="spark">✨</span></span><span class="sz">${sizeTxt || ''}</span>`;
+    el.className = 'ql-row ' + state;
     zone.appendChild(el);
-    liveRows.set(name, { el, size: sizeTxt });
-    tone(1200 + liveRows.size * 90, ac().currentTime, .12, 'sine', .08);
-    setTimeout(() => el.classList.remove('fresh'), 1600);
-  } else if (sizeTxt && sizeTxt !== row.size) {
-    row.size = sizeTxt;
-    row.el.querySelector('.sz').textContent = sizeTxt;
-    row.el.classList.add('fresh');
-    const sp = document.createElement('span'); sp.className = 'spark'; sp.textContent = ' ✨';
-    row.el.firstChild.appendChild(sp);
-    setTimeout(() => { row.el.classList.remove('fresh'); sp.remove(); }, 1500);
+    row = { el, size: null, state: null };
+    liveRows.set(name, row);
+  }
+  const changed = state !== row.state || (sizeTxt && sizeTxt !== row.size);
+  row.state = state; row.size = sizeTxt || row.size;
+  row.el.className = 'ql-row ' + state + (changed && state === 'done' ? ' fresh' : '');
+  if (state === 'working') {
+    row.el.innerHTML = `<span><span class="disk">💿</span> ${name}</span><span class="sz">${sizeTxt || 'working…'}</span>`;
+  } else {
+    row.el.innerHTML = `<span>✓ ${name} <span class="spark">✨</span></span><span class="sz">${sizeTxt || ''}</span>`;
+    if (changed) {
+      tone(1200 + liveRows.size * 90, ac().currentTime, .12, 'sine', .08);
+      setTimeout(() => row.el.classList.remove('fresh'), 1600);
+    }
   }
 }
 let livePollTimer = null;
@@ -314,9 +334,19 @@ function pollRealFolder(title) {
       const j = await fetch('/api/desktop/inspect?base=&title=' + encodeURIComponent(title)).then(r => r.json());
       if (!j.ok) { if (note()) note().textContent = 'queued — no folder on disk yet…'; return; }
       if (note()) note().textContent = j.path;
-      for (const f of (j.files || [])) liveAddOrUpdate(f.name, fmtBytes(f.size));
+      // A file is DONE when its size is nonzero and unchanged since the
+      // last check; present-but-growing stays WORKING with the live size.
+      const seen = new Map((j.files || []).map(f => [f.name, f.size]));
+      if (!pollRealFolder._last) pollRealFolder._last = new Map();
+      for (const [nm, size] of seen) {
+        if (!EXPECTED_FILES.includes(nm) && nm !== 'metadata.json') continue;
+        const prev = pollRealFolder._last.get(nm);
+        if (size > 0 && prev === size) liveSetRow(nm, 'done', fmtBytes(size));
+        else liveSetRow(nm, 'working', size > 0 ? fmtBytes(size) : null);
+      }
+      pollRealFolder._last = seen;
       const stems = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
-      if (stems.every(nm => liveRows.has(nm))) {
+      if (stems.every(nm => liveRows.get(nm) && liveRows.get(nm).state === 'done')) {
         clearInterval(livePollTimer);
         if (note()) note().textContent = j.path + ' — all six stems landed ✓';
         S.chime();
@@ -363,7 +393,7 @@ function stemcutShow(machine, name, done) {
         chip.style.opacity = '0'; chip.style.transform = 'scale(.5)';
       });
       S.whoosh();
-      setTimeout(() => { chip.remove(); liveAddOrUpdate(f, null); }, 830);
+      setTimeout(() => { chip.remove(); liveSetRow(f, 'done', (4.5 + Math.random() * 3).toFixed(1) + ' MB'); }, 830);
       folder.el.querySelector('.sub').textContent = `building… ${i + 1}/7 files`;
     }, 400 + i * 420);
   });
@@ -596,7 +626,68 @@ function runMachine(m, o) {
   } else if (m.work === 'play') {
     const t = ac().currentTime; [164.8, 207.6, 246.9, 329.6].forEach(f => tone(f, t, 1.2, 'sine', .06));
     hint('🔊 The <b>Amp</b> plays whatever lands on it.');
+  } else if (m.work === 'queue') {
+    hint('The <b>QUEUE tray</b> holds the pipeline\'s pending work — right-click it to look into the flow.');
+    showQueueCard();
   }
+}
+
+/* ── PIPELINE INSTRUMENTATION: poll the real queue, animate the flow ──── */
+let lastQueue = null;
+async function pollSystem() {
+  try {
+    const q = await fetch('/api/queue').then(r => r.json());
+    const incoming = (q.incoming || []).length;
+    const queued = (q.queued || []).length;
+    const depth = incoming + queued;
+    const badge = document.getElementById('q-badge');
+    if (badge) badge.textContent = depth;
+    const proc = q.processing;
+    qtray.el.querySelector('.sub').textContent =
+      `${incoming} incoming · ${queued} queued` +
+      (proc ? ` · rendering: ${String(proc.name || proc.base || proc).slice(0, 24)}` : '') +
+      ((q.failed || []).length ? ` · ${q.failed.length} failed ⚠` : '');
+    const sc = machines.find(m => m.work === 'stemcut' || m.work === 'aggregate');
+    if (sc) {
+      const busy = !!proc;
+      sc.el.classList.toggle('working', busy);
+      const scSub = sc.el.querySelector('.sub');
+      if (busy && scSub) scSub.textContent = `RENDERING: ${String(proc.name || proc.base || proc).slice(0, 26)}${proc.phase ? ' · ' + proc.phase : ''}`;
+      else if (scSub && sc.work === 'stemcut') scSub.textContent = 'URL slot · saws songs into stems';
+    }
+    if (lastQueue) {
+      if (depth > lastQueue.depth) S.drop();
+      if (!lastQueue.proc && proc && sc) { S.whoosh(); flyChip(center(qtray.el), center(sc.el), '📄 ' + String(proc.name || 'job').slice(0, 18)); }
+      if (lastQueue.proc && !proc) S.chime();
+    }
+    lastQueue = { depth, proc: !!proc };
+    qtray._raw = q;
+  } catch (e) {}
+}
+function flyChip(from, to, text) {
+  const chip = document.createElement('div');
+  chip.className = 'chip'; chip.textContent = text;
+  chip.style.left = from.x + 'px'; chip.style.top = (from.y - 50) + 'px';
+  desk.appendChild(chip);
+  requestAnimationFrame(() => {
+    chip.style.left = (to.x - 20) + 'px'; chip.style.top = to.y + 'px';
+    chip.style.opacity = '0.2';
+  });
+  setTimeout(() => chip.remove(), 900);
+}
+setInterval(pollSystem, 6000);
+pollSystem();
+
+function showQueueCard() {
+  const q = qtray._raw || {};
+  const li = (arr) => (arr && arr.length) ? arr.map(x => '  ' + String(x.name || x)).join('\n') : '  (none)';
+  document.getElementById('card-body').innerHTML =
+    `<h3>📥 QUEUE — the pipeline's pending work</h3>
+     <div class="file">INCOMING_WEBLOC (awaiting the Librarian):\n${li(q.incoming)}\n
+STEM_QUEUE (awaiting this laptop's runner):\n${li(q.queued)}\n
+processing now: ${q.processing ? JSON.stringify(q.processing) : '(idle)'}\n
+failed: ${li(q.failed)}</div>`;
+  card.style.display = 'block'; S.riffle();
 }
 
 /* ── REAL OS drops on any URL-accepting machine ───────────────────────── */
@@ -612,6 +703,7 @@ addEventListener('drop', async (e) => {
   machines.forEach(m => m.el.classList.remove('legal'));
   const target = machines.find(m => m.accepts && m.accepts.includes('url') && overlapsPoint(m.el, e.clientX, e.clientY));
   if (!target) return;
+  const isTray = target.work === 'queue';
   let url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split('\n')[0].trim();
   let dropName = null;
   if (!url && e.dataTransfer.files && e.dataTransfer.files.length) {
@@ -644,7 +736,9 @@ addEventListener('drop', async (e) => {
     const j = await r.json();
     if (!r.ok) { hint(`✗ ${j.error || 'enqueue failed'}`); S.thunk(); return; }
     hint(`✓ REALLY queued as <b>${j.queued}</b> — pipeline is rendering. The show below is a preview; the quick-look will sparkle in the REAL files as they land on disk.`);
-    if (target.work === 'aggregate') runMachine(target, place('tmpurl', '', -999, -999, 'url'));
+    pollSystem();
+    if (isTray) { S.drop(); openLiveCard(name); }
+    else if (target.work === 'aggregate') runMachine(target, place('tmpurl', '', -999, -999, 'url'));
     else stemcutShow(target, name);
     // Real renders: watch the actual folder and sparkle files in as they
     // are created (source.wav first, stems as Demucs finishes each).
@@ -852,8 +946,14 @@ desk.addEventListener('contextmenu', (e) => {
     items.push({ label: '📂 Edit in Finder…', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
     items.push({ label: '🔊 Audition', run: () => { S.chime(); hint('(real desk: plays 3 s of the mix)'); } });
   }
-  if (o.kind === 'machine') {
+  if (o.work === 'queue') {
+    items.push({ label: '📋 List pending jobs', run: showQueueCard });
+    items.push({ label: '📂 Open INCOMING_WEBLOC in Finder', run: () => fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: '__INCOMING__' }) }) });
+    items.push({ label: '📂 Open STEM_QUEUE in Finder', run: () => fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: '__QUEUE__' }) }) });
+    items.push({ label: '🔄 Refresh now', run: pollSystem });
+  } else if (o.kind === 'machine') {
     if (o.accepts && o.accepts.includes('url')) items.push({ label: '▶ Run with the URL chip', run: () => { const chip = objects.find(x => x.kind === 'url'); if (chip) runMachine(o, chip); else hint('URL chip is gone — refresh.'); } });
+    if (o.work === 'stemcut' || o.work === 'aggregate') items.push({ label: '📡 Current render status', run: showQueueCard });
     if (o.work === 'aggregate') items.push({ label: '🔧 Take apart', run: () => disassemble(o) });
     items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
   }

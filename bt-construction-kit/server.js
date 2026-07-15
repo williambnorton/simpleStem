@@ -5960,6 +5960,15 @@ app.post('/api/desktop/reveal', async (req, res) => {
   try {
     const base = String((req.body && req.body.base) || '').trim();
     const title = String((req.body && req.body.title) || '').trim();
+    // Pipeline instruments: fixed special targets for the desk's queue tray.
+    const SPECIAL = {
+      '__INCOMING__': path.join(SIMPLE_STEM_ROOT, 'INCOMING_WEBLOC'),
+      '__QUEUE__': path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE'),
+    };
+    if (SPECIAL[base]) {
+      require('child_process').spawn('open', [SPECIAL[base]], { detached: true, stdio: 'ignore' }).unref();
+      return res.json({ ok: true, opened: SPECIAL[base], how: 'special', exact: true });
+    }
     const { target, how } = await resolveDeskFolder(base, title);
     require('child_process').spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
     res.json({ ok: true, opened: target, how, exact: how !== 'root' });
