@@ -37,6 +37,10 @@
   .machine.illegal { filter: grayscale(1) brightness(.6); }
   .machine.working .art { animation: shake .12s linear infinite; }
   .machine.aggtarget { outline: 2px dashed #f1c40f; outline-offset: 8px; border-radius: 14px; }
+  .machine.alive .art { animation: hum 1.8s ease-in-out infinite; }
+  .machine.down { filter: grayscale(.8) brightness(.55); }
+  .machine.down .label { background: rgba(231,76,60,.5); color: #fff; }
+  @keyframes hum { 50% { transform: scale(1.05); } }
   @keyframes shake { 25% { transform: rotate(-3deg);} 75% { transform: rotate(3deg);} }
   .badge { position: absolute; top: -4px; right: 10px; font-size: 16px; }
   .dragging { opacity: .85; z-index: 40; pointer-events: none; transform: scale(1.05); }
@@ -256,12 +260,31 @@ qtray.el.querySelector('.art').insertAdjacentHTML('beforeend', '<span class="bad
 // Performer's zone (this laptop renders and plays).
 (function layoutZones() {
   const zm = document.getElementById('zone-mini');
-  zm.style.left = '18px'; zm.style.top = (H * 0.10) + 'px';
-  zm.style.width = '215px'; zm.style.height = (H * 0.72) + 'px';
+  zm.style.left = '18px'; zm.style.top = (H * 0.06) + 'px';
+  zm.style.width = '215px'; zm.style.height = (H * 0.80) + 'px';
   const zl = document.getElementById('zone-laptop');
   zl.style.left = (W * 0.26) + 'px'; zl.style.top = (H * 0.06) + 'px';
-  zl.style.width = (W * 0.52) + 'px'; zl.style.height = (H * 0.80) + 'px';
+  zl.style.width = (W * 0.62) + 'px'; zl.style.height = (H * 0.80) + 'px';
 })();
+
+// ── THE WHOLE SYSTEM, ILLUSTRATED — one live object per process and
+// data source in the real workflow (Bill 2026-07-15):
+//   mini zone:   LIBRARIAN robot (webloc_watch + daemons) · SHEET
+//                (band songlist / mpb_sync) · CATALOG (catalog.py) ·
+//                QUEUE tray (INCOMING_WEBLOC + STEM_QUEUE)
+//   boundary:    DRIVE cloud (Google Drive sync between machines)
+//   laptop zone: STEMCUTTER (queue_runner + Demucs) · TAGGER
+//                (metadata.py) · GIG BINDER (GIGS/SETLISTS) · CACHE
+//                (~/.bt-cache offline contract) · LIBRARY (STEMS/) ·
+//                AMP (portal player) · XR18 (18-ch USB out)
+const robot   = machineDef('robot', '🤖', 'LIBRARIAN', 'checking daemons…', 60, H*0.08, [], 'info');
+const sheet   = machineDef('sheet', '📊', 'SONGLIST SHEET', 'Google Sheet · mpb_sync daily', 60, H*0.30, [], 'info');
+const catalog = machineDef('catalog', '📇', 'CATALOG', 'catalog.json · hourly pass', 60, H*0.42, [], 'info');
+const drive   = machineDef('drive', '☁️', 'DRIVE', 'syncs everything between machines', W*0.225, H*0.34, [], 'info');
+const gigbind = machineDef('gigbind', '🧳', 'GIG BINDER', 'loading gigs…', W*0.45, H*0.10, [], 'info');
+const cacheOb = machineDef('cache', '🧰', 'CACHE', 'loading cache…', W*0.45, H*0.58, [], 'info');
+const xr18    = machineDef('xr18', '🎚️', 'XR18', '18-ch USB out · the band hears this', W*0.74, H*0.58, [], 'info');
+let libState = null, cacheState = null, gigList = null;
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
@@ -756,6 +779,41 @@ async function pollSystem() {
     lastQueue = { depth, incoming, proc: !!proc };
     qtray._raw = q;
   } catch (e) {}
+  // Slow instruments: daemons, cache, gigs — every 4th tick (~24 s).
+  pollSystem._n = (pollSystem._n || 0) + 1;
+  if (pollSystem._n % 4 === 1) pollSlowInstruments();
+}
+async function pollSlowInstruments() {
+  try {
+    const ls = await fetch('/api/librarian/state').then(r => r.json());
+    libState = (ls && ls.state) || ls;
+    const daemons = libState.librarianDaemons || {};
+    const watcher = daemons['lib-watcher'];
+    const alive = watcher ? !!watcher.running : null;
+    robot.el.classList.toggle('alive', alive === true);
+    robot.el.classList.toggle('down', alive === false);
+    robot.el.querySelector('.sub').textContent =
+      alive === true ? `ingesting weblocs · pid ${watcher.pid} · all quiet` :
+      alive === false ? '⚠ WATCHER DOWN — nothing ingests' : 'daemon state unknown';
+    const mpb = daemons['lib-mpbsync'];
+    sheet.el.classList.toggle('down', mpb ? !mpb.running : false);
+  } catch (e) {}
+  try {
+    const cr = await fetch('/api/cache/status').then(r => r.json());
+    const c = (cr && cr.state) || cr;
+    cacheState = c;
+    const done = c.done != null ? c.done : c.cached, total = c.total;
+    if (done != null && total != null) {
+      cacheOb.el.querySelector('.sub').textContent = `${done}/${total} songs cached offline`;
+      cacheOb.el.classList.toggle('down', done < total);
+    }
+  } catch (e) {}
+  try {
+    const g = await fetch('/api/gigs').then(r => r.json());
+    gigList = g.gigs || g;
+    if (Array.isArray(gigList)) gigbind.el.querySelector('.sub').textContent = `${gigList.length} gigs on file`;
+  } catch (e) {}
+  catalog.el.querySelector('.sub').textContent = `${realLib.length} songs indexed · hourly pass`;
 }
 function flyChip(from, to, text) {
   const chip = document.createElement('div');
@@ -918,6 +976,55 @@ claude.md · runlog.md · ⎇ git</div>`;
   if (o.work === 'aggregate') return `<h4>${o.label}</h4><div class="pk">aggregate machine
 intake: URL → stage 1 cuts stems → lid opens →
 stage 2 fills metadata → tagged folder out</div>`;
+  if (o.work === 'queue') {
+    // Hover shows the NAMES of the files being worked on (Bill 2026-07-15).
+    const q = qtray._raw || {};
+    const nm = (arr, cap) => (arr || []).slice(0, 8).map(x => '  ' + String(x.name || x).slice(0, 36)).join('\n') || '  (none)';
+    return `<h4>📥 QUEUE — pending work</h4><div class="pk">INCOMING_WEBLOC (mini ingests):
+${nm(q.incoming)}
+STEM_QUEUE (laptop renders):
+${nm(q.queued)}
+now rendering: ${q.processing ? String(q.processing.name || q.processing.base || q.processing).slice(0, 36) : '(idle)'}</div>`;
+  }
+  if (o.id === 'robot') {
+    let rows = 'daemon state unknown';
+    try {
+      const d = libState && libState.librarianDaemons;
+      if (d) rows = Object.entries(d).map(([k, v]) =>
+        `${v && v.running ? '●' : '○'} ${k.replace('lib-', '')}${v && v.pid ? ' pid ' + v.pid : ''}`).join('\n');
+    } catch (e) {}
+    return `<h4>🤖 LIBRARIAN (Mac mini · background)</h4><div class="pk">webloc_watch ingests INCOMING_WEBLOC:
+downloads source.wav, runs metadata.py,
+queues the render for the laptop.
+${rows}</div>`;
+  }
+  if (o.id === 'sheet') return `<h4>📊 SONGLIST SHEET</h4><div class="pk">"New Mitchell Park Song List" (Google Sheet)
+mpb_sync.py pulls it daily on the mini:
+singers · band-required · drum patterns ·
+readiness → written into each song's metadata.
+Also builds gig files from the gig tabs.</div>`;
+  if (o.id === 'catalog') return `<h4>📇 CATALOG</h4><div class="pk">CATALOG.json — the library's index.
+catalog.py (mini, hourly) is the producer;
+the portal reads a local mirror, never Drive.
+${realLib.length} songs indexed.</div>`;
+  if (o.id === 'drive') return `<h4>☁️ GOOGLE DRIVE</h4><div class="pk">The conveyor between the two machines.
+Everything here crosses it: weblocs, stems,
+metadata, catalogs, gigs. Known moods:
+conflict copies ("file 2.wav") and sync lag.</div>`;
+  if (o.id === 'gigbind') return `<h4>🧳 GIG BINDER</h4><div class="pk">GIGS/*.json + SETLISTS/*.json
+${Array.isArray(gigList) ? gigList.slice(0, 6).map(g => '  ' + (g.title || g.slug || g)).join('\n') : '  loading…'}
+Closing the lid = Flash Cache (offline contract).</div>`;
+  if (o.id === 'cache') {
+    const c = cacheState || {};
+    return `<h4>🧰 OFFLINE CACHE (~/.bt-cache)</h4><div class="pk">Every stem of every song lives here so gigs
+work with NO wifi — the absolute contract.
+${c.done != null ? c.done + '/' + c.total + ' cached · ' + (c.failed || 0) + ' failed' : 'status loading…'}</div>`;
+  }
+  if (o.id === 'xr18') return `<h4>🎚️ BEHRINGER XR18</h4><div class="pk">18-channel USB interface — the AMP's output.
+Each stem routes to its own output pair
+(drummer's wedge gets the click, etc).
+Firmware 1.25 · short USB cable · watch for
+the coreaudiod wedge (first-aid in the portal).</div>`;
   if (o.kind === 'machine') {
     const io = { stemcut: 'intake: URL\noutput: song folder (6 stems + empty metadata)',
                  tag: 'intake: raw song folder\noutput: same folder, metadata filled',
