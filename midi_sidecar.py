@@ -53,6 +53,142 @@ except ImportError:
 
 PORT = 5555
 
+# ── XR18 OSC client (UDP :10024) ────────────────────────────────────────
+# The XR18's parameter tree is readable/writable over OSC on UDP 10024
+# (X AIR series; replies return to the sender's addr/port). Sending a
+# path with NO arguments queries it; sending with an argument sets it.
+# /xinfo broadcast discovers the console. Sources: Behringer X AIR OSC
+# docs, behringer.world/wiki x-air_osc, xair-api-python.
+import os
+import socket
+import struct
+
+XAIR_PORT = 10024
+_xr_cache = {"addr": None, "at": 0.0}
+
+
+def _osc_str(txt):
+    b = txt.encode("utf-8") + b"\0"
+    return b + b"\0" * ((4 - len(b) % 4) % 4)
+
+
+def osc_encode(addr, args=()):
+    tags, payload = ",", b""
+    for a in args:
+        if isinstance(a, bool):
+            a = int(a)
+        if isinstance(a, int):
+            tags += "i"; payload += struct.pack(">i", a)
+        elif isinstance(a, float):
+            tags += "f"; payload += struct.pack(">f", a)
+        else:
+            tags += "s"; payload += _osc_str(str(a))
+    return _osc_str(addr) + _osc_str(tags) + payload
+
+
+def _read_str(data, i):
+    end = data.index(b"\0", i)
+    txt = data[i:end].decode("utf-8", "replace")
+    i = end + 1
+    i += (4 - i % 4) % 4
+    return txt, i
+
+
+def osc_decode(data):
+    addr, i = _read_str(data, 0)
+    args = []
+    if i < len(data) and data[i:i + 1] == b",":
+        tags, i = _read_str(data, i)
+        for t in tags[1:]:
+            if t == "i":
+                args.append(struct.unpack(">i", data[i:i + 4])[0]); i += 4
+            elif t == "f":
+                args.append(round(struct.unpack(">f", data[i:i + 4])[0], 5)); i += 4
+            elif t == "s":
+                v, i = _read_str(data, i); args.append(v)
+            elif t == "b":
+                n = struct.unpack(">i", data[i:i + 4])[0]
+                i += 4 + n + (4 - n % 4) % 4
+                args.append("<blob %d bytes>" % n)
+    return addr, args
+
+
+def xr_discover(timeout=1.5):
+    now = time.time()
+    if _xr_cache["addr"] and now - _xr_cache["at"] < 300:
+        return _xr_cache["addr"]
+    env_ip = os.environ.get("XR18_IP")
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sk.settimeout(timeout)
+    try:
+        msg = osc_encode("/xinfo")
+        if env_ip:
+            sk.sendto(msg, (env_ip, XAIR_PORT))
+        else:
+            sk.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sk.sendto(msg, ("255.255.255.255", XAIR_PORT))
+        _data, addr = sk.recvfrom(4096)
+        _xr_cache["addr"] = addr
+        _xr_cache["at"] = now
+        return addr
+    except Exception:
+        _xr_cache["addr"] = None
+        return None
+    finally:
+        sk.close()
+
+
+def xr_exchange(path, args=(), timeout=1.5, expect_reply=True):
+    addr = xr_discover()
+    if not addr:
+        return None
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sk.settimeout(timeout)
+    try:
+        sk.sendto(osc_encode(path, args), addr)
+        if not expect_reply:
+            return {"sent": True}
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            data, _ = sk.recvfrom(4096)
+            raddr, rargs = osc_decode(data)
+            if raddr == path or path == "/xinfo":
+                return {"path": raddr, "args": rargs}
+        return None
+    except Exception:
+        return None
+    finally:
+        sk.close()
+
+
+def fader_to_db(f):
+    if f is None:
+        return None
+    if f >= 0.5:
+        db = f * 40.0 - 30.0
+    elif f >= 0.25:
+        db = f * 80.0 - 50.0
+    elif f >= 0.0625:
+        db = f * 160.0 - 70.0
+    elif f > 0.0:
+        db = f * 480.0 - 90.0
+    else:
+        return "-inf"
+    return round(db, 1)
+
+
+def db_to_fader(db):
+    db = float(db)
+    if db >= -10.0:
+        f = (db + 30.0) / 40.0
+    elif db >= -30.0:
+        f = (db + 50.0) / 80.0
+    elif db >= -60.0:
+        f = (db + 70.0) / 160.0
+    else:
+        f = (db + 90.0) / 480.0
+    return max(0.0, min(1.0, f))
+
 # Lazy-open outputs so we don't grab every device at startup. Cached by the
 # canonical port name (what mido reports) so multiple substring queries that
 # resolve to the same port share one handle.
@@ -234,7 +370,50 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
                                     "inputs": mido.get_input_names()})
+        if self.path == "/xr18/info":
+            return self._xr18_info()
+        if self.path.startswith("/xr18/query?"):
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            osc_path = (q.get("path") or [""])[0]
+            if not osc_path.startswith("/"):
+                return self._json(400, {"error": "path must start with /"})
+            r = xr_exchange(osc_path)
+            if r is None:
+                return self._json(503, {"ok": False, "error": "XR18 unreachable"})
+            return self._json(200, {"ok": True, **r})
         self._json(404, {"error": "not found"})
+
+    def _xr18_info(self):
+        info = xr_exchange("/xinfo", timeout=2.0)
+        if info is None:
+            return self._json(503, {"ok": False, "error": "XR18 not found on the network (OSC :10024)"})
+        a = info.get("args") or []
+        out = {"ok": True,
+               "network": {"ip": a[0] if len(a) > 0 else None,
+                           "name": a[1] if len(a) > 1 else None,
+                           "model": a[2] if len(a) > 2 else None,
+                           "firmware": a[3] if len(a) > 3 else None}}
+        snap = xr_exchange("/-snap/index")
+        out["snapshot_index"] = (snap or {}).get("args", [None])[0]
+        sname = xr_exchange("/-snap/name")
+        out["snapshot_name"] = (sname or {}).get("args", [None])[0]
+        lrf = xr_exchange("/lr/mix/fader")
+        f = (lrf or {}).get("args", [None])[0]
+        out["main_lr"] = {"fader": f, "fader_db": fader_to_db(f)}
+        lron = xr_exchange("/lr/mix/on")
+        on = (lron or {}).get("args", [None])[0]
+        out["main_lr"]["muted"] = (on == 0) if on is not None else None
+        buses = []
+        for b in range(1, 7):
+            nm = xr_exchange("/bus/%d/config/name" % b, timeout=0.8)
+            fv = xr_exchange("/bus/%d/mix/fader" % b, timeout=0.8)
+            bf = (fv or {}).get("args", [None])[0]
+            buses.append({"bus": b,
+                          "name": ((nm or {}).get("args", [""]) or [""])[0],
+                          "fader": bf, "fader_db": fader_to_db(bf)})
+        out["aux_buses"] = buses
+        return self._json(200, out)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -247,6 +426,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_send(body)
         if self.path == "/clock":
             return self._handle_clock(body)
+        if self.path == "/xr18/set":
+            osc_path = str(body.get("path") or "")
+            if not osc_path.startswith("/"):
+                return self._json(400, {"error": "path must start with /"})
+            value = body.get("value")
+            if body.get("db") is not None:
+                value = db_to_fader(body["db"])
+            args = [] if value is None else [value]
+            r = xr_exchange(osc_path, args, expect_reply=False)
+            if r is None:
+                return self._json(503, {"ok": False, "error": "XR18 unreachable"})
+            back = xr_exchange(osc_path)
+            return self._json(200, {"ok": True, "set": osc_path, "value": value,
+                                    "readback": (back or {}).get("args")})
         self._json(404, {"error": "not found"})
 
     def _handle_clock(self, body):

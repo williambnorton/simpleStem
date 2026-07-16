@@ -1039,7 +1039,22 @@ ${list(outs)}
 <span class="meta-k">inputs (${ins.length})</span>:
 ${list(ins)}
 
-<span class="meta-k">probed</span>: ${new Date().toLocaleTimeString()}</div>`;
+<span class="meta-k">probed</span>: ${new Date().toLocaleTimeString()}
+
+<span class="meta-k">OSC console probe (:10024)</span>: <span class="empty" id="xr18-osc">reaching for the board…</span></div>`;
+    fetch('/api/xr18/info').then(r => r.json()).then(o => {
+      const el = document.getElementById('xr18-osc');
+      if (!el) return;
+      if (!o.ok) { el.innerHTML = `<span style="color:#ff5252">${o.error || 'unreachable'}</span> — is the laptop on the XR18's network?`; return; }
+      const n = o.network || {}, lr = o.main_lr || {};
+      const buses = (o.aux_buses || []).map(b => `  AUX ${b.bus} ${b.name ? '“' + b.name + '”' : ''}  fader ${b.fader_db === '-inf' ? '-∞' : b.fader_db} dB`).join('\n');
+      el.outerHTML = `<span style="color:#00e676;font-weight:800">LIVE ✓</span>
+<span class="meta-k">console</span>: ${n.name || '?'} · ${n.model || '?'} · fw ${n.firmware || '?'} · ${n.ip || '?'}
+<span class="meta-k">snapshot</span>: ${o.snapshot_index != null ? '#' + o.snapshot_index + (o.snapshot_name ? ' “' + o.snapshot_name + '”' : '') : 'unknown'}
+<span class="meta-k">Main LR</span>: fader ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db} dB · ${lr.muted === true ? '<span style="color:#ff5252;font-weight:800">MUTED</span>' : lr.muted === false ? 'open' : '?'}
+<span class="meta-k">monitor buses</span>:
+${buses || '  (none read)'}`;
+    }).catch(() => {});
   } catch (e) {
     document.getElementById('card-body').innerHTML =
       `<h3>🎚️ XR18 — live MIDI properties</h3><div class="file"><span style="color:#ff5252">sidecar unreachable: ${e.message}</span>\n\nstart it on the Performer:\n  ./performer.sh start</div>`;
@@ -1620,6 +1635,26 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '🔎 Probe MIDI (live properties)', run: showXr18Card });
       items.push({ label: '⏱ Start MIDI clock · 120', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm: 120, port: 'XR18' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏱ clock: ' + r.error : '⏱ MIDI clock running at 120 → XR18.'); pollSlowInstruments(); } });
       items.push({ label: '⏹ Stop MIDI clock', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏹ clock: ' + r.error : '⏹ MIDI clock stopped.'); pollSlowInstruments(); } });
+      items.push({ label: '📸 Recall snapshot… (MIDI PC)', run: async () => {
+        const n = parseInt(prompt('Snapshot number 1-64 to recall on the XR18:'), 10);
+        if (!(n >= 1 && n <= 64)) return;
+        const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'XR18', type: 'pc', channel: 1, program: n - 1 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        hint(r.error ? '📸 ' + r.error : `📸 snapshot <b>${n}</b> recalled (PC ${n} · ch 1).`); setTimeout(showXr18Card, 800);
+      } });
+      items.push({ label: '🎚 Set Main LR fader… (OSC)', run: async () => {
+        const db = parseFloat(prompt('Main LR fader in dB (-90 … +10). 0 = unity:', '0'));
+        if (isNaN(db) || db > 10 || db < -90) return;
+        const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/lr/mix/fader', db }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        hint(r.ok ? `🎚 Main LR → <b>${db} dB</b> (readback ${JSON.stringify(r.readback)}).` : '🎚 ' + (r.error || 'failed')); setTimeout(showXr18Card, 500);
+      } });
+      items.push({ label: '🔇 Mute Main LR (OSC)', run: async () => {
+        const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/lr/mix/on', value: 0 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        hint(r.ok ? '🔇 Main LR MUTED.' : '🔇 ' + (r.error || 'failed')); setTimeout(showXr18Card, 500);
+      } });
+      items.push({ label: '🔊 Unmute Main LR (OSC)', run: async () => {
+        const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/lr/mix/on', value: 1 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        hint(r.ok ? '🔊 Main LR open.' : '🔊 ' + (r.error || 'failed')); setTimeout(showXr18Card, 500);
+      } });
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
     }
     items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });

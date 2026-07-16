@@ -235,3 +235,15 @@ pointer theatrics.
   probe time). Right-click adds: Probe MIDI, Start clock 120 → XR18,
   Stop clock, Open X-AIR-Edit. Requires the SERVER restarted for the
   proxy and the MIDI sidecar restarted for the inputs field.
+- 2026-07-15 (XR18 deep control): researched both control surfaces
+  (docs/14_XR18_CONTROL.md). MIDI chart: PC1-64@ch1 = snapshots, CC@ch1
+  = faders (31 = Main LR, 21-26 = the six wedges), ch2 = mutes, ch3 =
+  pan, plus OSC-over-SysEx. OSC on UDP :10024: path with no args READS,
+  with args WRITES; /xinfo broadcast discovers. midi_sidecar.py grew a
+  dependency-free OSC client (encoder/decoder unit-tested, discovery
+  cached 5 min, XR18_IP override, X32 piecewise fader<->dB). Endpoints
+  /xr18/info|query|set proxied as /api/xr18/*. Desk card shows console
+  identity + snapshot + Main LR + AUX 1-6; right-click gained recall
+  snapshot (MIDI PC), set Main LR dB, mute/unmute Main LR (OSC, with
+  readback). OSC needs the laptop ON THE XR18'S NETWORK — USB carries
+  audio+MIDI only.

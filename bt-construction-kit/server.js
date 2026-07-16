@@ -5859,15 +5859,50 @@ app.get('/api/snapshot/diff/:name', (req, res) => {
 // stays same-origin and gets a friendly error when the sidecar is down.
 const MIDI_SIDECAR_URL = process.env.MIDI_SIDECAR_URL || 'http://127.0.0.1:5555';
 
-async function sidecarFetch(path, init) {
+async function sidecarFetch(path, init, timeoutMs = 2000) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 2000);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(`${MIDI_SIDECAR_URL}${path}`, { ...init, signal: ctrl.signal });
     const body = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, body };
   } finally { clearTimeout(t); }
 }
+
+// ── XR18 OSC bridge (Bill 2026-07-15) ──────────────────────────────────
+// The sidecar owns a UDP OSC client to the XR18 on :10024. info = deep
+// probe (xinfo/snapshot/main LR/aux buses — many round trips, so a long
+// bound); query/set are single-parameter reads/writes on the OSC tree.
+app.get('/api/xr18/info', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/info', undefined, 15000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+app.get('/api/xr18/query', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/query?path=' + encodeURIComponent(String(req.query.path || '')), undefined, 4000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+app.post('/api/xr18/set', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    }, 5000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
 
 app.get('/api/midi/health', async (req, res) => {
   try {
