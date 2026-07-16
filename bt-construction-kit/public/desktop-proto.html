@@ -49,6 +49,11 @@
   .pop { animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
   @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
+  /* folder health tint (Bill 2026-07-15): brown = empty on disk,
+     yellow = being worked on, normal glyph color = complete */
+  .folder-state-empty .art { filter: sepia(1) saturate(2.8) hue-rotate(-32deg) brightness(.72); }
+  .folder-state-working .art { filter: sepia(1) saturate(5) hue-rotate(8deg) brightness(1.25); }
+
   /* ── sliced folder (three horizontal bands of the 📁 glyph) ─────────── */
   .folder-art { position: relative; width: 74px; height: 62px; margin: 0 auto; }
   .folder-art .slice { position: absolute; left: 0; width: 100%; overflow: hidden; font-size: 54px; line-height: 62px; }
@@ -534,7 +539,11 @@ function pollRealFolder(title) {
     if (Date.now() - t0 > 35 * 60 * 1000) { clearInterval(livePollTimer); return; }
     try {
       const j = await fetch('/api/desktop/inspect?base=&title=' + encodeURIComponent(title)).then(r => r.json());
-      if (!j.ok) { if (note()) note().textContent = 'queued — no folder on disk yet…'; return; }
+      if (!j.ok) {
+        if (note()) note().textContent = 'queued — no folder on disk yet…';
+        if (folder && folder.el) { folder.el.classList.add('folder-state-empty'); folder.el.classList.remove('folder-state-working'); }
+        return;
+      }
       if (note()) note().textContent = j.path;
       // A file is DONE when its size is nonzero and unchanged since the
       // last check; present-but-growing stays WORKING with the live size.
@@ -547,6 +556,16 @@ function pollRealFolder(title) {
         else liveSetRow(nm, 'working', size > 0 ? fmtBytes(size) : null);
       }
       pollRealFolder._last = seen;
+      // Folder health tint: brown while nothing has landed on disk,
+      // yellow while stems are still being worked on, normal when the
+      // six m4a stems are all done.
+      if (folder && folder.el) {
+        const stems = EXPECTED_FILES.filter(f => f.endsWith('.m4a'));
+        const anyBytes = [...seen.values()].some(sz => sz > 0);
+        const allDone = stems.every(f => { const row = liveRows.get(f); return row && row.state === 'done'; });
+        folder.el.classList.toggle('folder-state-empty', !anyBytes);
+        folder.el.classList.toggle('folder-state-working', anyBytes && !allDone);
+      }
       // A stem finishing is WORK IN FLIGHT: a chip launches from the
       // Stemcutter across the desk to the worklog pane.
       for (const [nm, size] of seen) {
@@ -590,6 +609,7 @@ function stemcutShow(machine, name, done) {
      </div>
      <div class="label">${name}</div><div class="sub">building… 0/7 files</div>`,
     fx, fy, 'building', 'pop');
+  folder.el.classList.add('folder-state-working');
   folderStage = 'raw';
   hint(`The <b>Stemcutter</b> is sawing <b>${name}</b> — stems are flying into the folder…`);
   openLiveCard(name);   // quick-look stays open; files sparkle in below

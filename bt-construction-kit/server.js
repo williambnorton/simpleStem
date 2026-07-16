@@ -5913,9 +5913,19 @@ async function resolveDeskFolder(base, title) {
   const bounded = (p) => Promise.race([p, new Promise(r => setTimeout(() => r(null), 3000))]);
   if (title) {
     const best = await bounded((async () => {
+      // oEmbed titles carry noise ("ZZ Top - Sharp Dressed Man (Official
+      // Music Video)") that poisoned the token threshold and sent the
+      // reveal to the WRONG folder (Bill's Sharp Dressed Man →
+      // It_s_A_Long_Way bug, 2026-07-15). Strip parentheticals/brackets
+      // and noise words BEFORE matching.
+      const NOISE = new Set(['official', 'video', 'music', 'audio', 'hd', 'hq',
+        'remaster', 'remastered', 'lyrics', 'lyric', 'live', 'full', 'album',
+        'version', 'visualizer', 'feat', 'ft', 'the']);
+      const cleanedTitle = String(title).replace(/[\(\[].*?[\)\]]/g, ' ');
       const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
-      const tn = norm(title);
-      const tokens = title.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+      const rawTokens = cleanedTitle.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+      const tokens = rawTokens.filter(w => !NOISE.has(w));
+      const tn = norm(tokens.join(''));
       const entries = await fs.promises.readdir(stemsRoot, { withFileTypes: true });
       let bestName = null, bestScore = 0, bestMt = 0;
       for (const e of entries) {
@@ -5939,6 +5949,10 @@ async function resolveDeskFolder(base, title) {
       return bestName;
     })());
     if (best) return { target: path.join(stemsRoot, best), how: 'title-match' };
+    // A title was given and nothing matched: DO NOT guess "newest" —
+    // that guess is what opened the wrong song's folder. Open the STEMS
+    // root honestly instead.
+    return { target: stemsRoot, how: 'root' };
   }
   const newest = await bounded((async () => {
     const entries = await fs.promises.readdir(stemsRoot, { withFileTypes: true });

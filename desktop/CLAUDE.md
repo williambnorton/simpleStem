@@ -212,3 +212,15 @@ pointer theatrics.
   direction — an A→B / B→A pair needs SAME-sign `off` values to bow
   apart, opposite signs silently overlap (labels collide into garble).
   Verified by reading the rendered <text> x/y attrs, not just the code.
+- 2026-07-15 (reveal matcher): oEmbed titles carry noise — "(Official
+  Music Video)" etc. — that poisoned resolveDeskFolder's 60% token
+  threshold; the newest-30-min fallback then opened a DIFFERENT song's
+  folder (Sharp Dressed Man → It_s_A_Long_Way). Fix: strip
+  parentheticals + a NOISE word set before matching, and when a title
+  is given but unmatched return the STEMS root honestly — never guess
+  "newest" past a failed title match.
+- 2026-07-15 (folder health tint): the desk folder's .art gets
+  `folder-state-empty` (brown filter) while nothing is on disk and
+  `folder-state-working` (yellow filter) until all six m4a stems are
+  done; classes are toggled inside pollRealFolder from the same
+  size-stable-between-polls "done" logic the worklog rows use.
