@@ -224,3 +224,14 @@ pointer theatrics.
   `folder-state-working` (yellow filter) until all six m4a stems are
   done; classes are toggled inside pollRealFolder from the same
   size-stable-between-polls "done" logic the worklog rows use.
+- 2026-07-15 (XR18 MIDI link): the XR18 desk object is now a live MIDI
+  connectivity instrument. `pollSlowInstruments` hits `/api/midi/health`
+  (new server proxy → sidecar :5555/health, which now reports `inputs`
+  as well as outputs): green drop-shadow `.midi-ok` when an XR18/X-AIR
+  port is on the bus, red `.midi-miss` when the sidecar is up but the
+  board isn't, dimmed `.midi-down` when the sidecar is unreachable.
+  CLICK (press without move) selects the XR18 → live properties card
+  (per-port list, XR18/Helix/IAC tagged, in+out verdicts, clock state,
+  probe time). Right-click adds: Probe MIDI, Start clock 120 → XR18,
+  Stop clock, Open X-AIR-Edit. Requires the SERVER restarted for the
+  proxy and the MIDI sidecar restarted for the inputs field.

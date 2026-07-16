@@ -49,6 +49,12 @@
   .pop { animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
   @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
+  /* XR18 MIDI link state (Bill 2026-07-15): green glow = XR18 seen on
+     the MIDI bus, red = sidecar up but no XR18, dim = sidecar down */
+  .midi-ok .art { filter: drop-shadow(0 0 10px rgba(0,230,118,.9)); }
+  .midi-miss .art { filter: drop-shadow(0 0 10px rgba(255,82,82,.85)); }
+  .midi-down .art { opacity: .55; }
+
   /* folder health tint (Bill 2026-07-15): brown = empty on disk,
      yellow = being worked on, normal glyph color = complete */
   .folder-state-empty .art { filter: sepia(1) saturate(2.8) hue-rotate(-32deg) brightness(.72); }
@@ -726,6 +732,7 @@ desk.addEventListener('pointerup', () => {
     redrawWires();
   }
   if (!drag.moved && o === folder) showCard();
+  if (!drag.moved && o.id === 'xr18') showXr18Card();
   drag = null;
 });
 desk.addEventListener('dblclick', (e) => {
@@ -948,6 +955,20 @@ async function pollSlowInstruments() {
     if (Array.isArray(gigList)) gigbind.el.querySelector('.sub').textContent = `${gigList.length} gigs on file`;
   } catch (e) {}
   catalog.el.querySelector('.sub').textContent = `${realLib.length} songs indexed · hourly pass`;
+  try {
+    const h = await fetch('/api/midi/health').then(r => r.json());
+    midiState = h;
+    const outs = h.ports || [], ins = h.inputs || [];
+    const seen = (list) => list.some(n => /xr\s?18|x\s?air/i.test(n));
+    const okOut = seen(outs), okIn = seen(ins);
+    xr18.el.classList.toggle('midi-ok', h.ok === true && okOut);
+    xr18.el.classList.toggle('midi-miss', h.ok === true && !okOut);
+    xr18.el.classList.toggle('midi-down', !h.ok);
+    xr18.el.querySelector('.sub').textContent =
+      !h.ok ? 'MIDI sidecar down — ./performer.sh status' :
+      okOut ? `MIDI ✓ wired (out${okIn ? '+in' : ''}) · ${outs.length} ports${h.clock && h.clock.running ? ' · clock ' + h.clock.bpm : ''}` :
+      `MIDI ✗ XR18 not on the bus · ${outs.length} ports up`;
+  } catch (e) { midiState = null; xr18.el.classList.add('midi-down'); }
 }
 function flyChip(from, to, text) {
   const chip = document.createElement('div');
@@ -992,6 +1013,38 @@ async function showCacheTree() {
    Gigs and standalone setlists are collections of songs; a song is a
    sequence of SECTIONS and timeline ACTIONS. Selecting any node reveals
    its properties; its methods are buttons that hit the REAL endpoints. */
+let midiState = null;
+async function showXr18Card() {
+  document.getElementById('card-body').innerHTML = '<h3>🎚️ XR18 — MIDI interface</h3><div class="file">probing the sidecar…</div>';
+  card.style.display = 'block'; S.riffle();
+  try {
+    const h = await fetch('/api/midi/health').then(r => r.json());
+    midiState = h;
+    if (!h.ok) throw new Error(h.error || 'sidecar down');
+    const outs = h.ports || [], ins = h.inputs || [];
+    const mark = (n) => /xr\s?18|x\s?air/i.test(n) ? ` <span style="color:#00e676;font-weight:800">← XR18 ✓</span>`
+      : /helix|hx/i.test(n) ? ' <span style="color:#7fd6a4">← Helix</span>'
+      : /iac/i.test(n) ? ' <span style="color:#7fd6a4">← Logic (IAC)</span>' : '';
+    const list = (arr) => arr.length ? arr.map(n => `  ${n}${mark(n)}`).join('\n') : '  (none)';
+    const okOut = outs.some(n => /xr\s?18|x\s?air/i.test(n)), okIn = ins.some(n => /xr\s?18|x\s?air/i.test(n));
+    document.getElementById('card-body').innerHTML =
+      `<h3>🎚️ XR18 — live MIDI properties</h3><div class="file" style="max-height:56vh;overflow-y:auto"><span class="meta-k">sidecar</span>: alive on :5555
+<span class="meta-k">XR18 output port</span>: ${okOut ? '<span style="color:#00e676;font-weight:800">CONNECTED ✓</span>' : '<span style="color:#ff5252">not found ✗</span>'}
+<span class="meta-k">XR18 input port</span>: ${okIn ? '<span style="color:#00e676;font-weight:800">CONNECTED ✓</span>' : '<span style="color:#ff5252">not found ✗</span>'}
+<span class="meta-k">MIDI clock</span>: ${h.clock && h.clock.running ? 'RUNNING · ' + h.clock.bpm + ' bpm' : 'stopped'}
+
+<span class="meta-k">outputs (${outs.length})</span>:
+${list(outs)}
+
+<span class="meta-k">inputs (${ins.length})</span>:
+${list(ins)}
+
+<span class="meta-k">probed</span>: ${new Date().toLocaleTimeString()}</div>`;
+  } catch (e) {
+    document.getElementById('card-body').innerHTML =
+      `<h3>🎚️ XR18 — live MIDI properties</h3><div class="file"><span style="color:#ff5252">sidecar unreachable: ${e.message}</span>\n\nstart it on the Performer:\n  ./performer.sh start</div>`;
+  }
+}
 let obLib = null, obSelEl = null;
 const fmtT = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 async function obLibrary() {
@@ -1388,7 +1441,8 @@ LOOP bus via BlackHole). Drop a real audio
 file here and it opens IN Logic; drops land
 in Drive's LOGIC_INBOX/ first, so the mini
 sees them too. Double-click opens Logic.</div>`;
-  if (o.id === 'xr18') return `<h4>🎚️ BEHRINGER XR18</h4><div class="pk">18-channel USB interface — the AMP's output.
+  if (o.id === 'xr18') return `<h4>🎚️ BEHRINGER XR18</h4><div class="pk">${midiState && midiState.ok ? ((midiState.ports || []).some(n => /xr\s?18|x\s?air/i.test(n)) ? 'MIDI link: CONNECTED ✓ — click for live properties' : 'MIDI link: XR18 not on the bus ✗') : 'MIDI sidecar down'}
+18-channel USB interface — the AMP's output.
 Each stem routes to its own output pair
 (drummer's wedge gets the click, etc).
 Firmware 1.25 · short USB cable · watch for
@@ -1562,6 +1616,12 @@ desk.addEventListener('contextmenu', (e) => {
     if (o.accepts && o.accepts.includes('url')) items.push({ label: '▶ Run with the URL chip', run: () => { const chip = objects.find(x => x.kind === 'url'); if (chip) runMachine(o, chip); else hint('URL chip is gone — refresh.'); } });
     if (o.work === 'stemcut' || o.work === 'aggregate') items.push({ label: '📡 Current render status', run: showQueueCard });
     if (o.work === 'aggregate') items.push({ label: '🔧 Take apart', run: () => disassemble(o) });
+    if (o.id === 'xr18') {
+      items.push({ label: '🔎 Probe MIDI (live properties)', run: showXr18Card });
+      items.push({ label: '⏱ Start MIDI clock · 120', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm: 120, port: 'XR18' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏱ clock: ' + r.error : '⏱ MIDI clock running at 120 → XR18.'); pollSlowInstruments(); } });
+      items.push({ label: '⏹ Stop MIDI clock', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏹ clock: ' + r.error : '⏹ MIDI clock stopped.'); pollSlowInstruments(); } });
+      items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
+    }
     items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
     items.push({ label: '↺ Reset desk layout', run: () => { if (confirm('Put every machine back in its default spot?')) resetLayout(); } });
   }

@@ -5869,6 +5869,15 @@ async function sidecarFetch(path, init) {
   } finally { clearTimeout(t); }
 }
 
+app.get('/api/midi/health', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/health');
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
 app.get('/api/midi/ports', async (req, res) => {
   try {
     const r = await sidecarFetch('/ports');

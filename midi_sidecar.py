@@ -229,9 +229,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             return self._json(200, {"ok": True, "ports": mido.get_output_names(),
+                                    "inputs": mido.get_input_names(),
                                     "clock": {"running": _clock.running, "bpm": _clock.bpm}})
         if self.path == "/ports":
-            return self._json(200, {"outputs": mido.get_output_names()})
+            return self._json(200, {"outputs": mido.get_output_names(),
+                                    "inputs": mido.get_input_names()})
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
