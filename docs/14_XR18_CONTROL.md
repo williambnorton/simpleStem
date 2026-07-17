@@ -83,3 +83,46 @@ carries audio + MIDI, NOT OSC), *DIN/USB Rx* enabled for MIDI control.
 - Behringer *X AIR OSC documentation* + `behringer.world` X AIR OSC wiki
 - Patrick-Gilles Maillot's unofficial X32 OSC protocol (fader curve)
 - `xair-api-python` (onyx-and-iris) — parameter tree confirmation
+
+---
+
+# Companion devices on the same MIDI wire (research 2026-07-15)
+
+## Line 6 Helix Stadium (official manual, Rev D v1.3)
+
+Global MIDI channel 1 (bypass/ctrl on channel 2). DIN + USB-C MIDI,
+clock send/receive. Global CC map used by the desk:
+
+- Preset recall: CC32 (setlist/bank) + PC 0-127; Stadium auto-transmits
+  PC on preset change (Global Settings > MIDI > Send MIDI PC).
+- Snapshots: CC69 val 0-7 (8 = next, 9 = previous).
+- Looper: CC58 rec(64-127)/overdub(0-63) · CC59 play(64-127)/stop(0-63)
+  · CC60 play once · CC52 clear · CC53 undo/redo · CC54 half-speed ·
+  CC55 reverse · CC62 looper block on/off.
+- Transport (Song view): CC63 playlist · CC10 song cue · CC46 marker ·
+  CC47 return-to-zero · CC49 prev/next song · CC51 play/pause.
+- Expression/knobs: CC1/CC2 EXP · CC36 toe switch · CC38-45 knobs 1-8 ·
+  CC64 tap tempo · CC9 panel-button emulation.
+
+## TC Electronic Ditto X4 (community-verified chart; needs the MIDI-CC
+firmware update; DIN In/Thru only)
+
+MIDI channel 4 (fixed). Receives MIDI clock — loop lengths lock to
+tempo (pairs with the sidecar's 24-ppqn clock).
+
+- Looper 1: CC3 rec/dub/play · CC9 stop · CC14 clear · CC15 level ·
+  CC20 store · CC21 clear backtrack.
+- Looper 2: CC22 rec/dub/play · CC23 stop · CC24 clear · CC25 level ·
+  CC26 store · CC27 clear backtrack.
+- Global: CC29 all stop · CC30 all clear · CC28 decay · CC31 FX on/off
+  · CC85 serial/parallel · PC 1-7 FX select.
+
+## Desk integration
+
+Both devices are desk objects in the stage rig (instruments → Helix →
+Ditto → XR18 analog chain; blue dashed MIDI control wires from the
+MacBook). Right-click fires the real commands through
+`POST /api/midi/send` (port substrings "helix" / "ditto"). Click opens
+the instrumentation card (live port verdict + full CC map). The ambient
+DEVICE DOCK along the bottom of the desk shows every physical device's
+live properties without selecting anything.

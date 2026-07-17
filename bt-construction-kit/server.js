@@ -6030,6 +6030,7 @@ app.post('/api/desktop/reveal', async (req, res) => {
       '__CATALOG__': ['-R', path.join(SIMPLE_STEM_ROOT, 'CATALOG.json')],
       '__XR18__': ['-a', 'X-AIR-Edit'],
       '__LOGIC__': ['-a', 'Logic Pro'],
+      '__HELIXAPP__': ['-a', 'Helix Stadium'],
     };
     if (SPECIAL[base]) {
       require('child_process').spawn('open', SPECIAL[base], { detached: true, stdio: 'ignore' }).unref();

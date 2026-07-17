@@ -247,3 +247,17 @@ pointer theatrics.
   snapshot (MIDI PC), set Main LR dB, mute/unmute Main LR (OSC, with
   readback). OSC needs the laptop ON THE XR18'S NETWORK — USB carries
   audio+MIDI only.
+- 2026-07-15 (device rack + ambient dock): Helix Stadium (🏟️, MIDI ch1,
+  snapshots CC69, looper CC52-62, presets CC32+PC) and Ditto X4 (🔁,
+  ch4 fixed, L1 CC3/9/14, L2 CC22-24, all-stop CC29) are desk objects
+  wired into the stage chain (instr→helix→ditto→xr18) with blue dashed
+  MIDI control wires from the new 💻 MACBOOK object. Right-click =
+  device methods over /api/midi/send; click = instrumentation card
+  (live port verdict + CC map, docs/14_XR18_CONTROL.md holds the
+  research). #dock is the AMBIENT PROPERTIES surface (Bill: "the area
+  surrounding the desktop") — a bottom strip of always-on live panels
+  (XR18/Helix/Ditto/sidecar/MacBook) rebuilt by renderDock() on every
+  slow poll; clicking a panel opens the full card. XR18 OSC deep-probe
+  refreshes into the dock every ~12 slow polls. Direction Bill set: the
+  WHOLE desk should become objects — every action, every process, every
+  physical device.

@@ -221,7 +221,21 @@
   #wires path.usb { stroke: #00e676; stroke-dasharray: 9 6; animation: flow .8s linear infinite; }
   #wires path.outs { stroke: #ff9f43; stroke-dasharray: 6 8; animation: flow 1.4s linear infinite; }
   @keyframes flow { to { stroke-dashoffset: -26; } }
+  #wires path.midi { stroke: #4fc3f7; stroke-dasharray: 3 9; animation: flow .6s linear infinite; opacity: .4; }
   #wires text { font: 700 10px -apple-system, sans-serif; fill: #9fb3c8; opacity: .85; }
+
+  /* ambient device dock: the area surrounding the desk holds every
+     physical device's live properties — no selection needed */
+  #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    display: flex; gap: 10px; padding: 8px 14px; overflow-x: auto;
+    background: rgba(10,13,19,.92); border-top: 1px solid rgba(255,255,255,.14); }
+  .dock-p { min-width: 190px; flex: 1; cursor: pointer; border: 1px solid rgba(255,255,255,.1);
+    border-radius: 9px; padding: 6px 10px; background: rgba(255,255,255,.03); }
+  .dock-p:hover { background: rgba(255,255,255,.08); }
+  .dock-p h5 { font: 700 10px -apple-system, sans-serif; letter-spacing: 1px; color: #7fd6a4; margin: 0 0 3px; }
+  .dock-p .dl { font: 10px/1.55 Menlo, monospace; color: #9fb3c8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dock-p .ok { color: #00e676; font-weight: 700; }
+  .dock-p .bad { color: #ff5252; font-weight: 700; }
 
   /* machine-role zones: the Librarian's work happens in the background */
   .zone {
@@ -250,6 +264,7 @@
 <div class="zone" id="zone-mini" style="left:12px; top:60px; width:240px; height:0;"><span class="zlabel">Mac mini · Librarian (background)</span></div>
 <div class="zone" id="zone-laptop" style="left:0; top:0; width:0; height:0;"><span class="zlabel">This laptop · Performer</span></div>
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
+<div id="dock"></div>
 <div id="objb"><div class="objb-head"><span>🧳 OBJECT BROWSER — Gig → Setlist → Song → Sections + Timeline actions</span><span class="close" onclick="objb.style.display='none'">✕</span></div>
 <div class="objb-panes"><div class="objb-tree" id="objb-tree"></div><div class="objb-insp" id="objb-insp"><div class="ob-note">Select an object on the left — summary + methods here, ALL properties below. Right-click any object for its methods.</div></div></div>
 <div class="objb-props" id="objb-props"><h4>ALL PROPERTIES</h4><div class="ob-note">nothing selected.</div></div></div>
@@ -369,13 +384,21 @@ const logic   = machineDef('logic', '🎹', 'LOGIC PRO', 'drop an audio file —
 // to Main L/R and AUX 1-6. Drawn as objects + animated signal wires.
 const mics    = machineDef('mics', '🎤', 'MICS', 'vocal mics → XR18 inputs 1-4', W*0.56, H*0.78, [], 'info');
 const instr   = machineDef('instr', '🎸', 'INSTRUMENTS', 'guitars · bass · keys → XR18 inputs', W*0.68, H*0.78, [], 'info');
+const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig · MIDI ch 1', W*0.50, H*0.62, [], 'info');
+const ditto   = machineDef('ditto', '🔁', 'DITTO X4', 'looper · MIDI ch 4', W*0.585, H*0.62, [], 'info');
+const macbook = machineDef('macbook', '💻', 'MACBOOK PRO', 'the Performer · portal host', W*0.30, H*0.36, [], 'info');
 const mains   = machineDef('mains', '🔊', 'MAIN L/R', 'front of house', W*0.90, H*0.42, [], 'info');
 const wedges  = machineDef('wedges', '📢', 'AUX 1–6', 'six monitor wedges (click to the drummer)', W*0.90, H*0.70, [], 'info');
 
 // wires: from → to, kind (analog/usb/outs), label, label offset
 const WIRES = [
   { a: 'mics',  b: 'xr18',  k: 'analog', label: 'XLR' },
-  { a: 'instr', b: 'xr18',  k: 'analog', label: '' },
+  { a: 'instr', b: 'helix', k: 'analog', label: '' },
+  { a: 'helix', b: 'ditto', k: 'analog', label: '' },
+  { a: 'ditto', b: 'xr18',  k: 'analog', label: '' },
+  { a: 'macbook', b: 'helix', k: 'midi', label: 'MIDI' },
+  { a: 'macbook', b: 'ditto', k: 'midi', label: '' },
+  { a: 'macbook', b: 'xr18',  k: 'midi', label: '' },
   { a: 'amp',   b: 'xr18',  k: 'usb',    label: 'stems · 18 USB returns' },
   { a: 'xr18',  b: 'logic', k: 'usb',    label: 'USB 18ch →', off: 55 },
   { a: 'logic', b: 'xr18',  k: 'usb',    label: '← Logic mix', off: 55 },
@@ -405,7 +428,7 @@ function redrawWires() {
 }
 setInterval(redrawWires, 1000);
 setTimeout(redrawWires, 300);
-let libState = null, cacheState = null, gigList = null;
+let libState = null, cacheState = null, gigList = null, qDepth = null;
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
@@ -733,6 +756,9 @@ desk.addEventListener('pointerup', () => {
   }
   if (!drag.moved && o === folder) showCard();
   if (!drag.moved && o.id === 'xr18') showXr18Card();
+  if (!drag.moved && o.id === 'helix') showHelixCard();
+  if (!drag.moved && o.id === 'ditto') showDittoCard();
+  if (!drag.moved && o.id === 'macbook') showMacbookCard();
   drag = null;
 });
 desk.addEventListener('dblclick', (e) => {
@@ -887,6 +913,7 @@ async function pollSystem() {
     const incoming = (q.incoming || []).length;
     const queued = (q.queued || []).length;
     const depth = incoming + queued;
+    qDepth = depth;
     const badge = document.getElementById('q-badge');
     if (badge) badge.textContent = depth;
     const proc = q.processing;
@@ -969,6 +996,16 @@ async function pollSlowInstruments() {
       okOut ? `MIDI ✓ wired (out${okIn ? '+in' : ''}) · ${outs.length} ports${h.clock && h.clock.running ? ' · clock ' + h.clock.bpm : ''}` :
       `MIDI ✗ XR18 not on the bus · ${outs.length} ports up`;
   } catch (e) { midiState = null; xr18.el.classList.add('midi-down'); }
+  const seenP = (re) => midiState && midiState.ok && (midiState.ports || []).some(n => re.test(n));
+  helix.el.classList.toggle('midi-ok', seenP(/helix|stadium|hx/i));
+  helix.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/helix|stadium|hx/i));
+  ditto.el.classList.toggle('midi-ok', seenP(/ditto/i));
+  ditto.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/ditto/i));
+  pollSlowInstruments._n = (pollSlowInstruments._n || 0) + 1;
+  if (pollSlowInstruments._n % 12 === 1) {
+    fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderDock(); }).catch(() => {});
+  }
+  renderDock();
 }
 function flyChip(from, to, text) {
   const chip = document.createElement('div');
@@ -983,6 +1020,7 @@ function flyChip(from, to, text) {
 }
 setInterval(pollSystem, 6000);
 pollSystem();
+renderDock();
 
 // CACHE double-click: an in-desk FILE TREE of ~/.bt-cache (Bill
 // 2026-07-15), scrollable, with per-branch file counts and sizes.
@@ -1059,6 +1097,104 @@ ${buses || '  (none read)'}`;
     document.getElementById('card-body').innerHTML =
       `<h3>🎚️ XR18 — live MIDI properties</h3><div class="file"><span style="color:#ff5252">sidecar unreachable: ${e.message}</span>\n\nstart it on the Performer:\n  ./performer.sh start</div>`;
   }
+}
+async function sendCC(port, channel, controller, value, what) {
+  const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ port, type: 'cc', channel, controller, value }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+  hint(r.error ? '🎛 ' + r.error : '🎛 ' + what + ' → sent to the wire.');
+  return r;
+}
+function portVerdict(re) {
+  if (!midiState || !midiState.ok) return '<span style="color:#ff5252">sidecar down</span>';
+  const o = (midiState.ports || []).some(n => re.test(n)), i = (midiState.inputs || []).some(n => re.test(n));
+  return o ? `<span style="color:#00e676;font-weight:800">CONNECTED ✓ (out${i ? '+in' : ''})</span>`
+           : '<span style="color:#ff5252">not on the MIDI bus ✗</span>';
+}
+async function showHelixCard() {
+  try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) {}
+  document.getElementById('card-body').innerHTML =
+    `<h3>🏟️ HELIX STADIUM — MIDI instrumentation</h3><div class="file" style="max-height:60vh;overflow-y:auto"><span class="meta-k">MIDI link</span>: ${portVerdict(/helix|stadium|hx/i)}
+<span class="meta-k">global channel</span>: 1 · <span class="meta-k">bypass/ctrl channel</span>: 2
+<span class="meta-k">preset recall</span>: CC32 (setlist) + PC 0-127
+<span class="meta-k">snapshots</span>: CC69 val 0-7 · 8=next · 9=prev
+<span class="meta-k">looper</span>: CC58 rec/dub · CC59 play/stop · CC60 once
+  CC52 clear · CC53 undo · CC54 ½-speed · CC55 reverse · CC62 block on/off
+<span class="meta-k">transport (Song view)</span>: CC63 playlist · CC10 song cue
+  CC46 marker · CC47 RTZ · CC49 prev/next · CC51 play/pause
+<span class="meta-k">expression</span>: CC1 EXP1 · CC2 EXP2 · CC36 toe switch
+<span class="meta-k">knobs</span>: CC38-45 · <span class="meta-k">tap tempo</span>: CC64
+<span class="meta-k">MIDI clock</span>: sends + receives (DIN + USB) — syncs delays to the click
+<span class="meta-k">source</span>: Line 6 Helix Stadium manual (Rev D v1.3)</div>`;
+  card.style.display = 'block'; S.riffle();
+}
+async function showDittoCard() {
+  try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) {}
+  document.getElementById('card-body').innerHTML =
+    `<h3>🔁 DITTO X4 — MIDI instrumentation</h3><div class="file" style="max-height:60vh;overflow-y:auto"><span class="meta-k">MIDI link</span>: ${portVerdict(/ditto/i)}
+<span class="meta-k">channel</span>: 4 (fixed)
+<span class="meta-k">looper 1</span>: CC3 rec/dub/play · CC9 stop · CC14 clear · CC15 level
+<span class="meta-k">looper 2</span>: CC22 rec/dub/play · CC23 stop · CC24 clear · CC25 level
+<span class="meta-k">both loops</span>: CC29 all stop · CC30 all clear · CC28 decay
+<span class="meta-k">FX</span>: CC31 on/off · PC 1-7 selects the FX
+<span class="meta-k">routing</span>: CC85 serial/parallel toggle
+<span class="meta-k">MIDI clock</span>: receives — loop lengths lock to the tempo
+<span class="meta-k">note</span>: needs the MIDI-CC firmware update; DIN In/Thru only</div>`;
+  card.style.display = 'block'; S.riffle();
+}
+async function showMacbookCard() {
+  document.getElementById('card-body').innerHTML = '<h3>💻 MACBOOK PRO — the Performer</h3><div class="file">reading host state…</div>';
+  card.style.display = 'block'; S.riffle();
+  try {
+    const [h, c, q] = await Promise.all([
+      fetch('/api/health').then(r => r.json()).catch(() => ({})),
+      fetch('/api/cache/status').then(r => r.json()).catch(() => ({})),
+      fetch('/api/queue').then(r => r.json()).catch(() => ({})),
+    ]);
+    const cs = c.state || c;
+    document.getElementById('card-body').innerHTML =
+      `<h3>💻 MACBOOK PRO — the Performer</h3><div class="file"><span class="meta-k">portal</span>: up · build ${h.version || h.boot_version || '?'}
+<span class="meta-k">library</span>: ${realLib.length} songs
+<span class="meta-k">offline cache</span>: ${cs.done != null ? cs.done + '/' + cs.total + ' songs' : '?'}
+<span class="meta-k">render queue</span>: ${Array.isArray(q.queued) ? q.queued.length + ' queued · ' + (q.incoming || []).length + ' incoming' : 'idle'}
+<span class="meta-k">runs</span>: portal :3000 · MIDI sidecar :5555 · Demucs queue
+<span class="meta-k">drives</span>: Helix Stadium + Ditto X4 + XR18 over MIDI/OSC</div>`;
+  } catch (e) {}
+}
+let xr18Slow = null;
+function renderDock() {
+  const dock = document.getElementById('dock');
+  if (!dock) return;
+  const has = (re) => midiState && midiState.ok && (midiState.ports || []).some(n => re.test(n));
+  const V = (b) => b ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>';
+  const lr = xr18Slow && xr18Slow.ok ? xr18Slow.main_lr : null;
+  const net = xr18Slow && xr18Slow.ok ? xr18Slow.network : null;
+  dock.innerHTML = `
+    <div class="dock-p" data-open="xr18"><h5>🎚️ XR18</h5>
+      <div class="dl">MIDI ${V(has(/xr\s?18|x\s?air/i))} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">—</span>'}</div>
+      <div class="dl">${lr ? 'Main LR ' + (lr.fader_db === '-inf' ? '-∞' : lr.fader_db) + ' dB' + (lr.muted ? ' · <span class="bad">MUTED</span>' : ' · open') : 'snapshot PC ch1 · faders CC ch1'}</div>
+      <div class="dl">${xr18Slow && xr18Slow.ok && xr18Slow.snapshot_index != null ? 'snapshot #' + xr18Slow.snapshot_index : 'mutes CC ch2 · pan CC ch3'}</div></div>
+    <div class="dock-p" data-open="helix"><h5>🏟️ HELIX STADIUM</h5>
+      <div class="dl">MIDI ${V(has(/helix|stadium|hx/i))} · global ch1 · ctrl ch2</div>
+      <div class="dl">snap CC69 · preset CC32+PC · tap CC64</div>
+      <div class="dl">looper CC52-62 · song cue CC10</div></div>
+    <div class="dock-p" data-open="ditto"><h5>🔁 DITTO X4</h5>
+      <div class="dl">MIDI ${V(has(/ditto/i))} · ch4 fixed · clock sync</div>
+      <div class="dl">L1 CC3/9/14 · L2 CC22/23/24</div>
+      <div class="dl">all-stop CC29 · all-clear CC30 · FX CC31</div></div>
+    <div class="dock-p" data-open="sidecar"><h5>🛰 MIDI SIDECAR</h5>
+      <div class="dl">:5555 ${V(!!(midiState && midiState.ok))} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
+      <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · OSC :10024 bridge</div>
+      <div class="dl">Logic IAC ${V(has(/iac/i))}</div></div>
+    <div class="dock-p" data-open="macbook"><h5>💻 MACBOOK · PERFORMER</h5>
+      <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
+      <div class="dl">cache ${cacheState && (cacheState.done != null) ? cacheState.done + '/' + cacheState.total : '—'} · queue ${qDepth != null ? qDepth : '—'}</div>
+      <div class="dl">Demucs · Web Audio mix · automation</div></div>`;
+  dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('click', () => {
+    const k = el.dataset.open;
+    if (k === 'xr18') showXr18Card(); else if (k === 'helix') showHelixCard();
+    else if (k === 'ditto') showDittoCard(); else if (k === 'macbook') showMacbookCard();
+    else showXr18Card();
+  }));
 }
 let obLib = null, obSelEl = null;
 const fmtT = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
@@ -1439,6 +1575,18 @@ Closing the lid = Flash Cache (offline contract).</div>`;
 work with NO wifi — the absolute contract.
 ${c.done != null ? c.done + '/' + c.total + ' cached · ' + (c.failed || 0) + ' failed' : 'status loading…'}</div>`;
   }
+  if (o.id === 'helix') return `<h4>🏟️ HELIX STADIUM</h4><div class="pk">${midiState && midiState.ok ? ((midiState.ports || []).some(n => /helix|stadium|hx/i.test(n)) ? 'MIDI: CONNECTED ✓' : 'MIDI: not on the bus ✗') : 'MIDI sidecar down'}
+Guitar rig. Snapshots CC69, presets PC,
+looper CC52-62, tap CC64 — right-click
+to fire them. Click for the full map.</div>`;
+  if (o.id === 'ditto') return `<h4>🔁 DITTO X4</h4><div class="pk">${midiState && midiState.ok ? ((midiState.ports || []).some(n => /ditto/i.test(n)) ? 'MIDI: CONNECTED ✓' : 'MIDI: not on the bus ✗') : 'MIDI sidecar down'}
+Two-track looper on MIDI ch 4. L1 CC3/9/14,
+L2 CC22/23/24, all-stop CC29. Syncs loop
+length to MIDI clock.</div>`;
+  if (o.id === 'macbook') return `<h4>💻 MACBOOK PRO — the Performer</h4><div class="pk">Runs the portal (:3000), the MIDI sidecar
+(:5555), the Demucs render queue, and the
+Web Audio 6-stem mix. Drives every device
+on this desk. Click for host status.</div>`;
   if (o.id === 'mics') return `<h4>🎤 MICS</h4><div class="pk">Vocal mics (Bill · Matt · Dan · JD) into
 the XR18's XLR inputs. The board's preamps
 feed them over USB into Logic's mixer.</div>`;
@@ -1578,6 +1726,9 @@ desk.addEventListener('dblclick', async (e) => {
       xr18:    () => openSpecial('__XR18__', 'X-AIR-Edit (the XR18\'s app)'),
       logic:   () => openSpecial('__LOGIC__', 'Logic Pro'),
       cache:   showCacheTree,
+      helix:   () => openSpecial('__HELIXAPP__', 'the Helix Stadium app'),
+      ditto:   showDittoCard,
+      macbook: () => { window.open('/', '_blank'); hint('💻 Opened the portal — the MacBook\'s real face.'); },
       mics:    () => openSpecial('__XR18__', 'X-AIR-Edit (input channels live there)'),
       instr:   () => openSpecial('__XR18__', 'X-AIR-Edit (input channels live there)'),
       mains:   () => openSpecial('__XR18__', 'X-AIR-Edit (Main L/R bus)'),
@@ -1656,6 +1807,33 @@ desk.addEventListener('contextmenu', (e) => {
         hint(r.ok ? '🔊 Main LR open.' : '🔊 ' + (r.error || 'failed')); setTimeout(showXr18Card, 500);
       } });
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
+    }
+    if (o.id === 'helix') {
+      items.push({ label: '🔎 MIDI instrumentation card', run: showHelixCard });
+      items.push({ label: '📸 Snapshot 1-8…', run: () => { const n = parseInt(prompt('Snapshot 1-8:'), 10); if (n >= 1 && n <= 8) sendCC('helix', 1, 69, n - 1, 'Stadium snapshot ' + n); } });
+      items.push({ label: '⏭ Next snapshot', run: () => sendCC('helix', 1, 69, 8, 'Stadium next snapshot') });
+      items.push({ label: '🎵 Preset PC…', run: async () => { const n = parseInt(prompt('Preset PC number 0-127:'), 10); if (!(n >= 0 && n <= 127)) return; const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'helix', type: 'pc', channel: 1, program: n }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🎵 ' + r.error : '🎵 Stadium preset PC ' + n + ' sent.'); } });
+      items.push({ label: '⏺ Looper record', run: () => sendCC('helix', 1, 58, 127, 'Stadium looper RECORD') });
+      items.push({ label: '▶ Looper play', run: () => sendCC('helix', 1, 59, 127, 'Stadium looper PLAY') });
+      items.push({ label: '⏹ Looper stop', run: () => sendCC('helix', 1, 59, 0, 'Stadium looper STOP') });
+      items.push({ label: '🧹 Looper clear', run: () => sendCC('helix', 1, 52, 127, 'Stadium looper CLEAR') });
+      items.push({ label: '👆 Tap tempo', run: () => sendCC('helix', 1, 64, 127, 'Stadium tap tempo') });
+    }
+    if (o.id === 'ditto') {
+      items.push({ label: '🔎 MIDI instrumentation card', run: showDittoCard });
+      items.push({ label: '⏺ Loop 1 rec/dub/play', run: () => sendCC('ditto', 4, 3, 127, 'Ditto L1 rec/dub/play') });
+      items.push({ label: '⏹ Loop 1 stop', run: () => sendCC('ditto', 4, 9, 127, 'Ditto L1 stop') });
+      items.push({ label: '🧹 Loop 1 clear', run: () => sendCC('ditto', 4, 14, 127, 'Ditto L1 clear') });
+      items.push({ label: '⏺ Loop 2 rec/dub/play', run: () => sendCC('ditto', 4, 22, 127, 'Ditto L2 rec/dub/play') });
+      items.push({ label: '⏹ Loop 2 stop', run: () => sendCC('ditto', 4, 23, 127, 'Ditto L2 stop') });
+      items.push({ label: '⏹⏹ ALL loops stop', run: () => sendCC('ditto', 4, 29, 127, 'Ditto ALL STOP') });
+      items.push({ label: '🧹🧹 ALL loops clear', run: () => sendCC('ditto', 4, 30, 127, 'Ditto ALL CLEAR') });
+      items.push({ label: '✨ FX on/off', run: () => sendCC('ditto', 4, 31, 127, 'Ditto FX toggle') });
+    }
+    if (o.id === 'macbook') {
+      items.push({ label: '🔎 Host status card', run: showMacbookCard });
+      items.push({ label: '🎛 Open the portal', run: () => window.open('/', '_blank') });
+      items.push({ label: '🧰 Flash Cache (precache all)', run: async () => { const r = await fetch('/api/cache/flash', { method: 'POST' }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🧰 ' + r.error : '🧰 Flash Cache kicked off — watch the CACHE object.'); } });
     }
     items.push({ label: '📋 Spec card', run: () => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) });
     items.push({ label: '↺ Reset desk layout', run: () => { if (confirm('Put every machine back in its default spot?')) resetLayout(); } });
