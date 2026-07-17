@@ -168,6 +168,19 @@ positions are stored as viewport fractions in the browser
 resizes. Right-click any machine → "↺ Reset desk layout" to go back to
 the defaults.
 
+## The surround (2026-07-15)
+
+The desk is framed by always-on property surfaces, updated once per
+minute: a right-hand RACK column with one panel per physical device
+(XR18, Helix Stadium, Ditto X4, Logic Pro) showing a green border when
+the device is online, its live values (console name, firmware, current
+snapshot, Main LR and AUX levels over OSC), and the complete MIDI
+instrumentation map from the research in docs/14_XR18_CONTROL.md; and a
+bottom DOCK covering the virtual components (MacBook host, MIDI
+sidecar, Librarian daemons, render queue, library/catalog/gigs). No
+selection needed — the surround is the system's live spec sheet, and
+clicking any panel opens the object's full card.
+
 ## Open questions for round two
 
 - Does the desk REPLACE the library tab or live beside it? (Suggest:

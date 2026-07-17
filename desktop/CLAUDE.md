@@ -261,3 +261,16 @@ pointer theatrics.
   refreshes into the dock every ~12 slow polls. Direction Bill set: the
   WHOLE desk should become objects — every action, every process, every
   physical device.
+- 2026-07-15 (surround properties): the desk is now framed by live
+  property surfaces. #rack (right column) holds the PHYSICAL devices —
+  XR18 / Helix Stadium / Ditto X4 / Logic — each panel showing the FULL
+  MIDI instrumentation map plus live values (XR18: OSC console, fw,
+  snapshot, Main LR, per-AUX levels), with a GREEN border when the
+  device is on the MIDI/OSC bus and red when not (same outline treatment
+  on the desk objects themselves via .midi-ok/.midi-miss). #dock
+  (bottom) covers the virtual components: MacBook, sidecar, Librarian
+  daemons, Queue depth, Library+Catalog+Gigs. pollSurround() refreshes
+  midi health + the XR18 OSC deep probe ONCE PER MINUTE (Bill's spec)
+  and re-renders both surfaces; panels click through to the full cards.
+  Default mains/wedges x moved 0.90→0.79 so the rack column doesn't
+  cover them (saved layouts unaffected — drag + it persists).
