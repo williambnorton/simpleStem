@@ -126,3 +126,45 @@ MacBook). Right-click fires the real commands through
 the instrumentation card (live port verdict + full CC map). The ambient
 DEVICE DOCK along the bottom of the desk shows every physical device's
 live properties without selecting anything.
+
+---
+
+# Field diagnosis — the daisy chain (2026-07-17)
+
+Interrogated the Performer Mac's MIDI Studio (Audio MIDI Setup):
+
+- **Active MIDI entities**: `NUX B-8` (hardware interface, 1 in / 1 out
+  — THE HEAD OF THE CHAIN) and `IAC Driver`. Network/Bluetooth/UMP are
+  virtual.
+- **Offline (pale)**: `HELIX` (its own USB not connected) and a generic
+  `USB MIDI Interface` (unplugged).
+- **No port is named XR18 / Ditto / Helix.** The physical wiring is a
+  serial chain: Mac (NUX B-8 OUT) → XR18 MIDI IN → XR18 OUT/Thru →
+  Ditto X4 IN → Ditto THRU → Helix Stadium → return → NUX B-8 IN.
+
+Consequences + fixes shipped:
+
+1. **Port-name routing could never work** — the sidecar 404'd on
+   "helix"/"ditto"/"XR18" because only "NUX B-8" exists. Fix:
+   `chain_port()` fallback — unmatched device sends route out the chain
+   head (env `MIDI_CHAIN_PORT` override; auto-detect prefers "xr18",
+   else the first non-virtual port, skipping IAC/Network/Bluetooth/UMP).
+   `/health` now reports `chain_port`; the desk shows "CHAINED via
+   NUX B-8 ✓" instead of a false red ✗.
+2. **Desk boot crash** (`Cannot access 'midiState' before
+   initialization`) — boot-time `renderDock()` ran before the `let`
+   declarations; state now declared at the top of the script.
+3. **Channel plan for ONE shared wire** (every device hears everything):
+   XR18 = ch 1/2/3 (fixed) · Ditto X4 = ch 4 (fixed) · Helix Stadium =
+   ch 1 by default, WHICH COLLIDES with the XR18 fader map (and XR18
+   fader CCs 0-31 on ch 1 trip Stadium global functions like CC10 song
+   cue). **Recommended: set Stadium Global Settings > MIDI > Global
+   MIDI Channel = 5** (Bypass/Ctrl = 6), then right-click the desk
+   Stadium → "Desk MIDI channel…" → 5. Note the portal's timeline
+   automation editor also defaults new events to ch 4 — on this chain
+   ch 4 is the DITTO; pick the channel deliberately per event.
+4. **Board-side switches that must be ON** for the chain to pass:
+   XR18 Setup > MIDI > DIN/USB Rx (or the XR18 ignores input) and MIDI
+   OUT-as-Thru so messages continue to the Ditto; Ditto DIP switches
+   set for MIDI CC + Thru; Stadium MIDI > MIDI Thru if the return to
+   the Mac should carry messages onward.

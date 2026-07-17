@@ -208,13 +208,39 @@ def find_port(needle):
     return None
 
 
-def get_output(needle):
+def chain_port():
+    """The head of Bill's physical MIDI daisy chain (2026-07-15 wiring:
+    Mac MIDI OUT -> XR18 IN, XR18 OUT/Thru -> Ditto X4 IN, Ditto THRU ->
+    Helix Stadium, Helix -> back to Mac IN). Every chained device hears
+    the SAME stream and answers by MIDI CHANNEL, so messages for devices
+    with no port of their own route out the chain head. Override with
+    MIDI_CHAIN_PORT=<substring>; default tries XR18, then the first
+    non-virtual (non-IAC) output."""
+    env = os.environ.get("MIDI_CHAIN_PORT")
+    if env:
+        return find_port(env)
+    name = find_port("xr18")
+    if name:
+        return name
+    virtual = ("iac", "network", "bluetooth", "ump", "session")
+    for n in mido.get_output_names():
+        low = n.lower()
+        if not any(v in low for v in virtual):
+            return n
+    return None
+
+
+def get_output(needle, allow_chain=True):
     name = find_port(needle)
+    routed = "direct"
+    if not name and allow_chain:
+        name = chain_port()
+        routed = "chain"
     if not name:
-        return None
+        return None, None
     if name not in _outputs:
         _outputs[name] = mido.open_output(name)
-    return _outputs[name]
+    return _outputs[name], routed
 
 
 class MidiClock:
@@ -364,8 +390,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
+            try:
+                chain = chain_port()
+            except Exception:
+                chain = None
             return self._json(200, {"ok": True, "ports": mido.get_output_names(),
                                     "inputs": mido.get_input_names(),
+                                    "chain_port": chain,
                                     "clock": {"running": _clock.running, "bpm": _clock.bpm}})
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
@@ -467,10 +498,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(500, {"error": f"clock failed: {e}"})
 
     def _handle_send(self, body):
-        out = get_output(body.get("port"))
+        out, routed = get_output(body.get("port"))
         if not out:
             return self._json(404, {
-                "error": f'no MIDI output matching "{body.get("port")}"',
+                "error": f'no MIDI output matching "{body.get("port")}" and no chain port',
                 "available": mido.get_output_names(),
             })
         try:
@@ -481,7 +512,7 @@ class Handler(BaseHTTPRequestHandler):
             out.send(msg)
         except Exception as e:
             return self._json(500, {"error": f"send failed: {e}"})
-        return self._json(200, {"ok": True, "sent_to": out.name, "msg": str(msg)})
+        return self._json(200, {"ok": True, "sent_to": out.name, "routed": routed, "msg": str(msg)})
 
 
 def main():

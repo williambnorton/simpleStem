@@ -274,3 +274,16 @@ pointer theatrics.
   and re-renders both surfaces; panels click through to the full cards.
   Default mains/wedges x moved 0.90→0.79 so the rack column doesn't
   cover them (saved layouts unaffected — drag + it persists).
+- 2026-07-17 (daisy-chain diagnosis): TWO real-world lessons. (a) A
+  boot-time call into a function that reads `let` state declared LATER
+  in the script kills the WHOLE desk with a TDZ ReferenceError — and
+  headless tests that pre-set globals MASK it. Declare shared state at
+  the top; test boot order, not just functions. (b) Port-substring
+  routing assumes each device has its own port; Bill's rig is a SERIAL
+  DIN chain behind one "NUX B-8" interface, so the sidecar now falls
+  back to chain_port() (env MIDI_CHAIN_PORT; auto skips virtual ports)
+  and the desk says "CHAINED via <port>" rather than lying red.
+  Channel map on the shared wire: XR18 ch1-3, Ditto ch4 (both fixed),
+  Stadium configurable — desk channel for the Stadium lives in
+  localStorage desk.helixMidiChannel (right-click → Desk MIDI
+  channel…; recommend 5 after setting the Stadium global channel).

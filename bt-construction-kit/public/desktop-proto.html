@@ -446,6 +446,7 @@ function redrawWires() {
 setInterval(redrawWires, 1000);
 setTimeout(redrawWires, 300);
 let libState = null, cacheState = null, gigList = null, qDepth = null;
+let midiState = null, xr18Slow = null;
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
@@ -1014,10 +1015,11 @@ async function pollSlowInstruments() {
       `MIDI ✗ XR18 not on the bus · ${outs.length} ports up`;
   } catch (e) { midiState = null; xr18.el.classList.add('midi-down'); }
   const seenP = (re) => midiState && midiState.ok && (midiState.ports || []).some(n => re.test(n));
-  helix.el.classList.toggle('midi-ok', seenP(/helix|stadium|hx/i));
-  helix.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/helix|stadium|hx/i));
-  ditto.el.classList.toggle('midi-ok', seenP(/ditto/i));
-  ditto.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/ditto/i));
+  const chained = !!(midiState && midiState.ok && midiState.chain_port);
+  helix.el.classList.toggle('midi-ok', seenP(/helix|stadium|hx/i) || chained);
+  helix.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/helix|stadium|hx/i) && !chained);
+  ditto.el.classList.toggle('midi-ok', seenP(/ditto/i) || chained);
+  ditto.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/ditto/i) && !chained);
   pollSlowInstruments._n = (pollSlowInstruments._n || 0) + 1;
   if (pollSlowInstruments._n % 12 === 1) {
     fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderDock(); }).catch(() => {});
@@ -1068,7 +1070,6 @@ async function showCacheTree() {
    Gigs and standalone setlists are collections of songs; a song is a
    sequence of SECTIONS and timeline ACTIONS. Selecting any node reveals
    its properties; its methods are buttons that hit the REAL endpoints. */
-let midiState = null;
 async function showXr18Card() {
   document.getElementById('card-body').innerHTML = '<h3>🎚️ XR18 — MIDI interface</h3><div class="file">probing the sidecar…</div>';
   card.style.display = 'block'; S.riffle();
@@ -1124,8 +1125,9 @@ async function sendCC(port, channel, controller, value, what) {
 function portVerdict(re) {
   if (!midiState || !midiState.ok) return '<span style="color:#ff5252">sidecar down</span>';
   const o = (midiState.ports || []).some(n => re.test(n)), i = (midiState.inputs || []).some(n => re.test(n));
-  return o ? `<span style="color:#00e676;font-weight:800">CONNECTED ✓ (out${i ? '+in' : ''})</span>`
-           : '<span style="color:#ff5252">not on the MIDI bus ✗</span>';
+  if (o) return `<span style="color:#00e676;font-weight:800">CONNECTED ✓ (out${i ? '+in' : ''})</span>`;
+  if (midiState.chain_port) return `<span style="color:#00e676;font-weight:800">CHAINED via ${midiState.chain_port} ✓</span> <span style="opacity:.6">(daisy chain — addressed by MIDI channel)</span>`;
+  return '<span style="color:#ff5252">not on the MIDI bus ✗</span>';
 }
 async function showHelixCard() {
   try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) {}
@@ -1177,12 +1179,11 @@ async function showMacbookCard() {
 <span class="meta-k">drives</span>: Helix Stadium + Ditto X4 + XR18 over MIDI/OSC</div>`;
   } catch (e) {}
 }
-let xr18Slow = null;
 function renderRack() {
   const rack = document.getElementById('rack');
   if (!rack) return;
   const up = midiState && midiState.ok;
-  const has = (re) => up && (midiState.ports || []).some(n => re.test(n));
+  const has = (re) => up && ((midiState.ports || []).some(n => re.test(n)) || !!midiState.chain_port);
   const hasIn = (re) => up && (midiState.inputs || []).some(n => re.test(n));
   const V = (b) => b ? '<span class="ok">ONLINE ✓</span>' : '<span class="bad">OFFLINE ✗</span>';
   const stamp = new Date().toLocaleTimeString();
@@ -1902,15 +1903,20 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
     }
     if (o.id === 'helix') {
+      const hch = () => parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1;
       items.push({ label: '🔎 MIDI instrumentation card', run: showHelixCard });
-      items.push({ label: '📸 Snapshot 1-8…', run: () => { const n = parseInt(prompt('Snapshot 1-8:'), 10); if (n >= 1 && n <= 8) sendCC('helix', 1, 69, n - 1, 'Stadium snapshot ' + n); } });
-      items.push({ label: '⏭ Next snapshot', run: () => sendCC('helix', 1, 69, 8, 'Stadium next snapshot') });
-      items.push({ label: '🎵 Preset PC…', run: async () => { const n = parseInt(prompt('Preset PC number 0-127:'), 10); if (!(n >= 0 && n <= 127)) return; const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'helix', type: 'pc', channel: 1, program: n }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🎵 ' + r.error : '🎵 Stadium preset PC ' + n + ' sent.'); } });
-      items.push({ label: '⏺ Looper record', run: () => sendCC('helix', 1, 58, 127, 'Stadium looper RECORD') });
-      items.push({ label: '▶ Looper play', run: () => sendCC('helix', 1, 59, 127, 'Stadium looper PLAY') });
-      items.push({ label: '⏹ Looper stop', run: () => sendCC('helix', 1, 59, 0, 'Stadium looper STOP') });
-      items.push({ label: '🧹 Looper clear', run: () => sendCC('helix', 1, 52, 127, 'Stadium looper CLEAR') });
-      items.push({ label: '👆 Tap tempo', run: () => sendCC('helix', 1, 64, 127, 'Stadium tap tempo') });
+      items.push({ label: `🔧 Desk MIDI channel… (now ${parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1})`, run: () => {
+        const n = parseInt(prompt('MIDI channel the desk uses for the Stadium (1-16).\nOn the shared daisy chain, ch 1 COLLIDES with the XR18 fader map — set the Stadium\'s Global MIDI channel to 5 and enter 5 here:', String(parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1)), 10);
+        if (n >= 1 && n <= 16) { localStorage.setItem('desk.helixMidiChannel', String(n)); hint('🔧 Stadium desk channel → ' + n + '.'); }
+      } });
+      items.push({ label: '📸 Snapshot 1-8…', run: () => { const n = parseInt(prompt('Snapshot 1-8:'), 10); if (n >= 1 && n <= 8) sendCC('helix', hch(), 69, n - 1, 'Stadium snapshot ' + n); } });
+      items.push({ label: '⏭ Next snapshot', run: () => sendCC('helix', hch(), 69, 8, 'Stadium next snapshot') });
+      items.push({ label: '🎵 Preset PC…', run: async () => { const n = parseInt(prompt('Preset PC number 0-127:'), 10); if (!(n >= 0 && n <= 127)) return; const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'helix', type: 'pc', channel: hch(), program: n }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🎵 ' + r.error : '🎵 Stadium preset PC ' + n + ' sent.'); } });
+      items.push({ label: '⏺ Looper record', run: () => sendCC('helix', hch(), 58, 127, 'Stadium looper RECORD') });
+      items.push({ label: '▶ Looper play', run: () => sendCC('helix', hch(), 59, 127, 'Stadium looper PLAY') });
+      items.push({ label: '⏹ Looper stop', run: () => sendCC('helix', hch(), 59, 0, 'Stadium looper STOP') });
+      items.push({ label: '🧹 Looper clear', run: () => sendCC('helix', hch(), 52, 127, 'Stadium looper CLEAR') });
+      items.push({ label: '👆 Tap tempo', run: () => sendCC('helix', hch(), 64, 127, 'Stadium tap tempo') });
     }
     if (o.id === 'ditto') {
       items.push({ label: '🔎 MIDI instrumentation card', run: showDittoCard });
