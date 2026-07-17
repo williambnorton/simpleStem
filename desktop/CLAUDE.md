@@ -287,3 +287,15 @@ pointer theatrics.
   Stadium configurable — desk channel for the Stadium lives in
   localStorage desk.helixMidiChannel (right-click → Desk MIDI
   channel…; recommend 5 after setting the Stadium global channel).
+- 2026-07-17 (Logic Pro instrument): Logic's desk object now has real
+  transport methods via `POST /api/desktop/logic-key` — osascript
+  activates Logic Pro then System Events sends the keystroke. Server
+  whitelist only: named actions (record/playstop/rtz/cycle/metronome/
+  countin/undo/save), or single [a-z0-9] key / known key code + mods
+  from {command,shift,option,control} — ARG ARRAYS to osascript, never
+  a shell string, injection-tested. Desk right-click carries the
+  built-ins plus USER-ADDED keys (localStorage desk.logicKeys.v1;
+  "＋ Add Logic key…" parses specs like "cmd+shift+r" via
+  parseLogicKeySpec — unit-tested). Click = instrumentation card.
+  GOTCHA: System Events keystrokes need Accessibility permission for
+  the node process, or they are silently swallowed — the card says so.

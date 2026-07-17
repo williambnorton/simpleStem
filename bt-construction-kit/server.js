@@ -5904,6 +5904,56 @@ app.post('/api/xr18/set', async (req, res) => {
   }
 });
 
+// ── Logic Pro key-command bridge (Bill 2026-07-17) ─────────────────────
+// Drives Logic's transport by sending its own key commands via
+// AppleScript (osascript): activate Logic Pro, then System Events
+// keystroke/key-code. Whitelisted: named actions, or a single
+// alphanumeric key / known key code + modifier set, so the desk can
+// grow new methods without new server code. NOTE: macOS Accessibility
+// permission must be granted to the process running node (System
+// Settings > Privacy & Security > Accessibility) or keystrokes are
+// silently swallowed.
+const LOGIC_KEY_ACTIONS = {
+  record:       { key: 'r' },
+  playstop:     { code: 49 },   // space: play/stop toggle
+  stop:         { code: 49 },
+  rtz:          { code: 36 },   // return: go to beginning
+  cycle:        { key: 'c' },
+  metronome:    { key: 'k' },
+  countin:      { key: 'k', mods: ['shift'] },
+  undo:         { key: 'z', mods: ['command'] },
+  save:         { key: 's', mods: ['command'] },
+};
+const LOGIC_ALLOWED_CODES = new Set([36, 48, 49, 51, 53, 123, 124, 125, 126]);
+const LOGIC_ALLOWED_MODS = new Set(['command', 'shift', 'option', 'control']);
+function logicKeystrokeArgs(body) {
+  let spec = body.action && LOGIC_KEY_ACTIONS[String(body.action)] ? LOGIC_KEY_ACTIONS[String(body.action)] : null;
+  if (!spec) {
+    const key = body.key != null ? String(body.key) : null;
+    const code = body.code != null ? parseInt(body.code, 10) : null;
+    if (key && /^[a-z0-9]$/i.test(key)) spec = { key: key.toLowerCase(), mods: body.mods };
+    else if (code != null && LOGIC_ALLOWED_CODES.has(code)) spec = { code, mods: body.mods };
+    else return null;
+  }
+  const mods = (spec.mods || body.mods || []).map(m => String(m).toLowerCase()).filter(m => LOGIC_ALLOWED_MODS.has(m));
+  const using = mods.length ? ` using {${mods.map(m => m + ' down').join(', ')}}` : '';
+  const line = spec.key != null
+    ? `tell application "System Events" to keystroke "${spec.key}"${using}`
+    : `tell application "System Events" to key code ${spec.code}${using}`;
+  return ['-e', 'tell application "Logic Pro" to activate', '-e', 'delay 0.15', '-e', line];
+}
+
+app.post('/api/desktop/logic-key', express.json(), (req, res) => {
+  const args = logicKeystrokeArgs(req.body || {});
+  if (!args) return res.status(400).json({ error: 'unsupported key spec', allowed_actions: Object.keys(LOGIC_KEY_ACTIONS) });
+  try {
+    require('child_process').spawn('osascript', args, { detached: true, stdio: 'ignore' }).unref();
+    res.json({ ok: true, sent: args[args.length - 1] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/midi/health', async (req, res) => {
   try {
     const r = await sidecarFetch('/health');

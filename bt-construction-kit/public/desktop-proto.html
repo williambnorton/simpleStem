@@ -777,6 +777,7 @@ desk.addEventListener('pointerup', () => {
   if (!drag.moved && o.id === 'helix') showHelixCard();
   if (!drag.moved && o.id === 'ditto') showDittoCard();
   if (!drag.moved && o.id === 'macbook') showMacbookCard();
+  if (!drag.moved && o.id === 'logic') showLogicCard();
   drag = null;
 });
 desk.addEventListener('dblclick', (e) => {
@@ -1158,6 +1159,41 @@ async function showDittoCard() {
 <span class="meta-k">routing</span>: CC85 serial/parallel toggle
 <span class="meta-k">MIDI clock</span>: receives — loop lengths lock to the tempo
 <span class="meta-k">note</span>: needs the MIDI-CC firmware update; DIN In/Thru only</div>`;
+  card.style.display = 'block'; S.riffle();
+}
+async function logicKey(spec, what) {
+  const r = await fetch('/api/desktop/logic-key', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec) }).then(r => r.json()).catch(e => ({ error: e.message }));
+  hint(r.error ? '🎹 ' + r.error : '🎹 ' + what + ' → sent to Logic.');
+}
+const LOGIC_KEYS_STORE = 'desk.logicKeys.v1';
+function customLogicKeys() {
+  try { return JSON.parse(localStorage.getItem(LOGIC_KEYS_STORE) || '[]'); } catch (e) { return []; }
+}
+function parseLogicKeySpec(txt) {
+  const toks = String(txt || '').toLowerCase().split('+').map(t => t.trim()).filter(Boolean);
+  if (!toks.length) return null;
+  const keyTok = toks.pop();
+  const mods = toks.map(t => ({ cmd: 'command', command: 'command', shift: 'shift', opt: 'option', option: 'option', alt: 'option', ctrl: 'control', control: 'control' })[t]).filter(Boolean);
+  if (keyTok === 'space') return { code: 49, mods };
+  if (keyTok === 'return' || keyTok === 'enter') return { code: 36, mods };
+  if (/^[a-z0-9]$/.test(keyTok)) return { key: keyTok, mods };
+  return null;
+}
+async function showLogicCard() {
+  try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) {}
+  const customs = customLogicKeys().map(c => `  ★ ${c.label} — ${c.spec}`).join('\n');
+  document.getElementById('card-body').innerHTML =
+    `<h3>🎹 LOGIC PRO — instrumentation</h3><div class="file" style="max-height:60vh;overflow-y:auto"><span class="meta-k">MIDI (IAC bus)</span>: ${portVerdict(/iac/i)}
+<span class="meta-k">key commands (AppleScript → System Events)</span>:
+  R record · space play/stop · return RTZ
+  C cycle · K metronome · ⇧K count-in
+  ⌘Z undo · ⌘S save
+${customs ? `<span class="meta-k">your added keys</span>:\n${customs}\n` : ''}<span class="meta-k">audio</span>: 18ch USB from the XR18 · mix returns over USB
+<span class="meta-k">automation</span>: timeline events over IAC · follows sidecar clock
+<span class="meta-k">note</span>: keystrokes require Accessibility permission for
+the portal's node process (System Settings → Privacy → Accessibility)
+<span class="meta-k">grow it</span>: right-click → ＋ Add Logic key… (e.g. "shift+cmd+r")</div>`;
   card.style.display = 'block'; S.riffle();
 }
 async function showMacbookCard() {
@@ -1928,6 +1964,28 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '⏹⏹ ALL loops stop', run: () => sendCC('ditto', 4, 29, 127, 'Ditto ALL STOP') });
       items.push({ label: '🧹🧹 ALL loops clear', run: () => sendCC('ditto', 4, 30, 127, 'Ditto ALL CLEAR') });
       items.push({ label: '✨ FX on/off', run: () => sendCC('ditto', 4, 31, 127, 'Ditto FX toggle') });
+    }
+    if (o.id === 'logic') {
+      items.push({ label: '🔎 Instrumentation card', run: showLogicCard });
+      items.push({ label: '⏺ Record (R)', run: () => logicKey({ action: 'record' }, 'RECORD') });
+      items.push({ label: '⏯ Play / Stop (space)', run: () => logicKey({ action: 'playstop' }, 'PLAY/STOP') });
+      items.push({ label: '⏮ Return to zero (return)', run: () => logicKey({ action: 'rtz' }, 'RETURN TO ZERO') });
+      items.push({ label: '🔁 Cycle (C)', run: () => logicKey({ action: 'cycle' }, 'CYCLE') });
+      items.push({ label: '🥁 Metronome (K)', run: () => logicKey({ action: 'metronome' }, 'METRONOME') });
+      items.push({ label: '↩️ Undo (⌘Z)', run: () => logicKey({ action: 'undo' }, 'UNDO') });
+      items.push({ label: '💾 Save (⌘S)', run: () => logicKey({ action: 'save' }, 'SAVE') });
+      for (const c of customLogicKeys()) {
+        items.push({ label: '★ ' + c.label, user: true, run: () => { const sp = parseLogicKeySpec(c.spec); if (sp) logicKey(sp, c.label); } });
+      }
+      items.push({ label: '＋ Add Logic key…', run: () => {
+        const label = prompt('Name the Logic action (e.g. "Capture recording"):');
+        if (!label || !label.trim()) return;
+        const spec = prompt('Key spec — a single key with optional modifiers, e.g.\n  r · space · return · shift+r · cmd+shift+r :');
+        if (!parseLogicKeySpec(spec)) { hint('🎹 could not parse that key spec.'); return; }
+        const all = customLogicKeys(); all.push({ label: label.trim(), spec: spec.trim() });
+        localStorage.setItem(LOGIC_KEYS_STORE, JSON.stringify(all));
+        hint(`🎹 “<b>${label.trim()}</b>” added — right-click Logic to fire it.`);
+      } });
     }
     if (o.id === 'macbook') {
       items.push({ label: '🔎 Host status card', run: showMacbookCard });
