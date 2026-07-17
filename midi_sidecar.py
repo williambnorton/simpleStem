@@ -230,6 +230,27 @@ def chain_port():
     return None
 
 
+def chain_in_port():
+    """The chain's RETURN port (Helix -> back to the Mac's MIDI IN).
+    Override with MIDI_CHAIN_IN; else first non-virtual input."""
+    env = os.environ.get("MIDI_CHAIN_IN")
+    virtual = ("iac", "network", "bluetooth", "ump", "session")
+    try:
+        names = mido.get_input_names()
+    except Exception:
+        return None
+    if env:
+        for n in names:
+            if env.lower() in n.lower():
+                return n
+        return None
+    for n in names:
+        low = n.lower()
+        if not any(v in low for v in virtual):
+            return n
+    return None
+
+
 def get_output(needle, allow_chain=True):
     name = find_port(needle)
     routed = "direct"
@@ -401,6 +422,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
                                     "inputs": mido.get_input_names()})
+        if self.path == "/chain/test":
+            return self._chain_test()
         if self.path == "/xr18/info":
             return self._xr18_info()
         if self.path.startswith("/xr18/query?"):
@@ -414,6 +437,48 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(503, {"ok": False, "error": "XR18 unreachable"})
             return self._json(200, {"ok": True, **r})
         self._json(404, {"error": "not found"})
+
+    def _chain_test(self):
+        """Loopback test of the physical DIN chain: send a marker CC on
+        channel 16 (no device in the rig listens there) out the chain
+        head and listen for its echo on the chain return input. Echo
+        received = every Thru in XR18 -> Ditto -> Helix -> Mac passes."""
+        import random
+        out, _routed = get_output(None)
+        inp_name = chain_in_port()
+        if not out:
+            return self._json(503, {"ok": False, "error": "no chain output port"})
+        if not inp_name:
+            return self._json(200, {"ok": True, "loop": "untestable",
+                                    "hint": "no hardware MIDI input for the return leg"})
+        nonce = random.randint(1, 126)
+        marker = mido.Message("control_change", channel=15, control=119, value=nonce)
+        try:
+            inp = mido.open_input(inp_name)
+        except Exception as e:
+            return self._json(500, {"ok": False, "error": f"open input failed: {e}"})
+        try:
+            for _m in inp.iter_pending():
+                pass
+            t0 = time.time()
+            out.send(marker)
+            while time.time() - t0 < 2.0:
+                for msg in inp.iter_pending():
+                    if (msg.type == "control_change" and msg.channel == 15
+                            and msg.control == 119 and msg.value == nonce):
+                        return self._json(200, {"ok": True, "loop": "intact",
+                                                "roundtrip_ms": int((time.time() - t0) * 1000),
+                                                "out": out.name, "inp": inp_name})
+                time.sleep(0.01)
+            return self._json(200, {"ok": True, "loop": "broken",
+                                    "out": out.name, "inp": inp_name,
+                                    "hint": "no echo — check XR18 MIDI thru, Ditto thru, "
+                                            "Helix MIDI Thru, and the return cable"})
+        finally:
+            try:
+                inp.close()
+            except Exception:
+                pass
 
     def _xr18_info(self):
         info = xr_exchange("/xinfo", timeout=2.0)

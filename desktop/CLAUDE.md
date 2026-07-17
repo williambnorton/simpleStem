@@ -299,3 +299,17 @@ pointer theatrics.
   parseLogicKeySpec — unit-tested). Click = instrumentation card.
   GOTCHA: System Events keystrokes need Accessibility permission for
   the node process, or they are silently swallowed — the card says so.
+- 2026-07-17 (verdict unification + loop test): Bill caught the rack,
+  dock, and peeks CONTRADICTING each other — three surfaces, three
+  different "online" definitions (rack counted chain as ✓, dock was
+  direct-only, peeks predated chaining, and the rack even showed Logic
+  ONLINE via a DIN chain it isn't on). Rule going forward: ONE
+  `midiVerdict(re, chainDevice)` is the only source of device MIDI
+  state — states down/ok/chain/bad, rendered by verdictTag/verdictGlyph
+  everywhere (rack, dock, peeks, cards, object outlines; chain = amber
+  dashed, never green, until VERIFIED). Verification is real:
+  GET /chain/test on the sidecar sends CC119 ch16 (nobody's channel)
+  out the chain head and listens for the echo on the chain return input
+  (the rig loops back to the Mac) — intact echo upgrades chained
+  devices to "CHAINED ✓ loop-verified" green. Runs each pollSurround
+  minute + on demand (XR18 right-click → Test DIN chain loop now).

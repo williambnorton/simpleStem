@@ -56,6 +56,7 @@
   .midi-down .art { opacity: .55; }
   /* ONLINE = green border around the whole object (Bill 2026-07-15) */
   .midi-ok { outline: 2px solid rgba(0,230,118,.85); outline-offset: 5px; border-radius: 14px; }
+  .midi-chain { outline: 2px dashed rgba(241,196,15,.85); outline-offset: 5px; border-radius: 14px; }
   .midi-miss { outline: 2px solid rgba(255,82,82,.7); outline-offset: 5px; border-radius: 14px; }
 
   /* folder health tint (Bill 2026-07-15): brown = empty on disk,
@@ -236,7 +237,9 @@
   .rack-p { border: 2px solid rgba(255,255,255,.12); border-radius: 10px; padding: 7px 10px;
     background: rgba(255,255,255,.03); cursor: pointer; }
   .rack-p.on { border-color: rgba(0,230,118,.75); }
+  .rack-p.chain { border-color: rgba(241,196,15,.75); }
   .rack-p.off { border-color: rgba(255,82,82,.6); }
+  .rack-p .chain, .dock-p .chain { color: #f1c40f; font-weight: 700; }
   .rack-p h5 { font: 700 11px -apple-system, sans-serif; letter-spacing: 1px; color: #7fd6a4; margin: 0 0 4px; }
   .rack-p .rl { font: 9.5px/1.5 Menlo, monospace; color: #9fb3c8; white-space: pre-wrap; }
   .rack-p .rl .k { color: #f1c40f; }
@@ -1015,12 +1018,13 @@ async function pollSlowInstruments() {
       okOut ? `MIDI ✓ wired (out${okIn ? '+in' : ''}) · ${outs.length} ports${h.clock && h.clock.running ? ' · clock ' + h.clock.bpm : ''}` :
       `MIDI ✗ XR18 not on the bus · ${outs.length} ports up`;
   } catch (e) { midiState = null; xr18.el.classList.add('midi-down'); }
-  const seenP = (re) => midiState && midiState.ok && (midiState.ports || []).some(n => re.test(n));
-  const chained = !!(midiState && midiState.ok && midiState.chain_port);
-  helix.el.classList.toggle('midi-ok', seenP(/helix|stadium|hx/i) || chained);
-  helix.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/helix|stadium|hx/i) && !chained);
-  ditto.el.classList.toggle('midi-ok', seenP(/ditto/i) || chained);
-  ditto.el.classList.toggle('midi-miss', !!(midiState && midiState.ok) && !seenP(/ditto/i) && !chained);
+  const applyV = (el, v) => {
+    el.classList.toggle('midi-ok', v.state === 'ok' || (v.state === 'chain' && v.verified));
+    el.classList.toggle('midi-chain', v.state === 'chain' && !v.verified);
+    el.classList.toggle('midi-miss', v.state === 'bad');
+  };
+  applyV(helix.el, midiVerdict(/helix|stadium|hx/i));
+  applyV(ditto.el, midiVerdict(/ditto/i));
   pollSlowInstruments._n = (pollSlowInstruments._n || 0) + 1;
   if (pollSlowInstruments._n % 12 === 1) {
     fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderDock(); }).catch(() => {});
@@ -1123,12 +1127,40 @@ async function sendCC(port, channel, controller, value, what) {
   hint(r.error ? '🎛 ' + r.error : '🎛 ' + what + ' → sent to the wire.');
   return r;
 }
-function portVerdict(re) {
-  if (!midiState || !midiState.ok) return '<span style="color:#ff5252">sidecar down</span>';
-  const o = (midiState.ports || []).some(n => re.test(n)), i = (midiState.inputs || []).some(n => re.test(n));
-  if (o) return `<span style="color:#00e676;font-weight:800">CONNECTED ✓ (out${i ? '+in' : ''})</span>`;
-  if (midiState.chain_port) return `<span style="color:#00e676;font-weight:800">CHAINED via ${midiState.chain_port} ✓</span> <span style="opacity:.6">(daisy chain — addressed by MIDI channel)</span>`;
-  return '<span style="color:#ff5252">not on the MIDI bus ✗</span>';
+/* THE one truth about a device's MIDI state (Bill 2026-07-17: every
+   surface was using a different definition and contradicted itself).
+   states: down (sidecar), ok (its own port), chain (reachable send-only
+   over the DIN daisy chain — amber, honest), bad (nothing). Devices NOT
+   on the physical chain (Logic/IAC) never get the chain state. */
+let chainLoop = null;
+function midiVerdict(re, chainDevice = true) {
+  if (!midiState || !midiState.ok) return { state: 'down' };
+  const direct = (midiState.ports || []).some(n => re.test(n));
+  const inn = (midiState.inputs || []).some(n => re.test(n));
+  if (direct) return { state: 'ok', inn };
+  if (chainDevice && midiState.chain_port) {
+    return { state: 'chain', via: midiState.chain_port,
+             verified: !!(chainLoop && chainLoop.loop === 'intact') };
+  }
+  return { state: 'bad' };
+}
+function verdictTag(v) {
+  if (v.state === 'down') return '<span class="bad">SIDECAR DOWN</span>';
+  if (v.state === 'ok') return '<span class="ok">ONLINE ✓' + (v.inn ? ' out+in' : '') + '</span>';
+  if (v.state === 'chain') return v.verified
+    ? `<span class="ok">CHAINED ✓ loop-verified</span>`
+    : `<span class="chain">CHAINED ⛓ via ${v.via}</span>`;
+  return '<span class="bad">OFFLINE ✗</span>';
+}
+function verdictGlyph(v) {
+  if (v.state === 'ok') return '<span class="ok">✓</span>';
+  if (v.state === 'chain') return v.verified ? '<span class="ok">⛓✓</span>' : '<span class="chain">⛓</span>';
+  return '<span class="bad">✗</span>';
+}
+function portVerdict(re, chainDevice = true) {
+  const v = midiVerdict(re, chainDevice);
+  if (v.state === 'chain' && !v.verified) return verdictTag(v) + ' <span style="opacity:.6">(send-only — run the DIN loop test to verify)</span>';
+  return verdictTag(v);
 }
 async function showHelixCard() {
   try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) {}
@@ -1218,17 +1250,16 @@ async function showMacbookCard() {
 function renderRack() {
   const rack = document.getElementById('rack');
   if (!rack) return;
-  const up = midiState && midiState.ok;
-  const has = (re) => up && ((midiState.ports || []).some(n => re.test(n)) || !!midiState.chain_port);
-  const hasIn = (re) => up && (midiState.inputs || []).some(n => re.test(n));
-  const V = (b) => b ? '<span class="ok">ONLINE ✓</span>' : '<span class="bad">OFFLINE ✗</span>';
   const stamp = new Date().toLocaleTimeString();
-  const xrMidi = has(/xr\s?18|x\s?air/i), xrOsc = !!(xr18Slow && xr18Slow.ok);
+  const vX = midiVerdict(/xr\s?18|x\s?air/i), vH = midiVerdict(/helix|stadium|hx/i);
+  const vD = midiVerdict(/ditto/i), vL = midiVerdict(/iac/i, false);
+  const cls = (v, extraOk) => (v.state === 'ok' || (v.state === 'chain' && v.verified) || extraOk) ? 'on' : v.state === 'chain' ? 'chain' : 'off';
+  const xrMidi = vX.state === 'ok', xrOsc = !!(xr18Slow && xr18Slow.ok);
   const lr = xrOsc ? xr18Slow.main_lr : null, net = xrOsc ? xr18Slow.network : null;
   const buses = xrOsc ? (xr18Slow.aux_buses || []).map(b => `AUX${b.bus} ${b.name || ''} ${b.fader_db === '-inf' ? '-∞' : b.fader_db}dB`).join('\n') : '';
   rack.innerHTML = `
-    <div class="rack-p ${xrMidi || xrOsc ? 'on' : 'off'}" data-open="xr18"><h5>🎚️ XR18 ${V(xrMidi || xrOsc)}</h5>
-      <div class="rl"><span class="k">MIDI</span> ${xrMidi ? 'out' + (hasIn(/xr\s?18|x\s?air/i) ? '+in ✓' : ' ✓') : '✗'} · <span class="k">OSC</span> ${xrOsc ? '✓ ' + (net.name || net.ip) : '✗'}
+    <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18"><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}</h5>
+      <div class="rl"><span class="k">MIDI</span> ${verdictGlyph(vX)} · <span class="k">OSC</span> ${xrOsc ? '✓ ' + (net.name || net.ip) : '✗ (join the XR18\'s network)'}
 ${xrOsc ? `<span class="k">fw</span> ${net.firmware || '?'} · <span class="k">snap</span> #${xr18Slow.snapshot_index != null ? xr18Slow.snapshot_index : '?'}
 <span class="k">Main LR</span> ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db}dB ${lr.muted ? '<span class="bad">MUTED</span>' : 'open'}
 ${buses}
@@ -1236,7 +1267,7 @@ ${buses}
 <span class="k">faders</span> CC0-31 ch1 (31=LR, 21-26=AUX)
 <span class="k">mutes</span> CC ch2 · <span class="k">pan</span> CC ch3
 <span class="k">OSC</span> :10024 read/write all params</div></div>
-    <div class="rack-p ${has(/helix|stadium|hx/i) ? 'on' : 'off'}" data-open="helix"><h5>🏟️ HELIX STADIUM ${V(has(/helix|stadium|hx/i))}</h5>
+    <div class="rack-p ${cls(vH)}" data-open="helix"><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}</h5>
       <div class="rl"><span class="k">ch</span> 1 global · 2 bypass/ctrl
 <span class="k">preset</span> CC32 bank + PC 0-127
 <span class="k">snapshots</span> CC69 0-7 · 8 next · 9 prev
@@ -1248,7 +1279,7 @@ ${buses}
   CC51 play/pause
 <span class="k">exp</span> CC1/2 · <span class="k">toe</span> CC36 · <span class="k">knobs</span> CC38-45
 <span class="k">tap</span> CC64 · <span class="k">clock</span> send+recv</div></div>
-    <div class="rack-p ${has(/ditto/i) ? 'on' : 'off'}" data-open="ditto"><h5>🔁 DITTO X4 ${V(has(/ditto/i))}</h5>
+    <div class="rack-p ${cls(vD)}" data-open="ditto"><h5>🔁 DITTO X4 ${verdictTag(vD)}</h5>
       <div class="rl"><span class="k">ch</span> 4 (fixed) · <span class="k">clock</span> receives
 <span class="k">loop 1</span> CC3 rec/dub/play · CC9 stop
   CC14 clear · CC15 level · CC20 store
@@ -1257,11 +1288,12 @@ ${buses}
 <span class="k">both</span> CC29 all stop · CC30 all clear
 <span class="k">fx</span> CC31 on/off · PC1-7 select
 <span class="k">route</span> CC85 serial/parallel</div></div>
-    <div class="rack-p ${has(/iac/i) ? 'on' : 'off'}" data-open="logic"><h5>🎹 LOGIC PRO ${V(has(/iac/i))}</h5>
+    <div class="rack-p ${cls(vL)}" data-open="logic"><h5>🎹 LOGIC PRO ${verdictTag(vL)}</h5>
       <div class="rl"><span class="k">wire</span> IAC Driver bus (virtual MIDI)
 <span class="k">gets</span> timeline automation events
 <span class="k">clock</span> follows sidecar 24-ppqn
 <span class="k">audio</span> 18ch USB from the XR18</div></div>
+    <div class="rl" style="text-align:center"><span class="k">DIN chain loop</span> ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">INTACT ✓ ' + chainLoop.roundtrip_ms + ' ms round trip</span>' : chainLoop.loop === 'broken' ? '<span class="bad">BROKEN — check thru switches + return cable</span>' : 'untestable (no return input)') : 'untested'}</div>
     <div class="rl" style="opacity:.5;text-align:center">rack refreshed ${stamp} · every 60 s</div>`;
   rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
@@ -1272,6 +1304,9 @@ ${buses}
 async function pollSurround() {
   try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) { midiState = null; }
   fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderRack(); renderDock(); }).catch(() => {});
+  if (midiState && midiState.ok) {
+    fetch('/api/midi/chain-test').then(r => r.json()).then(j => { chainLoop = j; renderRack(); renderDock(); }).catch(() => {});
+  }
   renderRack(); renderDock();
 }
 setInterval(pollSurround, 60000);
@@ -1279,27 +1314,26 @@ setTimeout(pollSurround, 1500);
 function renderDock() {
   const dock = document.getElementById('dock');
   if (!dock) return;
-  const has = (re) => midiState && midiState.ok && (midiState.ports || []).some(n => re.test(n));
-  const V = (b) => b ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>';
+  const V3 = (re, cd) => verdictGlyph(midiVerdict(re, cd));
   const lr = xr18Slow && xr18Slow.ok ? xr18Slow.main_lr : null;
   const net = xr18Slow && xr18Slow.ok ? xr18Slow.network : null;
   dock.innerHTML = `
     <div class="dock-p" data-open="xr18"><h5>🎚️ XR18</h5>
-      <div class="dl">MIDI ${V(has(/xr\s?18|x\s?air/i))} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">—</span>'}</div>
+      <div class="dl">MIDI ${V3(/xr\s?18|x\s?air/i)} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">—</span>'}</div>
       <div class="dl">${lr ? 'Main LR ' + (lr.fader_db === '-inf' ? '-∞' : lr.fader_db) + ' dB' + (lr.muted ? ' · <span class="bad">MUTED</span>' : ' · open') : 'snapshot PC ch1 · faders CC ch1'}</div>
       <div class="dl">${xr18Slow && xr18Slow.ok && xr18Slow.snapshot_index != null ? 'snapshot #' + xr18Slow.snapshot_index : 'mutes CC ch2 · pan CC ch3'}</div></div>
     <div class="dock-p" data-open="helix"><h5>🏟️ HELIX STADIUM</h5>
-      <div class="dl">MIDI ${V(has(/helix|stadium|hx/i))} · global ch1 · ctrl ch2</div>
+      <div class="dl">MIDI ${V3(/helix|stadium|hx/i)} · global ch1 · ctrl ch2</div>
       <div class="dl">snap CC69 · preset CC32+PC · tap CC64</div>
       <div class="dl">looper CC52-62 · song cue CC10</div></div>
     <div class="dock-p" data-open="ditto"><h5>🔁 DITTO X4</h5>
-      <div class="dl">MIDI ${V(has(/ditto/i))} · ch4 fixed · clock sync</div>
+      <div class="dl">MIDI ${V3(/ditto/i)} · ch4 fixed · clock sync</div>
       <div class="dl">L1 CC3/9/14 · L2 CC22/23/24</div>
       <div class="dl">all-stop CC29 · all-clear CC30 · FX CC31</div></div>
     <div class="dock-p" data-open="sidecar"><h5>🛰 MIDI SIDECAR</h5>
-      <div class="dl">:5555 ${V(!!(midiState && midiState.ok))} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
+      <div class="dl">:5555 ${midiState && midiState.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
       <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · OSC :10024 bridge</div>
-      <div class="dl">Logic IAC ${V(has(/iac/i))}</div></div>
+      <div class="dl">Logic IAC ${V3(/iac/i, false)} · chain loop ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '—'}</div></div>
     <div class="dock-p" data-open="macbook"><h5>💻 MACBOOK · PERFORMER</h5>
       <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
       <div class="dl">cache ${cacheState && (cacheState.done != null) ? cacheState.done + '/' + cacheState.total : '—'} · queue ${qDepth != null ? qDepth : '—'}</div>
@@ -1705,11 +1739,11 @@ Closing the lid = Flash Cache (offline contract).</div>`;
 work with NO wifi — the absolute contract.
 ${c.done != null ? c.done + '/' + c.total + ' cached · ' + (c.failed || 0) + ' failed' : 'status loading…'}</div>`;
   }
-  if (o.id === 'helix') return `<h4>🏟️ HELIX STADIUM</h4><div class="pk">${midiState && midiState.ok ? ((midiState.ports || []).some(n => /helix|stadium|hx/i.test(n)) ? 'MIDI: CONNECTED ✓' : 'MIDI: not on the bus ✗') : 'MIDI sidecar down'}
+  if (o.id === 'helix') return `<h4>🏟️ HELIX STADIUM</h4><div class="pk">MIDI: ${verdictTag(midiVerdict(/helix|stadium|hx/i)).replace(/<[^>]+>/g, '')}
 Guitar rig. Snapshots CC69, presets PC,
 looper CC52-62, tap CC64 — right-click
 to fire them. Click for the full map.</div>`;
-  if (o.id === 'ditto') return `<h4>🔁 DITTO X4</h4><div class="pk">${midiState && midiState.ok ? ((midiState.ports || []).some(n => /ditto/i.test(n)) ? 'MIDI: CONNECTED ✓' : 'MIDI: not on the bus ✗') : 'MIDI sidecar down'}
+  if (o.id === 'ditto') return `<h4>🔁 DITTO X4</h4><div class="pk">MIDI: ${verdictTag(midiVerdict(/ditto/i)).replace(/<[^>]+>/g, '')}
 Two-track looper on MIDI ch 4. L1 CC3/9/14,
 L2 CC22/23/24, all-stop CC29. Syncs loop
 length to MIDI clock.</div>`;
@@ -1916,6 +1950,14 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '🔎 Probe MIDI (live properties)', run: showXr18Card });
       items.push({ label: '⏱ Start MIDI clock · 120', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm: 120, port: 'XR18' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏱ clock: ' + r.error : '⏱ MIDI clock running at 120 → XR18.'); pollSlowInstruments(); } });
       items.push({ label: '⏹ Stop MIDI clock', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏹ clock: ' + r.error : '⏹ MIDI clock stopped.'); pollSlowInstruments(); } });
+      items.push({ label: '🔄 Test DIN chain loop now', run: async () => {
+        hint('🔄 marker sent around the chain — listening for the echo…');
+        const j = await fetch('/api/midi/chain-test').then(r => r.json()).catch(e => ({ error: e.message }));
+        chainLoop = j; renderRack(); renderDock();
+        hint(j.loop === 'intact' ? `🔄 <b>LOOP INTACT ✓</b> — echo back in ${j.roundtrip_ms} ms. Every Thru is passing.` :
+             j.loop === 'broken' ? '🔄 <b>loop broken</b> — no echo. Check XR18/Ditto/Helix thru + the return cable.' :
+             '🔄 ' + (j.error || j.hint || 'untestable'));
+      } });
       items.push({ label: '📸 Recall snapshot… (MIDI PC)', run: async () => {
         const n = parseInt(prompt('Snapshot number 1-64 to recall on the XR18:'), 10);
         if (!(n >= 1 && n <= 64)) return;
