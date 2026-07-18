@@ -313,3 +313,10 @@ pointer theatrics.
   (the rig loops back to the Mac) — intact echo upgrades chained
   devices to "CHAINED ✓ loop-verified" green. Runs each pollSurround
   minute + on demand (XR18 right-click → Test DIN chain loop now).
+- 2026-07-17 (MIDI Console): /midi-console.html is the topology + state
+  + control surface (see docs/14). Sidecar grew /monitor — a daemon
+  thread listening on ALL MIDI inputs with a filtered ring buffer and
+  derived device state; that thread is THE read path for MIDI state.
+  Console note/PC senders target port 'IAC' (Logic must have the IAC
+  bus online); generic sends use port 'chain' to route out the chain
+  head explicitly. Desk links: rack footer + sidecar dock panel.

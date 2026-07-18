@@ -5954,6 +5954,15 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
   }
 });
 
+app.get('/api/midi/monitor', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/monitor', undefined, 3000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
 app.get('/api/midi/chain-test', async (req, res) => {
   try {
     const r = await sidecarFetch('/chain/test', undefined, 6000);

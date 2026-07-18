@@ -1294,6 +1294,7 @@ ${buses}
 <span class="k">clock</span> follows sidecar 24-ppqn
 <span class="k">audio</span> 18ch USB from the XR18</div></div>
     <div class="rl" style="text-align:center"><span class="k">DIN chain loop</span> ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">INTACT ✓ ' + chainLoop.roundtrip_ms + ' ms round trip</span>' : chainLoop.loop === 'broken' ? '<span class="bad">BROKEN — check thru switches + return cable</span>' : 'untestable (no return input)') : 'untested'}</div>
+    <div class="rl" style="opacity:.7;text-align:center"><a href="/midi-console.html" target="_blank" style="color:#7fd6a4">🎛 open the MIDI CONSOLE — topology + live state + controls</a></div>
     <div class="rl" style="opacity:.5;text-align:center">rack refreshed ${stamp} · every 60 s</div>`;
   rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
@@ -1332,7 +1333,7 @@ function renderDock() {
       <div class="dl">all-stop CC29 · all-clear CC30 · FX CC31</div></div>
     <div class="dock-p" data-open="sidecar"><h5>🛰 MIDI SIDECAR</h5>
       <div class="dl">:5555 ${midiState && midiState.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
-      <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · OSC :10024 bridge</div>
+      <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · click → MIDI CONSOLE</div>
       <div class="dl">Logic IAC ${V3(/iac/i, false)} · chain loop ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '—'}</div></div>
     <div class="dock-p" data-open="macbook"><h5>💻 MACBOOK · PERFORMER</h5>
       <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
@@ -1354,6 +1355,7 @@ function renderDock() {
     const k = el.dataset.open;
     if (k === 'xr18') showXr18Card(); else if (k === 'helix') showHelixCard();
     else if (k === 'ditto') showDittoCard(); else if (k === 'macbook') showMacbookCard();
+    else if (k === 'sidecar') window.open('/midi-console.html', '_blank');
     else if (k === 'robot') window.open('/librarian.html', '_blank');
     else if (k === 'queue') showQueueCard();
     else if (k === 'library') showObjectBrowser();

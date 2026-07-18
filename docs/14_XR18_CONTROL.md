@@ -168,3 +168,36 @@ Consequences + fixes shipped:
    OUT-as-Thru so messages continue to the Ditto; Ditto DIP switches
    set for MIDI CC + Thru; Stadium MIDI > MIDI Thru if the return to
    the Mac should carry messages onward.
+
+---
+
+# The MIDI Console (2026-07-17)
+
+`/midi-console.html` — the control room for everything MIDI. Top: a
+live TOPOLOGY diagram (MacBook → XR18 → Ditto → Helix → return, plus
+the IAC branch to Logic), nodes colored by the shared verdict rules,
+the return edge annotated with the loop-test round trip. Below, one
+panel per device:
+
+- **XR18** — snapshot recall (PC ch 1), Main LR fader slider (CC31
+  ch 1), main mute/unmute (CC31 ch 2), OSC console readout, and the
+  RX-derived fader/mute state (populates once the board's **USB Tx**
+  is enabled and it starts transmitting its moves).
+- **Ditto X4** — both loopers + all-stop/all-clear/FX (ch 4).
+- **Logic Pro** — transport key commands, plus **Note On** (channel/
+  note/velocity, auto note-off after 250 ms) and **Program Change**
+  senders over the IAC bus. In Logic: a record-armed Software
+  Instrument track receives them; External MIDI tracks pointed at the
+  chain port let LOGIC drive the XR18/Ditto/Helix.
+- **Clock + chain** — 24-ppqn clock start/stop/bpm, DIN loop test.
+- **RX MONITOR** — the sidecar now runs a background listener on EVERY
+  MIDI input (`/monitor`): ring buffer of recent messages (clock
+  filtered) and derived last-known state (XR18 fader/mute/pan CC maps,
+  Stadium program + snapshot). This is "all state available via MIDI"
+  — MIDI is write-only unless devices transmit, so the monitor is the
+  read path. Enable XR18 USB Tx and Stadium Send MIDI PC/Snapshot CC
+  to fill it.
+
+Sends from the console use `port:'chain'` (explicit chain routing) or
+'XR18'/'IAC' where a real port exists. Reached from the desk: rack
+footer link, or click the MIDI SIDECAR dock panel.

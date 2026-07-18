@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>simpleStem — MIDI Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0b0e14; color: #c7d2de; font: 13px -apple-system, sans-serif; padding: 14px 18px; }
+  h1 { font-size: 16px; color: #7fd6a4; margin-bottom: 2px; }
+  .sub { opacity: .55; font-size: 11px; margin-bottom: 12px; }
+  .ok { color: #00e676; font-weight: 700; }
+  .chain { color: #f1c40f; font-weight: 700; }
+  .bad { color: #ff5252; font-weight: 700; }
+  #topo { width: 100%; height: 210px; background: rgba(255,255,255,.02);
+    border: 1px solid rgba(255,255,255,.1); border-radius: 12px; margin-bottom: 14px; }
+  #topo text { font: 700 11px -apple-system, sans-serif; fill: #c7d2de; }
+  #topo .nsub { font: 9px Menlo, monospace; fill: #9fb3c8; font-weight: 400; }
+  #topo rect { fill: rgba(255,255,255,.04); stroke-width: 2; rx: 10; }
+  #topo .n-ok rect { stroke: #00e676; }
+  #topo .n-chain rect { stroke: #f1c40f; stroke-dasharray: 5 4; }
+  #topo .n-bad rect { stroke: #ff5252; }
+  #topo path { fill: none; stroke-width: 2; }
+  #topo path.wire { stroke: #4fc3f7; stroke-dasharray: 4 8; animation: flow .7s linear infinite; opacity: .6; }
+  #topo path.wire.dead { stroke: #ff5252; animation: none; opacity: .3; }
+  #topo .elabel { font: 9px Menlo, monospace; fill: #9fb3c8; }
+  @keyframes flow { to { stroke-dashoffset: -24; } }
+  .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .panel { border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,.03); }
+  .panel h3 { font-size: 13px; color: #7fd6a4; margin-bottom: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; font: 12px Menlo, monospace; }
+  .row .k { color: #f1c40f; min-width: 88px; }
+  button { background: rgba(0,230,118,.12); color: #aef7cd; border: 1px solid rgba(0,230,118,.4);
+    border-radius: 7px; padding: 5px 11px; font: 600 11px -apple-system, sans-serif; cursor: pointer; }
+  button:hover { background: rgba(0,230,118,.28); }
+  button.warn { background: rgba(255,82,82,.12); color: #ffb3b3; border-color: rgba(255,82,82,.4); }
+  input[type=number] { width: 58px; background: #131824; color: #c7d2de; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 6px; padding: 4px 6px; font: 12px Menlo, monospace; }
+  input[type=range] { width: 150px; accent-color: #00e676; }
+  #rxlog { font: 10.5px/1.6 Menlo, monospace; max-height: 260px; overflow-y: auto; white-space: pre; color: #9fb3c8; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
+    border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
+  .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  a { color: #7fd6a4; }
+</style>
+</head>
+<body>
+<h1>🎛 MIDI CONSOLE — the Performer's control room</h1>
+<div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a></div>
+
+<svg id="topo" viewBox="0 0 1160 210" preserveAspectRatio="xMidYMid meet"></svg>
+
+<div class="panels">
+  <div class="panel"><h3>🎚️ XR18 <span id="xr-tag"></span></h3>
+    <div class="row"><span class="k">console</span><span id="xr-net">—</span></div>
+    <div class="row"><span class="k">snapshot</span>
+      <input type="number" id="xr-snap" min="1" max="64" value="1">
+      <button onclick="xrSnap()">📸 Recall (PC ch1)</button><span id="xr-snapnow"></span></div>
+    <div class="row"><span class="k">Main LR</span>
+      <input type="range" id="xr-lr" min="0" max="127" value="95" oninput="document.getElementById('xr-lrv').textContent=this.value">
+      <span id="xr-lrv">95</span>
+      <button onclick="xrFader(31, +document.getElementById('xr-lr').value)">send CC31 ch1</button></div>
+    <div class="row"><span class="k">Main mute</span>
+      <button class="warn" onclick="sendCC(2, 31, 127, 'XR18 Main LR MUTE')">🔇 mute</button>
+      <button onclick="sendCC(2, 31, 0, 'XR18 Main LR unmute')">🔊 unmute</button></div>
+    <div class="row"><span class="k">rx state</span></div>
+    <div class="statebox" id="xr-state">no fader/mute CCs received yet — enable USB Tx on the board to hear its moves</div>
+  </div>
+
+  <div class="panel"><h3>🔁 DITTO X4 <span id="dt-tag"></span></h3>
+    <div class="row"><span class="k">looper 1</span>
+      <button onclick="sendCC(4, 3, 127, 'Ditto L1 rec/dub/play')">⏺ rec/dub/play</button>
+      <button onclick="sendCC(4, 9, 127, 'Ditto L1 stop')">⏹ stop</button>
+      <button class="warn" onclick="sendCC(4, 14, 127, 'Ditto L1 clear')">🧹 clear</button></div>
+    <div class="row"><span class="k">looper 2</span>
+      <button onclick="sendCC(4, 22, 127, 'Ditto L2 rec/dub/play')">⏺ rec/dub/play</button>
+      <button onclick="sendCC(4, 23, 127, 'Ditto L2 stop')">⏹ stop</button>
+      <button class="warn" onclick="sendCC(4, 24, 127, 'Ditto L2 clear')">🧹 clear</button></div>
+    <div class="row"><span class="k">both</span>
+      <button class="warn" onclick="sendCC(4, 29, 127, 'Ditto ALL STOP')">⏹⏹ all stop</button>
+      <button class="warn" onclick="sendCC(4, 30, 127, 'Ditto ALL CLEAR')">🧹🧹 all clear</button>
+      <button onclick="sendCC(4, 31, 127, 'Ditto FX toggle')">✨ FX</button></div>
+    <div class="statebox">write-only device (ch 4 fixed) — no state comes back; the chain
+loop test below is its liveness proxy.</div>
+  </div>
+
+  <div class="panel"><h3>🎹 LOGIC PRO <span id="lg-tag"></span></h3>
+    <div class="row"><span class="k">transport</span>
+      <button onclick="logicKey('record','RECORD')">⏺ R</button>
+      <button onclick="logicKey('playstop','PLAY/STOP')">⏯ space</button>
+      <button onclick="logicKey('rtz','RTZ')">⏮ return</button>
+      <button onclick="logicKey('metronome','METRONOME')">🥁 K</button></div>
+    <div class="row"><span class="k">note on</span>
+      ch <input type="number" id="lg-nch" min="1" max="16" value="1">
+      note <input type="number" id="lg-note" min="0" max="127" value="60">
+      vel <input type="number" id="lg-vel" min="1" max="127" value="100">
+      <button onclick="logicNote()">🎵 send (IAC)</button></div>
+    <div class="row"><span class="k">prog change</span>
+      ch <input type="number" id="lg-pch" min="1" max="16" value="1">
+      pgm <input type="number" id="lg-pgm" min="0" max="127" value="0">
+      <button onclick="logicPC()">📇 send (IAC)</button></div>
+    <div class="statebox" id="lg-note-help">Notes/PC ride the IAC bus. In Logic, a record-armed Software
+Instrument track receives them; External MIDI tracks can drive the
+chain devices back out (set output to the chain port + channel).</div>
+  </div>
+
+  <div class="panel"><h3>⏱ MIDI CLOCK + CHAIN</h3>
+    <div class="row"><span class="k">clock</span>
+      bpm <input type="number" id="ck-bpm" min="30" max="300" value="120">
+      <button onclick="clockCtl('start')">▶ start</button>
+      <button onclick="clockCtl('stop')">⏹ stop</button>
+      <span id="ck-now"></span></div>
+    <div class="row"><span class="k">DIN loop</span>
+      <button onclick="loopTest()">🔄 test now</button>
+      <span id="loop-now">untested</span></div>
+    <div class="statebox">Clock broadcasts 24 ppqn to every output — the Ditto locks loop
+lengths to it, the Stadium syncs delays. The loop test sends CC119
+ch16 around the chain and listens for the echo.</div>
+  </div>
+
+  <div class="panel" style="grid-column: 1 / -1;"><h3>📡 RX MONITOR — what the wire is telling us <span id="rx-tag"></span></h3>
+    <div class="row"><span class="k">listening on</span><span id="rx-ports">—</span></div>
+    <div id="rxlog">no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.</div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+let health = null, xrInfo = null, loop = null, mon = null;
+const $ = (id) => document.getElementById(id);
+function toast(t) { const el = $('toast'); el.innerHTML = t; el.style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(() => el.style.display = 'none', 3200); }
+const J = (r) => r.json();
+
+async function send(body, what) {
+  const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
+  toast(r.error ? '⚠ ' + r.error : '✓ ' + what + (r.routed === 'chain' ? ' · via ' + r.sent_to : ''));
+  return r;
+}
+const sendCC = (channel, controller, value, what) => send({ port: 'chain', type: 'cc', channel, controller, value }, what);
+function xrSnap() { const n = +$('xr-snap').value; if (n >= 1 && n <= 64) send({ port: 'XR18', type: 'pc', channel: 1, program: n - 1 }, 'XR18 snapshot ' + n); }
+function xrFader(cc, val) { sendCC(1, cc, val, 'XR18 fader CC' + cc + ' → ' + val); }
+async function logicKey(action, what) {
+  const r = await fetch('/api/desktop/logic-key', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }) }).then(J).catch(e => ({ error: e.message }));
+  toast(r.error ? '⚠ ' + r.error : '✓ Logic ' + what);
+}
+async function logicNote() {
+  const ch = +$('lg-nch').value, note = +$('lg-note').value, vel = +$('lg-vel').value;
+  await send({ port: 'IAC', type: 'note_on', channel: ch, note, velocity: vel }, `note_on ${note} vel ${vel} ch ${ch} → Logic`);
+  setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: ch, note, velocity: 0 }, 'note_off ' + note), 250);
+}
+function logicPC() { send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
+async function clockCtl(action) {
+  const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, bpm: +$('ck-bpm').value }) }).then(J).catch(e => ({ error: e.message }));
+  toast(r.error ? '⚠ ' + r.error : '✓ clock ' + action + (r.bpm ? ' @ ' + r.bpm : ''));
+  pollFast();
+}
+async function loopTest() {
+  $('loop-now').textContent = 'testing…';
+  loop = await fetch('/api/midi/chain-test').then(J).catch(() => null);
+  paintLoop(); drawTopo();
+}
+function paintLoop() {
+  $('loop-now').innerHTML = !loop ? 'untested'
+    : loop.loop === 'intact' ? `<span class="ok">INTACT ✓ ${loop.roundtrip_ms} ms</span>`
+    : loop.loop === 'broken' ? '<span class="bad">BROKEN — check thru + return cable</span>'
+    : (loop.hint || loop.error || 'untestable');
+}
+
+function verdict(re, chainDev = true) {
+  if (!health || !health.ok) return 'bad';
+  if ((health.ports || []).some(n => re.test(n))) return 'ok';
+  if (chainDev && health.chain_port) return (loop && loop.loop === 'intact') ? 'ok' : 'chain';
+  return 'bad';
+}
+function tag(v) { return v === 'ok' ? '<span class="ok">✓</span>' : v === 'chain' ? '<span class="chain">⛓</span>' : '<span class="bad">✗</span>'; }
+
+function drawTopo() {
+  const vX = verdict(/xr\s?18|x\s?air/i), vH = verdict(/helix|stadium|hx/i), vD = verdict(/ditto/i), vL = verdict(/iac/i, false);
+  const chainName = health && health.chain_port ? health.chain_port : 'no chain port';
+  const loopOk = loop && loop.loop === 'intact';
+  const N = (x, y, id, cls, name, sub) =>
+    `<g class="n-${cls}" data-id="${id}"><rect x="${x}" y="${y}" width="150" height="52"/>` +
+    `<text x="${x + 75}" y="${y + 21}" text-anchor="middle">${name}</text>` +
+    `<text class="nsub" x="${x + 75}" y="${y + 38}" text-anchor="middle">${sub}</text></g>`;
+  const E = (x1, y1, x2, y2, dead, label) =>
+    `<path class="wire ${dead ? 'dead' : ''}" d="M ${x1} ${y1} C ${x1 + 45} ${y1}, ${x2 - 45} ${y2}, ${x2} ${y2}"/>` +
+    (label ? `<text class="elabel" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" text-anchor="middle">${label}</text>` : '');
+  const sidecarUp = !!(health && health.ok);
+  $('topo').innerHTML =
+    N(20, 75, 'mac', sidecarUp ? 'ok' : 'bad', '💻 MACBOOK PRO', sidecarUp ? 'sidecar :5555 ✓' : 'sidecar down') +
+    E(170, 92, 250, 92, !sidecarUp, 'USB') +
+    N(250, 66, 'xr18', vX, '🎚️ XR18', vX === 'ok' ? 'USB MIDI · ch 1/2/3' : 'via ' + chainName) +
+    E(400, 92, 480, 92, vX === 'bad', 'DIN OUT (pass-thru)') +
+    N(480, 66, 'ditto', vD, '🔁 DITTO X4', 'ch 4 fixed') +
+    E(630, 92, 710, 92, vD === 'bad', 'THRU') +
+    N(710, 66, 'helix', vH, '🏟️ HELIX STADIUM', 'global ch (set 5)') +
+    E(860, 92, 940, 92, !loopOk, 'return') +
+    N(940, 66, 'ret', loopOk ? 'ok' : (loop && loop.loop === 'broken') ? 'bad' : 'chain', '↩ NUX B-8 IN', loopOk ? 'loop ' + loop.roundtrip_ms + ' ms ✓' : 'loop unverified') +
+    E(170, 130, 250, 160, vL === 'bad', 'IAC bus (virtual)') +
+    N(250, 140, 'logic', vL, '🎹 LOGIC PRO', vL === 'ok' ? 'notes · PC · automation' : 'enable IAC in Audio MIDI Setup') +
+    `<text class="elabel" x="580" y="200" text-anchor="middle">${loopOk ? '⛓✓ chain LOOP-VERIFIED — every Thru passing' : 'chain devices are send-only until the loop test passes'}</text>`;
+  $('xr-tag').innerHTML = tag(vX); $('dt-tag').innerHTML = tag(vD); $('lg-tag').innerHTML = tag(vL);
+}
+
+function paintState() {
+  if (xrInfo && xrInfo.ok) {
+    const n = xrInfo.network || {}, lr = xrInfo.main_lr || {};
+    $('xr-net').innerHTML = `<span class="ok">${n.name || n.ip}</span> · fw ${n.firmware || '?'} · OSC LR ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db} dB ${lr.muted ? '<span class="bad">MUTED</span>' : ''}`;
+    if (xrInfo.snapshot_index != null) $('xr-snapnow').textContent = 'now #' + xrInfo.snapshot_index;
+  } else $('xr-net').innerHTML = '<span class="bad">OSC unreachable</span> — MIDI-only (join the XR18 network for names/levels)';
+  if (mon && mon.ok) {
+    $('rx-ports').textContent = (mon.listening || []).join(' · ') || 'none';
+    const d = mon.derived || {};
+    const f = d.xr18 && d.xr18.faders, m = d.xr18 && d.xr18.mutes;
+    const parts = [];
+    if (f && Object.keys(f).length) parts.push('faders(ch1): ' + Object.entries(f).map(([k, v]) => 'CC' + k + '=' + v).join(' '));
+    if (m && Object.keys(m).length) parts.push('mutes(ch2): ' + Object.entries(m).map(([k, v]) => 'CC' + k + '=' + v).join(' '));
+    if (parts.length) $('xr-state').textContent = parts.join('\n');
+    if (d.stadium && (d.stadium.program != null || d.stadium.snapshot != null)) {
+      $('lg-note-help').textContent = 'Stadium heard on the wire — program ' + d.stadium.program + (d.stadium.snapshot ? ' · snapshot ' + d.stadium.snapshot : '');
+    }
+    const evs = (mon.events || []).slice().reverse();
+    $('rxlog').textContent = evs.length ? evs.map(e => {
+      const time = new Date(e.t * 1000).toLocaleTimeString();
+      const det = e.type === 'control_change' ? `CC${e.control}=${e.value}` : e.type === 'program_change' ? `PC${e.program}` :
+        e.type.startsWith('note') ? `${e.type} ${e.note} vel${e.velocity}` : e.type;
+      return `${time}  ${(e.port || '').padEnd(18).slice(0, 18)}  ch${String(e.channel || '-').padEnd(2)}  ${det}`;
+    }).join('\n') : 'no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.';
+    $('rx-tag').innerHTML = '<span class="ok">listening ✓</span>';
+  } else $('rx-tag').innerHTML = '<span class="bad">down</span>';
+  if (health && health.ok && health.clock) $('ck-now').innerHTML = health.clock.running ? `<span class="ok">RUNNING @ ${health.clock.bpm}</span>` : 'stopped';
+}
+
+async function pollFast() {
+  health = await fetch('/api/midi/health').then(J).catch(() => null);
+  mon = await fetch('/api/midi/monitor').then(J).catch(() => null);
+  drawTopo(); paintState();
+}
+async function pollSlow() {
+  xrInfo = await fetch('/api/xr18/info').then(J).catch(() => null);
+  loop = await fetch('/api/midi/chain-test').then(J).catch(() => loop);
+  paintLoop(); drawTopo(); paintState();
+}
+setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
+pollFast(); setTimeout(pollSlow, 1200);
+</script>
+</body>
+</html>

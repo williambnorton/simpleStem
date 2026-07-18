@@ -359,6 +359,65 @@ class MidiClock:
 _clock = MidiClock()
 
 
+# ── RX monitor (Bill 2026-07-17): the only way to READ state over MIDI
+# is to listen. A background thread opens every MIDI input (hardware +
+# IAC), keeps a ring buffer of recent messages (clock/active-sense
+# filtered out), and derives last-known device state: XR18 fader/mute/
+# pan CC maps (ch 1/2/3), Stadium program + snapshot (PC / CC69).
+from collections import deque
+
+_rx = {"events": deque(maxlen=150), "listening": [],
+       "derived": {"xr18": {"faders": {}, "mutes": {}, "pans": {}},
+                   "stadium": {"program": None, "snapshot": None},
+                   "last_rx_at": None}}
+
+
+def _record_rx(port, msg):
+    if msg.type in ("clock", "active_sensing", "start", "stop", "continue"):
+        return
+    ev = {"t": round(time.time(), 3), "port": port, "type": msg.type}
+    for attr in ("channel", "control", "value", "program", "note", "velocity"):
+        if hasattr(msg, attr):
+            ev[attr] = getattr(msg, attr)
+    if "channel" in ev:
+        ev["channel"] += 1
+    _rx["events"].append(ev)
+    _rx["derived"]["last_rx_at"] = ev["t"]
+    ch = ev.get("channel")
+    if msg.type == "control_change":
+        if ch == 1 and msg.control <= 35:
+            _rx["derived"]["xr18"]["faders"][str(msg.control)] = msg.value
+        elif ch == 2 and msg.control <= 39:
+            _rx["derived"]["xr18"]["mutes"][str(msg.control)] = msg.value
+        elif ch == 3 and msg.control <= 35:
+            _rx["derived"]["xr18"]["pans"][str(msg.control)] = msg.value
+        if msg.control == 69:
+            _rx["derived"]["stadium"]["snapshot"] = msg.value + 1 if msg.value <= 7 else None
+    elif msg.type == "program_change":
+        _rx["derived"]["stadium"]["program"] = msg.program
+
+
+def _rx_loop():
+    opened = {}
+    while True:
+        try:
+            for n in mido.get_input_names():
+                if n not in opened:
+                    try:
+                        opened[n] = mido.open_input(n)
+                    except Exception:
+                        opened[n] = None
+            _rx["listening"] = [n for n, p in opened.items() if p]
+            for n, inp in opened.items():
+                if not inp:
+                    continue
+                for msg in inp.iter_pending():
+                    _record_rx(n, msg)
+        except Exception:
+            pass
+        time.sleep(0.03)
+
+
 def build_msg(body):
     msg_type = (body.get("type") or "").lower()
     # MIDI channels are 1-16 to humans, 0-15 on the wire.
@@ -422,6 +481,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
                                     "inputs": mido.get_input_names()})
+        if self.path == "/monitor":
+            return self._json(200, {"ok": True,
+                                    "listening": _rx["listening"],
+                                    "events": list(_rx["events"])[-50:],
+                                    "derived": _rx["derived"]})
         if self.path == "/chain/test":
             return self._chain_test()
         if self.path == "/xr18/info":
@@ -588,6 +652,7 @@ def main():
         outs = []
         print(f"WARN: could not enumerate MIDI ports: {e}", file=sys.stderr)
     print(f"available MIDI outputs: {outs}")
+    threading.Thread(target=_rx_loop, daemon=True, name="rx-monitor").start()
     HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
 
 
