@@ -129,6 +129,12 @@ def xr_configured_ip():
 
 
 def xr_discover(timeout=1.5):
+    """Find the XR18: pinned IP first (xr18_ip.txt / XR18_IP), then
+    broadcast fallback — including the link-local broadcast, because
+    Bill's board lives at a 169.254.x.x APIPA address on direct
+    Ethernet and self-assigned addresses CAN drift after reboot. First
+    /xinfo reply wins and is cached 5 min, so a drifted pin heals
+    itself without editing the file."""
     now = time.time()
     if _xr_cache["addr"] and now - _xr_cache["at"] < 300:
         return _xr_cache["addr"]
@@ -137,11 +143,16 @@ def xr_discover(timeout=1.5):
     sk.settimeout(timeout)
     try:
         msg = osc_encode("/xinfo")
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        targets = []
         if env_ip:
-            sk.sendto(msg, (env_ip, XAIR_PORT))
-        else:
-            sk.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            sk.sendto(msg, ("255.255.255.255", XAIR_PORT))
+            targets.append(env_ip)
+        targets += ["255.255.255.255", "169.254.255.255"]
+        for t in targets:
+            try:
+                sk.sendto(msg, (t, XAIR_PORT))
+            except Exception:
+                pass
         _data, addr = sk.recvfrom(4096)
         _xr_cache["addr"] = addr
         _xr_cache["at"] = now

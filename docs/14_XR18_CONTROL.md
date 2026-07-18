@@ -245,3 +245,15 @@ discovery, which macOS multi-interface routing and the application
 firewall both love to eat. If probes still fail with a correct IP:
 System Settings > Network > Firewall — allow incoming for the python
 running the sidecar.
+
+## Link-local pinning (2026-07-18)
+
+The board turned up at 169.254.213.60 — APIPA/link-local on direct
+Ethernet (no DHCP anywhere). Verdict: pinning that IP in `xr18_ip.txt`
+is fine AND the sidecar now self-heals — discovery probes the pinned
+IP and the global + link-local broadcasts together, first /xinfo reply
+wins, so a drifted self-assigned address just re-caches. Do NOT
+statically configure an address INSIDE 169.254/16 (reserved for
+auto-assignment). If full determinism is wanted for gigs: X-AIR-Edit
+Setup > Connection > LAN → static 192.168.87.2/24, Mac Ethernet
+service → manual 192.168.87.1/24, pin 192.168.87.2.
