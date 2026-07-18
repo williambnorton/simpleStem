@@ -6114,7 +6114,16 @@ app.post('/api/desktop/reveal', async (req, res) => {
       '__HELIXAPP__': ['-a', 'Helix Stadium'],
     };
     if (SPECIAL[base]) {
-      require('child_process').spawn('open', SPECIAL[base], { detached: true, stdio: 'ignore' }).unref();
+      const child = require('child_process').spawn('open', SPECIAL[base], { stdio: 'ignore' });
+      const code = await new Promise((resolve) => {
+        let done = false;
+        child.on('exit', (c) => { if (!done) { done = true; resolve(c); } });
+        child.on('error', () => { if (!done) { done = true; resolve(1); } });
+        setTimeout(() => { if (!done) { done = true; resolve(0); } }, 900);
+      });
+      if (code !== 0) {
+        return res.status(404).json({ ok: false, error: `open ${SPECIAL[base].join(' ')} failed — app not installed under that name?` });
+      }
       return res.json({ ok: true, opened: SPECIAL[base].join(' '), how: 'special', exact: true });
     }
     const { target, how } = await resolveDeskFolder(base, title);

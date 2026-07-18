@@ -270,6 +270,31 @@ async function pollSlow() {
   loop = await fetch('/api/midi/chain-test').then(J).catch(() => loop);
   paintLoop(); drawTopo(); paintState();
 }
+/* topology nodes are interactive (Bill 2026-07-18): click = highlight
+   the device's panel, double-click = open the REAL thing behind it */
+$('topo').addEventListener('click', (e) => {
+  const g = e.target.closest('g[data-id]');
+  if (!g) return;
+  const panelTag = { xr18: 'xr-tag', ditto: 'dt-tag', logic: 'lg-tag', helix: 'dt-tag' }[g.dataset.id];
+  if (!panelTag) return;
+  const p = $(panelTag).closest('.panel');
+  p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  p.style.boxShadow = '0 0 0 2px #00e676';
+  setTimeout(() => p.style.boxShadow = '', 1400);
+});
+$('topo').addEventListener('dblclick', async (e) => {
+  const g = e.target.closest('g[data-id]');
+  if (!g) return;
+  const id = g.dataset.id;
+  const special = { xr18: '__XR18__', logic: '__LOGIC__', helix: '__HELIXAPP__' }[id];
+  if (special) {
+    const j = await fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base: special }) }).then(J).catch(e => ({ error: e.message }));
+    toast(j.ok === false || j.error ? '⚠ ' + (j.error || 'open failed') : '✓ opened ' + id + "'s app");
+  } else if (id === 'ret') { loopTest(); toast('🔄 running the DIN loop test…'); }
+  else if (id === 'mac') window.open('/desktop-proto.html', '_blank');
+  else toast('the Ditto has no companion app — its controls are in the panel below');
+});
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>

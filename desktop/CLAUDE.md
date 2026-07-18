@@ -320,3 +320,11 @@ pointer theatrics.
   Console note/PC senders target port 'IAC' (Logic must have the IAC
   bus online); generic sends use port 'chain' to route out the chain
   head explicitly. Desk links: rack footer + sidecar dock panel.
+- 2026-07-18 (channel plan final + interactive topology): Helix channel
+  answered definitively — NOT 4 (Ditto's fixed channel; CC9 collides
+  with Stadium panel-button emulation on a shared wire). Map: ch 1-3
+  reserved (XR18 chart), ch 4 Ditto, ch 5 Stadium global (6 bypass).
+  Console topology nodes are now interactive: click highlights the
+  device's panel, dblclick opens the real app; app opens now WAIT for
+  `open`'s exit code and report "app not installed?" instead of failing
+  silently (that silence read as "double-click does nothing").

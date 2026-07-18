@@ -1868,8 +1868,8 @@ desk.addEventListener('dblclick', async (e) => {
     // 2026-07-15): Finder on its directory, or the right app entirely.
     const openSpecial = async (base, what) => {
       try {
-        await fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base }) });
-        hint(`📂 Opened <b>${what}</b>.`);
+        const j = await fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base }) }).then(r => r.json());
+        hint(j.ok === false ? '⚠ ' + (j.error || 'open failed') : `📂 Opened <b>${what}</b>.`);
       } catch (err) { hint('Open failed: ' + err.message); }
     };
     const map = {
