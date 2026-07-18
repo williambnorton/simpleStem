@@ -113,11 +113,26 @@ def osc_decode(data):
     return addr, args
 
 
+XR18_IP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "xr18_ip.txt")
+
+
+def xr_configured_ip():
+    env = os.environ.get("XR18_IP")
+    if env:
+        return env.strip()
+    try:
+        with open(XR18_IP_FILE, "r", encoding="utf-8") as f:
+            ip = f.read().strip()
+            return ip or None
+    except Exception:
+        return None
+
+
 def xr_discover(timeout=1.5):
     now = time.time()
     if _xr_cache["addr"] and now - _xr_cache["at"] < 300:
         return _xr_cache["addr"]
-    env_ip = os.environ.get("XR18_IP")
+    env_ip = xr_configured_ip()
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sk.settimeout(timeout)
     try:
@@ -586,6 +601,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_send(body)
         if self.path == "/clock":
             return self._handle_clock(body)
+        if self.path == "/xr18/ip":
+            import re as _re
+            ip = str(body.get("ip") or "").strip()
+            if ip and not _re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip):
+                return self._json(400, {"error": "not an IPv4 address"})
+            try:
+                if ip:
+                    with open(XR18_IP_FILE, "w", encoding="utf-8") as f:
+                        f.write(ip + "\n")
+                elif os.path.exists(XR18_IP_FILE):
+                    os.remove(XR18_IP_FILE)
+            except Exception as e:
+                return self._json(500, {"error": str(e)})
+            _xr_cache["addr"] = None
+            _xr_cache["at"] = 0.0
+            probe = xr_exchange("/xinfo", timeout=2.0)
+            return self._json(200, {"ok": True, "ip": ip or None,
+                                    "probe": probe.get("args") if probe else None,
+                                    "reachable": probe is not None})
         if self.path == "/xr18/set":
             osc_path = str(body.get("path") or "")
             if not osc_path.startswith("/"):

@@ -222,3 +222,26 @@ from here on:
 - **Return leg** can now come home through the XR18's own DIN IN
   (DIN IN → USB is part of pass-thru) — the NUX B-8 becomes optional.
   `MIDI_CHAIN_IN` env pins the return port if both are present.
+
+## Turning OSC on (2026-07-18)
+
+OSC has no enable switch — the XR18 always listens on UDP :10024. "Not
+found" = no IP path between laptop and mixer. Three ways to create one
+(X-AIR-Edit Setup > Connection tabs):
+
+1. **Access Point** — the XR18 broadcasts its own Wi-Fi; join it from
+   the Mac. Gig-proof (no internet needed), but the laptop loses
+   internet while joined.
+2. **WLAN client** — the XR18 joins the home/band router; laptop stays
+   on the same Wi-Fi. Best at home (internet + OSC together).
+3. **LAN** — Ethernet from the XR18's port to the router (or direct).
+   Most reliable for gigs.
+
+Then pin the mixer's IP (shown in X-AIR-Edit once connected) via the
+console's "mixer IP → set + probe" (persists in `xr18_ip.txt` next to
+the sidecar; `POST /xr18/ip` validates, saves, clears the discovery
+cache, and probes /xinfo immediately). Pinning beats broadcast
+discovery, which macOS multi-interface routing and the application
+firewall both love to eat. If probes still fail with a correct IP:
+System Settings > Network > Firewall — allow incoming for the python
+running the sidecar.

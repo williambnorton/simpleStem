@@ -52,6 +52,9 @@
 <div class="panels">
   <div class="panel"><h3>🎚️ XR18 <span id="xr-tag"></span></h3>
     <div class="row"><span class="k">console</span><span id="xr-net">—</span></div>
+    <div class="row"><span class="k">mixer IP</span>
+      <input type="text" id="xr-ip" placeholder="from X-AIR-Edit Setup" style="width:130px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
+      <button onclick="xrSetIp()">🌐 set + probe</button></div>
     <div class="row"><span class="k">snapshot</span>
       <input type="number" id="xr-snap" min="1" max="64" value="1">
       <button onclick="xrSnap()">📸 Recall (OSC)</button><span id="xr-snapnow"></span></div>
@@ -146,6 +149,13 @@ async function xrSet(path, value, what, db) {
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
   toast(r.ok ? '✓ ' + what + (r.readback ? ' · readback ' + JSON.stringify(r.readback) : '') : '⚠ ' + (r.error || 'failed') + ' — OSC needs the XR18 network');
   return r;
+}
+async function xrSetIp() {
+  const ip = document.getElementById('xr-ip').value.trim();
+  const r = await fetch('/api/xr18/ip', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip }) }).then(J).catch(e => ({ error: e.message }));
+  toast(r.error ? '⚠ ' + r.error : r.reachable ? '✓ XR18 answered at ' + ip + ' — ' + JSON.stringify(r.probe) : '⚠ saved, but no answer at ' + ip + ' — same network?');
+  pollSlow();
 }
 function xrSnap() { const n = +$('xr-snap').value; if (n >= 1 && n <= 64) xrSet('/-snap/load', n, 'XR18 snapshot ' + n + ' (OSC)'); }
 function xrLrDb(db) { xrSet('/lr/mix/fader', undefined, 'XR18 Main LR → ' + db + ' dB', db); }

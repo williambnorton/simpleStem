@@ -5891,6 +5891,19 @@ app.get('/api/xr18/query', async (req, res) => {
   }
 });
 
+app.post('/api/xr18/ip', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/ip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    }, 6000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
 app.post('/api/xr18/set', async (req, res) => {
   try {
     const r = await sidecarFetch('/xr18/set', {
