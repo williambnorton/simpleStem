@@ -134,7 +134,14 @@ let health = null, xrInfo = null, loop = null, mon = null;
 const $ = (id) => document.getElementById(id);
 function toast(t) { const el = $('toast'); el.innerHTML = t; el.style.display = 'block';
   clearTimeout(toast._t); toast._t = setTimeout(() => el.style.display = 'none', 3200); }
-const J = (r) => r.json();
+const J = async (r) => {
+  const t = await r.text();
+  try { return JSON.parse(t); } catch (e) {
+    return { error: r.status === 404
+      ? 'the running server lacks this endpoint — restart the Performer (./performer.sh restart) to load the new server.js'
+      : 'non-JSON response (' + r.status + ')' };
+  }
+};
 
 async function send(body, what) {
   const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
