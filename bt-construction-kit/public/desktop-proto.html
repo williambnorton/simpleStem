@@ -1960,11 +1960,11 @@ desk.addEventListener('contextmenu', (e) => {
              j.loop === 'broken' ? '🔄 <b>loop broken</b> — no echo. Check XR18/Ditto/Helix thru + the return cable.' :
              '🔄 ' + (j.error || j.hint || 'untestable'));
       } });
-      items.push({ label: '📸 Recall snapshot… (MIDI PC)', run: async () => {
+      items.push({ label: '📸 Recall snapshot… (OSC)', run: async () => {
         const n = parseInt(prompt('Snapshot number 1-64 to recall on the XR18:'), 10);
         if (!(n >= 1 && n <= 64)) return;
-        const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'XR18', type: 'pc', channel: 1, program: n - 1 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
-        hint(r.error ? '📸 ' + r.error : `📸 snapshot <b>${n}</b> recalled (PC ${n} · ch 1).`); setTimeout(showXr18Card, 800);
+        const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/-snap/load', value: n }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        hint(r.ok ? `📸 snapshot <b>${n}</b> loaded over OSC.` : '📸 ' + (r.error || 'failed') + ' — in pass-thru mode the board only listens on OSC; join its network.'); setTimeout(showXr18Card, 800);
       } });
       items.push({ label: '🎚 Set Main LR fader… (OSC)', run: async () => {
         const db = parseFloat(prompt('Main LR fader in dB (-90 … +10). 0 = unity:', '0'));

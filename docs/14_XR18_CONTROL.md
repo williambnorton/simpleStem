@@ -201,3 +201,24 @@ panel per device:
 Sends from the console use `port:'chain'` (explicit chain routing) or
 'XR18'/'IAC' where a real port exists. Reached from the desk: rack
 footer link, or click the MIDI SIDECAR dock panel.
+
+---
+
+# Pass-thru mode verdict (2026-07-17, Bill's final config)
+
+Bill enabled **USB-DIN Pass Thru** — confirmed correct AND
+consequential: in this mode the XR18 becomes a pure USB↔DIN MIDI
+interface (USB→DIN OUT to the chain, DIN IN→USB back) and **the mixer
+itself ignores all MIDI** (the greyed checkboxes are inactive, per the
+X AIR manual's "Using MIDI without affecting XR18"). Division of labor
+from here on:
+
+- **XR18 control = OSC only** (:10024 — laptop must be on the XR18's
+  network). Snapshot recall switched from MIDI PC to OSC `/-snap/load`
+  in both the desk and the console; Main LR fader/mute were already
+  OSC-capable and the console's CC-based versions were replaced.
+- **Chain devices (Ditto ch 4, Stadium ch 5) = MIDI** out the XR18's
+  USB port → DIN OUT.
+- **Return leg** can now come home through the XR18's own DIN IN
+  (DIN IN → USB is part of pass-thru) — the NUX B-8 becomes optional.
+  `MIDI_CHAIN_IN` env pins the return port if both are present.

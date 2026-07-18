@@ -54,16 +54,18 @@
     <div class="row"><span class="k">console</span><span id="xr-net">—</span></div>
     <div class="row"><span class="k">snapshot</span>
       <input type="number" id="xr-snap" min="1" max="64" value="1">
-      <button onclick="xrSnap()">📸 Recall (PC ch1)</button><span id="xr-snapnow"></span></div>
+      <button onclick="xrSnap()">📸 Recall (OSC)</button><span id="xr-snapnow"></span></div>
     <div class="row"><span class="k">Main LR</span>
-      <input type="range" id="xr-lr" min="0" max="127" value="95" oninput="document.getElementById('xr-lrv').textContent=this.value">
-      <span id="xr-lrv">95</span>
-      <button onclick="xrFader(31, +document.getElementById('xr-lr').value)">send CC31 ch1</button></div>
+      <input type="range" id="xr-lr" min="-90" max="10" value="0" oninput="document.getElementById('xr-lrv').textContent=this.value+' dB'">
+      <span id="xr-lrv">0 dB</span>
+      <button onclick="xrLrDb(+document.getElementById('xr-lr').value)">set (OSC)</button></div>
     <div class="row"><span class="k">Main mute</span>
-      <button class="warn" onclick="sendCC(2, 31, 127, 'XR18 Main LR MUTE')">🔇 mute</button>
-      <button onclick="sendCC(2, 31, 0, 'XR18 Main LR unmute')">🔊 unmute</button></div>
+      <button class="warn" onclick="xrSet('/lr/mix/on', 0, 'XR18 Main LR MUTE')">🔇 mute</button>
+      <button onclick="xrSet('/lr/mix/on', 1, 'XR18 Main LR unmute')">🔊 unmute</button></div>
     <div class="row"><span class="k">rx state</span></div>
-    <div class="statebox" id="xr-state">no fader/mute CCs received yet — enable USB Tx on the board to hear its moves</div>
+    <div class="statebox" id="xr-state">USB-DIN Pass Thru is ON: the board IGNORES MIDI (it's a pure
+MIDI interface now) — all XR18 control rides OSC. Join the
+XR18's network for these controls + state.</div>
   </div>
 
   <div class="panel"><h3>🔁 DITTO X4 <span id="dt-tag"></span></h3>
@@ -138,8 +140,15 @@ async function send(body, what) {
   return r;
 }
 const sendCC = (channel, controller, value, what) => send({ port: 'chain', type: 'cc', channel, controller, value }, what);
-function xrSnap() { const n = +$('xr-snap').value; if (n >= 1 && n <= 64) send({ port: 'XR18', type: 'pc', channel: 1, program: n - 1 }, 'XR18 snapshot ' + n); }
-function xrFader(cc, val) { sendCC(1, cc, val, 'XR18 fader CC' + cc + ' → ' + val); }
+async function xrSet(path, value, what, db) {
+  const body = db !== undefined ? { path, db } : { path, value };
+  const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
+  toast(r.ok ? '✓ ' + what + (r.readback ? ' · readback ' + JSON.stringify(r.readback) : '') : '⚠ ' + (r.error || 'failed') + ' — OSC needs the XR18 network');
+  return r;
+}
+function xrSnap() { const n = +$('xr-snap').value; if (n >= 1 && n <= 64) xrSet('/-snap/load', n, 'XR18 snapshot ' + n + ' (OSC)'); }
+function xrLrDb(db) { xrSet('/lr/mix/fader', undefined, 'XR18 Main LR → ' + db + ' dB', db); }
 async function logicKey(action, what) {
   const r = await fetch('/api/desktop/logic-key', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action }) }).then(J).catch(e => ({ error: e.message }));
@@ -192,7 +201,7 @@ function drawTopo() {
   $('topo').innerHTML =
     N(20, 75, 'mac', sidecarUp ? 'ok' : 'bad', '💻 MACBOOK PRO', sidecarUp ? 'sidecar :5555 ✓' : 'sidecar down') +
     E(170, 92, 250, 92, !sidecarUp, 'USB') +
-    N(250, 66, 'xr18', vX, '🎚️ XR18', vX === 'ok' ? 'USB MIDI · ch 1/2/3' : 'via ' + chainName) +
+    N(250, 66, 'xr18', vX, '🎚️ XR18', vX === 'ok' ? 'pass-thru interface · ctrl=OSC' : 'via ' + chainName) +
     E(400, 92, 480, 92, vX === 'bad', 'DIN OUT (pass-thru)') +
     N(480, 66, 'ditto', vD, '🔁 DITTO X4', 'ch 4 fixed') +
     E(630, 92, 710, 92, vD === 'bad', 'THRU') +
