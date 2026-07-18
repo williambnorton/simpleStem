@@ -535,40 +535,56 @@ class Handler(BaseHTTPRequestHandler):
         received = every Thru in XR18 -> Ditto -> Helix -> Mac passes."""
         import random
         out, _routed = get_output(None)
-        inp_name = chain_in_port()
         if not out:
             return self._json(503, {"ok": False, "error": "no chain output port"})
-        if not inp_name:
+        virtual = ("iac", "network", "bluetooth", "ump", "session")
+        in_names = [n for n in mido.get_input_names()
+                    if not any(v in n.lower() for v in virtual)]
+        env = os.environ.get("MIDI_CHAIN_IN")
+        if env:
+            narrowed = [n for n in in_names if env.lower() in n.lower()]
+            in_names = narrowed or in_names
+        if not in_names:
             return self._json(200, {"ok": True, "loop": "untestable",
                                     "hint": "no hardware MIDI input for the return leg"})
         nonce = random.randint(1, 126)
         marker = mido.Message("control_change", channel=15, control=119, value=nonce)
-        try:
-            inp = mido.open_input(inp_name)
-        except Exception as e:
-            return self._json(500, {"ok": False, "error": f"open input failed: {e}"})
-        try:
-            for _m in inp.iter_pending():
+        inps = []
+        for n in in_names:
+            try:
+                inps.append((n, mido.open_input(n)))
+            except Exception:
                 pass
+        if not inps:
+            return self._json(500, {"ok": False, "error": "could not open any return input"})
+        try:
+            for _n, inp in inps:
+                for _m in inp.iter_pending():
+                    pass
             t0 = time.time()
             out.send(marker)
             while time.time() - t0 < 2.0:
-                for msg in inp.iter_pending():
-                    if (msg.type == "control_change" and msg.channel == 15
-                            and msg.control == 119 and msg.value == nonce):
-                        return self._json(200, {"ok": True, "loop": "intact",
-                                                "roundtrip_ms": int((time.time() - t0) * 1000),
-                                                "out": out.name, "inp": inp_name})
+                for n, inp in inps:
+                    for msg in inp.iter_pending():
+                        if (msg.type == "control_change" and msg.channel == 15
+                                and msg.control == 119 and msg.value == nonce):
+                            return self._json(200, {"ok": True, "loop": "intact",
+                                                    "roundtrip_ms": int((time.time() - t0) * 1000),
+                                                    "out": out.name, "heard_on": n,
+                                                    "listened_on": [x[0] for x in inps]})
                 time.sleep(0.01)
             return self._json(200, {"ok": True, "loop": "broken",
-                                    "out": out.name, "inp": inp_name,
-                                    "hint": "no echo — check XR18 MIDI thru, Ditto thru, "
-                                            "Helix MIDI Thru, and the return cable"})
+                                    "out": out.name,
+                                    "listened_on": [x[0] for x in inps],
+                                    "hint": "no echo on ANY hardware input — isolate the break: "
+                                            "cable XR18 DIN OUT straight into the return input "
+                                            "and retest, then re-insert Ditto, then Helix"})
         finally:
-            try:
-                inp.close()
-            except Exception:
-                pass
+            for _n, inp in inps:
+                try:
+                    inp.close()
+                except Exception:
+                    pass
 
     def _xr18_info(self):
         info = xr_exchange("/xinfo", timeout=2.0)

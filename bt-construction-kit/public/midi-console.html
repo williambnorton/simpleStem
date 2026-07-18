@@ -190,8 +190,8 @@ async function loopTest() {
 }
 function paintLoop() {
   $('loop-now').innerHTML = !loop ? 'untested'
-    : loop.loop === 'intact' ? `<span class="ok">INTACT ✓ ${loop.roundtrip_ms} ms</span>`
-    : loop.loop === 'broken' ? '<span class="bad">BROKEN — check thru + return cable</span>'
+    : loop.loop === 'intact' ? `<span class="ok">INTACT ✓ ${loop.roundtrip_ms} ms · heard on ${loop.heard_on || '?'}</span>`
+    : loop.loop === 'broken' ? '<span class="bad">BROKEN</span> — listened on ' + (loop.listened_on || []).join(' + ') + '. Isolate: XR18 DIN OUT straight to the return IN, retest; then add Ditto; then Helix'
     : (loop.hint || loop.error || 'untestable');
 }
 
@@ -224,7 +224,7 @@ function drawTopo() {
     E(630, 92, 710, 92, vD === 'bad', 'THRU') +
     N(710, 66, 'helix', vH, '🏟️ HELIX STADIUM', 'global ch (set 5)') +
     E(860, 92, 940, 92, !loopOk, 'return') +
-    N(940, 66, 'ret', loopOk ? 'ok' : (loop && loop.loop === 'broken') ? 'bad' : 'chain', '↩ NUX B-8 IN', loopOk ? 'loop ' + loop.roundtrip_ms + ' ms ✓' : 'loop unverified') +
+    N(940, 66, 'ret', loopOk ? 'ok' : (loop && loop.loop === 'broken') ? 'bad' : 'chain', '↩ RETURN IN', loopOk ? 'loop ' + loop.roundtrip_ms + ' ms ✓ via ' + String(loop.heard_on || '').slice(0, 12) : (health && (health.inputs || []).filter(n => !/iac|network|bluetooth|ump|session/i.test(n)).slice(0, 2).join(' · ')) || 'no hw input') +
     E(170, 130, 250, 160, vL === 'bad', 'IAC bus (virtual)') +
     N(250, 140, 'logic', vL, '🎹 LOGIC PRO', vL === 'ok' ? 'notes · PC · automation' : 'enable IAC in Audio MIDI Setup') +
     `<text class="elabel" x="580" y="200" text-anchor="middle">${loopOk ? '⛓✓ chain LOOP-VERIFIED — every Thru passing' : 'chain devices are send-only until the loop test passes'}</text>`;
