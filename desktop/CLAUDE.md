@@ -366,3 +366,14 @@ pointer theatrics.
   method: docs/15_DESK_METHOD_TEST_PLAN.md — wire-log line + physical
   proof + safety class per method; Ditto/Stadium sections gated on the
   DIN loop test passing.
+- 2026-07-18 (architecture doc + instrumentation tooltips): the full
+  system map lives in docs/16_SYSTEM_ARCHITECTURE.md (mermaid diagram
+  of both machines, Drive, pipeline, sidecar, OSC, DIN chain, IAC,
+  Logic, PA; GUI description; acronym glossary — MIDI/CC/PC/DIN/PPQN/
+  CoreMIDI/IAC/OSC/UDP/APIPA; instrumentation philosophy: verdicts +
+  wire log + active probes = "is the system telling the truth"). Every
+  rack panel, dock panel, and the wire log now carries a native title
+  tooltip explaining WHAT that instrument shows and HOW it collects it;
+  console topology nodes carry SVG <title> tooltips; console panels
+  too. Desk objects keep their richer hover peeks — tooltips are for
+  the PERIMETER instrumentation.

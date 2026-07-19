@@ -1323,14 +1323,14 @@ function renderRack() {
   const mark = (n) => /xr\s?18|x\s?air/i.test(n) ? ' <span class="ok">←XR18</span>' : /helix|stadium|hx/i.test(n) ? ' <span class="ok">←Stadium</span>' : /ditto/i.test(n) ? ' <span class="ok">←Ditto</span>' : /iac/i.test(n) ? ' <span class="ok">←Logic</span>' : /logic pro virtual/i.test(n) ? ' <span class="ok">←Logic app</span>' : '';
   const portList = (arr) => (arr || []).map(n => '  ' + n.slice(0, 22) + mark(n)).join('\n') || '  (none)';
   rack.innerHTML = `
-    <div class="rack-p ${midiState && midiState.ok ? 'on' : 'off'}" data-open="hub"><h5>💻 MIDI HUB ${midiState && midiState.ok ? '<span class="ok">LIVE ✓</span>' : '<span class="bad">SIDECAR DOWN</span>'}</h5>
+    <div class="rack-p ${midiState && midiState.ok ? 'on' : 'off'}" data-open="hub" title="MIDI HUB — the MacBook's view of every MIDI port on the system, read live from CoreMIDI by the midi_sidecar (:5555). 'Chain head' is the output port all daisy-chained device commands leave through. Outputs = where the Mac can send; inputs = where it listens. Refreshed once per minute."><h5>💻 MIDI HUB ${midiState && midiState.ok ? '<span class="ok">LIVE ✓</span>' : '<span class="bad">SIDECAR DOWN</span>'}</h5>
       <div class="rl">${midiState && midiState.ok ? `<span class="k">chain head</span> ${midiState.chain_port || '?'}
 <span class="k">clock</span> ${midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'}
 <span class="k">outputs (${(midiState.ports || []).length})</span>
 ${portList(midiState.ports)}
 <span class="k">inputs (${(midiState.inputs || []).length})</span>
 ${portList(midiState.inputs)}` : 'start it: ./performer.sh start'}</div></div>
-    <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18"><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}</h5>
+    <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18" title="XR18 panel — live state of the Behringer XR18 mixer. MIDI shows its USB port; OSC (Open Sound Control, UDP :10024) is how the app reads and writes the board: name, firmware, snapshot, Main LR and AUX levels. In pass-thru mode the board ignores MIDI, so OSC is the only control path. Green border = online."><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}</h5>
       <div class="rl"><span class="k">MIDI</span> ${verdictGlyph(vX)} · <span class="k">OSC</span> ${xrOsc ? '✓ ' + (net.name || net.ip) : '✗ (join the XR18\'s network)'}
 ${xrOsc ? `<span class="k">fw</span> ${net.firmware || '?'} · <span class="k">snap</span> #${xr18Slow.snapshot_index != null ? xr18Slow.snapshot_index : '?'}
 <span class="k">Main LR</span> ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db}dB ${lr.muted ? '<span class="bad">MUTED</span>' : 'open'}
@@ -1338,7 +1338,7 @@ ${buses}
 ` : ''}<span class="k">control</span> OSC :10024 read/write all params
 <span class="k">MIDI chart</span> PC/CC ch1-3 <span style="opacity:.55">(ignored: pass-thru ON)</span>
 <span class="k">DIN</span> USB→OUT to chain · IN→USB return</div></div>
-    <div class="rack-p ${cls(vH)}" data-open="helix"><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}</h5>
+    <div class="rack-p ${cls(vH)}" data-open="helix" title="Helix Stadium panel — the guitar rig's full MIDI command map (from the Line 6 manual). No port of its own: commands ride the DIN daisy chain out the chain head, addressed to MIDI channel 5. Amber dashed = chained but unverified; green = loop-verified."><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}</h5>
       <div class="rl"><span class="k">ch</span> 1 global · 2 bypass/ctrl
 <span class="k">preset</span> CC32 bank + PC 0-127
 <span class="k">snapshots</span> CC69 0-7 · 8 next · 9 prev
@@ -1350,7 +1350,7 @@ ${buses}
   CC51 play/pause
 <span class="k">exp</span> CC1/2 · <span class="k">toe</span> CC36 · <span class="k">knobs</span> CC38-45
 <span class="k">tap</span> CC64 · <span class="k">clock</span> send+recv</div></div>
-    <div class="rack-p ${cls(vD)}" data-open="ditto"><h5>🔁 DITTO X4 ${verdictTag(vD)}</h5>
+    <div class="rack-p ${cls(vD)}" data-open="ditto" title="Ditto X4 panel — the TC Electronic looper's MIDI chart. Fixed to channel 4, write-only (it never transmits state), DIN in/thru only. The chain loop test is its liveness proxy."><h5>🔁 DITTO X4 ${verdictTag(vD)}</h5>
       <div class="rl"><span class="k">ch</span> 4 (fixed) · <span class="k">clock</span> receives
 <span class="k">loop 1</span> CC3 rec/dub/play · CC9 stop
   CC14 clear · CC15 level · CC20 store
@@ -1359,7 +1359,7 @@ ${buses}
 <span class="k">both</span> CC29 all stop · CC30 all clear
 <span class="k">fx</span> CC31 on/off · PC1-7 select
 <span class="k">route</span> CC85 serial/parallel</div></div>
-    <div class="rack-p ${cls(vL)}" data-open="logic"><h5>🎹 LOGIC PRO ${verdictTag(vL)}</h5>
+    <div class="rack-p ${cls(vL)}" data-open="logic" title="Logic Pro panel — the automated sound engineer. Talks over the IAC bus (Inter-Application Communication: macOS's built-in virtual MIDI cable between apps, enabled in Audio MIDI Setup). Receives timeline automation and notes, follows the sidecar's 24-ppqn MIDI clock, mixes the 18-channel USB audio from the XR18."><h5>🎹 LOGIC PRO ${verdictTag(vL)}</h5>
       <div class="rl"><span class="k">wire</span> IAC Driver bus (virtual MIDI)
 <span class="k">gets</span> timeline automation events
 <span class="k">clock</span> follows sidecar 24-ppqn
@@ -1402,39 +1402,39 @@ function renderDock() {
   const lr = xr18Slow && xr18Slow.ok ? xr18Slow.main_lr : null;
   const net = xr18Slow && xr18Slow.ok ? xr18Slow.network : null;
   dock.innerHTML = `
-    <div class="dock-p" data-open="xr18"><h5>🎚️ XR18</h5>
+    <div class="dock-p" data-open="xr18" title="XR18 summary — MIDI + OSC verdicts and Main LR state at a glance. Click for the full card; right-click for its methods."><h5>🎚️ XR18</h5>
       <div class="dl">MIDI ${V3(/xr\s?18|x\s?air/i)} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">—</span>'}</div>
       <div class="dl">${lr ? 'Main LR ' + (lr.fader_db === '-inf' ? '-∞' : lr.fader_db) + ' dB' + (lr.muted ? ' · <span class="bad">MUTED</span>' : ' · open') : 'snapshot PC ch1 · faders CC ch1'}</div>
       <div class="dl">${xr18Slow && xr18Slow.ok && xr18Slow.snapshot_index != null ? 'snapshot #' + xr18Slow.snapshot_index : 'mutes CC ch2 · pan CC ch3'}</div></div>
-    <div class="dock-p" data-open="helix"><h5>🏟️ HELIX STADIUM</h5>
+    <div class="dock-p" data-open="helix" title="Stadium summary — connection verdict and key CC numbers. ⛓ means reachable over the daisy chain by channel. Right-click for snapshot/looper/preset methods."><h5>🏟️ HELIX STADIUM</h5>
       <div class="dl">MIDI ${V3(/helix|stadium|hx/i)} · global ch1 · ctrl ch2</div>
       <div class="dl">snap CC69 · preset CC32+PC · tap CC64</div>
       <div class="dl">looper CC52-62 · song cue CC10</div></div>
-    <div class="dock-p" data-open="ditto"><h5>🔁 DITTO X4</h5>
+    <div class="dock-p" data-open="ditto" title="Ditto summary — channel-4 looper command set. Right-click to fire loop record/stop/clear over the chain."><h5>🔁 DITTO X4</h5>
       <div class="dl">MIDI ${V3(/ditto/i)} · ch4 fixed · clock sync</div>
       <div class="dl">L1 CC3/9/14 · L2 CC22/23/24</div>
       <div class="dl">all-stop CC29 · all-clear CC30 · FX CC31</div></div>
-    <div class="dock-p" data-open="sidecar"><h5>🛰 MIDI SIDECAR</h5>
+    <div class="dock-p" data-open="sidecar" title="midi_sidecar.py — the Python daemon on :5555 that owns every MIDI port and the OSC socket. The browser can't touch MIDI reliably, so ALL sends and all listening go through it. Click to open the MIDI Console."><h5>🛰 MIDI SIDECAR</h5>
       <div class="dl">:5555 ${midiState && midiState.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
       <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · click → MIDI CONSOLE</div>
       <div class="dl">Logic IAC ${V3(/iac/i, false)} · chain loop ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '—'}</div></div>
-    <div class="dock-p" data-open="macbook"><h5>💻 MACBOOK · PERFORMER</h5>
+    <div class="dock-p" data-open="macbook" title="The Performer laptop — runs the portal (:3000), the MIDI sidecar (:5555), the Demucs render queue, and the Web Audio six-stem mix. Everything on this desk is driven from here."><h5>💻 MACBOOK · PERFORMER</h5>
       <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
       <div class="dl">cache ${cacheState && (cacheState.done != null) ? cacheState.done + '/' + cacheState.total : '—'} · queue ${qDepth != null ? qDepth : '—'}</div>
       <div class="dl">Demucs · Web Audio mix · automation</div></div>
-    <div class="dock-p" data-open="robot"><h5>🤖 LIBRARIAN · MINI</h5>
+    <div class="dock-p" data-open="robot" title="The Mac mini — background curator. Ingests YouTube links, analyzes BPM/key, keeps CATALOG.json and the band songlist in sync. Green pid = its watcher daemon heartbeat."><h5>🤖 LIBRARIAN · MINI</h5>
       <div class="dl">watcher ${libState && libState.librarianDaemons && libState.librarianDaemons['lib-watcher'] ? (libState.librarianDaemons['lib-watcher'].running ? '<span class="ok">✓ pid ' + libState.librarianDaemons['lib-watcher'].pid + '</span>' : '<span class="bad">DOWN</span>') : '—'}</div>
       <div class="dl">daemons ${libState && libState.librarianDaemons ? Object.values(libState.librarianDaemons).filter(d => d.running).length + '/' + Object.keys(libState.librarianDaemons).length + ' up' : '—'}</div>
       <div class="dl">ingest · metadata · catalog · sheet sync</div></div>
-    <div class="dock-p" data-open="queue"><h5>📥 QUEUE</h5>
+    <div class="dock-p" data-open="queue" title="Render pipeline — .webloc files land in INCOMING_WEBLOC, become jobs in STEM_QUEUE, and Demucs on this laptop separates each song into six stems (~10-25 min each)."><h5>📥 QUEUE</h5>
       <div class="dl">depth ${qDepth != null ? (qDepth ? '<span class="ok">' + qDepth + '</span>' : '0 · idle') : '—'}</div>
       <div class="dl">INCOMING_WEBLOC → STEM_QUEUE</div>
       <div class="dl">Demucs ~10-25 min/song</div></div>
-    <div class="dock-p" data-open="library"><h5>🗄️ LIBRARY + CATALOG</h5>
+    <div class="dock-p" data-open="library" title="The song library — STEMS/ folders with six m4a stems + metadata each, indexed hourly into CATALOG.json, synced between machines by Google Drive, cached locally for offline gigs."><h5>🗄️ LIBRARY + CATALOG</h5>
       <div class="dl">${realLib.length} songs · CATALOG.json hourly</div>
       <div class="dl">gigs ${Array.isArray(gigList) ? gigList.length : '—'} on file</div>
       <div class="dl">☁️ Drive syncs both machines</div></div>
-    <div class="dock-p dock-log" data-open="console"><h5>📡 WIRE LOG — MIDI + OSC, sent + heard (click → full console)</h5>
+    <div class="dock-p dock-log" data-open="console" title="WIRE LOG — every MIDI and OSC message, both directions, timestamped and decoded into plain English. →SENT = the app transmitted; ←HEARD = something arrived on an input (device telemetry or the chain echo). This is the system's truth serum: if a command isn't here, it never left the Mac."><h5>📡 WIRE LOG — MIDI + OSC, sent + heard (click → full console)</h5>
       <div id="desk-wirelog">loading…</div></div>`;
   updateDeskWireLog();
   dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('contextmenu', (e) => bridgeCtx(e, el.dataset.open)));

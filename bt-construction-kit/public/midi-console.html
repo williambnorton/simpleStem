@@ -50,7 +50,7 @@
 <svg id="topo" viewBox="0 0 1160 210" preserveAspectRatio="xMidYMid meet"></svg>
 
 <div class="panels">
-  <div class="panel"><h3>🎚️ XR18 <span id="xr-tag"></span></h3>
+  <div class="panel" title="XR18 control panel — everything here rides OSC (Open Sound Control) over UDP :10024 to the mixer's static IP. In pass-thru mode OSC is the ONLY way the app controls the board."><h3>🎚️ XR18 <span id="xr-tag"></span></h3>
     <div class="row"><span class="k">console</span><span id="xr-net">—</span></div>
     <div class="row"><span class="k">mixer IP</span>
       <input type="text" id="xr-ip" placeholder="from X-AIR-Edit Setup" style="width:130px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
@@ -71,7 +71,7 @@ MIDI interface now) — all XR18 control rides OSC. Join the
 XR18's network for these controls + state.</div>
   </div>
 
-  <div class="panel"><h3>🔁 DITTO X4 <span id="dt-tag"></span></h3>
+  <div class="panel" title="Ditto X4 control panel — each button sends one MIDI CC on channel 4 out the chain head. The pedal never answers; watch its LEDs and the wire log."><h3>🔁 DITTO X4 <span id="dt-tag"></span></h3>
     <div class="row"><span class="k">looper 1</span>
       <button onclick="sendCC(4, 3, 127, 'Ditto L1 rec/dub/play')">⏺ rec/dub/play</button>
       <button onclick="sendCC(4, 9, 127, 'Ditto L1 stop')">⏹ stop</button>
@@ -88,7 +88,7 @@ XR18's network for these controls + state.</div>
 loop test below is its liveness proxy.</div>
   </div>
 
-  <div class="panel"><h3>🏟️ HELIX STADIUM <span id="hx-tag"></span></h3>
+  <div class="panel" title="Helix Stadium control panel — CC/PC commands on the configurable Stadium channel (default 5), from the official Line 6 MIDI map. Patch install lives in the Stadium desktop app."><h3>🏟️ HELIX STADIUM <span id="hx-tag"></span></h3>
     <div class="row"><span class="k">channel</span>
       <input type="number" id="hx-ch" min="1" max="16" value="5">
       <span style="opacity:.6">(set the Stadium's Global MIDI ch to match)</span></div>
@@ -113,7 +113,7 @@ double-click the Stadium node above to open it. RX shows the
 Stadium's own PC/CC69 sends once Send MIDI PC is on.</div>
   </div>
 
-  <div class="panel"><h3>🎹 LOGIC PRO <span id="lg-tag"></span></h3>
+  <div class="panel" title="Logic Pro panel — transport via AppleScript key commands; notes and program changes via the IAC virtual MIDI bus. A record-armed Software Instrument track in Logic receives them."><h3>🎹 LOGIC PRO <span id="lg-tag"></span></h3>
     <div class="row"><span class="k">transport</span>
       <button onclick="logicKey('record','RECORD')">⏺ R</button>
       <button onclick="logicKey('playstop','PLAY/STOP')">⏯ space</button>
@@ -135,7 +135,7 @@ USB from the XR18, and returns the mix. Notes/PC ride IAC — a
 record-armed Software Instrument track receives them.</div>
   </div>
 
-  <div class="panel"><h3>⏱ MIDI CLOCK + CHAIN</h3>
+  <div class="panel" title="MIDI clock — the sidecar generates 24 pulses per quarter note and broadcasts to every output; the Ditto and Stadium sync to it. The DIN loop test sends a marker around the physical chain and listens for its echo."><h3>⏱ MIDI CLOCK + CHAIN</h3>
     <div class="row"><span class="k">clock</span>
       bpm <input type="number" id="ck-bpm" min="30" max="300" value="120">
       <button onclick="clockCtl('start')">▶ start</button>
@@ -149,7 +149,7 @@ lengths to it, the Stadium syncs delays. The loop test sends CC119
 ch16 around the chain and listens for the echo.</div>
   </div>
 
-  <div class="panel" style="grid-column: 1 / -1;"><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
+  <div class="panel" style="grid-column: 1 / -1;" title="The wire log — every MIDI and OSC message, both directions, timestamped with plain-English decoding. →SENT left the Mac; ←HEARD arrived on an input. The system's black-box recorder."><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
     <div class="row"><span class="k">listening on</span><span id="rx-ports">—</span></div>
     <div id="rxlog">no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.</div>
   </div>
@@ -270,8 +270,16 @@ function drawTopo() {
   const vX = verdict(/xr\s?18|x\s?air/i), vH = verdict(/helix|stadium|hx/i), vD = verdict(/ditto/i), vL = verdict(/iac/i, false);
   const chainName = health && health.chain_port ? health.chain_port : 'no chain port';
   const loopOk = loop && loop.loop === 'intact';
+  const NODE_TIPS = {
+    mac: 'The Performer MacBook — runs the portal, the MIDI sidecar (the Python daemon that owns every MIDI port + the OSC socket), Demucs renders, and the Web Audio stem mix.',
+    xr18: 'Behringer XR18 — 18-channel digital mixer. USB carries 18ch audio + MIDI; in USB-DIN Pass Thru mode its DIN jacks become a MIDI interface for the chain and the board itself is controlled over OSC (UDP :10024).',
+    ditto: 'TC Electronic Ditto X4 — two-track looper pedal. Listens on MIDI channel 4 (fixed), write-only, syncs loop lengths to MIDI clock.',
+    helix: 'Line 6 Helix Stadium — guitar amp/FX rig. Desk addresses it on MIDI channel 5; snapshots CC69, presets PC, looper CC52-62. Its MIDI Thru forwards the stream to the return leg.',
+    ret: 'The return leg — the chain loops back to a Mac MIDI input, which lets the loop test PROVE the whole chain passes (send a marker, hear the echo) and carries device telemetry home.',
+    logic: 'Logic Pro — the automated sound engineer. Wired via the IAC bus (Inter-Application Communication: macOS\'s virtual MIDI cable), it receives timeline automation + notes and returns the mixed 18ch USB audio.',
+  };
   const N = (x, y, id, cls, name, sub) =>
-    `<g class="n-${cls}" data-id="${id}"><rect x="${x}" y="${y}" width="150" height="52"/>` +
+    `<g class="n-${cls}" data-id="${id}"><title>${NODE_TIPS[id] || ''}</title><rect x="${x}" y="${y}" width="150" height="52"/>` +
     `<text x="${x + 75}" y="${y + 21}" text-anchor="middle">${name}</text>` +
     `<text class="nsub" x="${x + 75}" y="${y + 38}" text-anchor="middle">${sub}</text></g>`;
   const E = (x1, y1, x2, y2, dead, label) =>
