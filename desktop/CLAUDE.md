@@ -355,3 +355,14 @@ pointer theatrics.
   sub + rack panel say ctrl=OSC / chart-ignored so pass-thru can't
   mislead. Verified by driving Chrome: menus, bridges, cards, browser,
   aggregate make/unmake, wire log accumulating SENT+HEARD.
+- 2026-07-18 (Logic repair + guard): enabled the IAC bus FOR Bill via
+  computer use (Audio MIDI Setup > IAC Driver > Device is online — the
+  box was unchecked; Bus 1 already existed). Ports appear WITHOUT a
+  sidecar restart (names enumerated per call). Verified end-to-end:
+  note 60 out IAC, loopback in the wire log, Logic node green. Guard
+  added in get_output: IAC/Logic-bound sends NEVER chain-fallback (they
+  were routing to the DIN chain when the bus was missing); they try
+  'Logic Pro Virtual In' instead, else 404. Test plan for every desk
+  method: docs/15_DESK_METHOD_TEST_PLAN.md — wire-log line + physical
+  proof + safety class per method; Ditto/Stadium sections gated on the
+  DIN loop test passing.

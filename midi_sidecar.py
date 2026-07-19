@@ -284,6 +284,16 @@ def chain_in_port():
 def get_output(needle, allow_chain=True):
     name = find_port(needle)
     routed = "direct"
+    low = (needle or "").lower()
+    if not name and ("iac" in low or "logic" in low):
+        # Logic-bound messages must NEVER fall back to the DIN chain —
+        # notes meant for the DAW would hit the Ditto/Stadium. Try
+        # Logic's own virtual input instead (exists whenever Logic
+        # runs, even with the IAC bus disabled).
+        name = find_port("logic pro virtual in")
+        routed = "logic-virtual"
+        if not name:
+            return None, None
     if not name and allow_chain:
         name = chain_port()
         routed = "chain"
