@@ -341,3 +341,17 @@ pointer theatrics.
   perimeter. Stemcutter's slot-machine emoji replaced with STEMCUT_ART:
   an inline SVG of a machine with one paper in the intake tray and six
   stem-colored sheets fanned in the out tray.
+- 2026-07-18 (bug-hunt round, browser-driven): THIRD TDZ boot crash
+  (chainLoop/deskMon declared mid-file, boot renderDock() ran first) —
+  the lesson is now a RULE: every `let` the desk shares goes on the ONE
+  state line at the top (`let libState … midiState, xr18Slow, chainLoop,
+  deskMon`), and any new boot-time call must be checked against it.
+  Other fixes: Stadium desk channel default unified to 5 everywhere
+  (menu, prompt, object sub — decoder already assumed 5, menus sent
+  ch1); disassemble() defaults to newest aggregate instead of throwing;
+  MacBook card reads bootVersion; chain in/out candidates exclude
+  '*virtual*' ports (Logic Pro Virtual Out was polluting loop-test
+  listen list); console mixer-IP prefills from /health xr18_ip; XR18
+  sub + rack panel say ctrl=OSC / chart-ignored so pass-thru can't
+  mislead. Verified by driving Chrome: menus, bridges, cards, browser,
+  aggregate make/unmake, wire log accumulating SENT+HEARD.

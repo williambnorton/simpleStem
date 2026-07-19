@@ -334,6 +334,8 @@ function paintState() {
 
 async function pollFast() {
   health = await fetch('/api/midi/health').then(J).catch(() => null);
+  const ipEl = $('xr-ip');
+  if (health && health.ok && health.xr18_ip && !ipEl.value && document.activeElement !== ipEl) ipEl.value = health.xr18_ip;
   mon = await fetch('/api/midi/monitor').then(J).catch(() => null);
   drawTopo(); paintState();
 }

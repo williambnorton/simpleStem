@@ -252,7 +252,7 @@ def chain_port():
     name = find_port("xr18")
     if name:
         return name
-    virtual = ("iac", "network", "bluetooth", "ump", "session")
+    virtual = ("iac", "network", "bluetooth", "ump", "session", "virtual")
     for n in mido.get_output_names():
         low = n.lower()
         if not any(v in low for v in virtual):
@@ -264,7 +264,7 @@ def chain_in_port():
     """The chain's RETURN port (Helix -> back to the Mac's MIDI IN).
     Override with MIDI_CHAIN_IN; else first non-virtual input."""
     env = os.environ.get("MIDI_CHAIN_IN")
-    virtual = ("iac", "network", "bluetooth", "ump", "session")
+    virtual = ("iac", "network", "bluetooth", "ump", "session", "virtual")
     try:
         names = mido.get_input_names()
     except Exception:
@@ -527,6 +527,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "ports": mido.get_output_names(),
                                     "inputs": mido.get_input_names(),
                                     "chain_port": chain,
+                                    "xr18_ip": xr_configured_ip(),
                                     "clock": {"running": _clock.running, "bpm": _clock.bpm}})
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
@@ -561,7 +562,7 @@ class Handler(BaseHTTPRequestHandler):
         out, _routed = get_output(None)
         if not out:
             return self._json(503, {"ok": False, "error": "no chain output port"})
-        virtual = ("iac", "network", "bluetooth", "ump", "session")
+        virtual = ("iac", "network", "bluetooth", "ump", "session", "virtual")
         in_names = [n for n in mido.get_input_names()
                     if not any(v in n.lower() for v in virtual)]
         env = os.environ.get("MIDI_CHAIN_IN")

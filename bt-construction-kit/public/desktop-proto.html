@@ -428,7 +428,7 @@ const logic   = machineDef('logic', '🎹', 'LOGIC PRO', 'drop an audio file —
 // to Main L/R and AUX 1-6. Drawn as objects + animated signal wires.
 const mics    = machineDef('mics', '🎤', 'MICS', 'vocal mics → XR18 inputs 1-4', W*0.56, H*0.78, [], 'info');
 const instr   = machineDef('instr', '🎸', 'INSTRUMENTS', 'guitars · bass · keys → XR18 inputs', W*0.68, H*0.78, [], 'info');
-const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig · MIDI ch 1', W*0.50, H*0.62, [], 'info');
+const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig · MIDI ch ' + (parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5), W*0.50, H*0.62, [], 'info');
 const ditto   = machineDef('ditto', '🔁', 'DITTO X4', 'looper · MIDI ch 4', W*0.585, H*0.62, [], 'info');
 const macbook = machineDef('macbook', '💻', 'MACBOOK PRO', 'the Performer · portal host', W*0.30, H*0.36, [], 'info');
 const mains   = machineDef('mains', '🔊', 'MAIN L/R', 'front of house', W*0.79, H*0.42, [], 'info');
@@ -473,7 +473,7 @@ function redrawWires() {
 setInterval(redrawWires, 1000);
 setTimeout(redrawWires, 300);
 let libState = null, cacheState = null, gigList = null, qDepth = null;
-let midiState = null, xr18Slow = null;
+let midiState = null, xr18Slow = null, chainLoop = null, deskMon = null;
 
 /* ── REAL DATA: the desk boots from Bill's actual library ─────────────── */
 let realLib = [];        // /api/library songs
@@ -849,6 +849,8 @@ function makeAggregate(a, b) {
   return agg;
 }
 function disassemble(agg) {
+  if (!agg) agg = aggregates[aggregates.length - 1];
+  if (!agg) { hint('no aggregate on the desk to take apart.'); return; }
   const [a, b] = agg.parts;
   a.el.style.display = ''; b.el.style.display = '';
   a.el.style.left = (agg.el.offsetLeft - 80) + 'px'; a.x = agg.el.offsetLeft - 80;
@@ -1039,7 +1041,7 @@ async function pollSlowInstruments() {
     xr18.el.classList.toggle('midi-down', !h.ok);
     xr18.el.querySelector('.sub').textContent =
       !h.ok ? 'MIDI sidecar down — ./performer.sh status' :
-      okOut ? `MIDI ✓ wired (out${okIn ? '+in' : ''}) · ${outs.length} ports${h.clock && h.clock.running ? ' · clock ' + h.clock.bpm : ''}` :
+      okOut ? `MIDI ✓ wired (out${okIn ? '+in' : ''}) · ctrl=OSC${h.clock && h.clock.running ? ' · clock ' + h.clock.bpm : ''}` :
       `MIDI ✗ XR18 not on the bus · ${outs.length} ports up`;
   } catch (e) { midiState = null; xr18.el.classList.add('midi-down'); }
   const applyV = (el, v) => {
@@ -1158,7 +1160,6 @@ async function sendCC(port, channel, controller, value, what) {
    states: down (sidecar), ok (its own port), chain (reachable send-only
    over the DIN daisy chain — amber, honest), bad (nothing). Devices NOT
    on the physical chain (Logic/IAC) never get the chain state. */
-let chainLoop = null;
 function midiVerdict(re, chainDevice = true) {
   if (!midiState || !midiState.ok) return { state: 'down' };
   const direct = (midiState.ports || []).some(n => re.test(n));
@@ -1265,7 +1266,7 @@ async function showMacbookCard() {
     ]);
     const cs = c.state || c;
     document.getElementById('card-body').innerHTML =
-      `<h3>💻 MACBOOK PRO — the Performer</h3><div class="file"><span class="meta-k">portal</span>: up · build ${h.version || h.boot_version || '?'}
+      `<h3>💻 MACBOOK PRO — the Performer</h3><div class="file"><span class="meta-k">portal</span>: up · build ${h.bootVersion || h.version || '?'}
 <span class="meta-k">library</span>: ${realLib.length} songs
 <span class="meta-k">offline cache</span>: ${cs.done != null ? cs.done + '/' + cs.total + ' songs' : '?'}
 <span class="meta-k">render queue</span>: ${Array.isArray(q.queued) ? q.queued.length + ' queued · ' + (q.incoming || []).length + ' incoming' : 'idle'}
@@ -1292,7 +1293,6 @@ function deskDecode(e) {
   if ((e.type || '').startsWith('note')) return /iac|logic/i.test(e.port || '') ? 'Logic note' : null;
   return null;
 }
-let deskMon = null;
 function updateDeskWireLog() {
   const el = document.getElementById('desk-wirelog');
   if (!el) return;
@@ -1335,10 +1335,9 @@ ${portList(midiState.inputs)}` : 'start it: ./performer.sh start'}</div></div>
 ${xrOsc ? `<span class="k">fw</span> ${net.firmware || '?'} · <span class="k">snap</span> #${xr18Slow.snapshot_index != null ? xr18Slow.snapshot_index : '?'}
 <span class="k">Main LR</span> ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db}dB ${lr.muted ? '<span class="bad">MUTED</span>' : 'open'}
 ${buses}
-` : ''}<span class="k">snapshots</span> PC1-64 ch1
-<span class="k">faders</span> CC0-31 ch1 (31=LR, 21-26=AUX)
-<span class="k">mutes</span> CC ch2 · <span class="k">pan</span> CC ch3
-<span class="k">OSC</span> :10024 read/write all params</div></div>
+` : ''}<span class="k">control</span> OSC :10024 read/write all params
+<span class="k">MIDI chart</span> PC/CC ch1-3 <span style="opacity:.55">(ignored: pass-thru ON)</span>
+<span class="k">DIN</span> USB→OUT to chain · IN→USB return</div></div>
     <div class="rack-p ${cls(vH)}" data-open="helix"><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}</h5>
       <div class="rl"><span class="k">ch</span> 1 global · 2 bypass/ctrl
 <span class="k">preset</span> CC32 bank + PC 0-127
@@ -2071,10 +2070,10 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
     }
     if (o.id === 'helix') {
-      const hch = () => parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1;
+      const hch = () => parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5;
       items.push({ label: '🔎 MIDI instrumentation card', run: showHelixCard });
-      items.push({ label: `🔧 Desk MIDI channel… (now ${parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1})`, run: () => {
-        const n = parseInt(prompt('MIDI channel the desk uses for the Stadium (1-16).\nOn the shared daisy chain, ch 1 COLLIDES with the XR18 fader map — set the Stadium\'s Global MIDI channel to 5 and enter 5 here:', String(parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 1)), 10);
+      items.push({ label: `🔧 Desk MIDI channel… (now ${parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5})`, run: () => {
+        const n = parseInt(prompt('MIDI channel the desk uses for the Stadium (1-16).\nOn the shared daisy chain, ch 1 COLLIDES with the XR18 fader map — set the Stadium\'s Global MIDI channel to 5 and enter 5 here:', String(parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5)), 10);
         if (n >= 1 && n <= 16) { localStorage.setItem('desk.helixMidiChannel', String(n)); hint('🔧 Stadium desk channel → ' + n + '.'); }
       } });
       items.push({ label: '📸 Snapshot 1-8…', run: () => { const n = parseInt(prompt('Snapshot 1-8:'), 10); if (n >= 1 && n <= 8) sendCC('helix', hch(), 69, n - 1, 'Stadium snapshot ' + n); } });
