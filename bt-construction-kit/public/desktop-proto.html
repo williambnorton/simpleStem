@@ -255,6 +255,12 @@
   .dock-p .dl { font: 10px/1.55 Menlo, monospace; color: #9fb3c8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dock-p .ok { color: #00e676; font-weight: 700; }
   .dock-p .bad { color: #ff5252; font-weight: 700; }
+  .dock-p.dock-log { min-width: 430px; flex: 2.4; cursor: default; }
+  #desk-wirelog { font: 9.5px/1.55 Menlo, monospace; max-height: 74px; overflow-y: auto;
+    white-space: pre; color: #9fb3c8; }
+  #desk-wirelog .tx { color: #00e676; font-weight: 700; }
+  #desk-wirelog .hx { color: #f1c40f; font-weight: 700; }
+  #desk-wirelog .sem { color: #7fd6a4; }
 
   /* machine-role zones: the Librarian's work happens in the background */
   .zone {
@@ -355,7 +361,25 @@ const W = innerWidth, H = innerHeight;
 
 place('url', `<div class="art">🔗</div><div class="label">youtube.com/…dQw4</div><div class="sub">a URL — drag me</div>`, 60, H*0.18, 'url');
 
-const stemcutter = machineDef('stemcutter', '🎰', 'STEMCUTTER', 'URL slot · saws songs into stems', W*0.30, H*0.12, ['url'], 'stemcut');
+const STEMCUT_ART = `<svg width="60" height="56" viewBox="0 0 60 56" style="display:block">
+  <rect x="14" y="2" width="18" height="12" rx="1.5" fill="#e8eef4" stroke="#9fb3c8" stroke-width="1" transform="rotate(-4 23 8)"/>
+  <line x1="17" y1="6" x2="29" y2="6" stroke="#9fb3c8" stroke-width="1"/>
+  <line x1="17" y1="9" x2="29" y2="9" stroke="#9fb3c8" stroke-width="1"/>
+  <path d="M 8 12 L 38 12 L 36 18 L 10 18 Z" fill="#38434f"/>
+  <rect x="4" y="16" width="52" height="22" rx="5" fill="#5a6a7d"/>
+  <rect x="4" y="16" width="52" height="6" rx="3" fill="#6d7f94"/>
+  <circle cx="49" cy="27" r="2.5" fill="#00e676"/>
+  <path d="M 6 38 L 54 38 L 57 46 L 3 46 Z" fill="#38434f"/>
+  <g stroke-width="1">
+    <rect x="6"  y="40" width="7" height="10" rx="1" fill="#ffd54f" stroke="#38434f" transform="rotate(-10 9 45)"/>
+    <rect x="14" y="39" width="7" height="11" rx="1" fill="#ff8a65" stroke="#38434f" transform="rotate(-6 17 45)"/>
+    <rect x="22" y="38" width="7" height="12" rx="1" fill="#4fc3f7" stroke="#38434f"/>
+    <rect x="30" y="38" width="7" height="12" rx="1" fill="#aed581" stroke="#38434f"/>
+    <rect x="38" y="39" width="7" height="11" rx="1" fill="#ce93d8" stroke="#38434f" transform="rotate(6 41 45)"/>
+    <rect x="46" y="40" width="7" height="10" rx="1" fill="#e8eef4" stroke="#38434f" transform="rotate(10 49 45)"/>
+  </g>
+</svg>`;
+const stemcutter = machineDef('stemcutter', STEMCUT_ART, 'STEMCUTTER', 'one song in · six stems out', W*0.30, H*0.12, ['url'], 'stemcut');
 const tagger     = machineDef('tagger', '🗳️', 'TAGGER', 'folder tray · fills the metadata card', W*0.60, H*0.12, ['folder-raw'], 'tag');
 const library    = machineDef('library', '<span class="lib-art">🗄️<span class="lib-drawer"></span></span>', 'LIBRARY', 'loading your library…', W*0.60, H*0.60, ['folder-tagged'], 'shelve');
 const amp        = machineDef('amp', '🎛️', 'THE AMP', 'drop anything playable', W*0.30, H*0.60, ['folder-raw','folder-tagged'], 'play');
@@ -1045,6 +1069,8 @@ function flyChip(from, to, text) {
 setInterval(pollSystem, 6000);
 pollSystem();
 renderDock();
+setInterval(() => { fetch('/api/midi/monitor').then(r => r.json()).then(j => { deskMon = j; updateDeskWireLog(); }).catch(() => {}); }, 6000);
+setTimeout(() => { fetch('/api/midi/monitor').then(r => r.json()).then(j => { deskMon = j; updateDeskWireLog(); }).catch(() => {}); }, 2000);
 
 // CACHE double-click: an in-desk FILE TREE of ~/.bt-cache (Bill
 // 2026-07-15), scrollable, with per-branch file counts and sizes.
@@ -1247,6 +1273,43 @@ async function showMacbookCard() {
 <span class="meta-k">drives</span>: Helix Stadium + Ditto X4 + XR18 over MIDI/OSC</div>`;
   } catch (e) {}
 }
+const DESK_DITTO_CC = { 3: 'Ditto L1 rec/dub/play', 9: 'Ditto L1 stop', 14: 'Ditto L1 clear', 15: 'Ditto L1 level', 20: 'Ditto L1 store', 22: 'Ditto L2 rec/dub/play', 23: 'Ditto L2 stop', 24: 'Ditto L2 clear', 25: 'Ditto L2 level', 28: 'Ditto decay', 29: 'Ditto ALL STOP', 30: 'Ditto ALL CLEAR', 31: 'Ditto FX', 85: 'Ditto ser/par' };
+const DESK_STADIUM_CC = { 69: 'Stadium snapshot', 58: 'Stadium looper rec', 59: 'Stadium looper play/stop', 60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium undo', 54: 'Stadium ½spd', 55: 'Stadium rev', 62: 'Stadium looper blk', 64: 'Stadium tap', 32: 'Stadium setlist', 10: 'Stadium song cue', 51: 'Stadium play/pause' };
+function deskDecode(e) {
+  const stadiumCh = parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5;
+  if (e.proto === 'osc') {
+    if (e.path === '/-snap/load') return 'XR18 snapshot load';
+    if (e.path === '/lr/mix/fader') return 'XR18 Main LR fader';
+    if (e.path === '/lr/mix/on') return 'XR18 Main LR ' + ((e.args || [])[0] === 0 ? 'MUTE' : 'open');
+    if (e.path === '/xinfo') return 'XR18 identity';
+    return null;
+  }
+  if (e.channel === 16 && e.control === 119) return 'chain loop-test marker';
+  if (e.channel === 4 && e.type === 'control_change') return DESK_DITTO_CC[e.control] || 'Ditto CC';
+  if (e.channel === stadiumCh && e.type === 'control_change') return DESK_STADIUM_CC[e.control] || 'Stadium CC';
+  if (e.channel === stadiumCh && e.type === 'program_change') return 'Stadium preset';
+  if (e.channel >= 1 && e.channel <= 3 && e.type === 'control_change' && e.control <= 39) return 'XR18 chart (ignored: pass-thru)';
+  if ((e.type || '').startsWith('note')) return /iac|logic/i.test(e.port || '') ? 'Logic note' : null;
+  return null;
+}
+let deskMon = null;
+function updateDeskWireLog() {
+  const el = document.getElementById('desk-wirelog');
+  if (!el) return;
+  const evs = deskMon && deskMon.ok ? (deskMon.events || []).slice(-16).reverse() : [];
+  el.innerHTML = evs.length ? evs.map(e => {
+    const tm = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.round((e.t % 1) * 10));
+    const arrow = e.dir === 'tx' ? '<span class="tx">→SENT</span>' : '<span class="hx">←HEARD</span>';
+    let det;
+    if (e.proto === 'osc') det = `OSC ${e.path} ${JSON.stringify(e.args)}`;
+    else if (e.type === 'control_change') det = `ch${e.channel} CC${e.control}=${e.value}`;
+    else if (e.type === 'program_change') det = `ch${e.channel} PC${e.program}`;
+    else if ((e.type || '').startsWith('note')) det = `ch${e.channel} ${e.type} ${e.note} v${e.velocity}`;
+    else det = e.type;
+    const sem = deskDecode(e);
+    return `${tm} ${arrow} ${(e.port || '').slice(0, 14).padEnd(14)} ${det}${sem ? ' <span class="sem">· ' + sem + '</span>' : ''}`;
+  }).join('\n') : 'wire silent — fire a device method (right-click a device) or run the loop test';
+}
 function renderRack() {
   const rack = document.getElementById('rack');
   if (!rack) return;
@@ -1257,7 +1320,16 @@ function renderRack() {
   const xrMidi = vX.state === 'ok', xrOsc = !!(xr18Slow && xr18Slow.ok);
   const lr = xrOsc ? xr18Slow.main_lr : null, net = xrOsc ? xr18Slow.network : null;
   const buses = xrOsc ? (xr18Slow.aux_buses || []).map(b => `AUX${b.bus} ${b.name || ''} ${b.fader_db === '-inf' ? '-∞' : b.fader_db}dB`).join('\n') : '';
+  const mark = (n) => /xr\s?18|x\s?air/i.test(n) ? ' <span class="ok">←XR18</span>' : /helix|stadium|hx/i.test(n) ? ' <span class="ok">←Stadium</span>' : /ditto/i.test(n) ? ' <span class="ok">←Ditto</span>' : /iac/i.test(n) ? ' <span class="ok">←Logic</span>' : /logic pro virtual/i.test(n) ? ' <span class="ok">←Logic app</span>' : '';
+  const portList = (arr) => (arr || []).map(n => '  ' + n.slice(0, 22) + mark(n)).join('\n') || '  (none)';
   rack.innerHTML = `
+    <div class="rack-p ${midiState && midiState.ok ? 'on' : 'off'}" data-open="hub"><h5>💻 MIDI HUB ${midiState && midiState.ok ? '<span class="ok">LIVE ✓</span>' : '<span class="bad">SIDECAR DOWN</span>'}</h5>
+      <div class="rl">${midiState && midiState.ok ? `<span class="k">chain head</span> ${midiState.chain_port || '?'}
+<span class="k">clock</span> ${midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'}
+<span class="k">outputs (${(midiState.ports || []).length})</span>
+${portList(midiState.ports)}
+<span class="k">inputs (${(midiState.inputs || []).length})</span>
+${portList(midiState.inputs)}` : 'start it: ./performer.sh start'}</div></div>
     <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18"><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}</h5>
       <div class="rl"><span class="k">MIDI</span> ${verdictGlyph(vX)} · <span class="k">OSC</span> ${xrOsc ? '✓ ' + (net.name || net.ip) : '✗ (join the XR18\'s network)'}
 ${xrOsc ? `<span class="k">fw</span> ${net.firmware || '?'} · <span class="k">snap</span> #${xr18Slow.snapshot_index != null ? xr18Slow.snapshot_index : '?'}
@@ -1296,11 +1368,23 @@ ${buses}
     <div class="rl" style="text-align:center"><span class="k">DIN chain loop</span> ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">INTACT ✓ ' + chainLoop.roundtrip_ms + ' ms round trip</span>' : chainLoop.loop === 'broken' ? '<span class="bad">BROKEN — check thru switches + return cable</span>' : 'untestable (no return input)') : 'untested'}</div>
     <div class="rl" style="opacity:.7;text-align:center"><a href="/midi-console.html" target="_blank" style="color:#7fd6a4">🎛 open the MIDI CONSOLE — topology + live state + controls</a></div>
     <div class="rl" style="opacity:.5;text-align:center">rack refreshed ${stamp} · every 60 s</div>`;
+  rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('contextmenu', (e) => bridgeCtx(e, el.dataset.open)));
   rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
     if (k === 'xr18') showXr18Card(); else if (k === 'helix') showHelixCard();
     else if (k === 'ditto') showDittoCard(); else if (k === 'logic') openSpecial('__LOGIC__', 'Logic Pro');
+    else if (k === 'hub') window.open('/midi-console.html', '_blank');
   }));
+}
+function bridgeCtx(e, key) {
+  e.preventDefault();
+  e.stopPropagation();
+  const id = { xr18: 'xr18', helix: 'helix', ditto: 'ditto', logic: 'logic', macbook: 'macbook',
+               robot: 'robot', queue: 'qtray', library: 'library', hub: 'macbook',
+               sidecar: 'macbook', console: 'macbook' }[key];
+  const o = id && machines.find(m => m.id === id);
+  if (!o) return;
+  o.el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
 }
 async function pollSurround() {
   try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) { midiState = null; }
@@ -1350,12 +1434,16 @@ function renderDock() {
     <div class="dock-p" data-open="library"><h5>🗄️ LIBRARY + CATALOG</h5>
       <div class="dl">${realLib.length} songs · CATALOG.json hourly</div>
       <div class="dl">gigs ${Array.isArray(gigList) ? gigList.length : '—'} on file</div>
-      <div class="dl">☁️ Drive syncs both machines</div></div>`;
+      <div class="dl">☁️ Drive syncs both machines</div></div>
+    <div class="dock-p dock-log" data-open="console"><h5>📡 WIRE LOG — MIDI + OSC, sent + heard (click → full console)</h5>
+      <div id="desk-wirelog">loading…</div></div>`;
+  updateDeskWireLog();
+  dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('contextmenu', (e) => bridgeCtx(e, el.dataset.open)));
   dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
     if (k === 'xr18') showXr18Card(); else if (k === 'helix') showHelixCard();
     else if (k === 'ditto') showDittoCard(); else if (k === 'macbook') showMacbookCard();
-    else if (k === 'sidecar') window.open('/midi-console.html', '_blank');
+    else if (k === 'sidecar' || k === 'console') window.open('/midi-console.html', '_blank');
     else if (k === 'robot') window.open('/librarian.html', '_blank');
     else if (k === 'queue') showQueueCard();
     else if (k === 'library') showObjectBrowser();

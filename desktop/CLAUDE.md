@@ -328,3 +328,16 @@ pointer theatrics.
   device's panel, dblclick opens the real app; app opens now WAIT for
   `open`'s exit code and report "app not installed?" instead of failing
   silently (that silence read as "double-click does nothing").
+- 2026-07-18 (desk surround round two): the WIRE LOG is now ON THE DESK
+  — a wide dock panel polling /api/midi/monitor every 6 s, rendering
+  →SENT/←HEARD with the same semantics decoder as the console
+  (deskDecode; Stadium channel from desk.helixMidiChannel). The rack
+  gained a 💻 MIDI HUB panel at top: chain head, clock, full output +
+  input port lists with device marks — the XR18-card "live MIDI
+  properties" without any clicking. Right-click on ANY rack/dock panel
+  now bridges to the corresponding desk object's real method menu
+  (bridgeCtx dispatches a synthetic contextmenu on the object's el so
+  ONE menu builder serves every surface) — no more browser menu on the
+  perimeter. Stemcutter's slot-machine emoji replaced with STEMCUT_ART:
+  an inline SVG of a machine with one paper in the intake tray and six
+  stem-colored sheets fanned in the out tray.
