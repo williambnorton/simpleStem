@@ -164,7 +164,7 @@ def xr_discover(timeout=1.5):
         sk.close()
 
 
-def xr_exchange(path, args=(), timeout=1.5, expect_reply=True):
+def xr_exchange(path, args=(), timeout=1.5, expect_reply=True, log=False):
     addr = xr_discover()
     if not addr:
         return None
@@ -172,6 +172,8 @@ def xr_exchange(path, args=(), timeout=1.5, expect_reply=True):
     sk.settimeout(timeout)
     try:
         sk.sendto(osc_encode(path, args), addr)
+        if log:
+            _record_osc("tx", path, list(args))
         if not expect_reply:
             return {"sent": True}
         deadline = time.time() + timeout
@@ -179,6 +181,8 @@ def xr_exchange(path, args=(), timeout=1.5, expect_reply=True):
             data, _ = sk.recvfrom(4096)
             raddr, rargs = osc_decode(data)
             if raddr == path or path == "/xinfo":
+                if log:
+                    _record_osc("rx", raddr, rargs)
                 return {"path": raddr, "args": rargs}
         return None
     except Exception:
@@ -401,7 +405,8 @@ _rx = {"events": deque(maxlen=150), "listening": [],
 def _record_rx(port, msg):
     if msg.type in ("clock", "active_sensing", "start", "stop", "continue"):
         return
-    ev = {"t": round(time.time(), 3), "port": port, "type": msg.type}
+    ev = {"t": round(time.time(), 3), "port": port, "type": msg.type,
+          "dir": "rx", "proto": "midi"}
     for attr in ("channel", "control", "value", "program", "note", "velocity"):
         if hasattr(msg, attr):
             ev[attr] = getattr(msg, attr)
@@ -421,6 +426,25 @@ def _record_rx(port, msg):
             _rx["derived"]["stadium"]["snapshot"] = msg.value + 1 if msg.value <= 7 else None
     elif msg.type == "program_change":
         _rx["derived"]["stadium"]["program"] = msg.program
+
+
+def _record_tx(port, msg):
+    """Log an OUTBOUND MIDI message into the same wire log the RX
+    monitor uses, so the console shows the full conversation."""
+    ev = {"t": round(time.time(), 3), "port": port, "type": msg.type,
+          "dir": "tx", "proto": "midi"}
+    for attr in ("channel", "control", "value", "program", "note", "velocity"):
+        if hasattr(msg, attr):
+            ev[attr] = getattr(msg, attr)
+    if "channel" in ev:
+        ev["channel"] += 1
+    _rx["events"].append(ev)
+
+
+def _record_osc(direction, path, args):
+    _rx["events"].append({"t": round(time.time(), 3), "port": "XR18 UDP:10024",
+                          "type": "osc", "dir": direction, "proto": "osc",
+                          "path": path, "args": args})
 
 
 def _rx_loop():
@@ -522,7 +546,7 @@ class Handler(BaseHTTPRequestHandler):
             osc_path = (q.get("path") or [""])[0]
             if not osc_path.startswith("/"):
                 return self._json(400, {"error": "path must start with /"})
-            r = xr_exchange(osc_path)
+            r = xr_exchange(osc_path, log=True)
             if r is None:
                 return self._json(503, {"ok": False, "error": "XR18 unreachable"})
             return self._json(200, {"ok": True, **r})
@@ -563,6 +587,7 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             t0 = time.time()
             out.send(marker)
+            _record_tx(out.name, marker)
             while time.time() - t0 < 2.0:
                 for n, inp in inps:
                     for msg in inp.iter_pending():
@@ -655,10 +680,10 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("db") is not None:
                 value = db_to_fader(body["db"])
             args = [] if value is None else [value]
-            r = xr_exchange(osc_path, args, expect_reply=False)
+            r = xr_exchange(osc_path, args, expect_reply=False, log=True)
             if r is None:
                 return self._json(503, {"ok": False, "error": "XR18 unreachable"})
-            back = xr_exchange(osc_path)
+            back = xr_exchange(osc_path, log=True)
             return self._json(200, {"ok": True, "set": osc_path, "value": value,
                                     "readback": (back or {}).get("args")})
         self._json(404, {"error": "not found"})
@@ -700,6 +725,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": str(e)})
         try:
             out.send(msg)
+            _record_tx(out.name, msg)
         except Exception as e:
             return self._json(500, {"error": f"send failed: {e}"})
         return self._json(200, {"ok": True, "sent_to": out.name, "routed": routed, "msg": str(msg)})

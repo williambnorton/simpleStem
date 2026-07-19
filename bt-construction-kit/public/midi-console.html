@@ -88,6 +88,31 @@ XR18's network for these controls + state.</div>
 loop test below is its liveness proxy.</div>
   </div>
 
+  <div class="panel"><h3>🏟️ HELIX STADIUM <span id="hx-tag"></span></h3>
+    <div class="row"><span class="k">channel</span>
+      <input type="number" id="hx-ch" min="1" max="16" value="5">
+      <span style="opacity:.6">(set the Stadium's Global MIDI ch to match)</span></div>
+    <div class="row"><span class="k">snapshot</span>
+      <button onclick="hx(69, 0, 'Stadium snapshot 1')">1</button>
+      <button onclick="hx(69, 1, 'Stadium snapshot 2')">2</button>
+      <button onclick="hx(69, 2, 'Stadium snapshot 3')">3</button>
+      <button onclick="hx(69, 3, 'Stadium snapshot 4')">4</button>
+      <button onclick="hx(69, 8, 'Stadium next snapshot')">next ▸</button></div>
+    <div class="row"><span class="k">preset</span>
+      pgm <input type="number" id="hx-pgm" min="0" max="127" value="0">
+      <button onclick="hxPC()">🎵 PC send</button></div>
+    <div class="row"><span class="k">looper</span>
+      <button onclick="hx(58, 127, 'Stadium looper RECORD')">⏺ rec</button>
+      <button onclick="hx(59, 127, 'Stadium looper PLAY')">▶ play</button>
+      <button onclick="hx(59, 0, 'Stadium looper STOP')">⏹ stop</button>
+      <button class="warn" onclick="hx(52, 127, 'Stadium looper CLEAR')">🧹 clear</button></div>
+    <div class="row"><span class="k">tempo</span>
+      <button onclick="hx(64, 127, 'Stadium tap tempo')">👆 tap</button></div>
+    <div class="statebox">Patch install/browse lives in the Helix Stadium app —
+double-click the Stadium node above to open it. RX shows the
+Stadium's own PC/CC69 sends once Send MIDI PC is on.</div>
+  </div>
+
   <div class="panel"><h3>🎹 LOGIC PRO <span id="lg-tag"></span></h3>
     <div class="row"><span class="k">transport</span>
       <button onclick="logicKey('record','RECORD')">⏺ R</button>
@@ -103,9 +128,11 @@ loop test below is its liveness proxy.</div>
       ch <input type="number" id="lg-pch" min="1" max="16" value="1">
       pgm <input type="number" id="lg-pgm" min="0" max="127" value="0">
       <button onclick="logicPC()">📇 send (IAC)</button></div>
-    <div class="statebox" id="lg-note-help">Notes/PC ride the IAC bus. In Logic, a record-armed Software
-Instrument track receives them; External MIDI tracks can drive the
-chain devices back out (set output to the chain port + channel).</div>
+    <div class="row"><span class="k">engineer</span><span id="lg-state">—</span></div>
+    <div class="statebox" id="lg-note-help">Logic is the AUTOMATED SOUND ENGINEER: song timelines fire
+events over IAC, it follows the sidecar's clock, mixes the 18ch
+USB from the XR18, and returns the mix. Notes/PC ride IAC — a
+record-armed Software Instrument track receives them.</div>
   </div>
 
   <div class="panel"><h3>⏱ MIDI CLOCK + CHAIN</h3>
@@ -122,7 +149,7 @@ lengths to it, the Stadium syncs delays. The loop test sends CC119
 ch16 around the chain and listens for the echo.</div>
   </div>
 
-  <div class="panel" style="grid-column: 1 / -1;"><h3>📡 RX MONITOR — what the wire is telling us <span id="rx-tag"></span></h3>
+  <div class="panel" style="grid-column: 1 / -1;"><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
     <div class="row"><span class="k">listening on</span><span id="rx-ports">—</span></div>
     <div id="rxlog">no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.</div>
   </div>
@@ -176,6 +203,9 @@ async function logicNote() {
   await send({ port: 'IAC', type: 'note_on', channel: ch, note, velocity: vel }, `note_on ${note} vel ${vel} ch ${ch} → Logic`);
   setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: ch, note, velocity: 0 }, 'note_off ' + note), 250);
 }
+const hxCh = () => Math.min(16, Math.max(1, +($('hx-ch').value || 5)));
+const hx = (cc, val, what) => sendCC(hxCh(), cc, val, what);
+function hxPC() { send({ port: 'chain', type: 'pc', channel: hxCh(), program: +$('hx-pgm').value }, 'Stadium preset PC ' + $('hx-pgm').value); }
 function logicPC() { send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
 async function clockCtl(action) {
   const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -195,6 +225,39 @@ function paintLoop() {
     : (loop.hint || loop.error || 'untestable');
 }
 
+function escH(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+const DITTO_CC = { 3: 'Ditto L1 rec/dub/play', 9: 'Ditto L1 stop', 14: 'Ditto L1 clear', 15: 'Ditto L1 level',
+  20: 'Ditto L1 store', 21: 'Ditto L1 clear backtrack', 22: 'Ditto L2 rec/dub/play', 23: 'Ditto L2 stop',
+  24: 'Ditto L2 clear', 25: 'Ditto L2 level', 26: 'Ditto L2 store', 27: 'Ditto L2 clear backtrack',
+  28: 'Ditto decay', 29: 'Ditto ALL STOP', 30: 'Ditto ALL CLEAR', 31: 'Ditto FX on/off', 85: 'Ditto serial/parallel' };
+const STADIUM_CC = { 69: 'Stadium snapshot select', 58: 'Stadium looper rec/dub', 59: 'Stadium looper play/stop',
+  60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium looper undo', 54: 'Stadium ½-speed',
+  55: 'Stadium reverse', 62: 'Stadium looper block', 64: 'Stadium tap tempo', 32: 'Stadium setlist select',
+  63: 'Stadium playlist', 10: 'Stadium song cue', 46: 'Stadium marker cue', 47: 'Stadium RTZ',
+  49: 'Stadium prev/next song', 51: 'Stadium play/pause', 1: 'Stadium EXP1', 2: 'Stadium EXP2' };
+function decodeSemantics(e) {
+  if (e.proto === 'osc') {
+    if (e.path === '/-snap/load') return 'XR18 snapshot load';
+    if (e.path === '/lr/mix/fader') return 'XR18 Main LR fader';
+    if (e.path === '/lr/mix/on') return 'XR18 Main LR ' + ((e.args || [])[0] === 0 ? 'MUTE' : 'open');
+    if (e.path === '/xinfo') return 'XR18 identity';
+    return null;
+  }
+  const ch = e.channel;
+  if (ch === 16 && e.control === 119) return 'chain loop-test marker';
+  if (ch === 4 && e.type === 'control_change') return DITTO_CC[e.control] || 'Ditto (unmapped CC)';
+  if (ch === 4 && e.type === 'program_change') return 'Ditto FX select';
+  if (ch === hxCh() && e.type === 'control_change') {
+    const base = STADIUM_CC[e.control];
+    if (e.control === 69) return 'Stadium snapshot ' + (e.value <= 7 ? '#' + (e.value + 1) : e.value === 8 ? 'NEXT' : 'PREV');
+    return base || 'Stadium ctrl (unmapped)';
+  }
+  if (ch === hxCh() && e.type === 'program_change') return 'Stadium preset recall';
+  if (ch >= 1 && ch <= 3 && e.type === 'control_change' && e.control <= 39)
+    return 'XR18 chart ' + (ch === 1 ? 'fader' : ch === 2 ? 'mute' : 'pan') + ' CC' + e.control + ' (board ignores in pass-thru)';
+  if ((e.type || '').startsWith('note')) return /iac|logic/i.test(e.port || '') ? 'Logic note' : null;
+  return null;
+}
 function verdict(re, chainDev = true) {
   if (!health || !health.ok) return 'bad';
   if ((health.ports || []).some(n => re.test(n))) return 'ok';
@@ -249,15 +312,24 @@ function paintState() {
       $('lg-note-help').textContent = 'Stadium heard on the wire — program ' + d.stadium.program + (d.stadium.snapshot ? ' · snapshot ' + d.stadium.snapshot : '');
     }
     const evs = (mon.events || []).slice().reverse();
-    $('rxlog').textContent = evs.length ? evs.map(e => {
-      const time = new Date(e.t * 1000).toLocaleTimeString();
-      const det = e.type === 'control_change' ? `CC${e.control}=${e.value}` : e.type === 'program_change' ? `PC${e.program}` :
-        e.type.startsWith('note') ? `${e.type} ${e.note} vel${e.velocity}` : e.type;
-      return `${time}  ${(e.port || '').padEnd(18).slice(0, 18)}  ch${String(e.channel || '-').padEnd(2)}  ${det}`;
-    }).join('\n') : 'no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.';
+    $('rxlog').innerHTML = evs.length ? evs.map(e => {
+      const time = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.round((e.t % 1) * 10));
+      const arrow = e.dir === 'tx' ? '<span class="ok">→SENT</span>' : '<span class="chain">←HEARD</span>';
+      let det;
+      if (e.proto === 'osc') det = `<b>OSC</b> ${e.path} ${JSON.stringify(e.args)}`;
+      else if (e.type === 'control_change') det = `CC${e.control}=${e.value}`;
+      else if (e.type === 'program_change') det = `PC ${e.program}`;
+      else if ((e.type || '').startsWith('note')) det = `${e.type} ${e.note} vel ${e.velocity}`;
+      else det = e.type;
+      const sem = decodeSemantics(e);
+      return `${time}  ${arrow}  ${escH((e.port || '').slice(0, 20)).padEnd(20)} ${e.proto === 'osc' ? '' : 'ch' + String(e.channel || '-').padEnd(3)}${det}${sem ? '  <span style="color:#7fd6a4">· ' + sem + '</span>' : ''}`;
+    }).join('\n') : 'no messages yet — press a device method above, run the loop test, move a board fader (USB Tx), or tap the Stadium.';
     $('rx-tag').innerHTML = '<span class="ok">listening ✓</span>';
   } else $('rx-tag').innerHTML = '<span class="bad">down</span>';
   if (health && health.ok && health.clock) $('ck-now').innerHTML = health.clock.running ? `<span class="ok">RUNNING @ ${health.clock.bpm}</span>` : 'stopped';
+  const lgRunning = !!(health && health.ok && (health.ports || []).concat(health.inputs || []).some(n => /logic pro virtual/i.test(n)));
+  const lgIac = !!(health && health.ok && (health.ports || []).some(n => /iac/i.test(n)));
+  $('lg-state').innerHTML = `${lgRunning ? '<span class="ok">app RUNNING</span> (virtual port up)' : '<span class="bad">app not detected</span>'} · IAC ${lgIac ? '<span class="ok">✓</span>' : '<span class="bad">✗ (enable in Audio MIDI Setup)'}</span>` + (health && health.ok && health.clock && health.clock.running ? ' · following clock ' + health.clock.bpm : '');
 }
 
 async function pollFast() {
@@ -275,7 +347,7 @@ async function pollSlow() {
 $('topo').addEventListener('click', (e) => {
   const g = e.target.closest('g[data-id]');
   if (!g) return;
-  const panelTag = { xr18: 'xr-tag', ditto: 'dt-tag', logic: 'lg-tag', helix: 'dt-tag' }[g.dataset.id];
+  const panelTag = { xr18: 'xr-tag', ditto: 'dt-tag', logic: 'lg-tag', helix: 'hx-tag' }[g.dataset.id];
   if (!panelTag) return;
   const p = $(panelTag).closest('.panel');
   p.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -287,10 +359,17 @@ $('topo').addEventListener('dblclick', async (e) => {
   if (!g) return;
   const id = g.dataset.id;
   const special = { xr18: '__XR18__', logic: '__LOGIC__', helix: '__HELIXAPP__' }[id];
+  const panelTag = { xr18: 'xr-tag', helix: 'hx-tag', ditto: 'dt-tag', logic: 'lg-tag' }[id];
+  if (panelTag) {
+    const p = $(panelTag).closest('.panel');
+    p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    p.style.boxShadow = '0 0 0 2px #00e676';
+    setTimeout(() => p.style.boxShadow = '', 1800);
+  }
   if (special) {
     const j = await fetch('/api/desktop/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ base: special }) }).then(J).catch(e => ({ error: e.message }));
-    toast(j.ok === false || j.error ? '⚠ ' + (j.error || 'open failed') : '✓ opened ' + id + "'s app");
+    toast(j.ok === false || j.error ? '⚠ ' + (j.error || 'open failed') + ' — panel below has the instrumentation' : '✓ opened ' + id + "'s app · instrumentation in the panel below");
   } else if (id === 'ret') { loopTest(); toast('🔄 running the DIN loop test…'); }
   else if (id === 'mac') window.open('/desktop-proto.html', '_blank');
   else toast('the Ditto has no companion app — its controls are in the panel below');

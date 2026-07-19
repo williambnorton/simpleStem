@@ -257,3 +257,36 @@ statically configure an address INSIDE 169.254/16 (reserved for
 auto-assignment). If full determinism is wanted for gigs: X-AIR-Edit
 Setup > Connection > LAN → static 192.168.87.2/24, Mac Ethernet
 service → manual 192.168.87.1/24, pin 192.168.87.2.
+
+## The wire log (2026-07-18)
+
+Every message on the wire, both directions, in one timestamped log
+(console bottom panel + sidecar `/monitor`): MIDI sends are recorded at
+transmit time, the RX thread records everything heard, and explicit OSC
+writes/queries log their tx AND the reply (the 60 s deep-probe stays
+quiet to avoid spam). Each line: time·tenths · →SENT/←HEARD · host port
+· proto · raw message · plain-English semantics from the device charts
+("Ditto ALL STOP", "Stadium snapshot #3", "XR18 Main LR MUTE",
+"chain loop-test marker"). Ch 1-3 CCs are annotated "board ignores in
+pass-thru" so stale sends can't mislead a diagnosis.
+
+Console gained a HELIX STADIUM panel (snapshots 1-4/next, preset PC,
+looper, tap — on the configurable Stadium channel, default 5) and the
+Logic panel shows the "automated sound engineer" state: app RUNNING
+detection via the Logic Pro Virtual port, IAC verdict, clock-following.
+Topology double-clicks now highlight the device's panel AND open the
+real app (Helix Stadium app = patch install surface); desk double-click
+on Helix/Logic opens instrumentation card + app together.
+
+### Diagnosis flow for the Ditto (Bill's next test)
+
+1. Restart Performer → open the console.
+2. Press Ditto "⏺ L1 rec/dub/play" — the log shows
+   `→SENT … ch4 CC3=127 · Ditto L1 rec/dub/play` out the chain port.
+3. If the DIN loop is intact, the same message returns as
+   `←HEARD` on the return input ~tens of ms later — proof the Ditto's
+   IN saw it. The pedal should start recording; play something.
+4. No ←HEARD echo = the break is still in the chain (run the loop test
+   and the segment isolation). Echo but no pedal action = the Ditto's
+   MIDI-CC firmware/DIP config — it needs the MIDI CC update and the
+   DIP switches set for CC control.
