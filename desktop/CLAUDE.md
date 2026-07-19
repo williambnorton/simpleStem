@@ -377,3 +377,14 @@ pointer theatrics.
   console topology nodes carry SVG <title> tooltips; console panels
   too. Desk objects keep their richer hover peeks — tooltips are for
   the PERIMETER instrumentation.
+- 2026-07-18 (dock truthfulness): Bill unplugged the rig and the dock
+  kept looking healthy — the panels had NO status borders (only the
+  rack did) and their bodies are static CC maps that read as "fine".
+  Fix: dock panels now carry the same on/chain/off border classes from
+  the SAME midiVerdict source (off = red border + red header + explicit
+  "UNREACHABLE" text), sidecar/robot panels get up/down states, and a
+  failed /api/xr18/info fetch resets xr18Slow={ok:false} instead of
+  leaving stale green OSC data. Rule: any surface showing device state
+  MUST wear the verdict — a static instrument that can't go red is a
+  lie waiting to happen. Verified live against the actually-disconnected
+  rig (ports down to IAC + Logic Virtual only).

@@ -251,6 +251,10 @@
   .dock-p { min-width: 190px; flex: 1; cursor: pointer; border: 1px solid rgba(255,255,255,.1);
     border-radius: 9px; padding: 6px 10px; background: rgba(255,255,255,.03); }
   .dock-p:hover { background: rgba(255,255,255,.08); }
+  .dock-p.on { border-color: rgba(0,230,118,.6); }
+  .dock-p.chain { border-color: rgba(241,196,15,.65); border-style: dashed; }
+  .dock-p.off { border-color: rgba(255,82,82,.7); }
+  .dock-p.off h5 { color: #ff8a8a; }
   .dock-p h5 { font: 700 10px -apple-system, sans-serif; letter-spacing: 1px; color: #7fd6a4; margin: 0 0 3px; }
   .dock-p .dl { font: 10px/1.55 Menlo, monospace; color: #9fb3c8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dock-p .ok { color: #00e676; font-weight: 700; }
@@ -1387,7 +1391,7 @@ function bridgeCtx(e, key) {
 }
 async function pollSurround() {
   try { midiState = await fetch('/api/midi/health').then(r => r.json()); } catch (e) { midiState = null; }
-  fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderRack(); renderDock(); }).catch(() => {});
+  fetch('/api/xr18/info').then(r => r.json()).then(j => { xr18Slow = j; renderRack(); renderDock(); }).catch(() => { xr18Slow = { ok: false }; renderRack(); renderDock(); });
   if (midiState && midiState.ok) {
     fetch('/api/midi/chain-test').then(r => r.json()).then(j => { chainLoop = j; renderRack(); renderDock(); }).catch(() => {});
   }
@@ -1399,30 +1403,35 @@ function renderDock() {
   const dock = document.getElementById('dock');
   if (!dock) return;
   const V3 = (re, cd) => verdictGlyph(midiVerdict(re, cd));
+  const sidecarUp = !!(midiState && midiState.ok);
+  const cls3 = (v, extraOk) => (v.state === 'ok' || (v.state === 'chain' && v.verified) || extraOk) ? 'on' : v.state === 'chain' ? 'chain' : 'off';
+  const dvX = midiVerdict(/xr\s?18|x\s?air/i), dvH = midiVerdict(/helix|stadium|hx/i), dvD = midiVerdict(/ditto/i);
+  const oscUp = !!(xr18Slow && xr18Slow.ok);
+  const watcherUp = !!(libState && libState.librarianDaemons && libState.librarianDaemons['lib-watcher'] && libState.librarianDaemons['lib-watcher'].running);
   const lr = xr18Slow && xr18Slow.ok ? xr18Slow.main_lr : null;
   const net = xr18Slow && xr18Slow.ok ? xr18Slow.network : null;
   dock.innerHTML = `
-    <div class="dock-p" data-open="xr18" title="XR18 summary — MIDI + OSC verdicts and Main LR state at a glance. Click for the full card; right-click for its methods."><h5>🎚️ XR18</h5>
-      <div class="dl">MIDI ${V3(/xr\s?18|x\s?air/i)} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">—</span>'}</div>
+    <div class="dock-p ${cls3(dvX, oscUp)}" data-open="xr18" title="XR18 summary — MIDI + OSC verdicts and Main LR state at a glance. Click for the full card; right-click for its methods."><h5>🎚️ XR18</h5>
+      <div class="dl">MIDI ${V3(/xr\s?18|x\s?air/i)} · OSC ${net ? '<span class="ok">' + (net.name || net.ip) + '</span>' : '<span class="bad">unreachable ✗</span>'}</div>
       <div class="dl">${lr ? 'Main LR ' + (lr.fader_db === '-inf' ? '-∞' : lr.fader_db) + ' dB' + (lr.muted ? ' · <span class="bad">MUTED</span>' : ' · open') : 'snapshot PC ch1 · faders CC ch1'}</div>
       <div class="dl">${xr18Slow && xr18Slow.ok && xr18Slow.snapshot_index != null ? 'snapshot #' + xr18Slow.snapshot_index : 'mutes CC ch2 · pan CC ch3'}</div></div>
-    <div class="dock-p" data-open="helix" title="Stadium summary — connection verdict and key CC numbers. ⛓ means reachable over the daisy chain by channel. Right-click for snapshot/looper/preset methods."><h5>🏟️ HELIX STADIUM</h5>
-      <div class="dl">MIDI ${V3(/helix|stadium|hx/i)} · global ch1 · ctrl ch2</div>
+    <div class="dock-p ${cls3(dvH)}" data-open="helix" title="Stadium summary — connection verdict and key CC numbers. ⛓ means reachable over the daisy chain by channel. Right-click for snapshot/looper/preset methods."><h5>🏟️ HELIX STADIUM</h5>
+      <div class="dl">MIDI ${V3(/helix|stadium|hx/i)}${dvH.state === 'bad' ? ' <span class="bad">UNREACHABLE</span>' : ''} · ch5 · ctrl ch6</div>
       <div class="dl">snap CC69 · preset CC32+PC · tap CC64</div>
       <div class="dl">looper CC52-62 · song cue CC10</div></div>
-    <div class="dock-p" data-open="ditto" title="Ditto summary — channel-4 looper command set. Right-click to fire loop record/stop/clear over the chain."><h5>🔁 DITTO X4</h5>
-      <div class="dl">MIDI ${V3(/ditto/i)} · ch4 fixed · clock sync</div>
+    <div class="dock-p ${cls3(dvD)}" data-open="ditto" title="Ditto summary — channel-4 looper command set. Right-click to fire loop record/stop/clear over the chain."><h5>🔁 DITTO X4</h5>
+      <div class="dl">MIDI ${V3(/ditto/i)}${dvD.state === 'bad' ? ' <span class="bad">UNREACHABLE</span>' : ''} · ch4 fixed · clock sync</div>
       <div class="dl">L1 CC3/9/14 · L2 CC22/23/24</div>
       <div class="dl">all-stop CC29 · all-clear CC30 · FX CC31</div></div>
-    <div class="dock-p" data-open="sidecar" title="midi_sidecar.py — the Python daemon on :5555 that owns every MIDI port and the OSC socket. The browser can't touch MIDI reliably, so ALL sends and all listening go through it. Click to open the MIDI Console."><h5>🛰 MIDI SIDECAR</h5>
+    <div class="dock-p ${sidecarUp ? 'on' : 'off'}" data-open="sidecar" title="midi_sidecar.py — the Python daemon on :5555 that owns every MIDI port and the OSC socket. The browser can't touch MIDI reliably, so ALL sends and all listening go through it. Click to open the MIDI Console."><h5>🛰 MIDI SIDECAR</h5>
       <div class="dl">:5555 ${midiState && midiState.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
       <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · click → MIDI CONSOLE</div>
       <div class="dl">Logic IAC ${V3(/iac/i, false)} · chain loop ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '—'}</div></div>
-    <div class="dock-p" data-open="macbook" title="The Performer laptop — runs the portal (:3000), the MIDI sidecar (:5555), the Demucs render queue, and the Web Audio six-stem mix. Everything on this desk is driven from here."><h5>💻 MACBOOK · PERFORMER</h5>
+    <div class="dock-p on" data-open="macbook" title="The Performer laptop — runs the portal (:3000), the MIDI sidecar (:5555), the Demucs render queue, and the Web Audio six-stem mix. Everything on this desk is driven from here."><h5>💻 MACBOOK · PERFORMER</h5>
       <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
       <div class="dl">cache ${cacheState && (cacheState.done != null) ? cacheState.done + '/' + cacheState.total : '—'} · queue ${qDepth != null ? qDepth : '—'}</div>
       <div class="dl">Demucs · Web Audio mix · automation</div></div>
-    <div class="dock-p" data-open="robot" title="The Mac mini — background curator. Ingests YouTube links, analyzes BPM/key, keeps CATALOG.json and the band songlist in sync. Green pid = its watcher daemon heartbeat."><h5>🤖 LIBRARIAN · MINI</h5>
+    <div class="dock-p ${libState ? (watcherUp ? 'on' : 'off') : ''}" data-open="robot" title="The Mac mini — background curator. Ingests YouTube links, analyzes BPM/key, keeps CATALOG.json and the band songlist in sync. Green pid = its watcher daemon heartbeat."><h5>🤖 LIBRARIAN · MINI</h5>
       <div class="dl">watcher ${libState && libState.librarianDaemons && libState.librarianDaemons['lib-watcher'] ? (libState.librarianDaemons['lib-watcher'].running ? '<span class="ok">✓ pid ' + libState.librarianDaemons['lib-watcher'].pid + '</span>' : '<span class="bad">DOWN</span>') : '—'}</div>
       <div class="dl">daemons ${libState && libState.librarianDaemons ? Object.values(libState.librarianDaemons).filter(d => d.running).length + '/' + Object.keys(libState.librarianDaemons).length + ' up' : '—'}</div>
       <div class="dl">ingest · metadata · catalog · sheet sync</div></div>
