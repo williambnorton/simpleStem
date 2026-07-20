@@ -5967,6 +5967,41 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
   }
 });
 
+// ── docs browser (Bill 2026-07-18): the full project documentation,
+// readable inside the UI. Lists every tracked .md; serves one bounded
+// file at a time. Restricted to the repo's md files — never a free
+// path read.
+const DOCS_ROOT = path.join(__dirname, '..');
+async function listDocs() {
+  const out = [];
+  const addDir = async (rel) => {
+    const dir = path.join(DOCS_ROOT, rel);
+    try {
+      for (const f of await fs.promises.readdir(dir)) {
+        if (f.toLowerCase().endsWith('.md')) out.push((rel ? rel + '/' : '') + f);
+      }
+    } catch (e) {}
+  };
+  await addDir('');
+  await addDir('docs');
+  await addDir('desktop');
+  return out.sort();
+}
+app.get('/api/docs/list', async (req, res) => {
+  try {
+    res.json({ ok: true, docs: await listDocs() });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/docs/get', async (req, res) => {
+  try {
+    const name = String(req.query.name || '');
+    const all = await listDocs();
+    if (!all.includes(name)) return res.status(404).json({ ok: false, error: 'unknown doc' });
+    const text = await fs.promises.readFile(path.join(DOCS_ROOT, name), 'utf8');
+    res.json({ ok: true, name, text: text.slice(0, 400000) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.get('/api/midi/monitor', async (req, res) => {
   try {
     const r = await sidecarFetch('/monitor', undefined, 3000);
@@ -6112,6 +6147,7 @@ app.post('/api/desktop/reveal', async (req, res) => {
       '__XR18__': ['-a', 'X-AIR-Edit'],
       '__LOGIC__': ['-a', 'Logic Pro'],
       '__HELIXAPP__': ['-a', 'Helix Stadium'],
+      '__DOCS__': [path.join(__dirname, '..', 'docs')],
     };
     if (SPECIAL[base]) {
       const child = require('child_process').spawn('open', SPECIAL[base], { stdio: 'ignore' });

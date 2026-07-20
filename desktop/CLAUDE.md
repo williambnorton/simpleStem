@@ -6,6 +6,21 @@ Read this before touching the Sound Desktop (prototype:
 aggregates, and voice-built instrumentation work — and where each run of
 Claude should record what it learned.
 
+## The desk's purpose (Bill 2026-07-18 — the north star)
+
+The desk is a demonstration of **education–instrumentation–
+illustration**: live data and active icons that represent the
+underlying code, activities, and hardware. Every icon IS the real
+thing; the instrumentation is the educator — always on, always showing
+what it measures AND explaining what that means (tooltips, peeks, the
+docs reader); the animation illustrates how the system works (wire
+flows, chip flights, state tints). When adding anything to the desk,
+ask: does it teach, does it measure, does it illustrate — with real
+data? If not, it doesn't belong. The desk is a first-class VIEW next
+to Performer and Librarian (brand toggle on every page), and the full
+project documentation is readable in place via the 📚 DOCS object
+(`/api/docs/list|get`, restricted to the repo's .md files).
+
 ## Object model
 
 - **Noun**: URL chip, folder (`raw` → `tagged` → shelved), setlist, gig.
@@ -388,3 +403,11 @@ pointer theatrics.
   MUST wear the verdict — a static instrument that can't go red is a
   lie waiting to happen. Verified live against the actually-disconnected
   rig (ports down to IAC + Logic Virtual only).
+- 2026-07-18 (views + docs): Desk and MIDI Console joined the brand
+  role toggle on Performer AND Librarian pages (Performer · Librarian ·
+  Desk · MIDI); the desk hint bar links back and teaches the three
+  gestures up front. 📚 DOCS object: click = in-desk reader (list from
+  /api/docs/list, minimal md renderer — headers/bold/code/lists/fenced
+  blocks/tables-as-pre), right-click = curated shortcuts (architecture,
+  test plan, MIDI research), dblclick = reader + Finder. The educator
+  manifesto is now the top section of this contract.

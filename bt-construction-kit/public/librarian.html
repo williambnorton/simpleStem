@@ -904,6 +904,10 @@
         <span class="role" data-role="performer" title="Switch to Performer view (live mixer + gigs)">Performer</span>
         <span class="role-sep">·</span>
         <span class="role role-active" data-role="librarian" title="Currently showing Librarian view">Librarian</span>
+        <span class="role-sep">·</span>
+        <span class="role" data-role="desk" title="Switch to the Sound Desktop — the live system illustration">Desk</span>
+        <span class="role-sep">·</span>
+        <span class="role" data-role="midi" title="Switch to the MIDI Console">MIDI</span>
       </span>
       <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
       <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library</span>
@@ -1261,6 +1265,8 @@
         if (el.classList.contains('role-active')) return;
         const role = el.dataset.role;
         if (role === 'performer') location.href = '/?view=performer';
+        else if (role === 'desk') location.href = '/desktop-proto.html';
+        else if (role === 'midi') location.href = '/midi-console.html';
         else if (role === 'librarian') location.href = '/?view=librarian';
       });
     });

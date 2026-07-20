@@ -5893,6 +5893,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const role = el.dataset.role;
       if (role === 'librarian') {
         location.href = '/librarian';
+      } else if (role === 'desk') {
+        location.href = '/desktop-proto.html';
+      } else if (role === 'midi') {
+        location.href = '/midi-console.html';
       } else {
         location.href = '/?view=performer';
       }

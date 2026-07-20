@@ -162,6 +162,34 @@
   .ob-methods button:hover { background: rgba(0,230,118,.28); }
   .ob-note { margin-top: 10px; opacity: .55; font-style: italic; }
 
+  /* DOCS reader: the full manual inside the UI */
+  #docreader { position: fixed; left: 50%; top: 52%; transform: translate(-50%,-50%);
+    width: min(1100px, 88vw); height: 78vh; display: none; z-index: 80;
+    background: rgba(14,18,26,.98); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.6); overflow: hidden; }
+  #docreader .dr-head { padding: 10px 16px; font: 700 13px -apple-system, sans-serif; color: #7fd6a4;
+    border-bottom: 1px solid rgba(255,255,255,.12); display: flex; justify-content: space-between; }
+  #docreader .dr-head .close { cursor: pointer; opacity: .6; }
+  #docreader .dr-body { display: flex; height: calc(100% - 40px); }
+  #docreader .dr-list { width: 250px; overflow-y: auto; border-right: 1px solid rgba(255,255,255,.1);
+    padding: 8px; font: 11px/1.9 Menlo, monospace; }
+  #docreader .dr-item { cursor: pointer; padding: 1px 8px; border-radius: 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #docreader .dr-item:hover { background: rgba(255,255,255,.07); }
+  #docreader .dr-item.sel { background: rgba(0,230,118,.16); color: #aef7cd; }
+  #docreader .dr-doc { flex: 1; overflow-y: auto; padding: 16px 26px; font: 13px/1.65 -apple-system, sans-serif; }
+  .dr-doc h1 { font-size: 19px; color: #7fd6a4; margin: 14px 0 8px; }
+  .dr-doc h2 { font-size: 15px; color: #7fd6a4; margin: 14px 0 6px; }
+  .dr-doc h3 { font-size: 13px; color: #f1c40f; margin: 10px 0 4px; }
+  .dr-doc p { margin: 7px 0; }
+  .dr-doc li { margin: 3px 0 3px 20px; }
+  .dr-doc code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font: 11.5px Menlo, monospace; }
+  .dr-doc pre { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px; padding: 10px 12px; margin: 8px 0; overflow-x: auto;
+    font: 11px/1.55 Menlo, monospace; white-space: pre; }
+  .dr-doc a { color: #7fd6a4; }
+  .dr-doc strong { color: #e8eef4; }
+
   #card {
     position: fixed; right: 18px; top: 60px; width: 330px; display: none;
     background: rgba(18,22,30,.97); border: 1px solid rgba(255,255,255,.18);
@@ -287,7 +315,7 @@
 </style>
 </head>
 <body>
-<div id="hint">Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drop a REAL .webloc on it to queue an actual render · <b>drag one machine onto another</b> to build an aggregate (stems + tags in one step) · 🎤 for voice building</div>
+<div id="hint">Every icon is the REAL thing — <b>hover</b> to learn it, <b>double-click</b> to open it, <b>right-click</b> to act on it. Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drag machines together to aggregate · 🎤 voice · <a href="/" style="color:#7fd6a4">Performer</a> · <a href="/librarian" style="color:#7fd6a4">Librarian</a> · <a href="/midi-console.html" style="color:#7fd6a4">MIDI Console</a> · 📚 DOCS reads the manual</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
 <svg id="wires"></svg>
 <div class="zone" id="zone-mini" style="left:12px; top:60px; width:240px; height:0;"><span class="zlabel">Mac mini · Librarian (background)</span></div>
@@ -295,6 +323,8 @@
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 <div id="dock"></div>
 <div id="rack"></div>
+<div id="docreader"><div class="dr-head"><span>📚 simpleStem DOCUMENTATION — the whole manual, live from the repo</span><span class="close" onclick="docreader.style.display='none'">✕</span></div>
+<div class="dr-body"><div class="dr-list" id="dr-list">loading…</div><div class="dr-doc" id="dr-doc">Pick a document on the left. Start with docs/16_SYSTEM_ARCHITECTURE.md — the whole-system map.</div></div></div>
 <div id="objb"><div class="objb-head"><span>🧳 OBJECT BROWSER — Gig → Setlist → Song → Sections + Timeline actions</span><span class="close" onclick="objb.style.display='none'">✕</span></div>
 <div class="objb-panes"><div class="objb-tree" id="objb-tree"></div><div class="objb-insp" id="objb-insp"><div class="ob-note">Select an object on the left — summary + methods here, ALL properties below. Right-click any object for its methods.</div></div></div>
 <div class="objb-props" id="objb-props"><h4>ALL PROPERTIES</h4><div class="ob-note">nothing selected.</div></div></div>
@@ -435,6 +465,7 @@ const instr   = machineDef('instr', '🎸', 'INSTRUMENTS', 'guitars · bass · k
 const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig · MIDI ch ' + (parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5), W*0.50, H*0.62, [], 'info');
 const ditto   = machineDef('ditto', '🔁', 'DITTO X4', 'looper · MIDI ch 4', W*0.585, H*0.62, [], 'info');
 const macbook = machineDef('macbook', '💻', 'MACBOOK PRO', 'the Performer · portal host', W*0.30, H*0.36, [], 'info');
+const docsOb  = machineDef('docs', '📚', 'DOCS', 'the whole manual · click to read', W*0.155, H*0.12, [], 'info');
 const mains   = machineDef('mains', '🔊', 'MAIN L/R', 'front of house', W*0.79, H*0.42, [], 'info');
 const wedges  = machineDef('wedges', '📢', 'AUX 1–6', 'six monitor wedges (click to the drummer)', W*0.79, H*0.70, [], 'info');
 
@@ -809,6 +840,7 @@ desk.addEventListener('pointerup', () => {
   if (!drag.moved && o.id === 'ditto') showDittoCard();
   if (!drag.moved && o.id === 'macbook') showMacbookCard();
   if (!drag.moved && o.id === 'logic') showLogicCard();
+  if (!drag.moved && o.id === 'docs') showDocReader();
   drag = null;
 });
 desk.addEventListener('dblclick', (e) => {
@@ -1258,6 +1290,50 @@ ${customs ? `<span class="meta-k">your added keys</span>:\n${customs}\n` : ''}<s
 the portal's node process (System Settings → Privacy → Accessibility)
 <span class="meta-k">grow it</span>: right-click → ＋ Add Logic key… (e.g. "shift+cmd+r")</div>`;
   card.style.display = 'block'; S.riffle();
+}
+function mdToHtml(md) {
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const lines = md.split('\n');
+  let html = '', inCode = false, inList = false;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  const inline = (t) => esc(t)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  for (const ln of lines) {
+    if (ln.startsWith('```')) { closeList(); html += inCode ? '</pre>' : '<pre>'; inCode = !inCode; continue; }
+    if (inCode) { html += esc(ln) + '\n'; continue; }
+    if (/^\|/.test(ln)) { closeList(); html += '<pre style="margin:0;border:none;padding:1px 8px">' + esc(ln) + '</pre>'; continue; }
+    if (/^### /.test(ln)) { closeList(); html += '<h3>' + inline(ln.slice(4)) + '</h3>'; continue; }
+    if (/^## /.test(ln)) { closeList(); html += '<h2>' + inline(ln.slice(3)) + '</h2>'; continue; }
+    if (/^# /.test(ln)) { closeList(); html += '<h1>' + inline(ln.slice(2)) + '</h1>'; continue; }
+    if (/^[-*] /.test(ln)) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inline(ln.slice(2)) + '</li>'; continue; }
+    if (ln.trim() === '') { closeList(); html += '<p></p>'; continue; }
+    closeList(); html += '<p>' + inline(ln) + '</p>';
+  }
+  closeList(); if (inCode) html += '</pre>';
+  return html;
+}
+async function openDoc(name) {
+  document.querySelectorAll('#dr-list .dr-item').forEach(el => el.classList.toggle('sel', el.dataset.doc === name));
+  const box = document.getElementById('dr-doc');
+  box.innerHTML = 'loading ' + name + '…';
+  try {
+    const j = await fetch('/api/docs/get?name=' + encodeURIComponent(name)).then(r => r.json());
+    if (!j.ok) throw new Error(j.error || 'failed');
+    box.innerHTML = mdToHtml(j.text);
+    box.scrollTop = 0;
+  } catch (e) { box.textContent = 'could not load: ' + e.message; }
+}
+async function showDocReader(startDoc) {
+  docreader.style.display = 'block'; S.riffle();
+  const list = document.getElementById('dr-list');
+  try {
+    const j = await fetch('/api/docs/list').then(r => r.json());
+    list.innerHTML = (j.docs || []).map(d => `<div class="dr-item" data-doc="${d}">${d}</div>`).join('');
+    list.querySelectorAll('.dr-item').forEach(el => el.addEventListener('click', () => openDoc(el.dataset.doc)));
+    openDoc(startDoc && (j.docs || []).includes(startDoc) ? startDoc : ((j.docs || []).find(d => d.includes('16_SYSTEM')) || (j.docs || [])[0]));
+  } catch (e) { list.textContent = 'docs list failed: ' + e.message; }
 }
 async function showMacbookCard() {
   document.getElementById('card-body').innerHTML = '<h3>💻 MACBOOK PRO — the Performer</h3><div class="file">reading host state…</div>';
@@ -1845,6 +1921,11 @@ to fire them. Click for the full map.</div>`;
 Two-track looper on MIDI ch 4. L1 CC3/9/14,
 L2 CC22/23/24, all-stop CC29. Syncs loop
 length to MIDI clock.</div>`;
+  if (o.id === 'docs') return `<h4>📚 DOCS</h4><div class="pk">The project's full documentation, read live
+from the repo: architecture, the MIDI/OSC
+research, the test plan, the desk contract.
+Click to read in place; double-click also
+opens the folder in Finder.</div>`;
   if (o.id === 'macbook') return `<h4>💻 MACBOOK PRO — the Performer</h4><div class="pk">Runs the portal (:3000), the MIDI sidecar
 (:5555), the Demucs render queue, and the
 Web Audio 6-stem mix. Drives every device
@@ -1991,6 +2072,7 @@ desk.addEventListener('dblclick', async (e) => {
       helix:   () => { showHelixCard(); openSpecial('__HELIXAPP__', 'the Helix Stadium app (patch install lives there)'); },
       ditto:   showDittoCard,
       macbook: () => { window.open('/', '_blank'); hint('💻 Opened the portal — the MacBook\'s real face.'); },
+      docs:    () => { showDocReader(); openSpecial('__DOCS__', 'the docs/ folder in Finder'); },
       mics:    () => openSpecial('__XR18__', 'X-AIR-Edit (input channels live there)'),
       instr:   () => openSpecial('__XR18__', 'X-AIR-Edit (input channels live there)'),
       mains:   () => openSpecial('__XR18__', 'X-AIR-Edit (Main L/R bus)'),
@@ -2126,6 +2208,13 @@ desk.addEventListener('contextmenu', (e) => {
         localStorage.setItem(LOGIC_KEYS_STORE, JSON.stringify(all));
         hint(`🎹 “<b>${label.trim()}</b>” added — right-click Logic to fire it.`);
       } });
+    }
+    if (o.id === 'docs') {
+      items.push({ label: '📖 Read the manual', run: () => showDocReader() });
+      items.push({ label: '🗺 System architecture', run: () => showDocReader('docs/16_SYSTEM_ARCHITECTURE.md') });
+      items.push({ label: '🧪 Method test plan', run: () => showDocReader('docs/15_DESK_METHOD_TEST_PLAN.md') });
+      items.push({ label: '🎛 XR18 + MIDI research', run: () => showDocReader('docs/14_XR18_CONTROL.md') });
+      items.push({ label: '📂 Open docs/ in Finder', run: () => openSpecial('__DOCS__', 'the docs folder') });
     }
     if (o.id === 'macbook') {
       items.push({ label: '🔎 Host status card', run: showMacbookCard });
