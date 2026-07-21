@@ -162,6 +162,57 @@
   .ob-methods button:hover { background: rgba(0,230,118,.28); }
   .ob-note { margin-top: 10px; opacity: .55; font-style: italic; }
 
+  /* EAVFA config layer: D/C badges, the back<->forward switch, editor */
+  .cfgb { position: absolute; top: -6px; right: -8px; z-index: 5; cursor: pointer;
+    font: 800 9px -apple-system, sans-serif; padding: 1px 5px; border-radius: 6px;
+    background: rgba(0,230,118,.18); color: #00e676; border: 1px solid rgba(0,230,118,.5); }
+  .cfgb.custom { background: rgba(241,196,15,.18); color: #f1c40f; border-color: rgba(241,196,15,.5); }
+  .cfg-mini { cursor: pointer; font: 800 9px -apple-system, sans-serif; padding: 0 5px;
+    border-radius: 6px; margin-left: 6px;
+    background: rgba(0,230,118,.18); color: #00e676; border: 1px solid rgba(0,230,118,.5); }
+  .cfg-mini.custom { background: rgba(241,196,15,.18); color: #f1c40f; border-color: rgba(241,196,15,.5); }
+  #cfged { position: fixed; left: 50%; top: 52%; transform: translate(-50%,-50%);
+    width: min(980px, 84vw); height: 74vh; display: none; z-index: 85;
+    background: rgba(14,18,26,.98); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.6); overflow: hidden; }
+  #cfged .cf-head { padding: 10px 16px; display: flex; align-items: center; gap: 14px;
+    border-bottom: 1px solid rgba(255,255,255,.12); }
+  #cfged .cf-title { font: 700 13px -apple-system, sans-serif; color: #7fd6a4; flex: 1; }
+  #cfged .cf-oid { font: 10px Menlo, monospace; opacity: .5; }
+  #cfged .close { cursor: pointer; opacity: .6; }
+  .cf-switch { display: flex; align-items: center; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px; overflow: hidden; font: 700 10px -apple-system, sans-serif; user-select: none; }
+  .cf-switch .side { padding: 6px 14px; cursor: pointer; }
+  .cf-switch .side.left { color: #9fb3c8; }
+  .cf-switch .side.right { color: #9fb3c8; }
+  .cf-switch.custom .side.right { background: rgba(241,196,15,.22); color: #f1c40f; }
+  .cf-switch:not(.custom) .side.left { background: rgba(0,230,118,.22); color: #00e676; }
+  #cfged .cf-body { display: flex; height: calc(58% - 44px); }
+  #cfged .cf-art { width: 42%; border-right: 1px solid rgba(255,255,255,.1);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #cfged .cf-props { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .cf-prop { display: flex; align-items: center; gap: 10px; margin: 8px 0; font: 12px Menlo, monospace; }
+  .cf-prop .k { color: #f1c40f; min-width: 190px; }
+  .cf-prop .def { opacity: .45; min-width: 110px; }
+  .cf-prop input { width: 120px; background: #131824; color: #c7d2de;
+    border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 4px 6px; font: 12px Menlo, monospace; }
+  .cf-prop input:disabled { opacity: .4; }
+  .cf-prop button { background: rgba(79,195,247,.12); color: #a8dcff; border: 1px solid rgba(79,195,247,.4);
+    border-radius: 6px; padding: 3px 9px; font: 600 10px -apple-system, sans-serif; cursor: pointer; }
+  #cfged .cf-tree { height: 42%; overflow-y: auto; border-top: 1px solid rgba(255,255,255,.12);
+    padding: 10px 16px; font: 11px/1.85 Menlo, monospace; }
+  .cft-node { cursor: default; }
+  .cft-node.linked { cursor: pointer; color: #aef7cd; }
+  .cft-node.linked:hover { text-decoration: underline; }
+  .cft-node.here { color: #00e676; font-weight: 800; }
+  /* stem-machine big illustration */
+  @keyframes paperIn { 0% { transform: translateY(-46px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(6px); opacity: 0; } }
+  @keyframes paperOut { 0% { transform: translateY(-8px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateY(26px); opacity: 1; } }
+  @keyframes spkPulse { 0%,100% { transform: scale(1); opacity: .7; } 50% { transform: scale(1.18); opacity: 1; } }
+  .stem-ill .p-in { animation: paperIn 2.2s linear infinite; }
+  .stem-ill .p-out { animation: paperOut 2.2s ease-out infinite; }
+  .stem-ill .spk { animation: spkPulse 1.1s ease-in-out infinite; transform-origin: center; }
+
   /* DOCS reader: the full manual inside the UI */
   #docreader { position: fixed; left: 50%; top: 52%; transform: translate(-50%,-50%);
     width: min(1100px, 88vw); height: 78vh; display: none; z-index: 80;
@@ -323,6 +374,13 @@
 <div id="card"><span class="close" onclick="card.style.display='none'">✕</span><div id="card-body"></div></div>
 <div id="dock"></div>
 <div id="rack"></div>
+<div id="cfged"><div class="cf-head">
+  <span class="cf-title" id="cf-title">object</span>
+  <span class="cf-oid" id="cf-oid"></span>
+  <span class="cf-switch" id="cf-switch" title="LEFT = go back — one press per undo step, all the way to factory defaults. RIGHT = move forward — unlock customization."><span class="side left" id="cf-left">◀ DEFAULT / UNDO</span><span class="side right" id="cf-right">CUSTOMIZE ▶</span></span>
+  <span class="close" onclick="cfged.style.display='none'">✕</span></div>
+<div class="cf-body"><div class="cf-art" id="cf-art"></div><div class="cf-props" id="cf-props"></div></div>
+<div class="cf-tree" id="cf-tree"></div></div>
 <div id="docreader"><div class="dr-head"><span>📚 simpleStem DOCUMENTATION — the whole manual, live from the repo</span><span class="close" onclick="docreader.style.display='none'">✕</span></div>
 <div class="dr-body"><div class="dr-list" id="dr-list">loading…</div><div class="dr-doc" id="dr-doc">Pick a document on the left. Start with docs/16_SYSTEM_ARCHITECTURE.md — the whole-system map.</div></div></div>
 <div id="objb"><div class="objb-head"><span>🧳 OBJECT BROWSER — Gig → Setlist → Song → Sections + Timeline actions</span><span class="close" onclick="objb.style.display='none'">✕</span></div>
@@ -462,10 +520,180 @@ const logic   = machineDef('logic', '🎹', 'LOGIC PRO', 'drop an audio file —
 // to Main L/R and AUX 1-6. Drawn as objects + animated signal wires.
 const mics    = machineDef('mics', '🎤', 'MICS', 'vocal mics → XR18 inputs 1-4', W*0.56, H*0.78, [], 'info');
 const instr   = machineDef('instr', '🎸', 'INSTRUMENTS', 'guitars · bass · keys → XR18 inputs', W*0.68, H*0.78, [], 'info');
-const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig · MIDI ch ' + (parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5), W*0.50, H*0.62, [], 'info');
+const helix   = machineDef('helix', '🏟️', 'HELIX STADIUM', 'guitar rig', W*0.50, H*0.62, [], 'info');
 const ditto   = machineDef('ditto', '🔁', 'DITTO X4', 'looper · MIDI ch 4', W*0.585, H*0.62, [], 'info');
 const macbook = machineDef('macbook', '💻', 'MACBOOK PRO', 'the Performer · portal host', W*0.30, H*0.36, [], 'info');
 const docsOb  = machineDef('docs', '📚', 'DOCS', 'the whole manual · click to read', W*0.155, H*0.12, [], 'info');
+
+/* ── EAVFA config layer (Bill 2026-07-19) ─────────────────────────────
+   Every configured object: unique object-id, properties WITH factory
+   defaults, per-property TEST APPARATUS that demonstrates the value,
+   an undo HISTORY (left = back, back, back… to factory), and one
+   D/C indicator rendered at three scales (icon badge → rack mini →
+   full editor). Factory law: defaults must give minimum working
+   functionality with zero customization. */
+const CFG_KEY = 'desk.config.v2';
+function cfgLoadAll() { try { return JSON.parse(localStorage.getItem(CFG_KEY) || '{}'); } catch (e) { return {}; } }
+function cfgSaveAll(all) { localStorage.setItem(CFG_KEY, JSON.stringify(all)); }
+const CFG = {
+  stemcutter: { label: 'STEMCUTTER', parent: 'pipeline', props: {
+    format: { def: 'aac/m4a 256k faststart', ro: true, label: 'stem format (pipeline-owned)',
+      test: () => { stemcutter.el.classList.add('bounce'); S.saw(true); setTimeout(() => { stemcutter.el.classList.remove('bounce'); S.saw(false); }, 900); hint('⚗ format is enforced by stem.sh — every producer emits fast-start m4a.'); } },
+    samplerate: { def: '48 kHz', ro: true, label: 'sample rate (pipeline-owned)',
+      test: () => hint('⚗ 48 kHz end to end: source.wav → Demucs → stems → XR18 USB. One clock, no resampling.') } } },
+  helix: { label: 'HELIX STADIUM', parent: 'stage', props: {
+    channel: { def: 5, min: 1, max: 16, label: 'desk MIDI channel',
+      test: (v) => sendCC('chain', +v, 64, 127, 'Stadium tap-tempo probe on ch ' + v + ' — watch the tap light + wire log') } } },
+  xr18: { label: 'XR18', parent: 'stage', props: {
+    ip: { def: '', label: 'OSC IP pin (blank = auto-discover)',
+      apply: async (v) => fetch('/api/xr18/ip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip: v }) }).then(r => r.json()),
+      test: async (v) => { const j = await fetch('/api/xr18/ip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip: v }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(j.reachable ? '⚗ board answered /xinfo at ' + (v || 'broadcast') + ' ✓' : '⚗ no answer — ' + (j.error || 'check the network')); } } } },
+  clock: { label: 'MIDI CLOCK', parent: 'sidecar', props: {
+    bpm: { def: 120, min: 30, max: 300, label: 'default tempo (bpm)',
+      test: async (v) => { await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm: +v }) }); hint('⚗ clock running at ' + v + ' for 3 s — Ditto/Stadium sync lights should blink…'); setTimeout(() => fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }), 3000); } } } },
+  wirelog: { label: 'WIRE LOG', parent: 'desk', props: {
+    lines: { def: 16, min: 4, max: 60, label: 'visible lines',
+      test: () => { updateDeskWireLog(); hint('⚗ wire log re-rendered at the current line count.'); } } } },
+};
+function cfgState(id) { const all = cfgLoadAll(); return all[id] || { values: {}, history: [], custom: false }; }
+function cfgGet(id, key) {
+  const st = cfgState(id), p = CFG[id].props[key];
+  return (st.custom && st.values[key] !== undefined && st.values[key] !== '') ? st.values[key] : p.def;
+}
+function cfgIsCustom(id) { return !!cfgState(id).custom; }
+function cfgSet(id, key, val) {
+  const all = cfgLoadAll(); const st = all[id] || { values: {}, history: [], custom: false };
+  st.history.push(JSON.stringify(st.values)); if (st.history.length > 20) st.history.shift();
+  st.values[key] = val; st.custom = true; all[id] = st; cfgSaveAll(all);
+  const p = CFG[id].props[key]; if (p.apply) p.apply(val);
+  afterCfgChange(id);
+}
+function cfgBack(id) {
+  const all = cfgLoadAll(); const st = all[id] || { values: {}, history: [], custom: false };
+  if (st.history.length) { st.values = JSON.parse(st.history.pop()); if (!Object.keys(st.values).length) st.custom = false; }
+  else { st.values = {}; st.custom = false; }
+  all[id] = st; cfgSaveAll(all);
+  for (const [k, p] of Object.entries(CFG[id].props)) if (p.apply) p.apply(cfgGet(id, k) === p.def && !st.custom ? '' : cfgGet(id, k));
+  afterCfgChange(id);
+  hint(st.custom ? '◀ stepped back one change (' + st.history.length + ' more behind it).' : '◀ ' + CFG[id].label + ' is at FACTORY DEFAULTS.');
+}
+function cfgSetCustom(id) {
+  const all = cfgLoadAll(); const st = all[id] || { values: {}, history: [], custom: false };
+  st.custom = true; all[id] = st; cfgSaveAll(all); afterCfgChange(id);
+}
+function afterCfgChange(id) {
+  refreshCfgBadges();
+  if (id === 'helix') { const el = document.getElementById('helix'); if (el) el.querySelector('.sub').textContent = 'guitar rig · MIDI ch ' + cfgGet('helix', 'channel'); }
+  if (id === 'wirelog') updateDeskWireLog();
+  renderRack(); renderDock();
+  if (cfged.style.display === 'block' && cfged.dataset.obj === id) showCfgEditor(id);
+}
+function refreshCfgBadges() {
+  for (const id of Object.keys(CFG)) {
+    const host = document.getElementById(id);
+    if (!host) continue;
+    let b = host.querySelector('.cfgb');
+    if (!b) {
+      b = document.createElement('span'); b.className = 'cfgb';
+      b.title = 'EAVFA config — green D = factory defaults, amber C = customized. Click to open the object\'s config editor (◀ back to defaults · customize ▶).';
+      b.addEventListener('pointerdown', (e) => e.stopPropagation());
+      b.addEventListener('click', (e) => { e.stopPropagation(); showCfgEditor(id); });
+      host.appendChild(b);
+    }
+    const custom = cfgIsCustom(id);
+    b.textContent = custom ? 'C' : 'D';
+    b.classList.toggle('custom', custom);
+  }
+}
+const MODEL_TREE = { id: 'system', label: '🌐 simpleStem SYSTEM', kids: [
+  { id: 'librarian', label: '🤖 LIBRARIAN (Mac mini) — ingest · metadata · catalog · sheet' },
+  { id: 'performer', label: '💻 PERFORMER (MacBook Pro)', kids: [
+    { id: 'portal', label: '🎛 portal :3000 — Web Audio 6-stem mix' },
+    { id: 'sidecar', label: '🛰 midi_sidecar :5555 — CoreMIDI + OSC', kids: [
+      { id: 'clock', label: '⏱ MIDI clock (24 ppqn)' } ] },
+    { id: 'pipeline', label: '⚙ render pipeline', kids: [
+      { id: 'stemcutter', label: '🖨 STEMCUTTER — Demucs 6-stem' },
+      { id: 'tagger', label: '🗳 TAGGER — metadata' },
+      { id: 'library', label: '🗄 LIBRARY — CATALOG.json' } ] },
+    { id: 'stage', label: '🎸 stage rig', kids: [
+      { id: 'xr18', label: '🎚 XR18 — mixer (OSC ctrl, MIDI interface)' },
+      { id: 'ditto', label: '🔁 DITTO X4 — looper ch 4 (factory-locked)' },
+      { id: 'helix', label: '🏟 HELIX STADIUM — ch 5' },
+      { id: 'logic', label: '🎹 LOGIC PRO — IAC' } ] },
+    { id: 'desk', label: '🖥 desk UI', kids: [
+      { id: 'wirelog', label: '📡 WIRE LOG' } ] } ] } ] };
+function cfgArt(id) {
+  if (id === 'stemcutter') {
+    return `<svg class="stem-ill" width="330" height="300" viewBox="0 0 330 300">
+      <g class="p-in"><rect x="145" y="30" width="40" height="26" rx="2" fill="#e8eef4" stroke="#9fb3c8"/><line x1="152" y1="39" x2="178" y2="39" stroke="#9fb3c8"/><line x1="152" y1="46" x2="178" y2="46" stroke="#9fb3c8"/></g>
+      <path d="M 120 62 L 210 62 L 202 78 L 128 78 Z" fill="#38434f"/>
+      <rect x="95" y="76" width="140" height="58" rx="10" fill="#5a6a7d"/>
+      <rect x="95" y="76" width="140" height="14" rx="7" fill="#6d7f94"/>
+      <circle cx="222" cy="105" r="5" fill="#00e676"/>
+      <circle class="spk" cx="52" cy="105" r="26" fill="none" stroke="#4fc3f7" stroke-width="3"/>
+      <circle cx="52" cy="105" r="9" fill="#4fc3f7"/>
+      <text x="52" y="152" text-anchor="middle" fill="#9fb3c8" font-size="10" font-family="Menlo">L</text>
+      <circle class="spk" cx="278" cy="105" r="26" fill="none" stroke="#4fc3f7" stroke-width="3" style="animation-delay:.55s"/>
+      <circle cx="278" cy="105" r="9" fill="#4fc3f7"/>
+      <text x="278" y="152" text-anchor="middle" fill="#9fb3c8" font-size="10" font-family="Menlo">R</text>
+      <path d="M 88 136 L 242 136 L 252 158 L 78 158 Z" fill="#38434f"/>
+      ${['#ffd54f','#ff8a65','#4fc3f7','#aed581','#ce93d8','#e8eef4'].map((c, i) =>
+        `<g class="p-out" style="animation-delay:${i * 0.18}s"><rect x="${92 + i * 26}" y="160" width="20" height="30" rx="2" fill="${c}" stroke="#38434f"/></g>`).join('')}
+      ${['vocals','drums','bass','guitar','piano','other'].map((n, i) =>
+        `<text x="${102 + i * 26}" y="212" text-anchor="middle" fill="#9fb3c8" font-size="7" font-family="Menlo">${n}</text>`).join('')}
+      <text x="165" y="248" text-anchor="middle" fill="#7fd6a4" font-size="11" font-family="-apple-system">one song in · six stems out · L/R to the room</text>
+      <text x="165" y="268" text-anchor="middle" fill="#9fb3c8" font-size="9" font-family="Menlo">48 kHz · Demucs htdemucs_6s · fast-start m4a</text>
+    </svg>`;
+  }
+  const arts = { helix: '🏟️', xr18: '🎚️', clock: '⏱', wirelog: '📡' };
+  const live = id === 'helix' ? 'sends on MIDI ch ' + cfgGet('helix', 'channel')
+    : id === 'xr18' ? (xr18Slow && xr18Slow.ok ? 'OSC LIVE — ' + (xr18Slow.network.name || xr18Slow.network.ip) : 'OSC pin: ' + (cfgGet('xr18', 'ip') || 'auto-discover'))
+    : id === 'clock' ? (midiState && midiState.ok && midiState.clock && midiState.clock.running ? 'RUNNING @ ' + midiState.clock.bpm : 'stopped · default ' + cfgGet('clock', 'bpm') + ' bpm')
+    : id === 'wirelog' ? cfgGet('wirelog', 'lines') + ' lines on screen' : '';
+  return `<div style="text-align:center"><div style="font-size:96px" class="spk">${arts[id] || '⚙'}</div>
+    <div style="font:11px Menlo,monospace;color:#7fd6a4;margin-top:12px">${live}</div></div>`;
+}
+function showCfgEditor(id) {
+  const spec = CFG[id]; if (!spec) return;
+  cfged.style.display = 'block'; cfged.dataset.obj = id; S.riffle();
+  const st = cfgState(id);
+  document.getElementById('cf-title').textContent = spec.label + ' — configuration';
+  document.getElementById('cf-oid').textContent = 'object-id: ' + id + ' · history: ' + st.history.length + ' step' + (st.history.length === 1 ? '' : 's');
+  const sw = document.getElementById('cf-switch');
+  sw.classList.toggle('custom', st.custom);
+  document.getElementById('cf-left').onclick = () => cfgBack(id);
+  document.getElementById('cf-right').onclick = () => cfgSetCustom(id);
+  document.getElementById('cf-art').innerHTML = cfgArt(id);
+  const props = document.getElementById('cf-props');
+  props.innerHTML = Object.entries(spec.props).map(([k, p]) => {
+    const cur = cfgGet(id, k);
+    const isNum = typeof p.def === 'number';
+    return `<div class="cf-prop"><span class="k" title="${p.label}">${p.label}</span>
+      <span class="def" title="factory default">⌂ ${p.def === '' ? '(auto)' : p.def}</span>
+      <input data-k="${k}" ${p.ro || !st.custom ? 'disabled' : ''} type="${isNum ? 'number' : 'text'}" ${isNum ? `min="${p.min}" max="${p.max}"` : ''} value="${cur}">
+      ${p.test ? `<button data-test="${k}" title="test apparatus — demonstrate this value against the real system">⚗ test</button>` : ''}
+      ${p.ro ? '<span style="opacity:.4;font-size:10px">read-only</span>' : ''}</div>`;
+  }).join('') + `<div style="opacity:.5;font:10px -apple-system,sans-serif;margin-top:10px">◀ each left press walks one change back — all the way to factory. ▶ unlocks the inputs. Every property ships a ⚗ that proves it against the live system.</div>`;
+  props.querySelectorAll('input:not([disabled])').forEach(inp => inp.addEventListener('change', () => {
+    const k = inp.dataset.k; const p = spec.props[k];
+    cfgSet(id, k, typeof p.def === 'number' ? +inp.value : inp.value.trim());
+  }));
+  props.querySelectorAll('button[data-test]').forEach(b => b.addEventListener('click', () => spec.props[b.dataset.test].test(cfgGet(id, b.dataset.test))));
+  const treeBox = document.getElementById('cf-tree');
+  const render = (n, depth) => {
+    const badge = CFG[n.id] ? ` <span class="cfg-mini ${cfgIsCustom(n.id) ? 'custom' : ''}">${cfgIsCustom(n.id) ? 'C' : 'D'}</span>` : '';
+    return `<div class="cft-node ${CFG[n.id] ? 'linked' : ''} ${n.id === id ? 'here' : ''}" data-id="${n.id}" style="margin-left:${depth * 18}px">${depth ? '└ ' : ''}${n.label}${badge}</div>` +
+      (n.kids || []).map(k => render(k, depth + 1)).join('');
+  };
+  treeBox.innerHTML = '<div style="color:#f1c40f;font-weight:700;margin-bottom:4px">OBJECT HIERARCHY — the system as a tree; D/C shows each object\'s factory state</div>' + render(MODEL_TREE, 0);
+  treeBox.querySelectorAll('.cft-node.linked').forEach(el => el.addEventListener('click', () => showCfgEditor(el.dataset.id)));
+}
+setTimeout(() => {
+  const legacy = parseInt(localStorage.getItem('desk.helixMidiChannel'), 10);
+  if (legacy && legacy !== 5 && !cfgIsCustom('helix')) { cfgSet('helix', 'channel', legacy); }
+  helix.el.querySelector('.sub').textContent = 'guitar rig · MIDI ch ' + cfgGet('helix', 'channel');
+  refreshCfgBadges();
+}, 600);
 const mains   = machineDef('mains', '🔊', 'MAIN L/R', 'front of house', W*0.79, H*0.42, [], 'info');
 const wedges  = machineDef('wedges', '📢', 'AUX 1–6', 'six monitor wedges (click to the drummer)', W*0.79, H*0.70, [], 'info');
 
@@ -1357,7 +1585,7 @@ async function showMacbookCard() {
 const DESK_DITTO_CC = { 3: 'Ditto L1 rec/dub/play', 9: 'Ditto L1 stop', 14: 'Ditto L1 clear', 15: 'Ditto L1 level', 20: 'Ditto L1 store', 22: 'Ditto L2 rec/dub/play', 23: 'Ditto L2 stop', 24: 'Ditto L2 clear', 25: 'Ditto L2 level', 28: 'Ditto decay', 29: 'Ditto ALL STOP', 30: 'Ditto ALL CLEAR', 31: 'Ditto FX', 85: 'Ditto ser/par' };
 const DESK_STADIUM_CC = { 69: 'Stadium snapshot', 58: 'Stadium looper rec', 59: 'Stadium looper play/stop', 60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium undo', 54: 'Stadium ½spd', 55: 'Stadium rev', 62: 'Stadium looper blk', 64: 'Stadium tap', 32: 'Stadium setlist', 10: 'Stadium song cue', 51: 'Stadium play/pause' };
 function deskDecode(e) {
-  const stadiumCh = parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5;
+  const stadiumCh = +cfgGet('helix', 'channel');
   if (e.proto === 'osc') {
     if (e.path === '/-snap/load') return 'XR18 snapshot load';
     if (e.path === '/lr/mix/fader') return 'XR18 Main LR fader';
@@ -1376,7 +1604,7 @@ function deskDecode(e) {
 function updateDeskWireLog() {
   const el = document.getElementById('desk-wirelog');
   if (!el) return;
-  const evs = deskMon && deskMon.ok ? (deskMon.events || []).slice(-16).reverse() : [];
+  const evs = deskMon && deskMon.ok ? (deskMon.events || []).slice(-(+cfgGet('wirelog', 'lines'))).reverse() : [];
   el.innerHTML = evs.length ? evs.map(e => {
     const tm = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.round((e.t % 1) * 10));
     const arrow = e.dir === 'tx' ? '<span class="tx">→SENT</span>' : '<span class="hx">←HEARD</span>';
@@ -1403,14 +1631,14 @@ function renderRack() {
   const mark = (n) => /xr\s?18|x\s?air/i.test(n) ? ' <span class="ok">←XR18</span>' : /helix|stadium|hx/i.test(n) ? ' <span class="ok">←Stadium</span>' : /ditto/i.test(n) ? ' <span class="ok">←Ditto</span>' : /iac/i.test(n) ? ' <span class="ok">←Logic</span>' : /logic pro virtual/i.test(n) ? ' <span class="ok">←Logic app</span>' : '';
   const portList = (arr) => (arr || []).map(n => '  ' + n.slice(0, 22) + mark(n)).join('\n') || '  (none)';
   rack.innerHTML = `
-    <div class="rack-p ${midiState && midiState.ok ? 'on' : 'off'}" data-open="hub" title="MIDI HUB — the MacBook's view of every MIDI port on the system, read live from CoreMIDI by the midi_sidecar (:5555). 'Chain head' is the output port all daisy-chained device commands leave through. Outputs = where the Mac can send; inputs = where it listens. Refreshed once per minute."><h5>💻 MIDI HUB ${midiState && midiState.ok ? '<span class="ok">LIVE ✓</span>' : '<span class="bad">SIDECAR DOWN</span>'}</h5>
+    <div class="rack-p ${midiState && midiState.ok ? 'on' : 'off'}" data-open="hub" title="MIDI HUB — the MacBook's view of every MIDI port on the system, read live from CoreMIDI by the midi_sidecar (:5555). 'Chain head' is the output port all daisy-chained device commands leave through. Outputs = where the Mac can send; inputs = where it listens. Refreshed once per minute."><h5>💻 MIDI HUB ${midiState && midiState.ok ? '<span class="ok">LIVE ✓</span>' : '<span class="bad">SIDECAR DOWN</span>'}<span class="cfg-mini ${cfgIsCustom('clock') ? 'custom' : ''}" data-cfgmini="clock" title="clock config">${cfgIsCustom('clock') ? 'C' : 'D'}</span></h5>
       <div class="rl">${midiState && midiState.ok ? `<span class="k">chain head</span> ${midiState.chain_port || '?'}
 <span class="k">clock</span> ${midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'}
 <span class="k">outputs (${(midiState.ports || []).length})</span>
 ${portList(midiState.ports)}
 <span class="k">inputs (${(midiState.inputs || []).length})</span>
 ${portList(midiState.inputs)}` : 'start it: ./performer.sh start'}</div></div>
-    <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18" title="XR18 panel — live state of the Behringer XR18 mixer. MIDI shows its USB port; OSC (Open Sound Control, UDP :10024) is how the app reads and writes the board: name, firmware, snapshot, Main LR and AUX levels. In pass-thru mode the board ignores MIDI, so OSC is the only control path. Green border = online."><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}</h5>
+    <div class="rack-p ${cls(vX, xrOsc)}" data-open="xr18" data-cfg="xr18" title="XR18 panel — live state of the Behringer XR18 mixer. MIDI shows its USB port; OSC (Open Sound Control, UDP :10024) is how the app reads and writes the board: name, firmware, snapshot, Main LR and AUX levels. In pass-thru mode the board ignores MIDI, so OSC is the only control path. Green border = online."><h5>🎚️ XR18 ${xrOsc && vX.state !== 'ok' ? '<span class="ok">ONLINE ✓ (OSC)</span>' : verdictTag(vX)}<span class="cfg-mini ${cfgIsCustom('xr18') ? 'custom' : ''}" data-cfgmini="xr18" title="config: click to open the editor">${cfgIsCustom('xr18') ? 'C' : 'D'}</span></h5>
       <div class="rl"><span class="k">MIDI</span> ${verdictGlyph(vX)} · <span class="k">OSC</span> ${xrOsc ? '✓ ' + (net.name || net.ip) : '✗ (join the XR18\'s network)'}
 ${xrOsc ? `<span class="k">fw</span> ${net.firmware || '?'} · <span class="k">snap</span> #${xr18Slow.snapshot_index != null ? xr18Slow.snapshot_index : '?'}
 <span class="k">Main LR</span> ${lr.fader_db === '-inf' ? '-∞' : lr.fader_db}dB ${lr.muted ? '<span class="bad">MUTED</span>' : 'open'}
@@ -1418,7 +1646,7 @@ ${buses}
 ` : ''}<span class="k">control</span> OSC :10024 read/write all params
 <span class="k">MIDI chart</span> PC/CC ch1-3 <span style="opacity:.55">(ignored: pass-thru ON)</span>
 <span class="k">DIN</span> USB→OUT to chain · IN→USB return</div></div>
-    <div class="rack-p ${cls(vH)}" data-open="helix" title="Helix Stadium panel — the guitar rig's full MIDI command map (from the Line 6 manual). No port of its own: commands ride the DIN daisy chain out the chain head, addressed to MIDI channel 5. Amber dashed = chained but unverified; green = loop-verified."><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}</h5>
+    <div class="rack-p ${cls(vH)}" data-open="helix" data-cfg="helix" title="Helix Stadium panel — the guitar rig's full MIDI command map (from the Line 6 manual). No port of its own: commands ride the DIN daisy chain out the chain head, addressed to MIDI channel 5. Amber dashed = chained but unverified; green = loop-verified."><h5>🏟️ HELIX STADIUM ${verdictTag(vH)}<span class="cfg-mini ${cfgIsCustom('helix') ? 'custom' : ''}" data-cfgmini="helix" title="config: click to open the editor">${cfgIsCustom('helix') ? 'C' : 'D'}</span></h5>
       <div class="rl"><span class="k">ch</span> 1 global · 2 bypass/ctrl
 <span class="k">preset</span> CC32 bank + PC 0-127
 <span class="k">snapshots</span> CC69 0-7 · 8 next · 9 prev
@@ -1447,6 +1675,7 @@ ${buses}
     <div class="rl" style="text-align:center"><span class="k">DIN chain loop</span> ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">INTACT ✓ ' + chainLoop.roundtrip_ms + ' ms round trip</span>' : chainLoop.loop === 'broken' ? '<span class="bad">BROKEN — check thru switches + return cable</span>' : 'untestable (no return input)') : 'untested'}</div>
     <div class="rl" style="opacity:.7;text-align:center"><a href="/midi-console.html" target="_blank" style="color:#7fd6a4">🎛 open the MIDI CONSOLE — topology + live state + controls</a></div>
     <div class="rl" style="opacity:.5;text-align:center">rack refreshed ${stamp} · every 60 s</div>`;
+  rack.querySelectorAll('.cfg-mini[data-cfgmini]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); showCfgEditor(el.dataset.cfgmini); }));
   rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('contextmenu', (e) => bridgeCtx(e, el.dataset.open)));
   rack.querySelectorAll('.rack-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
@@ -1519,9 +1748,10 @@ function renderDock() {
       <div class="dl">${realLib.length} songs · CATALOG.json hourly</div>
       <div class="dl">gigs ${Array.isArray(gigList) ? gigList.length : '—'} on file</div>
       <div class="dl">☁️ Drive syncs both machines</div></div>
-    <div class="dock-p dock-log" data-open="console" title="WIRE LOG — every MIDI and OSC message, both directions, timestamped and decoded into plain English. →SENT = the app transmitted; ←HEARD = something arrived on an input (device telemetry or the chain echo). This is the system's truth serum: if a command isn't here, it never left the Mac."><h5>📡 WIRE LOG — MIDI + OSC, sent + heard (click → full console)</h5>
+    <div class="dock-p dock-log" data-open="console" title="WIRE LOG — every MIDI and OSC message, both directions, timestamped and decoded into plain English. →SENT = the app transmitted; ←HEARD = something arrived on an input (device telemetry or the chain echo). This is the system's truth serum: if a command isn't here, it never left the Mac."><h5>📡 WIRE LOG — MIDI + OSC, sent + heard (click → full console)<span class="cfg-mini ${cfgIsCustom('wirelog') ? 'custom' : ''}" data-cfgmini="wirelog" title="wire log config">${cfgIsCustom('wirelog') ? 'C' : 'D'}</span></h5>
       <div id="desk-wirelog">loading…</div></div>`;
   updateDeskWireLog();
+  dock.querySelectorAll('.cfg-mini[data-cfgmini]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); showCfgEditor(el.dataset.cfgmini); }));
   dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('contextmenu', (e) => bridgeCtx(e, el.dataset.open)));
   dock.querySelectorAll('.dock-p').forEach(el => el.addEventListener('click', () => {
     const k = el.dataset.open;
@@ -2128,7 +2358,7 @@ desk.addEventListener('contextmenu', (e) => {
     if (o.work === 'aggregate') items.push({ label: '🔧 Take apart', run: () => disassemble(o) });
     if (o.id === 'xr18') {
       items.push({ label: '🔎 Probe MIDI (live properties)', run: showXr18Card });
-      items.push({ label: '⏱ Start MIDI clock · 120', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm: 120, port: 'XR18' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏱ clock: ' + r.error : '⏱ MIDI clock running at 120 → XR18.'); pollSlowInstruments(); } });
+      items.push({ label: '⏱ Start MIDI clock', run: async () => { const bpm = +cfgGet('clock', 'bpm'); const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', bpm }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏱ clock: ' + r.error : '⏱ MIDI clock running at ' + bpm + ' (default lives in the CLOCK config).'); pollSlowInstruments(); } });
       items.push({ label: '⏹ Stop MIDI clock', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏹ clock: ' + r.error : '⏹ MIDI clock stopped.'); pollSlowInstruments(); } });
       items.push({ label: '🔄 Test DIN chain loop now', run: async () => {
         hint('🔄 marker sent around the chain — listening for the echo…');
@@ -2161,12 +2391,9 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
     }
     if (o.id === 'helix') {
-      const hch = () => parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5;
+      const hch = () => +cfgGet('helix', 'channel');
       items.push({ label: '🔎 MIDI instrumentation card', run: showHelixCard });
-      items.push({ label: `🔧 Desk MIDI channel… (now ${parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5})`, run: () => {
-        const n = parseInt(prompt('MIDI channel the desk uses for the Stadium (1-16).\nOn the shared daisy chain, ch 1 COLLIDES with the XR18 fader map — set the Stadium\'s Global MIDI channel to 5 and enter 5 here:', String(parseInt(localStorage.getItem('desk.helixMidiChannel'), 10) || 5)), 10);
-        if (n >= 1 && n <= 16) { localStorage.setItem('desk.helixMidiChannel', String(n)); hint('🔧 Stadium desk channel → ' + n + '.'); }
-      } });
+      items.push({ label: `🔧 Configure… (ch ${cfgGet('helix', 'channel')} · ${cfgIsCustom('helix') ? 'CUSTOM' : 'factory'})`, run: () => showCfgEditor('helix') });
       items.push({ label: '📸 Snapshot 1-8…', run: () => { const n = parseInt(prompt('Snapshot 1-8:'), 10); if (n >= 1 && n <= 8) sendCC('helix', hch(), 69, n - 1, 'Stadium snapshot ' + n); } });
       items.push({ label: '⏭ Next snapshot', run: () => sendCC('helix', hch(), 69, 8, 'Stadium next snapshot') });
       items.push({ label: '🎵 Preset PC…', run: async () => { const n = parseInt(prompt('Preset PC number 0-127:'), 10); if (!(n >= 0 && n <= 127)) return; const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: 'helix', type: 'pc', channel: hch(), program: n }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '🎵 ' + r.error : '🎵 Stadium preset PC ' + n + ' sent.'); } });

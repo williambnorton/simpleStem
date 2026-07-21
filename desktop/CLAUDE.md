@@ -21,6 +21,20 @@ to Performer and Librarian (brand toggle on every page), and the full
 project documentation is readable in place via the 📚 DOCS object
 (`/api/docs/list|get`, restricted to the repo's .md files).
 
+## EAVFA — the named theme (Bill 2026-07-19)
+
+The manifesto now has a name: **Educate-Animate-Visual-Flow-Action**.
+Spec: docs/17_EAVFA_OBJECT_MODEL.md. The config layer implements it:
+every configured object has an object-id, factory defaults satisfying
+the FACTORY LAW (minimum functionality with zero customization), an
+undo history walked by the ◀ DEFAULT/UNDO side of the back⟷forward
+switch (left = behind/undo·n, right = forward/customize), a ⚗ test
+apparatus per property that proves the value against the live system,
+and ONE D/C indicator at three scales (icon badge → perimeter mini →
+full editor with animated illustration + the object hierarchy tree).
+Store desk.config.v2; API cfgGet/cfgSet/cfgBack/cfgSetCustom;
+consumers MUST read cfgGet, never their own localStorage keys.
+
 ## Object model
 
 - **Noun**: URL chip, folder (`raw` → `tagged` → shelved), setlist, gig.
@@ -411,3 +425,14 @@ pointer theatrics.
   blocks/tables-as-pre), right-click = curated shortcuts (architecture,
   test plan, MIDI research), dblclick = reader + Finder. The educator
   manifesto is now the top section of this contract.
+- 2026-07-19 (EAVFA v1): config layer shipped and browser-verified
+  end-to-end (customize helix ch 5→6 propagated to sub/badge/decoder/
+  menus; two ◀ presses walked history back to factory; stem editor
+  shows the paper-in/six-stems-out/L-R-speakers illustration; 17-node
+  hierarchy tree with live D/C chips, cross-linked editors). Objects
+  configured so far: stemcutter (ro pipeline facts), helix (channel),
+  xr18 (OSC ip pin, apply→POST /api/xr18/ip), clock (default bpm),
+  wirelog (line count). Gotcha: keep CFG consts ABOVE the boot calls
+  (same TDZ law as all desk state). Roadmap in the spec: HOLODECK
+  config verbs, job futures with spoken ETA, the show layer (beat-grid
+  driven sprites — Bill's dancing clowns), knowledge screens.
