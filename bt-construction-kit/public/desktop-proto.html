@@ -1606,7 +1606,7 @@ function updateDeskWireLog() {
   if (!el) return;
   const evs = deskMon && deskMon.ok ? (deskMon.events || []).slice(-(+cfgGet('wirelog', 'lines'))).reverse() : [];
   el.innerHTML = evs.length ? evs.map(e => {
-    const tm = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.round((e.t % 1) * 10));
+    const tm = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.min(9, Math.floor((e.t % 1) * 10)));
     const arrow = e.dir === 'tx' ? '<span class="tx">→SENT</span>' : '<span class="hx">←HEARD</span>';
     let det;
     if (e.proto === 'osc') det = `OSC ${e.path} ${JSON.stringify(e.args)}`;
@@ -2362,7 +2362,7 @@ desk.addEventListener('contextmenu', (e) => {
       items.push({ label: '⏹ Stop MIDI clock', run: async () => { const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }).then(r => r.json()).catch(e => ({ error: e.message })); hint(r.error ? '⏹ clock: ' + r.error : '⏹ MIDI clock stopped.'); pollSlowInstruments(); } });
       items.push({ label: '🔄 Test DIN chain loop now', run: async () => {
         hint('🔄 marker sent around the chain — listening for the echo…');
-        const j = await fetch('/api/midi/chain-test').then(r => r.json()).catch(e => ({ error: e.message }));
+        const j = await fetch('/api/midi/chain-test?fresh=1').then(r => r.json()).catch(e => ({ error: e.message }));
         chainLoop = j; renderRack(); renderDock();
         hint(j.loop === 'intact' ? `🔄 <b>LOOP INTACT ✓</b> — echo back in ${j.roundtrip_ms} ms. Every Thru is passing.` :
              j.loop === 'broken' ? '🔄 <b>loop broken</b> — no echo. Check XR18/Ditto/Helix thru + the return cable.' :

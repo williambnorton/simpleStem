@@ -406,6 +406,7 @@ _clock = MidiClock()
 # pan CC maps (ch 1/2/3), Stadium program + snapshot (PC / CC69).
 from collections import deque
 
+_chain_cache = {"result": None, "at": 0.0}
 _rx = {"events": deque(maxlen=150), "listening": [],
        "derived": {"xr18": {"faders": {}, "mutes": {}, "pans": {}},
                    "stadium": {"program": None, "snapshot": None},
@@ -547,7 +548,10 @@ class Handler(BaseHTTPRequestHandler):
                                     "listening": _rx["listening"],
                                     "events": list(_rx["events"])[-50:],
                                     "derived": _rx["derived"]})
-        if self.path == "/chain/test":
+        if self.path.startswith("/chain/test"):
+            fresh = "fresh" in self.path
+            if not fresh and _chain_cache["result"] and time.time() - _chain_cache["at"] < 30:
+                return self._json(200, {**_chain_cache["result"], "cached": True})
             return self._chain_test()
         if self.path == "/xr18/info":
             return self._xr18_info()
@@ -564,6 +568,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
     def _chain_test(self):
+        """Results cache 30 s (desk + console both auto-test every minute;
+        without the cache the wire log drowns in markers)."""
         """Loopback test of the physical DIN chain: send a marker CC on
         channel 16 (no device in the rig listens there) out the chain
         head and listen for its echo on the chain return input. Echo
@@ -604,17 +610,21 @@ class Handler(BaseHTTPRequestHandler):
                     for msg in inp.iter_pending():
                         if (msg.type == "control_change" and msg.channel == 15
                                 and msg.control == 119 and msg.value == nonce):
-                            return self._json(200, {"ok": True, "loop": "intact",
-                                                    "roundtrip_ms": int((time.time() - t0) * 1000),
-                                                    "out": out.name, "heard_on": n,
-                                                    "listened_on": [x[0] for x in inps]})
+                            _chain_cache["result"] = {"ok": True, "loop": "intact",
+                                                      "roundtrip_ms": int((time.time() - t0) * 1000),
+                                                      "out": out.name, "heard_on": n,
+                                                      "listened_on": [x[0] for x in inps]}
+                            _chain_cache["at"] = time.time()
+                            return self._json(200, _chain_cache["result"])
                 time.sleep(0.01)
-            return self._json(200, {"ok": True, "loop": "broken",
-                                    "out": out.name,
-                                    "listened_on": [x[0] for x in inps],
-                                    "hint": "no echo on ANY hardware input — isolate the break: "
-                                            "cable XR18 DIN OUT straight into the return input "
-                                            "and retest, then re-insert Ditto, then Helix"})
+            _chain_cache["result"] = {"ok": True, "loop": "broken",
+                                      "out": out.name,
+                                      "listened_on": [x[0] for x in inps],
+                                      "hint": "no echo on ANY hardware input — isolate the break: "
+                                              "cable XR18 DIN OUT straight into the return input "
+                                              "and retest, then re-insert Ditto, then Helix"}
+            _chain_cache["at"] = time.time()
+            return self._json(200, _chain_cache["result"])
         finally:
             for _n, inp in inps:
                 try:

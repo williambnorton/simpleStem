@@ -215,7 +215,7 @@ async function clockCtl(action) {
 }
 async function loopTest() {
   $('loop-now').textContent = 'testing…';
-  loop = await fetch('/api/midi/chain-test').then(J).catch(() => null);
+  loop = await fetch('/api/midi/chain-test?fresh=1').then(J).catch(() => null);
   paintLoop(); drawTopo();
 }
 function paintLoop() {
@@ -299,7 +299,7 @@ function drawTopo() {
     E(170, 130, 250, 160, vL === 'bad', 'IAC bus (virtual)') +
     N(250, 140, 'logic', vL, '🎹 LOGIC PRO', vL === 'ok' ? 'notes · PC · automation' : 'enable IAC in Audio MIDI Setup') +
     `<text class="elabel" x="580" y="200" text-anchor="middle">${loopOk ? '⛓✓ chain LOOP-VERIFIED — every Thru passing' : 'chain devices are send-only until the loop test passes'}</text>`;
-  $('xr-tag').innerHTML = tag(vX); $('dt-tag').innerHTML = tag(vD); $('lg-tag').innerHTML = tag(vL);
+  $('xr-tag').innerHTML = tag(vX); $('dt-tag').innerHTML = tag(vD); $('lg-tag').innerHTML = tag(vL); $('hx-tag').innerHTML = tag(vH);
 }
 
 function paintState() {
@@ -321,7 +321,7 @@ function paintState() {
     }
     const evs = (mon.events || []).slice().reverse();
     $('rxlog').innerHTML = evs.length ? evs.map(e => {
-      const time = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.round((e.t % 1) * 10));
+      const time = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false }) + '.' + String(Math.min(9, Math.floor((e.t % 1) * 10)));
       const arrow = e.dir === 'tx' ? '<span class="ok">→SENT</span>' : '<span class="chain">←HEARD</span>';
       let det;
       if (e.proto === 'osc') det = `<b>OSC</b> ${e.path} ${JSON.stringify(e.args)}`;

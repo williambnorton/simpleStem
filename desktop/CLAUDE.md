@@ -436,3 +436,15 @@ pointer theatrics.
   (same TDZ law as all desk state). Roadmap in the spec: HOLODECK
   config verbs, job futures with spoken ETA, the show layer (beat-grid
   driven sprites — Bill's dancing clowns), knowledge screens.
+- 2026-07-19 (loop verified + screenshot review): the DIN chain went
+  LOOP-VERIFIED (12 ms, echo on U2MIDI Pro) — Ditto/Stadium method
+  testing unblocked. Bill's eye caught: Helix panel had no verdict tag
+  (drawTopo painted xr/dt/lg tags but never hx-tag — when adding a
+  panel, grep for the tag-paint line); wire-log tenths rendered '.10'
+  (Math.round carry — use min(9,floor)); the log drowned in loop-test
+  markers because desk + console each auto-test per minute — sidecar
+  now caches /chain/test results 30 s (auto polls share; the manual
+  'test now' buttons pass ?fresh=1). Field insight from the RX state:
+  CC1/CC2 traffic on ch1 labeled 'XR18 faders' is actually the
+  STADIUM'S EXP PEDALS — its Global MIDI channel is still 1; the chart
+  labels only hold once it moves to 5.
