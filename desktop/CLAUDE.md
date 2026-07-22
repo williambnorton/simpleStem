@@ -448,3 +448,12 @@ pointer theatrics.
   CC1/CC2 traffic on ch1 labeled 'XR18 faders' is actually the
   STADIUM'S EXP PEDALS — its Global MIDI channel is still 1; the chart
   labels only hold once it moves to 5.
+- 2026-07-19 (Stadium SEND MSG pulldown): the Helix Stadium console
+  panel gained a named-message pulldown — all 29 documented Stadium
+  commands in 5 groups (Preset/Snapshots/Looper/Song·Transport/Tempo·
+  Expression), each emitting the well-formed PC/CC on the Stadium
+  channel with a will-log preview; parameterized messages (PC program,
+  snapshot 1-8 with the 0-based CC69 mapping, song cue, EXP position)
+  show a value field. HX_MSGS is the catalog — extend it there, never
+  ad-hoc buttons. Verified live: tap-tempo send appeared in the wire
+  log off the real chain.

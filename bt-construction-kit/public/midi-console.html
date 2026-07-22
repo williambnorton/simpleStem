@@ -106,6 +106,11 @@ loop test below is its liveness proxy.</div>
       <button onclick="hx(59, 127, 'Stadium looper PLAY')">▶ play</button>
       <button onclick="hx(59, 0, 'Stadium looper STOP')">⏹ stop</button>
       <button class="warn" onclick="hx(52, 127, 'Stadium looper CLEAR')">🧹 clear</button></div>
+    <div class="row"><span class="k">SEND MSG</span>
+      <select id="hx-msg" onchange="hxMsgSel()" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:11px Menlo,monospace;max-width:230px"></select>
+      <input type="number" id="hx-msg-param" min="0" max="127" value="0" style="display:none" onchange="hxMsgPrev()">
+      <button onclick="hxMsgSend()">📤 send</button></div>
+    <div class="row"><span id="hx-msg-prev" style="opacity:.65;font-size:10px"></span></div>
     <div class="row"><span class="k">tempo</span>
       <button onclick="hx(64, 127, 'Stadium tap tempo')">👆 tap</button></div>
     <div class="statebox">Patch install/browse lives in the Helix Stadium app —
@@ -227,6 +232,69 @@ async function logicNote() {
   setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: ch, note, velocity: 0 }, 'note_off ' + note), 250);
 }
 const hxCh = () => Math.min(16, Math.max(1, +($('hx-ch').value || 5)));
+/* the Stadium's full researched command map as named, well-formed
+   messages — one pulldown, every message the manual documents */
+const HX_MSGS = [
+  { g: 'Preset', id: 'pc', label: 'Program Change — preset recall', kind: 'pc', param: 'program 0-127', def: 0 },
+  { g: 'Preset', id: 'setlist', label: 'Setlist select (CC32)', cc: 32, param: 'setlist value', def: 0 },
+  { g: 'Snapshots', id: 'snap', label: 'Snapshot select (CC69)', cc: 69, param: 'snapshot 1-8', def: 1, map: v => v - 1 },
+  { g: 'Snapshots', id: 'snapnext', label: 'Next snapshot (CC69=8)', cc: 69, val: 8 },
+  { g: 'Snapshots', id: 'snapprev', label: 'Previous snapshot (CC69=9)', cc: 69, val: 9 },
+  { g: 'Looper', id: 'lrec', label: 'Looper record (CC58=127)', cc: 58, val: 127 },
+  { g: 'Looper', id: 'ldub', label: 'Looper overdub (CC58=0)', cc: 58, val: 0 },
+  { g: 'Looper', id: 'lplay', label: 'Looper play (CC59=127)', cc: 59, val: 127 },
+  { g: 'Looper', id: 'lstop', label: 'Looper stop (CC59=0)', cc: 59, val: 0 },
+  { g: 'Looper', id: 'lonce', label: 'Looper play once (CC60)', cc: 60, val: 127 },
+  { g: 'Looper', id: 'lclear', label: 'Looper clear (CC52)', cc: 52, val: 127 },
+  { g: 'Looper', id: 'lundo', label: 'Looper undo/redo (CC53)', cc: 53, val: 127 },
+  { g: 'Looper', id: 'lhalf', label: 'Looper ½ speed (CC54=127)', cc: 54, val: 127 },
+  { g: 'Looper', id: 'lfull', label: 'Looper full speed (CC54=0)', cc: 54, val: 0 },
+  { g: 'Looper', id: 'lrev', label: 'Looper reverse (CC55=127)', cc: 55, val: 127 },
+  { g: 'Looper', id: 'lfwd', label: 'Looper forward (CC55=0)', cc: 55, val: 0 },
+  { g: 'Looper', id: 'lblkon', label: 'Looper block on (CC62=127)', cc: 62, val: 127 },
+  { g: 'Looper', id: 'lblkoff', label: 'Looper block off (CC62=0)', cc: 62, val: 0 },
+  { g: 'Song/Transport', id: 'songcue', label: 'Song cue (CC10)', cc: 10, param: 'song # 0-127', def: 0 },
+  { g: 'Song/Transport', id: 'playlist', label: 'Playlist select (CC63)', cc: 63, param: 'playlist #', def: 0 },
+  { g: 'Song/Transport', id: 'marker', label: 'Marker cue (CC46)', cc: 46, param: 'marker #', def: 0 },
+  { g: 'Song/Transport', id: 'rtz', label: 'Return to zero (CC47)', cc: 47, val: 0 },
+  { g: 'Song/Transport', id: 'nextsong', label: 'Next song (CC49=127)', cc: 49, val: 127 },
+  { g: 'Song/Transport', id: 'prevsong', label: 'Previous song (CC49=0)', cc: 49, val: 0 },
+  { g: 'Song/Transport', id: 'playpause', label: 'Play/Pause toggle (CC51)', cc: 51, val: 127 },
+  { g: 'Tempo/Expression', id: 'tap', label: 'Tap tempo (CC64=127)', cc: 64, val: 127 },
+  { g: 'Tempo/Expression', id: 'exp1', label: 'EXP1 position (CC1)', cc: 1, param: 'position 0-127', def: 64 },
+  { g: 'Tempo/Expression', id: 'exp2', label: 'EXP2 position (CC2)', cc: 2, param: 'position 0-127', def: 64 },
+  { g: 'Tempo/Expression', id: 'toe', label: 'Toe switch toggle (CC36)', cc: 36, val: 127 },
+];
+function hxMsgInit() {
+  const sel = $('hx-msg');
+  const groups = [...new Set(HX_MSGS.map(m => m.g))];
+  sel.innerHTML = groups.map(g => `<optgroup label="${g}">` +
+    HX_MSGS.filter(m => m.g === g).map(m => `<option value="${m.id}">${m.label}</option>`).join('') +
+    '</optgroup>').join('');
+  hxMsgSel();
+}
+const hxMsgCur = () => HX_MSGS.find(m => m.id === $('hx-msg').value);
+function hxMsgSel() {
+  const m = hxMsgCur();
+  const p = $('hx-msg-param');
+  p.style.display = m.param ? '' : 'none';
+  if (m.param) { p.value = m.def; p.title = m.param; }
+  hxMsgPrev();
+}
+function hxMsgPrev() {
+  const m = hxMsgCur();
+  const raw = m.param ? +$('hx-msg-param').value : null;
+  const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
+  $('hx-msg-prev').textContent = 'will log: →SENT ch' + hxCh() + ' ' +
+    (m.kind === 'pc' ? 'PC ' + v : `CC${m.cc}=${v}`) + (m.param ? ' (' + m.param + ')' : '');
+}
+async function hxMsgSend() {
+  const m = hxMsgCur();
+  const raw = m.param ? +$('hx-msg-param').value : null;
+  const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
+  if (m.kind === 'pc') await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v);
+  else await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label);
+}
 const hx = (cc, val, what) => sendCC(hxCh(), cc, val, what);
 function hxPC() { send({ port: 'chain', type: 'pc', channel: hxCh(), program: +$('hx-pgm').value }, 'Stadium preset PC ' + $('hx-pgm').value); }
 function logicPC() { send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
@@ -445,6 +513,7 @@ $('topo').addEventListener('dblclick', async (e) => {
   else toast('the Ditto has no companion app — its controls are in the panel below');
 });
 mcFields();
+hxMsgInit();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>
