@@ -459,10 +459,29 @@ def _record_osc(direction, path, args):
 
 
 def _rx_loop():
+    """Listens on every MIDI input. Hardened 2026-07-19: a port that
+    DISAPPEARS (unplug) gets closed and forgotten so it re-opens fresh
+    when it returns — a stale CoreMIDI handle stays silent forever while
+    fresh opens (like the loop test's) still work, which made the
+    monitor look deaf. Failed opens are retried every ~10 s."""
     opened = {}
+    tick = 0
     while True:
         try:
-            for n in mido.get_input_names():
+            tick += 1
+            current = set(mido.get_input_names())
+            for n in list(opened.keys()):
+                if n not in current:
+                    try:
+                        if opened[n]:
+                            opened[n].close()
+                    except Exception:
+                        pass
+                    del opened[n]
+            if tick % 300 == 0:
+                for n in [k for k, v in opened.items() if v is None]:
+                    del opened[n]
+            for n in current:
                 if n not in opened:
                     try:
                         opened[n] = mido.open_input(n)
