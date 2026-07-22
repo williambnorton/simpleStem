@@ -149,6 +149,29 @@ lengths to it, the Stadium syncs delays. The loop test sends CC119
 ch16 around the chain and listens for the echo.</div>
   </div>
 
+  <div class="panel" title="MIDI COMPOSER — build any well-formed MIDI message from pulldowns and send it to any port. The message appears in the wire log exactly as transmitted; use it to compare against what a device SHOULD emit."><h3>🧪 MIDI COMPOSER</h3>
+    <div class="row"><span class="k">message</span>
+      <select id="mc-type" onchange="mcFields()" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
+        <option value="pc">Program Change</option>
+        <option value="cc">Control Change</option>
+        <option value="note_on">Note On</option>
+        <option value="note_off">Note Off</option>
+      </select></div>
+    <div class="row"><span class="k">port</span>
+      <select id="mc-port" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace;max-width:190px">
+        <option value="chain">chain head (DIN loop)</option>
+      </select></div>
+    <div class="row"><span class="k">channel</span>
+      <input type="number" id="mc-ch" min="1" max="16" value="5" onchange="mcPreview()"></div>
+    <div class="row" id="mc-fields"></div>
+    <div class="row"><button onclick="mcSend()">📤 SEND</button>
+      <span id="mc-preview" style="opacity:.7"></span></div>
+    <div class="statebox">A PC on the Stadium's channel emulates exactly what its preset
+switches should transmit. Send one, watch →SENT appear, and if the
+chain loops it returns as ←HEARD — the reference signature to
+compare the pedal's own output against.</div>
+  </div>
+
   <div class="panel" style="grid-column: 1 / -1;" title="The wire log — every MIDI and OSC message, both directions, timestamped with plain-English decoding. →SENT left the Mac; ←HEARD arrived on an input. The system's black-box recorder."><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
     <div class="row"><span class="k">listening on</span><span id="rx-ports">—</span></div>
     <div id="rxlog">no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.</div>
@@ -340,12 +363,49 @@ function paintState() {
   $('lg-state').innerHTML = `${lgRunning ? '<span class="ok">app RUNNING</span> (virtual port up)' : '<span class="bad">app not detected</span>'} · IAC ${lgIac ? '<span class="ok">✓</span>' : '<span class="bad">✗ (enable in Audio MIDI Setup)'}</span>` + (health && health.ok && health.clock && health.clock.running ? ' · following clock ' + health.clock.bpm : '');
 }
 
+function mcFields() {
+  const t = $('mc-type').value;
+  const F = (id, label, val, max) => `${label} <input type="number" id="${id}" min="0" max="${max}" value="${val}" onchange="mcPreview()">`;
+  $('mc-fields').innerHTML = t === 'pc' ? F('mc-a', 'program', 0, 127)
+    : t === 'cc' ? F('mc-a', 'controller', 69, 127) + ' ' + F('mc-b', 'value', 0, 127)
+    : F('mc-a', 'note', 60, 127) + ' ' + F('mc-b', 'velocity', 100, 127);
+  mcPreview();
+}
+function mcBody() {
+  const t = $('mc-type').value;
+  const body = { port: $('mc-port').value, type: t, channel: +$('mc-ch').value };
+  if (t === 'pc') body.program = +$('mc-a').value;
+  else if (t === 'cc') { body.controller = +$('mc-a').value; body.value = +$('mc-b').value; }
+  else { body.note = +$('mc-a').value; body.velocity = +$('mc-b').value; }
+  return body;
+}
+function mcPreview() {
+  const b = mcBody();
+  const det = b.type === 'pc' ? 'PC ' + b.program : b.type === 'cc' ? `CC${b.controller}=${b.value}` : `${b.type} ${b.note} v${b.velocity}`;
+  $('mc-preview').textContent = `will log: →SENT ch${b.channel} ${det}`;
+}
+async function mcSend() {
+  const b = mcBody();
+  const det = b.type === 'pc' ? 'PC ' + b.program : b.type === 'cc' ? `CC${b.controller}=${b.value}` : `${b.type} ${b.note}`;
+  await send(b, 'composer: ch' + b.channel + ' ' + det);
+}
+function mcPorts() {
+  const sel = $('mc-port');
+  if (!health || !health.ok || !sel) return;
+  const keep = sel.value;
+  const opts = '<option value="chain">chain head (DIN loop)</option>' +
+    (health.ports || []).map(n => `<option value="${n}">${n}</option>`).join('');
+  if (sel.dataset.sig !== (health.ports || []).join('|')) {
+    sel.innerHTML = opts; sel.dataset.sig = (health.ports || []).join('|');
+    if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  }
+}
 async function pollFast() {
   health = await fetch('/api/midi/health').then(J).catch(() => null);
   const ipEl = $('xr-ip');
   if (health && health.ok && health.xr18_ip && !ipEl.value && document.activeElement !== ipEl) ipEl.value = health.xr18_ip;
   mon = await fetch('/api/midi/monitor').then(J).catch(() => null);
-  drawTopo(); paintState();
+  drawTopo(); paintState(); mcPorts();
 }
 async function pollSlow() {
   xrInfo = await fetch('/api/xr18/info').then(J).catch(() => null);
@@ -384,6 +444,7 @@ $('topo').addEventListener('dblclick', async (e) => {
   else if (id === 'mac') window.open('/desktop-proto.html', '_blank');
   else toast('the Ditto has no companion app — its controls are in the panel below');
 });
+mcFields();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>
