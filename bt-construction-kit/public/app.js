@@ -7067,6 +7067,12 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
         });
       } catch (e) {}
       if (!loaded.size) {
+        if ((typeof drumMachineActive !== 'undefined' && drumMachineActive) ||
+            (typeof backingTrackActive !== 'undefined' && backingTrackActive)) {
+          console.warn('[buffering] zero stems loaded but an alternate source (drum/backing) is active — treating as success.');
+          finish('alt-source');
+          return;
+        }
         console.warn('[buffering] hard timeout with zero loaded stems — failing.');
         fail({ code: 'timeout', message: `no stems responded after ${hardTimeoutMs/1000}s` });
       } else {
@@ -8260,6 +8266,12 @@ function engageDrumMachine() {
   if (isPlaying || Object.values(audioElements).some(audioHasSrc)) {
     stopAudio();
   }
+  // The stems were just aborted DELIBERATELY (drum loop takes over). A
+  // stem-buffering watchdog may still be armed from loadSong — cancel it
+  // or it fires "zero loaded stems" and fails the whole song (Blowin' In
+  // The Wind wedge, 2026-07-22).
+  if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
+  try { if (els.buffering) els.buffering.style.display = 'none'; } catch (e) {}
   el.src = drumMachineUrl;
   el.currentTime = 0;
   el.play().catch(e => console.warn('[drum-machine] play failed:', e));
@@ -8530,6 +8542,9 @@ function engageBackingTrack() {
   if (isPlaying || Object.values(audioElements).some(audioHasSrc)) {
     stopAudio();
   }
+  // Same watchdog cancel as engageDrumMachine — deliberate stem abort.
+  if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
+  try { if (els.buffering) els.buffering.style.display = 'none'; } catch (e) {}
   el.src = backingTrackUrl;
   el.currentTime = 0;
   el.play().catch(e => console.warn('[backing-track] play failed:', e));

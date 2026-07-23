@@ -457,3 +457,17 @@ pointer theatrics.
   show a value field. HX_MSGS is the catalog — extend it there, never
   ad-hoc buttons. Verified live: tap-tempo send appeared in the wire
   log off the real chain.
+- 2026-07-22 (drum-mode load wedge): Bill played Blowin' In the Wind
+  (drum-machine song) — app died with 'hard timeout with zero loaded
+  stems' + wedged UI. Root cause: engageDrumMachine/engageBackingTrack
+  DELIBERATELY stop the six stems (their mode owns the audio), but the
+  stem-buffering watchdog armed by loadSong doesn't know that — it saw
+  zero loaded stems and failed the whole song. Fixes: (a) both engage
+  paths cancel _bufferWatchCancel + hide the buffering box when they
+  stop stems; (b) watchdog hard-timeout treats drumMachineActive ||
+  backingTrackActive as SUCCESS ('alt-source'), never failure. The
+  backing-pick 404 in the log was benign-by-design (no backing matched).
+  Repro note: CDP-created automated tabs stall ALL media element loads
+  (readyState 0 forever) even though fetch() to the same URLs is
+  instant — do NOT chase media stalls seen only in automation tabs;
+  verify on Bill's real session.
