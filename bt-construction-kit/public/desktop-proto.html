@@ -1583,7 +1583,7 @@ async function showMacbookCard() {
   } catch (e) {}
 }
 const DESK_DITTO_CC = { 3: 'Ditto L1 rec/dub/play', 9: 'Ditto L1 stop', 14: 'Ditto L1 clear', 15: 'Ditto L1 level', 20: 'Ditto L1 store', 22: 'Ditto L2 rec/dub/play', 23: 'Ditto L2 stop', 24: 'Ditto L2 clear', 25: 'Ditto L2 level', 28: 'Ditto decay', 29: 'Ditto ALL STOP', 30: 'Ditto ALL CLEAR', 31: 'Ditto FX', 85: 'Ditto ser/par' };
-const DESK_STADIUM_CC = { 69: 'Stadium snapshot', 58: 'Stadium looper rec', 59: 'Stadium looper play/stop', 60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium undo', 54: 'Stadium ½spd', 55: 'Stadium rev', 62: 'Stadium looper blk', 64: 'Stadium tap', 32: 'Stadium setlist', 10: 'Stadium song cue', 51: 'Stadium play/pause' };
+const DESK_STADIUM_CC = { 0: 'Stadium bank MSB', 32: 'Stadium bank LSB', 69: 'Stadium snapshot', 58: 'Stadium looper rec', 59: 'Stadium looper play/stop', 60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium undo', 54: 'Stadium ½spd', 55: 'Stadium rev', 62: 'Stadium looper blk', 64: 'Stadium tap', 32: 'Stadium setlist', 10: 'Stadium song cue', 51: 'Stadium play/pause' };
 function deskDecode(e) {
   const stadiumCh = +cfgGet('helix', 'channel');
   if (e.proto === 'osc') {

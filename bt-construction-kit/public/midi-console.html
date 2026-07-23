@@ -296,7 +296,7 @@ function hxMsgPrev() {
   const raw = m.param ? +$('hx-msg-param').value : null;
   const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
   if (m.kind === 'bankpc') {
-    $('hx-msg-prev').textContent = `will log: →SENT ch${hxCh()} CC32=${+$('hx-msg-param2').value} then PC ${v}`;
+    $('hx-msg-prev').textContent = `will log: →SENT ch${hxCh()} CC0=0, CC32=${+$('hx-msg-param2').value}, PC ${v} — the trio the pedal itself transmits`;
     return;
   }
   $('hx-msg-prev').textContent = 'will log: →SENT ch' + hxCh() + ' ' +
@@ -309,8 +309,12 @@ async function hxMsgSend() {
   if (m.kind === 'bankpc') {
     const bank = +$('hx-msg-param2').value;
     recentRecord({ kind: 'bankpc', ch: hxCh(), bank, program: v, port: 'chain' });
-    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank CC32=' + bank);
-    await new Promise(r => setTimeout(r, 60));
+    // The Stadium's OWN preset-change transmission (seen in the wire log)
+    // is the full trio: CC0 (bank MSB) + CC32 (bank LSB) + PC. Mirror it.
+    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
+    await new Promise(r => setTimeout(r, 40));
+    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank LSB CC32=' + bank);
+    await new Promise(r => setTimeout(r, 40));
     await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium preset PC ' + v + ' (bank ' + bank + ')');
     return;
   }
@@ -343,7 +347,7 @@ const DITTO_CC = { 3: 'Ditto L1 rec/dub/play', 9: 'Ditto L1 stop', 14: 'Ditto L1
   20: 'Ditto L1 store', 21: 'Ditto L1 clear backtrack', 22: 'Ditto L2 rec/dub/play', 23: 'Ditto L2 stop',
   24: 'Ditto L2 clear', 25: 'Ditto L2 level', 26: 'Ditto L2 store', 27: 'Ditto L2 clear backtrack',
   28: 'Ditto decay', 29: 'Ditto ALL STOP', 30: 'Ditto ALL CLEAR', 31: 'Ditto FX on/off', 85: 'Ditto serial/parallel' };
-const STADIUM_CC = { 69: 'Stadium snapshot select', 58: 'Stadium looper rec/dub', 59: 'Stadium looper play/stop',
+const STADIUM_CC = { 0: 'Stadium bank MSB (CC0)', 69: 'Stadium snapshot select', 58: 'Stadium looper rec/dub', 59: 'Stadium looper play/stop',
   60: 'Stadium looper once', 52: 'Stadium looper clear', 53: 'Stadium looper undo', 54: 'Stadium ½-speed',
   55: 'Stadium reverse', 62: 'Stadium looper block', 64: 'Stadium tap tempo', 32: 'Stadium setlist select',
   63: 'Stadium playlist', 10: 'Stadium song cue', 46: 'Stadium marker cue', 47: 'Stadium RTZ',
@@ -508,7 +512,7 @@ function recentRecord(slot) {
   renderRecent();
 }
 function recentLabel(s) {
-  if (s.kind === 'bankpc') return `ch${s.ch} CC32=${s.bank} + PC ${s.program}`;
+  if (s.kind === 'bankpc') return `ch${s.ch} CC0=0+CC32=${s.bank}+PC ${s.program}`;
   if (s.kind === 'pc') return `ch${s.ch} PC ${s.program}`;
   if (s.kind === 'cc') return `ch${s.ch} CC${s.controller}=${s.value}`;
   if (s.kind === 'note') return `ch${s.ch} note ${s.note} v${s.velocity}`;
@@ -519,8 +523,10 @@ async function recentResend(i) {
   if (!s) return;
   const port = s.port || 'chain';
   if (s.kind === 'bankpc') {
-    await send({ port, type: 'cc', channel: s.ch, controller: 32, value: s.bank }, 'recent: bank CC32=' + s.bank);
-    await new Promise(r => setTimeout(r, 60));
+    await send({ port, type: 'cc', channel: s.ch, controller: 0, value: 0 }, 'recent: bank MSB CC0=0');
+    await new Promise(r => setTimeout(r, 40));
+    await send({ port, type: 'cc', channel: s.ch, controller: 32, value: s.bank }, 'recent: bank LSB CC32=' + s.bank);
+    await new Promise(r => setTimeout(r, 40));
     await send({ port, type: 'pc', channel: s.ch, program: s.program }, 'recent: PC ' + s.program + ' (bank ' + s.bank + ')');
   } else if (s.kind === 'pc') {
     await send({ port, type: 'pc', channel: s.ch, program: s.program }, 'recent: ' + recentLabel(s));

@@ -290,3 +290,19 @@ on Helix/Logic opens instrumentation card + app together.
    and the segment isolation). Echo but no pedal action = the Ditto's
    MIDI-CC firmware/DIP config — it needs the MIDI CC update and the
    DIP switches set for CC control.
+
+## Stadium preset-recall grammar — LEARNED FROM THE PEDAL (2026-07-22)
+
+The wire log captured the Stadium's own transmission when Bill changed
+presets on the hardware:
+
+    ch5 CC0=0   (Bank MSB)
+    ch5 CC32=1  (Bank LSB — the setlist/bank)
+    ch5 PC 0    (program)
+
+The manual documents CC32+PC; the DEVICE uses the full MIDI bank-select
+convention CC0+CC32+PC. Sends missing CC0 echo around the chain but
+don't change the preset. All full-recall paths (Stadium panel compound,
+RECENT SENDS bankpc slots) now transmit the trio 40 ms apart. This is
+the EAVFA thesis proving itself: the RX monitor turned the pedal into
+its own documentation.
