@@ -5575,9 +5575,17 @@ body.server-stale .player-active:hover::after {
    row get a soft green highlight so the user always knows where they
    are in the sequence. */
 .gig-setlist.playing { border-color: rgba(46, 204, 113, 0.55); box-shadow: 0 0 10px rgba(46, 204, 113, 0.15); }
+.ss-tr-remain {
+  font: 700 11px 'SF Mono', Menlo, monospace;
+  color: #00e676;
+  margin-left: 6px;
+  min-width: 58px;
+}
 .sls-row.playing {
-  background: rgba(46, 204, 113, 0.10);
-  border: 1px solid rgba(46, 139, 87, 0.45);
+  border: 3px solid #00e676 !important;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.55), inset 0 0 6px rgba(0, 230, 118, 0.15);
+  background: rgba(0, 230, 118, 0.10);
 }
 
 /* Gig → Setlist → Song hierarchy — visually distinct levels.

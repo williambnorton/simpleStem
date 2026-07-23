@@ -471,3 +471,15 @@ pointer theatrics.
   (readyState 0 forever) even though fetch() to the same URLs is
   instant — do NOT chase media stalls seen only in automation tabs;
   verify on Bill's real session.
+- 2026-07-22 (setlist live UI): .sls-row.playing = 3px bright green
+  border + glow (the now-playing song pops in the sidebar). New
+  .ss-tr-remain readout right of the setlist Next button: rest of the
+  current song from the playhead + all following songs, mm:ss, ticked
+  every 1 s by updateSetRemaining() (durations via mergedLibrary
+  lookup). ACCEPT button removed — candidates still auto-seed songs
+  with zero sections, and SAVE (saveAutomationForSong) persists
+  sections + actions + lyrics + count-in together as it already did.
+  Buffering watchdog patience: soft warn 1.5s→3s, hard fail 3s→8s
+  (Bill saw loads failing that just needed one more second; partial
+  loads already proceed at hard timeout). Verified live: border + 58:47
+  countdown on the Heritage Plaza set.

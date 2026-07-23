@@ -2071,6 +2071,7 @@ function renderOneGigSetlist(sl, idx) {
     <button class="ss-tr ss-tr-stop" title="Stop"><i data-lucide="square"></i></button>
     <button class="ss-tr ss-tr-play" title="Play this setlist from the start"><i data-lucide="${isPlayingThisSetlist ? 'pause' : 'play'}"></i></button>
     <button class="ss-tr ss-tr-next" title="Next song"><i data-lucide="skip-forward"></i></button>
+    <span class="ss-tr-remain" title="Time remaining in this set: rest of the current song from the playhead + every song after it">${isPlayingThisSetlist ? '' : ''}</span>
     <span class="ss-tr-pos">${isPlayingThisSetlist && gigPlayingSongIdx != null ? `${gigPlayingSongIdx + 1} / ${sl.songs.length}` : ''}</span>
   `;
   transport.querySelector('.ss-tr-play').addEventListener('click', e => {
@@ -6935,7 +6936,7 @@ let _bufferWatchCancel = null;
 // server's sendCachedAudio serving from ~/.bt-cache in milliseconds, a
 // healthy click completes in <500 ms. A click that's still buffering at
 // 3 seconds is by definition a failure — toast and move on.
-function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 1500, hardTimeoutMs = 3000 }) {
+function watchBuffering({ activeElements, channels, onReady, onFailure, softWarnMs = 3000, hardTimeoutMs = 8000 }) {
   try { SS_DEBUG.log('watchdog', 'enter', { channels, softWarnMs, hardTimeoutMs, activeCount: activeElements && activeElements.length }); } catch (e) {}
   if (_bufferWatchCancel) { try { _bufferWatchCancel(); } catch (e) {} }
   // Zero-stem edge case: the song's stems object had no usable sources,
@@ -10798,6 +10799,37 @@ function loadSetlistFromLocalStorage() {
 }
 
 // Auto-advance playlist play
+// Remaining time in the playing set (Bill 2026-07-22): rest of the
+// current song from the playhead + full duration of every song after
+// it. Rendered in the playing setlist's transport, ticked every 1 s.
+function songDurationForBase(base) {
+  if (!base) return 0;
+  const m = (mergedLibrary || []).find(mm => (mm.variants || []).some(v => v.folderName === base));
+  return (m && Number(m.duration)) || 0;
+}
+function updateSetRemaining() {
+  const el = document.querySelector('.gig-setlist-transport.playing .ss-tr-remain');
+  if (!el) return;
+  if (gigPlayingSetlistIdx == null || gigPlayingSongIdx == null || !activeGig) { el.textContent = ''; return; }
+  const sl = activeGig.setlists && activeGig.setlists[gigPlayingSetlistIdx];
+  if (!sl || !sl.songs) { el.textContent = ''; return; }
+  let remain = 0;
+  const curBase = sl.songs[gigPlayingSongIdx] && sl.songs[gigPlayingSongIdx].song_base;
+  const curDur = songDurationForBase(curBase);
+  let playhead = 0;
+  try {
+    const anyEl = Object.values(audioElements).find(ae => ae.src && ae.duration);
+    if (anyEl) playhead = anyEl.currentTime || 0;
+  } catch (e) {}
+  remain += Math.max(0, curDur - playhead);
+  for (let i = gigPlayingSongIdx + 1; i < sl.songs.length; i++) {
+    remain += songDurationForBase(sl.songs[i] && sl.songs[i].song_base);
+  }
+  const mm = Math.floor(remain / 60), ss = Math.floor(remain % 60);
+  el.textContent = remain > 0 ? `${mm}:${String(ss).padStart(2, '0')} left` : '';
+}
+setInterval(updateSetRemaining, 1000);
+
 function playNextInSetlist() {
   if (setlist.length === 0 || !currentSong) return;
   
@@ -13977,33 +14009,9 @@ function setupMidiUI() {
       alert(`Save failed: ${err.message}`);
     }
   });
-  // ACCEPT — drop a section marker at every auto-detected candidate that
-  // isn't already covered by a saved section. Quick way to rough-in all
-  // the boundaries for a song; the user can then relabel/move/delete with
-  // existing UI. Color rotates 1..9 (Intro/Verse/Chorus/Bridge/…) so
-  // adjacent sections are visually distinct.
-  document.getElementById('midi-btn-accept-candidates').addEventListener('click', () => {
-    if (!automationCurrentBase) return;
-    const cands = automationSectionCandidates || [];
-    if (!cands.length) {
-      alert("This song has no auto-detected section candidates yet.\n\n" +
-            "Run ./backfill_section_detect.sh --go on the Performer to compute them for the existing library.");
-      return;
-    }
-    const NEAR = 0.5;
-    let added = 0;
-    let colorIdx = (automationSections.length % 9) + 1;
-    for (const t of cands) {
-      if (automationSections.some(s => Math.abs(s.t - t) < NEAR)) continue;
-      automationSections.push({ t, color: colorIdx });
-      colorIdx = (colorIdx % 9) + 1;
-      added++;
-    }
-    if (added === 0) { alert('Every candidate is already covered by a section.'); return; }
-    automationSections.sort((a, b) => a.t - b.t);
-    renderAutomationLane();
-    markAutomationDirty();
-  });
+  // ACCEPT button removed 2026-07-22 (Bill) — candidates still auto-seed
+  // when a song has zero saved sections, and SAVE persists sections along
+  // with actions/lyrics/count-in via saveAutomationForSong.
 
   // NEXT ▶ — jump to the next song in the library that has zero saved
   // sections, so you can work through the catalog without manually picking.
