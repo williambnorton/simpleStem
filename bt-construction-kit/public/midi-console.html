@@ -109,6 +109,7 @@ loop test below is its liveness proxy.</div>
     <div class="row"><span class="k">SEND MSG</span>
       <select id="hx-msg" onchange="hxMsgSel()" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:11px Menlo,monospace;max-width:230px"></select>
       <input type="number" id="hx-msg-param" min="0" max="127" value="0" style="display:none" onchange="hxMsgPrev()">
+      <input type="number" id="hx-msg-param2" min="0" max="127" value="0" style="display:none" onchange="hxMsgPrev()">
       <button onclick="hxMsgSend()">📤 send</button></div>
     <div class="row"><span id="hx-msg-prev" style="opacity:.65;font-size:10px"></span></div>
     <div class="row"><span class="k">tempo</span>
@@ -236,6 +237,7 @@ const hxCh = () => Math.min(16, Math.max(1, +($('hx-ch').value || 5)));
    messages — one pulldown, every message the manual documents */
 const HX_MSGS = [
   { g: 'Preset', id: 'pc', label: 'Program Change — preset recall', kind: 'pc', param: 'program 0-127', def: 0 },
+  { g: 'Preset', id: 'bankpc', label: 'FULL recall: CC32 bank + PC (the pair the manual requires)', kind: 'bankpc', param: 'program 0-127', def: 0, param2: 'bank: 0=factory 1-4=user 5+=setlists', def2: 0 },
   { g: 'Preset', id: 'setlist', label: 'Setlist select (CC32)', cc: 32, param: 'setlist value', def: 0 },
   { g: 'Snapshots', id: 'snap', label: 'Snapshot select (CC69)', cc: 69, param: 'snapshot 1-8', def: 1, map: v => v - 1 },
   { g: 'Snapshots', id: 'snapnext', label: 'Next snapshot (CC69=8)', cc: 69, val: 8 },
@@ -279,12 +281,19 @@ function hxMsgSel() {
   const p = $('hx-msg-param');
   p.style.display = m.param ? '' : 'none';
   if (m.param) { p.value = m.def; p.title = m.param; }
+  const p2 = $('hx-msg-param2');
+  p2.style.display = m.param2 ? '' : 'none';
+  if (m.param2) { p2.value = m.def2 || 0; p2.title = m.param2; }
   hxMsgPrev();
 }
 function hxMsgPrev() {
   const m = hxMsgCur();
   const raw = m.param ? +$('hx-msg-param').value : null;
   const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
+  if (m.kind === 'bankpc') {
+    $('hx-msg-prev').textContent = `will log: →SENT ch${hxCh()} CC32=${+$('hx-msg-param2').value} then PC ${v}`;
+    return;
+  }
   $('hx-msg-prev').textContent = 'will log: →SENT ch' + hxCh() + ' ' +
     (m.kind === 'pc' ? 'PC ' + v : `CC${m.cc}=${v}`) + (m.param ? ' (' + m.param + ')' : '');
 }
@@ -292,6 +301,13 @@ async function hxMsgSend() {
   const m = hxMsgCur();
   const raw = m.param ? +$('hx-msg-param').value : null;
   const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
+  if (m.kind === 'bankpc') {
+    const bank = +$('hx-msg-param2').value;
+    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank CC32=' + bank);
+    await new Promise(r => setTimeout(r, 60));
+    await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium preset PC ' + v + ' (bank ' + bank + ')');
+    return;
+  }
   if (m.kind === 'pc') await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v);
   else await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label);
 }
