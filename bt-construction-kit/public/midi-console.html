@@ -40,10 +40,15 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
-  .recent-row { flex-wrap: nowrap !important; overflow-x: auto; gap: 4px !important;
+  .recent-row { gap: 5px !important;
     border-bottom: 1px dotted rgba(255,255,255,.08); padding-bottom: 4px;
-    font-size: 10px !important; white-space: nowrap; }
-  .recent-row select { max-width: 84px; }
+    font-size: 10.5px !important; }
+  .recent-row select { max-width: 110px; }
+  .recent-head { font-size: 11px; color: #7fd6a4; margin: 10px 0 2px; }
+  .recent-head .hint { opacity: .5; font-weight: 400; color: #c7d2de; }
+  .hx-cols { display: flex; gap: 22px; flex-wrap: wrap; }
+  .hx-cols > div:first-child { flex: 1 1 340px; min-width: 300px; }
+  .hx-cols > div:last-child { flex: 1 1 500px; min-width: 420px; }
   a { color: #7fd6a4; }
 </style>
 </head>
@@ -90,9 +95,12 @@ XR18's network for these controls + state.</div>
       <button onclick="sendCC(4, 31, 127, 'Ditto FX toggle')">✨ FX</button></div>
     <div class="statebox">write-only device (ch 4 fixed) — no state comes back; the chain
 loop test below is its liveness proxy.</div>
+    <div class="recent-head">🕔 RECENT SENDS — Ditto <span class="hint">· last 5 · edit + 📤 resend</span></div>
+    <div id="recent-ditto"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="Helix Stadium control panel — CC/PC commands on the configurable Stadium channel (default 5), from the official Line 6 MIDI map. Patch install lives in the Stadium desktop app."><h3>🏟️ HELIX STADIUM <span id="hx-tag"></span></h3>
+  <div class="panel" style="grid-column: 1 / -1" title="Helix Stadium control panel — CC/PC commands on the configurable Stadium channel (default 5), from the official Line 6 MIDI map. Patch install lives in the Stadium desktop app. Right side: this device's last 5 sends, each editable + resendable."><h3>🏟️ HELIX STADIUM <span id="hx-tag"></span></h3>
+    <div class="hx-cols"><div>
     <div class="row"><span class="k">channel</span>
       <input type="number" id="hx-ch" min="1" max="16" value="5">
       <span style="opacity:.6">(set the Stadium's Global MIDI ch to match)</span></div>
@@ -125,6 +133,12 @@ loop test below is its liveness proxy.</div>
     <div class="statebox">Patch install/browse lives in the Helix Stadium app —
 double-click the Stadium node above to open it. RX shows the
 Stadium's own PC/CC69 sends once Send MIDI PC is on.</div>
+    </div>
+    <div>
+    <div class="recent-head">🕔 RECENT SENDS — Stadium <span class="hint">· last 5 · each row is one saved message: edit any field, 📤 fires it again. A Preset(trio) row sends CC0 + CC32 + PC with one press.</span></div>
+    <div id="recent-helix"><div class="statebox">nothing sent yet — every Stadium message you send lands here as a reusable row.</div></div>
+    </div>
+    </div>
   </div>
 
   <div class="panel" title="Logic Pro panel — transport via AppleScript key commands; notes and program changes via the IAC virtual MIDI bus. A record-armed Software Instrument track in Logic receives them."><h3>🎹 LOGIC PRO <span id="lg-tag"></span></h3>
@@ -147,6 +161,8 @@ Stadium's own PC/CC69 sends once Send MIDI PC is on.</div>
 events over IAC, it follows the sidecar's clock, mixes the 18ch
 USB from the XR18, and returns the mix. Notes/PC ride IAC — a
 record-armed Software Instrument track receives them.</div>
+    <div class="recent-head">🕔 RECENT SENDS — Logic (IAC) <span class="hint">· last 5 · edit + 📤 resend</span></div>
+    <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
   <div class="panel" title="MIDI clock — the sidecar generates 24 pulses per quarter note and broadcasts to every output; the Ditto and Stadium sync to it. The DIN loop test sends a marker around the physical chain and listens for its echo."><h3>⏱ MIDI CLOCK + CHAIN</h3>
@@ -184,10 +200,6 @@ ch16 around the chain and listens for the echo.</div>
 switches should transmit. Send one, watch →SENT appear, and if the
 chain loops it returns as ←HEARD — the reference signature to
 compare the pedal's own output against.</div>
-  </div>
-
-  <div class="panel" title="RECENT SENDS — the last five MIDI messages you sent, each a living row: change it with the pulldowns, hit SEND to fire it again. A CC32+PC preset recall is ONE compound slot whose single button sends both messages."><h3>🕔 RECENT SENDS <span style="opacity:.5;font-size:10px">last 5 · editable · resendable</span></h3>
-    <div id="recent-sends"><div class="statebox">nothing sent yet — every MIDI message you send lands here as a reusable button.</div></div>
   </div>
 
   <div class="panel" style="grid-column: 1 / -1;" title="The wire log — every MIDI and OSC message, both directions, timestamped with plain-English decoding. →SENT left the Mac; ←HEARD arrived on an input. The system's black-box recorder."><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
@@ -536,10 +548,23 @@ function mcPorts() {
     if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
   }
 }
-/* ── RECENT SENDS: last 5 MIDI messages, editable + resendable ────── */
+/* ── RECENT SENDS: per-device, last 5 each, editable + resendable ── */
 const RECENT_KEY = 'console.recentSends.v1';
+function devOf(s) {
+  if (/iac|logic/i.test(s.port || '')) return 'logic';
+  if (s.ch === 4) return 'ditto';
+  return 'helix';
+}
 function recentLoad() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
-function recentSave(a) { localStorage.setItem(RECENT_KEY, JSON.stringify(a.slice(0, 5))); }
+function recentSave(a) {
+  const kept = [], counts = {};
+  for (const s of a) {
+    const d = devOf(s);
+    counts[d] = (counts[d] || 0) + 1;
+    if (counts[d] <= 5) kept.push(s);
+  }
+  localStorage.setItem(RECENT_KEY, JSON.stringify(kept));
+}
 function recentRecord(slot) {
   const a = recentLoad();
   const sig = JSON.stringify({ ...slot, t: 0 });
@@ -596,27 +621,33 @@ function recentEdit(i, field, value) {
   recentSave(a);
   renderRecent();
 }
-function renderRecent() {
-  const box = $('recent-sends');
-  if (!box) return;
-  const a = recentLoad();
-  if (!a.length) { box.innerHTML = '<div class="statebox">nothing sent yet — every MIDI message you send lands here as a reusable button.</div>'; return; }
-  const num = (i, f, v, max, title) => `<input type="number" min="0" max="${max}" value="${v}" title="${title}" style="width:44px;padding:2px 3px" onchange="recentEdit(${i},'${f}',this.value)">`;
+function recentRowHtml(s, i) {
+  const num = (f, v, max, title) => `<input type="number" min="0" max="${max}" value="${v}" title="${title}" style="width:48px;padding:2px 3px" onchange="recentEdit(${i},'${f}',this.value)">`;
   const ports = ['chain'].concat((health && health.ok && health.ports) || []);
-  box.innerHTML = a.map((s, i) => {
-    const kindSel = `<select onchange="recentEdit(${i},'kind',this.value)" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:11px Menlo,monospace">` +
-      [['pc', 'PC'], ['cc', 'CC'], ['note', 'Note'], ['snap', 'Snap'], ['bankpc', 'Preset(trio)']].map(([v, l]) => `<option value="${v}" ${s.kind === v ? 'selected' : ''}>${l}</option>`).join('') + '</select>';
-    const portSel = `<select onchange="recentEdit(${i},'port',this.value)" title="output port" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:10px Menlo,monospace;max-width:90px">` +
-      ports.map(p => `<option value="${p}" ${(s.port || 'chain') === p ? 'selected' : ''}>${p === 'chain' ? 'chain' : p.slice(0, 12)}</option>`).join('') + '</select>';
-    let fields = 'ch ' + num(i, 'ch', s.ch || 5, 16, 'channel 1-16');
-    if (s.kind === 'pc') fields += ' pgm ' + num(i, 'program', s.program || 0, 127, 'program');
-    else if (s.kind === 'cc') fields += ' cc ' + num(i, 'controller', s.controller || 0, 127, 'controller') + ' val ' + num(i, 'value', s.value || 0, 127, 'value');
-    else if (s.kind === 'note') fields += ' note ' + num(i, 'note', s.note || 60, 127, 'note') + ' vel ' + num(i, 'velocity', s.velocity || 100, 127, 'velocity');
-    else if (s.kind === 'bankpc') fields += ' bank ' + num(i, 'bank', s.bank || 0, 127, 'CC32 bank: 0=factory 1-4=user 5+=setlists') + ' pgm ' + num(i, 'program', s.program || 0, 127, 'program');
-    else if (s.kind === 'snap') fields += ' snap ' + num(i, 'snap', s.snap || 1, 10, 'snapshot 1-8 · 9=next · 10=prev');
-    return `<div class="row recent-row" title="${recentLabel(s)}">${kindSel} ${portSel} ${fields}
-      <button onclick="recentResend(${i})" title="send ${recentLabel(s)}">📤</button></div>`;
-  }).join('');
+  const kindSel = `<select onchange="recentEdit(${i},'kind',this.value)" title="message kind" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:11px Menlo,monospace">` +
+    [['pc', 'PC'], ['cc', 'CC'], ['note', 'Note'], ['snap', 'Snap'], ['bankpc', 'Preset(trio)']].map(([v, l]) => `<option value="${v}" ${s.kind === v ? 'selected' : ''}>${l}</option>`).join('') + '</select>';
+  const portSel = `<select onchange="recentEdit(${i},'port',this.value)" title="output port" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:10px Menlo,monospace;max-width:90px">` +
+    ports.map(p => `<option value="${p}" ${(s.port || 'chain') === p ? 'selected' : ''}>${p === 'chain' ? 'chain' : p.slice(0, 12)}</option>`).join('') + '</select>';
+  let fields = 'ch ' + num('ch', s.ch || 5, 16, 'channel 1-16');
+  if (s.kind === 'pc') fields += ' pgm ' + num('program', s.program || 0, 127, 'program');
+  else if (s.kind === 'cc') fields += ' cc ' + num('controller', s.controller || 0, 127, 'controller') + ' val ' + num('value', s.value || 0, 127, 'value');
+  else if (s.kind === 'note') fields += ' note ' + num('note', s.note || 60, 127, 'note') + ' vel ' + num('velocity', s.velocity || 100, 127, 'velocity');
+  else if (s.kind === 'bankpc') fields += ' bank ' + num('bank', s.bank || 0, 127, 'CC32 bank: 0=factory 1-4=user 5+=setlists') + ' pgm ' + num('program', s.program || 0, 127, 'program');
+  else if (s.kind === 'snap') fields += ' snap ' + num('snap', s.snap || 1, 10, 'snapshot 1-8 · 9=next · 10=prev');
+  return `<div class="row recent-row" title="${recentLabel(s)}">${kindSel} ${portSel} ${fields}
+    <span style="opacity:.5">${recentLabel(s)}</span>
+    <button onclick="recentResend(${i})" title="send ${recentLabel(s)}" style="margin-left:auto">📤</button></div>`;
+}
+function renderRecent() {
+  const a = recentLoad();
+  const boxes = { helix: $('recent-helix'), ditto: $('recent-ditto'), logic: $('recent-logic') };
+  const html = { helix: [], ditto: [], logic: [] };
+  a.forEach((s, i) => html[devOf(s)].push(recentRowHtml(s, i)));
+  for (const dev of Object.keys(boxes)) {
+    if (!boxes[dev]) continue;
+    boxes[dev].innerHTML = html[dev].length ? html[dev].join('')
+      : '<div class="statebox">nothing sent yet.</div>';
+  }
 }
 async function pollFast() {
   health = await fetch('/api/midi/health').then(J).catch(() => null);
