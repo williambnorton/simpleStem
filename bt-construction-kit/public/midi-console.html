@@ -305,7 +305,7 @@ function hxRecallInit() {
   const sel = $('hx-recall');
   if (!sel) return;
   let html = '<optgroup label="Presets — setlist 1 (CC32=1)">';
-  for (let i = 0; i <= 127; i++) html += `<option value="p:${i}">Preset PC ${i}</option>`;
+  for (let i = 0; i <= 127; i++) html += `<option value="p:${i}">Preset ${Math.floor(i / 4) + 1}${'ABCD'[i % 4]} — PC ${i}</option>`;
   html += '</optgroup><optgroup label="Snapshots (CC69)">';
   for (let i = 1; i <= 8; i++) html += `<option value="s:${i}">Snapshot ${i}</option>`;
   html += '<option value="s:9">Next snapshot</option><option value="s:10">Prev snapshot</option></optgroup>';
