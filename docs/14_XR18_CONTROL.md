@@ -306,3 +306,45 @@ don't change the preset. All full-recall paths (Stadium panel compound,
 RECENT SENDS bankpc slots) now transmit the trio 40 ms apart. This is
 the EAVFA thesis proving itself: the RX monitor turned the pedal into
 its own documentation.
+
+---
+
+# Field diagnosis — the figure-eight (2026-07-23): recall WORKS, wiring was the culprit
+
+Weeks of "the Stadium ignores our PCs" resolved in one remote experiment.
+The tell was in the wire log: OUR sends echoed home on **U2MIDI Pro**, but
+the pedal's own preset announcements arrived on **XR18**. The Stadium has
+only ONE output jack (MIDI IN + a single combined OUT/THRU — confirmed in
+the official Rev D manual), so if our messages passed through the pedal
+both traffic types would arrive on the same input. They didn't. Deduced
+topology — a figure-eight, two loops, Stadium in neither send path:
+
+- XR18 DIN OUT → Ditto IN → Ditto THRU → U2MIDI IN  ("the chain" — what
+  the loop test validates; the Stadium is NOT in it)
+- U2MIDI OUT → Stadium IN → Stadium OUT/THRU → XR18 DIN IN  (how the
+  pedal's announcements reached us)
+
+Proof: sent the trio (ch5 CC0=0 · CC32=1 · PC 13) out port "U2MIDI Pro"
+— each message echoed back on XR18 (thru-pass through the pedal), then a
+SECOND unprompted trio arrived on XR18: the Stadium announcing its change
+to 4B. Remote preset recall works; settings, channel, and grammar were
+right all along.
+
+Manual facts learned (manuals.line6.com/en/helix-stadium/live/midi):
+
+- CC32 bank map: 0 = FACTORY · **1-4 = USER PRESETS groups of 128
+  (1A-32D, 33A-64D, …)** · 5+ = custom setlists. The pedal announces
+  CC32=1, so Bill's presets live in USER PRESETS group 1.
+- PC alone suffices within the current group; the CC32 prefix only
+  matters when crossing groups/setlists (CC0 optional but harmless).
+- **Empty/unsaved preset slots silently ignore PC recall** — always test
+  against a slot the pedal has itself announced.
+- The pedal SHOWS its own recall recipe: Preset List sidebar (CC32 + PC)
+  and snapshot panel (CC69) display the exact messages.
+- Preset naming: 4 slots per bank, PC = (bank-1)*4 + slot(A=0..D=3);
+  4B = PC 13. The console RECALL pulldown speaks this dialect.
+
+Fix (two plug moves → canonical single chain, all software unchanged):
+Ditto THRU → Stadium IN, Stadium OUT/THRU → U2MIDI IN. The U2MIDI OUT
+plug and XR18 DIN IN retire. After rewiring, the loop test finally
+proves the WHOLE chain including the pedal.
