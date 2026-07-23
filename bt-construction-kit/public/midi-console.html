@@ -5,7 +5,13 @@
 <title>simpleStem — MIDI Console</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0b0e14; color: #c7d2de; font: 13px -apple-system, sans-serif; padding: 14px 18px; }
+  body { background: #0b0e14; color: #c7d2de; font: 13px -apple-system, sans-serif; padding: 42px 18px 14px; }
+  #portals { position: fixed; top: 8px; left: 12px; z-index: 90; display: flex; gap: 6px;
+    background: rgba(11,14,20,.92); border: 1px solid rgba(255,255,255,.14); border-radius: 9px; padding: 4px 6px; }
+  #portals a { color: #9fb3c8; text-decoration: none; font: 700 10px -apple-system, sans-serif; letter-spacing: .5px;
+    padding: 3px 8px; border-radius: 6px; border: 1px solid transparent; }
+  #portals a:hover { color: #aef7cd; border-color: rgba(0,230,118,.4); }
+  #portals a.here { color: #00e676; border-color: rgba(0,230,118,.5); background: rgba(0,230,118,.1); pointer-events: none; }
   h1 { font-size: 16px; color: #7fd6a4; margin-bottom: 2px; }
   .sub { opacity: .55; font-size: 11px; margin-bottom: 12px; }
   .ok { color: #00e676; font-weight: 700; }
@@ -53,6 +59,9 @@
 </style>
 </head>
 <body>
+<nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
+  <a href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a class="here" href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
+</nav>
 <h1>🎛 MIDI CONSOLE — the Performer's control room</h1>
 <div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a></div>
 

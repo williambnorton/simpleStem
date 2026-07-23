@@ -11,6 +11,12 @@
     background: linear-gradient(160deg, #1d2733 0%, #10161f 70%);
     color: #dfe6ee; overflow: hidden;
   }
+  #portals { position: fixed; top: 8px; left: 12px; z-index: 90; display: flex; gap: 6px;
+    background: rgba(11,14,20,.92); border: 1px solid rgba(255,255,255,.14); border-radius: 9px; padding: 4px 6px; }
+  #portals a { color: #9fb3c8; text-decoration: none; font: 700 10px -apple-system, sans-serif; letter-spacing: .5px;
+    padding: 3px 8px; border-radius: 6px; border: 1px solid transparent; }
+  #portals a:hover { color: #aef7cd; border-color: rgba(0,230,118,.4); }
+  #portals a.here { color: #00e676; border-color: rgba(0,230,118,.5); background: rgba(0,230,118,.1); pointer-events: none; }
   #hint {
     position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
     background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15);
@@ -366,6 +372,9 @@
 </style>
 </head>
 <body>
+<nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
+  <a href="/">🎛 PORTAL</a><a class="here" href="/desktop-proto.html">🖥 DESK</a><a href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
+</nav>
 <div id="hint">Every icon is the REAL thing — <b>hover</b> to learn it, <b>double-click</b> to open it, <b>right-click</b> to act on it. Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drag machines together to aggregate · 🎤 voice · <a href="/" style="color:#7fd6a4">Performer</a> · <a href="/librarian" style="color:#7fd6a4">Librarian</a> · <a href="/midi-console.html" style="color:#7fd6a4">MIDI Console</a> · 📚 DOCS reads the manual</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>
 <svg id="wires"></svg>
