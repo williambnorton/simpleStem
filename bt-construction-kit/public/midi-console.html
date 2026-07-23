@@ -40,6 +40,10 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .recent-row { flex-wrap: nowrap !important; overflow-x: auto; gap: 4px !important;
+    border-bottom: 1px dotted rgba(255,255,255,.08); padding-bottom: 4px;
+    font-size: 10px !important; white-space: nowrap; }
+  .recent-row select { max-width: 84px; }
   a { color: #7fd6a4; }
 </style>
 </head>
@@ -92,6 +96,10 @@ loop test below is its liveness proxy.</div>
     <div class="row"><span class="k">channel</span>
       <input type="number" id="hx-ch" min="1" max="16" value="5">
       <span style="opacity:.6">(set the Stadium's Global MIDI ch to match)</span></div>
+    <div class="row"><span class="k">RECALL</span>
+      <select id="hx-recall" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:11px Menlo,monospace;max-width:180px"></select>
+      <button onclick="hxRecallSend()">📤 send</button>
+      <span style="opacity:.55;font-size:10px">presets send CC0=0 · CC32=1 · PC — the pedal's own trio</span></div>
     <div class="row"><span class="k">snapshot</span>
       <button onclick="hx(69, 0, 'Stadium snapshot 1')">1</button>
       <button onclick="hx(69, 1, 'Stadium snapshot 2')">2</button>
@@ -272,6 +280,35 @@ const HX_MSGS = [
   { g: 'Tempo/Expression', id: 'exp2', label: 'EXP2 position (CC2)', cc: 2, param: 'position 0-127', def: 64 },
   { g: 'Tempo/Expression', id: 'toe', label: 'Toe switch toggle (CC36)', cc: 36, val: 127 },
 ];
+function hxRecallInit() {
+  const sel = $('hx-recall');
+  if (!sel) return;
+  let html = '<optgroup label="Presets — setlist 1 (CC32=1)">';
+  for (let i = 0; i <= 127; i++) html += `<option value="p:${i}">Preset PC ${i}</option>`;
+  html += '</optgroup><optgroup label="Snapshots (CC69)">';
+  for (let i = 1; i <= 8; i++) html += `<option value="s:${i}">Snapshot ${i}</option>`;
+  html += '<option value="s:9">Next snapshot</option><option value="s:10">Prev snapshot</option></optgroup>';
+  sel.innerHTML = html;
+}
+async function hxRecallSend() {
+  const v = $('hx-recall').value;
+  const ch = hxCh();
+  if (v.startsWith('p:')) {
+    const pgm = +v.slice(2);
+    recentRecord({ kind: 'bankpc', ch, bank: 1, program: pgm, port: 'chain' });
+    await send({ port: 'chain', type: 'cc', channel: ch, controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
+    await new Promise(r => setTimeout(r, 40));
+    await send({ port: 'chain', type: 'cc', channel: ch, controller: 32, value: 1 }, 'Stadium bank LSB CC32=1');
+    await new Promise(r => setTimeout(r, 40));
+    await send({ port: 'chain', type: 'pc', channel: ch, program: pgm }, 'Stadium preset PC ' + pgm + ' (setlist 1)');
+  } else {
+    const n = +v.slice(2);
+    const cc69 = n <= 8 ? n - 1 : (n === 9 ? 8 : 9);
+    recentRecord({ kind: 'snap', ch, snap: n, port: 'chain' });
+    await send({ port: 'chain', type: 'cc', channel: ch, controller: 69, value: cc69 },
+      'Stadium ' + (n <= 8 ? 'snapshot ' + n : n === 9 ? 'next snapshot' : 'prev snapshot'));
+  }
+}
 function hxMsgInit() {
   const sel = $('hx-msg');
   const groups = [...new Set(HX_MSGS.map(m => m.g))];
@@ -516,6 +553,7 @@ function recentLabel(s) {
   if (s.kind === 'pc') return `ch${s.ch} PC ${s.program}`;
   if (s.kind === 'cc') return `ch${s.ch} CC${s.controller}=${s.value}`;
   if (s.kind === 'note') return `ch${s.ch} note ${s.note} v${s.velocity}`;
+  if (s.kind === 'snap') return `ch${s.ch} snapshot ${s.snap <= 8 ? s.snap : s.snap === 9 ? 'next' : 'prev'} (CC69=${s.snap <= 8 ? s.snap - 1 : s.snap === 9 ? 8 : 9})`;
   return '?';
 }
 async function recentResend(i) {
@@ -535,6 +573,9 @@ async function recentResend(i) {
   } else if (s.kind === 'note') {
     await send({ port, type: 'note_on', channel: s.ch, note: s.note, velocity: s.velocity }, 'recent: ' + recentLabel(s));
     setTimeout(() => send({ port, type: 'note_off', channel: s.ch, note: s.note, velocity: 0 }, 'recent: note_off ' + s.note), 250);
+  } else if (s.kind === 'snap') {
+    const cc69 = s.snap <= 8 ? s.snap - 1 : (s.snap === 9 ? 8 : 9);
+    await send({ port, type: 'cc', channel: s.ch, controller: 69, value: cc69 }, 'recent: ' + recentLabel(s));
   }
   recentRecord(s);
 }
@@ -546,7 +587,8 @@ function recentEdit(i, field, value) {
     const defs = { pc: { kind: 'pc', ch, port, program: 0 },
                    cc: { kind: 'cc', ch, port, controller: 69, value: 0 },
                    note: { kind: 'note', ch, port, note: 60, velocity: 100 },
-                   bankpc: { kind: 'bankpc', ch, port, bank: 0, program: 0 } };
+                   snap: { kind: 'snap', ch, port, snap: 1 },
+                   bankpc: { kind: 'bankpc', ch, port, bank: 1, program: 0 } };
     a[i] = { ...defs[value], t: a[i].t };
   } else {
     a[i][field] = field === 'port' ? value : +value;
@@ -559,11 +601,11 @@ function renderRecent() {
   if (!box) return;
   const a = recentLoad();
   if (!a.length) { box.innerHTML = '<div class="statebox">nothing sent yet — every MIDI message you send lands here as a reusable button.</div>'; return; }
-  const num = (i, f, v, max, title) => `<input type="number" min="0" max="${max}" value="${v}" title="${title}" style="width:52px" onchange="recentEdit(${i},'${f}',this.value)">`;
+  const num = (i, f, v, max, title) => `<input type="number" min="0" max="${max}" value="${v}" title="${title}" style="width:44px;padding:2px 3px" onchange="recentEdit(${i},'${f}',this.value)">`;
   const ports = ['chain'].concat((health && health.ok && health.ports) || []);
   box.innerHTML = a.map((s, i) => {
     const kindSel = `<select onchange="recentEdit(${i},'kind',this.value)" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:11px Menlo,monospace">` +
-      [['pc', 'PC'], ['cc', 'CC'], ['note', 'Note'], ['bankpc', 'CC32+PC']].map(([v, l]) => `<option value="${v}" ${s.kind === v ? 'selected' : ''}>${l}</option>`).join('') + '</select>';
+      [['pc', 'PC'], ['cc', 'CC'], ['note', 'Note'], ['snap', 'Snap'], ['bankpc', 'Preset(trio)']].map(([v, l]) => `<option value="${v}" ${s.kind === v ? 'selected' : ''}>${l}</option>`).join('') + '</select>';
     const portSel = `<select onchange="recentEdit(${i},'port',this.value)" title="output port" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:10px Menlo,monospace;max-width:90px">` +
       ports.map(p => `<option value="${p}" ${(s.port || 'chain') === p ? 'selected' : ''}>${p === 'chain' ? 'chain' : p.slice(0, 12)}</option>`).join('') + '</select>';
     let fields = 'ch ' + num(i, 'ch', s.ch || 5, 16, 'channel 1-16');
@@ -571,9 +613,9 @@ function renderRecent() {
     else if (s.kind === 'cc') fields += ' cc ' + num(i, 'controller', s.controller || 0, 127, 'controller') + ' val ' + num(i, 'value', s.value || 0, 127, 'value');
     else if (s.kind === 'note') fields += ' note ' + num(i, 'note', s.note || 60, 127, 'note') + ' vel ' + num(i, 'velocity', s.velocity || 100, 127, 'velocity');
     else if (s.kind === 'bankpc') fields += ' bank ' + num(i, 'bank', s.bank || 0, 127, 'CC32 bank: 0=factory 1-4=user 5+=setlists') + ' pgm ' + num(i, 'program', s.program || 0, 127, 'program');
-    return `<div class="row" style="border-bottom:1px dotted rgba(255,255,255,.08);padding-bottom:4px">${kindSel} ${portSel} ${fields}
-      <button onclick="recentResend(${i})" title="send ${recentLabel(s)}">📤 SEND</button>
-      <span style="opacity:.5;font-size:9px">${recentLabel(s)}</span></div>`;
+    else if (s.kind === 'snap') fields += ' snap ' + num(i, 'snap', s.snap || 1, 10, 'snapshot 1-8 · 9=next · 10=prev');
+    return `<div class="row recent-row" title="${recentLabel(s)}">${kindSel} ${portSel} ${fields}
+      <button onclick="recentResend(${i})" title="send ${recentLabel(s)}">📤</button></div>`;
   }).join('');
 }
 async function pollFast() {
@@ -622,6 +664,7 @@ $('topo').addEventListener('dblclick', async (e) => {
 });
 mcFields();
 hxMsgInit();
+hxRecallInit();
 renderRecent();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);

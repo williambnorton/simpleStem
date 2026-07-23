@@ -493,3 +493,10 @@ pointer theatrics.
   the SEMANTIC level (never inside send(), or compounds fragment).
   Resending re-records to the top. Verified live: capture, compound
   slot, kind edit, dedupe, reorder.
+- 2026-07-22 (unified RECALL): Stadium panel's top row is now one
+  pulldown — 128 presets (each sends the verified trio CC0=0 CC32=1
+  PC n) + snapshots 1-8/next/prev (CC69) — one send button for either.
+  RECENT SENDS gained the 'snap' kind (editable snapshot number,
+  9=next 10=prev) and rows are single-line (nowrap, compact inputs,
+  label moved to tooltip). Old saved compound slots resend as the trio
+  automatically since resend logic owns the wire format, not the slot.
