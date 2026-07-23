@@ -483,3 +483,13 @@ pointer theatrics.
   (Bill saw loads failing that just needed one more second; partial
   loads already proceed at hard timeout). Verified live: border + 58:47
   countdown on the Heritage Plaza set.
+- 2026-07-22 (RECENT SENDS): console panel remembering the last 5 MIDI
+  messages (localStorage console.recentSends.v1, dedupe by content,
+  newest first, survives reloads). Each row is a LIVING message: kind
+  pulldown (PC/CC/Note/CC32+PC), port pulldown (chain + live ports),
+  channel + per-kind value inputs, one 📤 SEND. The CC32+PC preset
+  recall is ONE compound slot — one button, two messages 60 ms apart.
+  Captures hook sendCC / hxMsgSend / mcSend / logicNote / logicPC at
+  the SEMANTIC level (never inside send(), or compounds fragment).
+  Resending re-records to the top. Verified live: capture, compound
+  slot, kind edit, dedupe, reorder.

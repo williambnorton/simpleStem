@@ -178,6 +178,10 @@ chain loops it returns as ←HEARD — the reference signature to
 compare the pedal's own output against.</div>
   </div>
 
+  <div class="panel" title="RECENT SENDS — the last five MIDI messages you sent, each a living row: change it with the pulldowns, hit SEND to fire it again. A CC32+PC preset recall is ONE compound slot whose single button sends both messages."><h3>🕔 RECENT SENDS <span style="opacity:.5;font-size:10px">last 5 · editable · resendable</span></h3>
+    <div id="recent-sends"><div class="statebox">nothing sent yet — every MIDI message you send lands here as a reusable button.</div></div>
+  </div>
+
   <div class="panel" style="grid-column: 1 / -1;" title="The wire log — every MIDI and OSC message, both directions, timestamped with plain-English decoding. →SENT left the Mac; ←HEARD arrived on an input. The system's black-box recorder."><h3>📡 WIRE LOG — every MIDI + OSC message, sent and heard <span id="rx-tag"></span></h3>
     <div class="row"><span class="k">listening on</span><span id="rx-ports">—</span></div>
     <div id="rxlog">no messages yet — move a fader on the board (USB Tx), tap the Stadium, or play a note.</div>
@@ -205,7 +209,7 @@ async function send(body, what) {
   toast(r.error ? '⚠ ' + r.error : '✓ ' + what + (r.routed === 'chain' ? ' · via ' + r.sent_to : ''));
   return r;
 }
-const sendCC = (channel, controller, value, what) => send({ port: 'chain', type: 'cc', channel, controller, value }, what);
+const sendCC = (channel, controller, value, what) => { recentRecord({ kind: 'cc', ch: channel, controller, value, port: 'chain' }); return send({ port: 'chain', type: 'cc', channel, controller, value }, what); };
 async function xrSet(path, value, what, db) {
   const body = db !== undefined ? { path, db } : { path, value };
   const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -229,6 +233,7 @@ async function logicKey(action, what) {
 }
 async function logicNote() {
   const ch = +$('lg-nch').value, note = +$('lg-note').value, vel = +$('lg-vel').value;
+  recentRecord({ kind: 'note', ch, note, velocity: vel, port: 'IAC' });
   await send({ port: 'IAC', type: 'note_on', channel: ch, note, velocity: vel }, `note_on ${note} vel ${vel} ch ${ch} → Logic`);
   setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: ch, note, velocity: 0 }, 'note_off ' + note), 250);
 }
@@ -303,17 +308,18 @@ async function hxMsgSend() {
   const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
   if (m.kind === 'bankpc') {
     const bank = +$('hx-msg-param2').value;
+    recentRecord({ kind: 'bankpc', ch: hxCh(), bank, program: v, port: 'chain' });
     await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank CC32=' + bank);
     await new Promise(r => setTimeout(r, 60));
     await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium preset PC ' + v + ' (bank ' + bank + ')');
     return;
   }
-  if (m.kind === 'pc') await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v);
-  else await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label);
+  if (m.kind === 'pc') { recentRecord({ kind: 'pc', ch: hxCh(), program: v, port: 'chain' }); await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v); }
+  else { recentRecord({ kind: 'cc', ch: hxCh(), controller: m.cc, value: v, port: 'chain' }); await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label); }
 }
 const hx = (cc, val, what) => sendCC(hxCh(), cc, val, what);
 function hxPC() { send({ port: 'chain', type: 'pc', channel: hxCh(), program: +$('hx-pgm').value }, 'Stadium preset PC ' + $('hx-pgm').value); }
-function logicPC() { send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
+function logicPC() { recentRecord({ kind: 'pc', ch: +$('lg-pch').value, program: +$('lg-pgm').value, port: 'IAC' }); send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
 async function clockCtl(action) {
   const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, bpm: +$('ck-bpm').value }) }).then(J).catch(e => ({ error: e.message }));
@@ -470,6 +476,11 @@ function mcPreview() {
 }
 async function mcSend() {
   const b = mcBody();
+  const slot = { ch: b.channel, port: b.port };
+  if (b.type === 'pc') Object.assign(slot, { kind: 'pc', program: b.program });
+  else if (b.type === 'cc') Object.assign(slot, { kind: 'cc', controller: b.controller, value: b.value });
+  else Object.assign(slot, { kind: 'note', note: b.note, velocity: b.velocity });
+  recentRecord(slot);
   const det = b.type === 'pc' ? 'PC ' + b.program : b.type === 'cc' ? `CC${b.controller}=${b.value}` : `${b.type} ${b.note}`;
   await send(b, 'composer: ch' + b.channel + ' ' + det);
 }
@@ -483,6 +494,81 @@ function mcPorts() {
     sel.innerHTML = opts; sel.dataset.sig = (health.ports || []).join('|');
     if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
   }
+}
+/* ── RECENT SENDS: last 5 MIDI messages, editable + resendable ────── */
+const RECENT_KEY = 'console.recentSends.v1';
+function recentLoad() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
+function recentSave(a) { localStorage.setItem(RECENT_KEY, JSON.stringify(a.slice(0, 5))); }
+function recentRecord(slot) {
+  const a = recentLoad();
+  const sig = JSON.stringify({ ...slot, t: 0 });
+  const withoutDupe = a.filter(x => JSON.stringify({ ...x, t: 0 }) !== sig);
+  withoutDupe.unshift({ ...slot, t: Date.now() });
+  recentSave(withoutDupe);
+  renderRecent();
+}
+function recentLabel(s) {
+  if (s.kind === 'bankpc') return `ch${s.ch} CC32=${s.bank} + PC ${s.program}`;
+  if (s.kind === 'pc') return `ch${s.ch} PC ${s.program}`;
+  if (s.kind === 'cc') return `ch${s.ch} CC${s.controller}=${s.value}`;
+  if (s.kind === 'note') return `ch${s.ch} note ${s.note} v${s.velocity}`;
+  return '?';
+}
+async function recentResend(i) {
+  const s = recentLoad()[i];
+  if (!s) return;
+  const port = s.port || 'chain';
+  if (s.kind === 'bankpc') {
+    await send({ port, type: 'cc', channel: s.ch, controller: 32, value: s.bank }, 'recent: bank CC32=' + s.bank);
+    await new Promise(r => setTimeout(r, 60));
+    await send({ port, type: 'pc', channel: s.ch, program: s.program }, 'recent: PC ' + s.program + ' (bank ' + s.bank + ')');
+  } else if (s.kind === 'pc') {
+    await send({ port, type: 'pc', channel: s.ch, program: s.program }, 'recent: ' + recentLabel(s));
+  } else if (s.kind === 'cc') {
+    await send({ port, type: 'cc', channel: s.ch, controller: s.controller, value: s.value }, 'recent: ' + recentLabel(s));
+  } else if (s.kind === 'note') {
+    await send({ port, type: 'note_on', channel: s.ch, note: s.note, velocity: s.velocity }, 'recent: ' + recentLabel(s));
+    setTimeout(() => send({ port, type: 'note_off', channel: s.ch, note: s.note, velocity: 0 }, 'recent: note_off ' + s.note), 250);
+  }
+  recentRecord(s);
+}
+function recentEdit(i, field, value) {
+  const a = recentLoad();
+  if (!a[i]) return;
+  if (field === 'kind') {
+    const ch = a[i].ch || 5, port = a[i].port || 'chain';
+    const defs = { pc: { kind: 'pc', ch, port, program: 0 },
+                   cc: { kind: 'cc', ch, port, controller: 69, value: 0 },
+                   note: { kind: 'note', ch, port, note: 60, velocity: 100 },
+                   bankpc: { kind: 'bankpc', ch, port, bank: 0, program: 0 } };
+    a[i] = { ...defs[value], t: a[i].t };
+  } else {
+    a[i][field] = field === 'port' ? value : +value;
+  }
+  recentSave(a);
+  renderRecent();
+}
+function renderRecent() {
+  const box = $('recent-sends');
+  if (!box) return;
+  const a = recentLoad();
+  if (!a.length) { box.innerHTML = '<div class="statebox">nothing sent yet — every MIDI message you send lands here as a reusable button.</div>'; return; }
+  const num = (i, f, v, max, title) => `<input type="number" min="0" max="${max}" value="${v}" title="${title}" style="width:52px" onchange="recentEdit(${i},'${f}',this.value)">`;
+  const ports = ['chain'].concat((health && health.ok && health.ports) || []);
+  box.innerHTML = a.map((s, i) => {
+    const kindSel = `<select onchange="recentEdit(${i},'kind',this.value)" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:11px Menlo,monospace">` +
+      [['pc', 'PC'], ['cc', 'CC'], ['note', 'Note'], ['bankpc', 'CC32+PC']].map(([v, l]) => `<option value="${v}" ${s.kind === v ? 'selected' : ''}>${l}</option>`).join('') + '</select>';
+    const portSel = `<select onchange="recentEdit(${i},'port',this.value)" title="output port" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 4px;font:10px Menlo,monospace;max-width:90px">` +
+      ports.map(p => `<option value="${p}" ${(s.port || 'chain') === p ? 'selected' : ''}>${p === 'chain' ? 'chain' : p.slice(0, 12)}</option>`).join('') + '</select>';
+    let fields = 'ch ' + num(i, 'ch', s.ch || 5, 16, 'channel 1-16');
+    if (s.kind === 'pc') fields += ' pgm ' + num(i, 'program', s.program || 0, 127, 'program');
+    else if (s.kind === 'cc') fields += ' cc ' + num(i, 'controller', s.controller || 0, 127, 'controller') + ' val ' + num(i, 'value', s.value || 0, 127, 'value');
+    else if (s.kind === 'note') fields += ' note ' + num(i, 'note', s.note || 60, 127, 'note') + ' vel ' + num(i, 'velocity', s.velocity || 100, 127, 'velocity');
+    else if (s.kind === 'bankpc') fields += ' bank ' + num(i, 'bank', s.bank || 0, 127, 'CC32 bank: 0=factory 1-4=user 5+=setlists') + ' pgm ' + num(i, 'program', s.program || 0, 127, 'program');
+    return `<div class="row" style="border-bottom:1px dotted rgba(255,255,255,.08);padding-bottom:4px">${kindSel} ${portSel} ${fields}
+      <button onclick="recentResend(${i})" title="send ${recentLabel(s)}">📤 SEND</button>
+      <span style="opacity:.5;font-size:9px">${recentLabel(s)}</span></div>`;
+  }).join('');
 }
 async function pollFast() {
   health = await fetch('/api/midi/health').then(J).catch(() => null);
@@ -530,6 +616,7 @@ $('topo').addEventListener('dblclick', async (e) => {
 });
 mcFields();
 hxMsgInit();
+renderRecent();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>
