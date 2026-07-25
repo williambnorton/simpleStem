@@ -8520,31 +8520,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .od-lat-label input { width: 44px; font-size: 10px; }
 .od-session { font-size: 9px; color: #999; font-family: ui-monospace, monospace; }
 
-/* ── PORTALS strip (upper-left on every page) — same chips as the Desk +
-   MIDI Console fixed strip, rendered inline inside the brand block here
-   so it doesn't steal vertical space from the player. ───────────────── */
-#portals {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin: 4px 0 2px;
-}
-#portals a {
-  color: #9fb3c8;
-  text-decoration: none;
-  font: 700 10px -apple-system, sans-serif;
-  letter-spacing: 0.5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-}
-#portals a:hover { color: #aef7cd; border-color: rgba(0, 230, 118, 0.4); }
-#portals a.here {
-  color: #00e676;
-  border-color: rgba(0, 230, 118, 0.5);
-  background: rgba(0, 230, 118, 0.1);
-  pointer-events: none;
-}
+
+/* PORTALS block (upper-left, every page): current view as the big green
+   label, the other destinations as a compact horizontal icon row below. */
+#portals { display: inline-block; vertical-align: middle; }
+#portals .portals-here { font: 800 12px -apple-system, sans-serif; color: #00e676; letter-spacing: 1px; margin-bottom: 3px; }
+#portals .portals-row { display: flex; align-items: center; gap: 3px; }
+#portals .portals-row a { font-size: 13px; line-height: 1; text-decoration: none; padding: 3px 5px; border-radius: 6px; border: 1px solid transparent; }
+#portals .portals-row a:hover { border-color: rgba(0, 230, 118, 0.4); background: rgba(0, 230, 118, 0.08); }
 #portals img { width: 14px; height: 14px; display: block; border-radius: 3px; }
-#portals .portals-sep { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.18); margin: 1px 3px; }
+#portals .portals-sep { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.18); margin: 0 3px; }
