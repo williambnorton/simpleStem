@@ -64,8 +64,8 @@
 <nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
   <a href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a class="here" href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
   <span class="portals-sep"></span>
-  <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
-  <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
 </nav>
 <h1>🎛 MIDI CONSOLE — the Performer's control room</h1>
 <div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a></div>

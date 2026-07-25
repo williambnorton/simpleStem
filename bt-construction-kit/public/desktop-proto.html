@@ -377,8 +377,8 @@
 <nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
   <a href="/">🎛 PORTAL</a><a class="here" href="/desktop-proto.html">🖥 DESK</a><a href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
   <span class="portals-sep"></span>
-  <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
-  <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
 </nav>
 <div id="hint">Every icon is the REAL thing — <b>hover</b> to learn it, <b>double-click</b> to open it, <b>right-click</b> to act on it. Drag the <b>URL chip</b> onto the <b>STEMCUTTER</b> · drag machines together to aggregate · 🎤 voice · <a href="/" style="color:#7fd6a4">Performer</a> · <a href="/librarian" style="color:#7fd6a4">Librarian</a> · <a href="/midi-console.html" style="color:#7fd6a4">MIDI Console</a> · 📚 DOCS reads the manual</div>
 <button id="mic" title="Voice builder — say: connect stemcutter to tagger · take it apart · run the url">🎤</button>

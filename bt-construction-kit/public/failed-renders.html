@@ -63,8 +63,8 @@
 <nav id="portals" title="Portals — every view of the system, one click away.">
   <a href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
   <span class="portals-sep"></span>
-  <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
-  <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+  <a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
 </nav>
 
 <header>

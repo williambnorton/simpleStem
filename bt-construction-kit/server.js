@@ -6019,6 +6019,33 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
   }
 });
 
+// ── Keyboard Maestro macros (Bill 2026-07-24): the PORTALS strip's
+// ChatGPT/Perplexity buttons fire KM voice-mode macros instead of opening
+// browser tabs. Whitelisted ids → exact macro names (rename here if the
+// macros are renamed in KM). osascript arg-array form — no string
+// interpolation into the script, same injection-safe pattern as logic-key.
+const KM_MACROS = {
+  chatgpt:    'ChatGPT Voice Mode',
+  perplexity: 'Perplexity Voice Mode',
+};
+app.post('/api/desktop/km-macro', express.json(), (req, res) => {
+  const name = KM_MACROS[(req.body && req.body.macro) || ''];
+  if (!name) return res.status(400).json({ error: 'unknown macro id', allowed: Object.keys(KM_MACROS) });
+  try {
+    const p = require('child_process').spawn('osascript',
+      ['-e', 'on run argv', '-e', 'tell application "Keyboard Maestro Engine" to do script (item 1 of argv)', '-e', 'end run', name]);
+    let err = '';
+    p.stderr.on('data', d => { err += d; });
+    p.on('close', (code) => {
+      if (code === 0) return res.json({ ok: true, macro: name });
+      res.status(500).json({ error: (err.trim() || 'osascript failed') +
+        ` — is Keyboard Maestro running with a macro named "${name}"?` });
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── docs browser (Bill 2026-07-18): the full project documentation,
 // readable inside the UI. Lists every tracked .md; serves one bounded
 // file at a time. Restricted to the repo's md files — never a free
