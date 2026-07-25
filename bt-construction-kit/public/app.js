@@ -11577,7 +11577,14 @@ function songDurationSec() {
       if (d && isFinite(d) && d > 0) return d;
     }
   } catch (e) {}
-  if (currentSong && currentSong.duration_sec) return currentSong.duration_sec;
+  // Library rows carry `duration` (catalog field name); older code paths
+  // used `duration_sec`. Check both — reading only duration_sec left this
+  // fallback permanently 0 for library-loaded songs, so any moment the
+  // audio elements couldn't answer (teardown at song end, drum-machine
+  // engage) reported "no duration" and blanked the automation lane.
+  if (currentSong && (currentSong.duration_sec || currentSong.duration)) {
+    return currentSong.duration_sec || currentSong.duration;
+  }
   return 0;
 }
 
@@ -11665,10 +11672,15 @@ function renderAutomationLane() {
   const markers = document.getElementById('midi-lane-markers');
   const bands   = document.getElementById('midi-lane-bands');
   if (!lane || !markers) return;
+  const dur = songDurationSec();
+  // Duration unknown (audio elements torn down mid-transition)? KEEP the
+  // last paint instead of wiping. Clearing before this guard was the
+  // "my lyric placements vanished!" bug (Bill 2026-07-24): the events
+  // were safe in automationEvents, but one transient no-duration render
+  // blanked every marker until the next song load.
+  if (!dur) { refreshAutomationToolbar(); return; }
   markers.innerHTML = '';
   if (bands) bands.innerHTML = '';
-  const dur = songDurationSec();
-  if (!dur) { refreshAutomationToolbar(); return; }
 
   // Section bands overlay the FULL visualizer canvas (their own container).
   // Markers stack at the lane's bottom anchor.
