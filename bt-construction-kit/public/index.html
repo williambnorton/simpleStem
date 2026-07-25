@@ -30,17 +30,12 @@
     <!-- Left Sidebar: Search, Filters & Instrumentation Stats -->
     <aside class="sidebar glass">
       <div class="brand">
-        <div class="brand-logo">
-          <i data-lucide="waves" class="logo-icon glow-purple"></i>
-          <span>simpleStem</span>
-        </div>
-        <!-- PORTALS strip — the same upper-left shortcuts every page carries
-             (replaces the old text role toggle). Green chip = this page. -->
-        <nav id="portals" title="Portals — every view of the system, one click away.">
-          <div class="portals-here">🎛 PORTAL</div>
-          <div class="portals-row"><a href="/desktop-proto.html" title="Sound Desktop">🖥</a><a href="/midi-console.html" title="MIDI Console">🎹</a><a href="/librarian" title="Librarian">🤖</a><span class="portals-sep"></span><a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a><a href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a></div>
-        </nav>
-        <span id="brand-version" class="brand-version" title="Performer version (V1.MMDDHHMM)"></span>
+        <!-- The PORTALS tab bar IS the brand block now: wordmark + build
+             version on the top line, the four system views as tabs below. -->
+        <nav id="portals" class="tabbar" title="simpleStem views — one system, four surfaces. The green tab is where you are.">
+  <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span></div>
+  <div class="tb-tabs"><a class="tab here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="tab" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="tab" href="/desktop-proto.html" title="🖥 Desk view">🖥 Desk</a><a class="tab" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><span class="portals-sep"></span><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a></div>
+</nav>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
              main content area (next to the clock) — see #player-top-bar. -->
       </div>
