@@ -6552,6 +6552,27 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   margin-left: 2px;
 }
 
+/* 🆕 Fresh-stems pill — freshly rendered song whose levels were never
+   saved. Cleared by SAVE writing an init event. */
+.song-fresh-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  vertical-align: 2px;
+  color: #0b0e14;
+  background: #00e676;
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.55);
+  animation: fresh-pulse 2.2s ease-in-out infinite;
+}
+@keyframes fresh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 /* Marker — wider chip that holds a label like "V0" or "M4P12". Width is
    auto so longer labels grow it; markers center on their timestamp via the
    translateX(-50%) trick. */

@@ -492,6 +492,7 @@ async function scanStems() {
   }
 
   const results = [];
+  freshMap.clear();   // rebuilt below so deleted songs age out of /api/fresh
   // Async readdir + per-entry stat so Drive stalls don't lock up the
   // event loop. Each await yields, letting audio-stream requests and
   // other handlers interleave between filesystem calls.
@@ -651,6 +652,20 @@ async function scanStems() {
           const m = /^([A-G](?:#|b)?)\s*(major|minor)?$/.exec(mj.key.trim());
           if (m) key_short_meta = (m[2] === 'minor') ? `${m[1]}m` : m[1];
         }
+        // Fresh-stems bookkeeping: stemmed_at from the vocals stem's mtime
+        // (written once at render, never touched again — metadata.json's
+        // own mtime moves on every favorite/singer/automation save so it
+        // can't be trusted as a birth date).
+        try {
+          const vocalsFile = stems.vocals ? path.join(folderPath, stems.vocals) : metaJsonPath;
+          const st = fs.statSync(vocalsFile);
+          freshMap.set(folder, {
+            stemmed_at: new Date(st.mtimeMs).toISOString(),
+            has_init: Array.isArray(mj.automation) && mj.automation.some(ev => ev && ev.type === 'init'),
+            title: mj.title || folder,
+            artist: mj.artist || '',
+          });
+        } catch (e) {}
         usedMetaJson = true;
       } catch (e) {
         console.warn(`Bad metadata.json in ${folder}:`, e.message);
@@ -756,6 +771,15 @@ const LIBRARY_CACHE_FILE = path.join(__dirname, 'library_cache.json');
 const LIBRARY_REFRESH_MS = 60 * 60 * 1000; // 1 hour
 let libraryCache = null;       // { scannedAt: ISO string, data: { stats, songs } }
 let libraryRefreshing = false; // re-entrancy guard
+// Fresh-stems map (2026-07-24, Bill: "fresh stemmed song is a to-do list
+// for setting levels"). Keyed by STEMS folder name. Populated during
+// scanStems from data already in hand (metadata.json + vocals stem mtime)
+// so it costs one extra stat per song at scan time and NOTHING at request
+// time. A song is "fresh" until its automation carries an 'init' event —
+// i.e. until the operator sets levels and presses SAVE. Served by
+// GET /api/fresh; kept out of the library row shape on purpose (the
+// CATALOG.json row contract with catalog.py stays untouched).
+const freshMap = new Map();    // folder → { stemmed_at, has_init, title, artist }
 
 // Dedupe raw song entries (stems + m4a) by (title, artist) — one entry per
 // unique song so stats don't double-count a song that exists in multiple
@@ -5022,6 +5046,13 @@ app.put('/api/song/:base/automation', (req, res) => {
     meta.sections   = cleanSections;
     meta.countIn    = countIn;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    // Fresh-stems graduation: an init event = levels have been set —
+    // the song leaves the 🆕 to-do list immediately, no rescan needed.
+    try {
+      const fmKey = path.basename(s.dir);
+      const fm = freshMap.get(fmKey);
+      if (fm) fm.has_init = clean.some(ev => ev.type === 'init');
+    } catch (e) {}
     res.json({ ok: true, automation: clean, sections: cleanSections, countIn });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5685,6 +5716,21 @@ app.get('/api/favorites', (req, res) => {
       .sort((a, b) => (b.favorited_at || '').localeCompare(a.favorited_at || ''))
       .slice(0, RECENTS_CAP);
     res.json({ entries: favs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Fresh stems — the operator's to-do list. Every song whose automation has
+// never carried an 'init' event (levels never saved), newest render first.
+// Feeds the 🆕 Fresh Stems pseudo-gig and the NEW pill on library rows.
+// A song graduates the moment SAVE writes an init (see PUT automation).
+app.get('/api/fresh', (req, res) => {
+  try {
+    const entries = [...freshMap.entries()]
+      .filter(([, v]) => !v.has_init)
+      .map(([base, v]) => ({ base, title: v.title, artist: v.artist, stemmed_at: v.stemmed_at }))
+      .sort((a, b) => (b.stemmed_at || '').localeCompare(a.stemmed_at || ''))
+      .slice(0, 50);
+    res.json({ entries });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

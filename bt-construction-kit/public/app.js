@@ -1085,6 +1085,12 @@ const YOUTUBE_SYNC_GIG_SLUG    = '__youtube_sync__';
 const MANUAL_SETLISTS_GIG_SLUG = '__manual_setlists__';
 const RECENTS_GIG_SLUG         = '__recents__';
 const FAVORITES_GIG_SLUG       = '__favorites__';
+// Fresh Stems (2026-07-24) — newly rendered songs that have never had
+// levels saved (no 'init' in automation). Bill: "fresh stemmed song is a
+// to-do list for setting levels." Songs graduate off the list (and lose
+// their 🆕 pill in the library) the moment SAVE writes an init event.
+const FRESH_GIG_SLUG           = '__fresh__';
+let freshBases = new Set();    // bases currently on the to-do list (🆕 pill)
 // Per-singer + RoundRobin pseudo-gigs. Each one is a single read-only setlist
 // filtered from mergedLibrary by singer_lead. RoundRobin alternates singers
 // so any one of them gets to step away briefly without dead air.
@@ -1105,6 +1111,7 @@ const SYNTHETIC_GIG_SLUGS = new Set([
   MANUAL_SETLISTS_GIG_SLUG,
   RECENTS_GIG_SLUG,
   FAVORITES_GIG_SLUG,
+  FRESH_GIG_SLUG,
   BILL_GIG_SLUG,
   MATT_GIG_SLUG,
   DAN_GIG_SLUG,
@@ -1192,6 +1199,7 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   // star button land in Favorites (cap 50).
   options.push(`<option value="${RECENTS_GIG_SLUG}">⟲ Recents (last 50)</option>`);
   options.push(`<option value="${FAVORITES_GIG_SLUG}">★ Favorites</option>`);
+  options.push(`<option value="${FRESH_GIG_SLUG}">🆕 Fresh Stems (levels to-do)</option>`);
   // Per-singer pseudo-gigs (Bill / Matt / Dan / JD) + RoundRobin alternation.
   // Counts come from mergedLibrary's stems variants when it's ready; before
   // the library lands we still offer the option so the picker is stable.
@@ -1389,6 +1397,24 @@ async function loadFavoritesGig() {
   };
 }
 
+// Fresh Stems pseudo-gig — newly rendered songs with no saved init
+// (levels never set), newest render first. Refreshes freshBases so the
+// library rows' 🆕 pills repaint from the same fetch.
+async function loadFreshGig() {
+  let entries = [];
+  try {
+    const r = await fetch('/api/fresh');
+    if (r.ok) entries = (await r.json()).entries || [];
+  } catch (e) {}
+  freshBases = new Set(entries.map(e => e.base));
+  const songs = entries.map(e => ({ song_base: e.base, title: e.title || '', artist: e.artist || '' }));
+  return {
+    slug: FRESH_GIG_SLUG, title: 'Fresh Stems',
+    readOnly: true, synthetic: true, syntheticKind: 'fresh',
+    setlists: [{ title: 'Levels to-do — set levels, then SAVE', songs, origin: 'fresh' }],
+  };
+}
+
 // Tag-based pseudo-gig — filter mergedLibrary by the named tag.
 // Bill: "Protest Songs" template needs this. Adding any new tag-based
 // template only requires registering a new slug + calling loadTagGig
@@ -1423,6 +1449,8 @@ async function loadActiveGig(slug) {
         activeGig = await loadRecentsGig();
       } else if (slug === FAVORITES_GIG_SLUG) {
         activeGig = await loadFavoritesGig();
+      } else if (slug === FRESH_GIG_SLUG) {
+        activeGig = await loadFreshGig();
       } else if (slug in SINGER_GIG_MAP) {
         activeGig = loadSingerGig(slug, SINGER_GIG_MAP[slug]);
       } else if (slug === ROUND_ROBIN_GIG_SLUG) {
@@ -1440,6 +1468,7 @@ async function loadActiveGig(slug) {
           slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — save one from the planner)' :
           slug === RECENTS_GIG_SLUG         ? '(no recently played songs yet)' :
           slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
+          slug === FRESH_GIG_SLUG           ? '(no fresh stems — every song has saved levels 🎉)' :
           (slug in SINGER_GIG_MAP)          ? `(no ${SINGER_GIG_MAP[slug]} songs yet — set Singer in the library row)` :
           slug === ROUND_ROBIN_GIG_SLUG     ? '(no singer-tagged songs yet — set Singer in the library rows)' :
           slug === PROTEST_GIG_SLUG         ? '(no songs tagged "protest" yet — set tags via ⋯ menu on a library row)' :
@@ -1688,6 +1717,7 @@ function openGigTemplatePicker() {
     { slug: ROUND_ROBIN_GIG_SLUG, label: '🎙 Round Robin',     hint: 'singers alternate so nobody bears the whole set' },
     { slug: PROTEST_GIG_SLUG,   label: '✊ Protest Songs',     hint: 'tag = "protest" (set via ⋯ menu on library rows)' },
     { slug: RECENTS_GIG_SLUG,   label: '🕒 Recents',             hint: 'last 50 songs you played' },
+    { slug: FRESH_GIG_SLUG,     label: '🆕 Fresh Stems',         hint: 'newly stemmed, levels never saved — set levels + SAVE to clear' },
   ];
 
   const overlay = document.createElement('div');
@@ -3487,6 +3517,14 @@ async function fetchLibrary() {
     renderLibrary();
     setupLibrarySortHandlers();
     populateKeyFilter(data.songs);
+
+    // Fresh-stems pills: fetch the to-do list in the background and
+    // repaint the library once it lands (non-blocking — the library is
+    // already usable without the pills).
+    fetch('/api/fresh').then(r => r.ok ? r.json() : { entries: [] }).then(d => {
+      freshBases = new Set((d.entries || []).map(e => e.base));
+      if (freshBases.size && typeof renderLibrary === 'function') renderLibrary();
+    }).catch(() => {});
     
     let ageStr = '';
     if (data.scannedAt)       ageStr += ` · scanned ${timeAgo(data.scannedAt)}`;
@@ -3850,10 +3888,16 @@ function renderLibrary() {
     const favStarHTML = stemsVarForStar
       ? `<button class="song-fav-star${isFav ? ' on' : ''}" title="${isFav ? 'Favorite — click to unstar' : 'Click to favorite'}">${isFav ? '★' : '☆'}</button>`
       : '';
+    // 🆕 pill: song is freshly stemmed and its levels were never saved.
+    // Disappears the moment SAVE writes an init event for the song.
+    const isFresh = !!(stemsVarForStar && freshBases.has(stemsVarForStar.folderName));
+    const freshPillHTML = isFresh
+      ? ' <span class="song-fresh-pill" title="Freshly stemmed — set levels and SAVE to clear">NEW</span>'
+      : '';
     titleCell.innerHTML = `
       <button class="play-row-btn" title="Play stems"><i data-lucide="play"></i></button>
       ${favStarHTML}
-      <span>${escapeHtml(merged.title)}${isFav ? ' <span class="song-fav-inline" title="Favorite">★</span>' : ''}</span>
+      <span>${escapeHtml(merged.title)}${isFav ? ' <span class="song-fav-inline" title="Favorite">★</span>' : ''}${freshPillHTML}</span>
     `;
     const favBtn = titleCell.querySelector('.song-fav-star');
     if (favBtn && stemsVarForStar) {
@@ -11451,6 +11495,12 @@ async function saveAutomationForSong(songBase, events) {
   automationCountIn = savedCountIn;
   automationLastSavedJSON = JSON.stringify({ a: saved, s: savedSections, c: savedCountIn });
   automationDirty = false;
+  // Fresh-stems graduation: saving an init means levels are set — pull
+  // the 🆕 pill off the library row and drop off the Fresh Stems list.
+  if (saved.some(e => e.type === 'init') && freshBases.has(songBase)) {
+    freshBases.delete(songBase);
+    try { if (typeof renderLibrary === 'function') renderLibrary(); } catch (e) {}
+  }
   renderAutomationLane();
   refreshAutomationToolbar();
   refreshCountInButton();
