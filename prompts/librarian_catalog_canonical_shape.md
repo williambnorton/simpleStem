@@ -121,6 +121,10 @@ this shape:
         # { "loopNum": int, "bars": int, "files": { "drums": "drums_loop1_27bars.wav", "bass": ... } }
     ],
     "duration":          meta.get("duration_sec"),
+    # Fresh-stems fields (2026-07-24) — feed the portal's 🆕 to-do list
+    # (GET /api/fresh + the NEW pill on library rows):
+    "has_init":          any(ev.get("type") == "init" for ev in meta.get("automation") or []),
+    "stemmed_at":        <UTC ISO of the vocals stem file's mtime, seconds precision, e.g. "2026-07-24T19:20:00Z">,
     "cached":            False,                              # the Performer overlays this; just set False
     "logicProjectName":  <first *.logicx in folder, or None>,
     "stats": {

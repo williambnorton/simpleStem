@@ -202,6 +202,19 @@ def fill_gaps(base, stem_dir, meta):
     return meta, changed
 
 
+def _stemmed_at_iso(stem_dir, stems):
+    """Birth date of the render: mtime of the vocals stem (written once at
+    render time, never touched again — metadata.json's mtime moves on every
+    favorite/singer/automation save so it can't act as a birth date)."""
+    name = stems.get('vocals') or 'metadata.json'
+    try:
+        ts = os.path.getmtime(os.path.join(stem_dir, name))
+        return datetime.fromtimestamp(ts, tz=timezone.utc) \
+            .strftime('%Y-%m-%dT%H:%M:%SZ')
+    except OSError:
+        return None
+
+
 def build_stems_row(base, stem_dir, files_in_folder, meta):
     """Match scanStems output in bt-construction-kit/server.js byte-for-byte."""
     stems = pick_stem_files(files_in_folder)
@@ -229,6 +242,12 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         'readiness':          meta.get('readiness'),
         'favorite':           bool(meta.get('favorite')),
         'favorited_at':       meta.get('favorited_at'),
+        # Fresh-stems fields (2026-07-24) — feed the portal's 🆕 to-do list
+        # (GET /api/fresh + the NEW pill). has_init = automation carries an
+        # 'init' event, i.e. the operator has set levels and pressed SAVE.
+        'has_init':           any(isinstance(ev, dict) and ev.get('type') == 'init'
+                                  for ev in (meta.get('automation') or [])),
+        'stemmed_at':         _stemmed_at_iso(stem_dir, stems),
         # Source URL + extracted YouTube video ID — used by the portal's
         # ingest tracker to recognize when a submitted URL has landed in
         # the library. Without these the tracker can never trim a row.

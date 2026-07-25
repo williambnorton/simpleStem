@@ -492,7 +492,6 @@ async function scanStems() {
   }
 
   const results = [];
-  freshMap.clear();   // rebuilt below so deleted songs age out of /api/fresh
   // Async readdir + per-entry stat so Drive stalls don't lock up the
   // event loop. Each await yields, letting audio-stream requests and
   // other handlers interleave between filesystem calls.
@@ -652,19 +651,16 @@ async function scanStems() {
           const m = /^([A-G](?:#|b)?)\s*(major|minor)?$/.exec(mj.key.trim());
           if (m) key_short_meta = (m[2] === 'minor') ? `${m[1]}m` : m[1];
         }
-        // Fresh-stems bookkeeping: stemmed_at from the vocals stem's mtime
-        // (written once at render, never touched again — metadata.json's
-        // own mtime moves on every favorite/singer/automation save so it
-        // can't be trusted as a birth date).
+        // Fresh-stems fields (2026-07-24) — mirror catalog.py's
+        // build_stems_row. stemmed_at from the vocals stem's mtime
+        // (written once at render — metadata.json's own mtime moves on
+        // every favorite/singer/automation save so it can't be trusted
+        // as a birth date). has_init = levels have been saved.
+        var has_init_meta = Array.isArray(mj.automation) && mj.automation.some(ev => ev && ev.type === 'init');
+        var stemmed_at_meta = null;
         try {
           const vocalsFile = stems.vocals ? path.join(folderPath, stems.vocals) : metaJsonPath;
-          const st = fs.statSync(vocalsFile);
-          freshMap.set(folder, {
-            stemmed_at: new Date(st.mtimeMs).toISOString(),
-            has_init: Array.isArray(mj.automation) && mj.automation.some(ev => ev && ev.type === 'init'),
-            title: mj.title || folder,
-            artist: mj.artist || '',
-          });
+          stemmed_at_meta = new Date(fs.statSync(vocalsFile).mtimeMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
         } catch (e) {}
         usedMetaJson = true;
       } catch (e) {
@@ -710,6 +706,10 @@ async function scanStems() {
       // Favorite — set via PUT /api/song/:base/favorite.
       favorite: (typeof favorite_meta !== 'undefined') ? favorite_meta : false,
       favorited_at: (typeof favorited_at_meta !== 'undefined') ? favorited_at_meta : null,
+      // Fresh-stems fields — mirror catalog.py. Feed GET /api/fresh + the
+      // 🆕 NEW pill; has_init flips true when SAVE writes an init event.
+      has_init: (typeof has_init_meta !== 'undefined') ? has_init_meta : false,
+      stemmed_at: (typeof stemmed_at_meta !== 'undefined') ? stemmed_at_meta : null,
       // Play count — incremented via POST /api/song/:base/play.
       play_count: (typeof play_count_meta !== 'undefined') ? play_count_meta : 0,
       last_played_at: (typeof last_played_at_meta !== 'undefined') ? last_played_at_meta : null,
@@ -771,15 +771,14 @@ const LIBRARY_CACHE_FILE = path.join(__dirname, 'library_cache.json');
 const LIBRARY_REFRESH_MS = 60 * 60 * 1000; // 1 hour
 let libraryCache = null;       // { scannedAt: ISO string, data: { stats, songs } }
 let libraryRefreshing = false; // re-entrancy guard
-// Fresh-stems map (2026-07-24, Bill: "fresh stemmed song is a to-do list
-// for setting levels"). Keyed by STEMS folder name. Populated during
-// scanStems from data already in hand (metadata.json + vocals stem mtime)
-// so it costs one extra stat per song at scan time and NOTHING at request
-// time. A song is "fresh" until its automation carries an 'init' event —
-// i.e. until the operator sets levels and presses SAVE. Served by
-// GET /api/fresh; kept out of the library row shape on purpose (the
-// CATALOG.json row contract with catalog.py stays untouched).
-const freshMap = new Map();    // folder → { stemmed_at, has_init, title, artist }
+// Fresh stems (2026-07-24, Bill: "fresh stemmed song is a to-do list for
+// setting levels"): a song is "fresh" until its automation carries an
+// 'init' event — i.e. until the operator sets levels and presses SAVE.
+// Carried as `has_init` + `stemmed_at` ROW FIELDS, produced by BOTH row
+// shapers (catalog.py build_stems_row on the Librarian — the production
+// path — and scanStems below as the fallback), read by GET /api/fresh
+// from libraryCache exactly like /api/favorites, and patched in place by
+// PUT /api/song/:base/automation on save.
 
 // Dedupe raw song entries (stems + m4a) by (title, artist) — one entry per
 // unique song so stats don't double-count a song that exists in multiple
@@ -5046,12 +5045,15 @@ app.put('/api/song/:base/automation', (req, res) => {
     meta.sections   = cleanSections;
     meta.countIn    = countIn;
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
-    // Fresh-stems graduation: an init event = levels have been set —
-    // the song leaves the 🆕 to-do list immediately, no rescan needed.
+    // Fresh-stems graduation: an init event = levels have been set — patch
+    // the libraryCache row in place (same pattern as favorites/lyrics) so
+    // the song leaves the 🆕 to-do list immediately, no catalog pass needed.
     try {
-      const fmKey = path.basename(s.dir);
-      const fm = freshMap.get(fmKey);
-      if (fm) fm.has_init = clean.some(ev => ev.type === 'init');
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === path.basename(s.dir));
+        if (row) row.has_init = clean.some(ev => ev.type === 'init');
+      }
     } catch (e) {}
     res.json({ ok: true, automation: clean, sections: cleanSections, countIn });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -5722,12 +5724,16 @@ app.get('/api/favorites', (req, res) => {
 // Fresh stems — the operator's to-do list. Every song whose automation has
 // never carried an 'init' event (levels never saved), newest render first.
 // Feeds the 🆕 Fresh Stems pseudo-gig and the NEW pill on library rows.
-// A song graduates the moment SAVE writes an init (see PUT automation).
+// Reads libraryCache rows like /api/favorites; `has_init === false`
+// STRICTLY, so a pre-freshness CATALOG.json (field absent) yields an
+// empty list instead of flagging the whole library as new. A song
+// graduates the moment SAVE writes an init (see PUT automation).
 app.get('/api/fresh', (req, res) => {
   try {
-    const entries = [...freshMap.entries()]
-      .filter(([, v]) => !v.has_init)
-      .map(([base, v]) => ({ base, title: v.title, artist: v.artist, stemmed_at: v.stemmed_at }))
+    const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+    const entries = songs
+      .filter(s => s.type === 'stems' && s.has_init === false)
+      .map(s => ({ base: s.folderName, title: s.title, artist: s.artist, stemmed_at: s.stemmed_at || null }))
       .sort((a, b) => (b.stemmed_at || '').localeCompare(a.stemmed_at || ''))
       .slice(0, 50);
     res.json({ entries });
