@@ -179,9 +179,24 @@
       white-space: pre;
     }
     .raw summary { cursor: pointer; user-select: none; }
-  </style>
+  
+/* PORTALS strip — same upper-left shortcuts every page carries. */
+#portals { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 10px; }
+#portals a { color: #9fb3c8; text-decoration: none; font: 700 10px -apple-system, sans-serif;
+  letter-spacing: .5px; padding: 3px 8px; border-radius: 6px; border: 1px solid transparent; }
+#portals a:hover { color: #aef7cd; border-color: rgba(0,230,118,.4); }
+#portals img { width: 14px; height: 14px; display: block; border-radius: 3px; }
+#portals .portals-sep { width: 1px; align-self: stretch; background: rgba(255,255,255,.18); margin: 1px 3px; }
+</style>
 </head>
 <body>
+<nav id="portals" title="Portals — every view of the system, one click away.">
+  <a href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
+  <span class="portals-sep"></span>
+  <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+  <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
+</nav>
+
   <header>
     <h1>simpleStem · Operations Dashboard</h1>
     <div class="meta">

@@ -33,18 +33,15 @@
         <div class="brand-logo">
           <i data-lucide="waves" class="logo-icon glow-purple"></i>
           <span>simpleStem</span>
-          <!-- View toggle. On this page (index.html) "Performer" is the
-               current view. Click "Librarian" to navigate to /librarian. -->
-          <span class="brand-role-toggle" id="brand-role-toggle">
-            <span class="brand-role brand-role-active" data-role="performer" title="Currently showing Performer view (live mixer + gigs)">Performer</span>
-            <span class="brand-role-sep">·</span>
-            <span class="brand-role" data-role="librarian" title="Switch to Librarian view (ingest + catalog + sheet sync)">Librarian</span>
-            <span class="brand-role-sep">·</span>
-            <span class="brand-role" data-role="desk" title="Switch to the Sound Desktop — the live system illustration: every process, machine and device as an active object">Desk</span>
-            <span class="brand-role-sep">·</span>
-            <span class="brand-role" data-role="midi" title="Switch to the MIDI Console — rig topology, live state, device controls, wire log">MIDI</span>
-          </span>
         </div>
+        <!-- PORTALS strip — the same upper-left shortcuts every page carries
+             (replaces the old text role toggle). Green chip = this page. -->
+        <nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
+          <a class="here" href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
+          <span class="portals-sep"></span>
+          <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+          <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
+        </nav>
         <span id="brand-version" class="brand-version" title="Performer version (V1.MMDDHHMM)"></span>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
              main content area (next to the clock) — see #player-top-bar. -->
