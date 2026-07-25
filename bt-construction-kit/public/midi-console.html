@@ -12,6 +12,8 @@
     padding: 3px 8px; border-radius: 6px; border: 1px solid transparent; }
   #portals a:hover { color: #aef7cd; border-color: rgba(0,230,118,.4); }
   #portals a.here { color: #00e676; border-color: rgba(0,230,118,.5); background: rgba(0,230,118,.1); pointer-events: none; }
+  #portals img { width: 14px; height: 14px; display: block; border-radius: 3px; }
+  #portals .portals-sep { width: 1px; background: rgba(255,255,255,.18); margin: 1px 3px; }
   h1 { font-size: 16px; color: #7fd6a4; margin-bottom: 2px; }
   .sub { opacity: .55; font-size: 11px; margin-bottom: 12px; }
   .ok { color: #00e676; font-weight: 700; }
@@ -61,6 +63,9 @@
 <body>
 <nav id="portals" title="Portals — every view of the system, one click away. The green one is where you are.">
   <a href="/">🎛 PORTAL</a><a href="/desktop-proto.html">🖥 DESK</a><a class="here" href="/midi-console.html">🎹 MIDI</a><a href="/librarian">🤖 LIBRARIAN</a>
+  <span class="portals-sep"></span>
+  <a href="https://chatgpt.com" target="_blank" rel="noopener" title="ChatGPT — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a>
+  <a href="https://www.perplexity.ai/" target="_blank" rel="noopener" title="Perplexity — opens in a new tab"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a>
 </nav>
 <h1>🎛 MIDI CONSOLE — the Performer's control room</h1>
 <div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a></div>
