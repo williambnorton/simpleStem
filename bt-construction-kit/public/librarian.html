@@ -892,21 +892,25 @@
       font-style: italic;
       opacity: 0.6;
     }
-  #portals { display: inline-block; vertical-align: middle; }
-  #portals .tb-brand { display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px; }
-  #portals .tb-name { font: 800 15px -apple-system, sans-serif; color: #e8eef5; letter-spacing: .3px; }
+  #portals { display: block; max-width: 240px; }
+  #portals .tb-brand { display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px; }
+  #portals .tb-name { font: 800 16px -apple-system, sans-serif; color: #e8eef5; letter-spacing: .3px; }
   #portals .tb-ver { font: 10px Menlo, monospace; color: #7fd6a4; opacity: .85; }
-  #portals .tb-tabs { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 2px;
-    border-bottom: 1px solid rgba(255,255,255,.18); }
-  #portals .tb-tabs a.tab { font: 700 10.5px -apple-system, sans-serif; color: #9fb3c8; text-decoration: none;
-    padding: 4px 9px 5px; border: 1px solid rgba(255,255,255,.12); border-bottom: none;
-    border-radius: 7px 7px 0 0; background: rgba(255,255,255,.03); margin-bottom: 0; }
-  #portals .tb-tabs a.tab:hover { color: #aef7cd; background: rgba(0,230,118,.08); }
-  #portals .tb-tabs a.tab.here { color: #00e676; background: rgba(0,230,118,.13);
-    border-color: rgba(0,230,118,.55); font-weight: 800; }
-  #portals .tb-tabs a.tb-ai { padding: 2px 4px; align-self: center; line-height: 1; }
-  #portals img { width: 14px; height: 14px; display: block; border-radius: 3px; }
-  #portals .portals-sep { width: 1px; align-self: center; height: 14px; background: rgba(255,255,255,.18); margin: 0 4px; }
+  #portals .tb-grid { display: grid; grid-template-columns: repeat(2, minmax(98px, 1fr)); gap: 5px; }
+  #portals .pb { display: flex; align-items: center; justify-content: center; gap: 5px; height: 27px;
+    font: 700 11px -apple-system, sans-serif; text-decoration: none; border-radius: 8px;
+    border: 1px solid transparent; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  #portals .pb:hover { filter: brightness(1.25); }
+  #portals .pb:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+  #portals .pb.here { pointer-events: none; }
+  #portals .pb-performer { color: #aef7cd; background: rgba(0,230,118,.13); border-color: rgba(0,230,118,.55); }
+  #portals .pb-performer.here { color: #fff; background: rgba(0,230,118,.38); box-shadow: 0 0 10px rgba(0,230,118,.55), inset 0 1px 3px rgba(0,0,0,.35); }
+  #portals .pb-librarian { color: #ffe9a8; background: rgba(241,196,15,.13); border-color: rgba(241,196,15,.55); }
+  #portals .pb-librarian.here { color: #fff; background: rgba(241,196,15,.38); box-shadow: 0 0 10px rgba(241,196,15,.55), inset 0 1px 3px rgba(0,0,0,.35); }
+  #portals .pb-midi { color: #e6c9f5; background: rgba(177,111,209,.13); border-color: rgba(177,111,209,.55); }
+  #portals .pb-midi.here { color: #fff; background: rgba(177,111,209,.38); box-shadow: 0 0 10px rgba(177,111,209,.55), inset 0 1px 3px rgba(0,0,0,.35); }
+  #portals .pb-desk { color: #c9e9fb; background: rgba(79,195,247,.13); border-color: rgba(79,195,247,.55); }
+  #portals .pb-desk.here { color: #fff; background: rgba(79,195,247,.38); box-shadow: 0 0 10px rgba(79,195,247,.55), inset 0 1px 3px rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
@@ -915,9 +919,9 @@
       <!-- Role toggle. Lives in the brand row on every page so the operator
            can switch views from anywhere. Clicking the inactive role
            navigates; the active role is a no-op. -->
-      <nav id="portals" class="tabbar" title="simpleStem views — one system, four surfaces. The green tab is where you are.">
+      <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
   <div class="tb-brand"><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span></div>
-  <div class="tb-tabs"><a class="tab" href="/" title="🎛 Performer view">🎛 Performer</a><a class="tab here" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="tab" href="/desktop-proto.html" title="🖥 Desk view">🖥 Desk</a><a class="tab" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><span class="portals-sep"></span><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a></div>
+  <div class="tb-grid"><a class="pb pb-performer" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian here" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
       <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
       <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library</span>

@@ -8522,21 +8522,33 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 
 
 
-/* PORTALS tab bar (upper-left, every page): simpleStem wordmark + build
-   version on top, the four system views as attached tabs beneath, plus
-   the KM voice-mode buttons. Green tab = the view you are on. */
+
+/* PORTALS pushbuttons (upper-left, every page): brand + version on top,
+   four equal colored pushbuttons below — Performer green, Librarian
+   amber, MIDI purple, Desktop blue. The lit one is the current view. */
 #portals { display: block; width: 100%; min-width: 0; }
-#portals .tb-brand { display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px; }
-#portals .tb-name { font: 800 17px -apple-system, sans-serif; color: #e8eef5; letter-spacing: 0.3px; }
+#portals .tb-brand { display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px; }
+#portals .tb-name { font: 800 17px 'Outfit', -apple-system, sans-serif; color: #e8eef5; letter-spacing: 0.3px; }
 #portals .tb-ver { font: 10px Menlo, monospace; color: #7fd6a4; opacity: 0.85; }
-#portals .tb-tabs { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
-#portals .tb-tabs a.tab { font: 700 10.5px -apple-system, sans-serif; color: #9fb3c8; text-decoration: none;
-  padding: 4px 8px 5px; border: 1px solid rgba(255, 255, 255, 0.12); border-bottom: none;
-  border-radius: 7px 7px 0 0; background: rgba(255, 255, 255, 0.03); }
-#portals .tb-tabs a.tab:hover { color: #aef7cd; background: rgba(0, 230, 118, 0.08); }
-#portals .tb-tabs a.tab.here { color: #00e676; background: rgba(0, 230, 118, 0.13);
-  border-color: rgba(0, 230, 118, 0.55); font-weight: 800; }
-#portals .tb-tabs a.tb-ai { padding: 2px 4px; align-self: center; line-height: 1; border: none; }
-#portals img { width: 14px; height: 14px; display: block; border-radius: 3px; }
-#portals .portals-sep { width: 1px; align-self: center; height: 14px; background: rgba(255, 255, 255, 0.18); margin: 0 4px; }
+#portals .tb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+#portals .pb { display: flex; align-items: center; justify-content: center; gap: 5px; height: 27px;
+  font: 700 11px -apple-system, sans-serif; text-decoration: none; border-radius: 8px;
+  border: 1px solid transparent; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); white-space: nowrap; }
+#portals .pb:hover { filter: brightness(1.25); }
+#portals .pb:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+#portals .pb.here { pointer-events: none; }
+#portals .pb-performer { color: #aef7cd; background: rgba(0, 230, 118, 0.13); border-color: rgba(0, 230, 118, 0.55); }
+#portals .pb-performer.here { color: #fff; background: rgba(0, 230, 118, 0.38); box-shadow: 0 0 10px rgba(0, 230, 118, 0.55), inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+#portals .pb-librarian { color: #ffe9a8; background: rgba(241, 196, 15, 0.13); border-color: rgba(241, 196, 15, 0.55); }
+#portals .pb-librarian.here { color: #fff; background: rgba(241, 196, 15, 0.38); box-shadow: 0 0 10px rgba(241, 196, 15, 0.55), inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+#portals .pb-midi { color: #e6c9f5; background: rgba(177, 111, 209, 0.13); border-color: rgba(177, 111, 209, 0.55); }
+#portals .pb-midi.here { color: #fff; background: rgba(177, 111, 209, 0.38); box-shadow: 0 0 10px rgba(177, 111, 209, 0.55), inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+#portals .pb-desk { color: #c9e9fb; background: rgba(79, 195, 247, 0.13); border-color: rgba(79, 195, 247, 0.55); }
+#portals .pb-desk.here { color: #fff; background: rgba(79, 195, 247, 0.38); box-shadow: 0 0 10px rgba(79, 195, 247, 0.55), inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+
+/* AI voice buttons — next to MIDI Sync in the action toolbar. Each fires
+   a Keyboard Maestro voice-mode macro via POST /api/desktop/km-macro. */
+.ai-voice-btn { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px; padding: 3px 7px; cursor: pointer; line-height: 0; vertical-align: middle; }
+.ai-voice-btn:hover { border-color: rgba(0, 230, 118, 0.5); background: rgba(0, 230, 118, 0.1); }
+.ai-voice-btn img { width: 22px; height: 22px; border-radius: 5px; display: block; }

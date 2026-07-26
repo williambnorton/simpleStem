@@ -32,9 +32,9 @@
       <div class="brand">
         <!-- The PORTALS tab bar IS the brand block now: wordmark + build
              version on the top line, the four system views as tabs below. -->
-        <nav id="portals" class="tabbar" title="simpleStem views — one system, four surfaces. The green tab is where you are.">
+        <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
   <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span></div>
-  <div class="tb-tabs"><a class="tab here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="tab" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="tab" href="/desktop-proto.html" title="🖥 Desk view">🖥 Desk</a><a class="tab" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><span class="portals-sep"></span><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=32" alt="ChatGPT"></a><a class="tb-ai" href="#" onclick="event.preventDefault();fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=32" alt="Perplexity"></a></div>
+  <div class="tb-grid"><a class="pb pb-performer here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
              main content area (next to the clock) — see #player-top-bar. -->
@@ -416,6 +416,11 @@
                    + Click / + Count-in section-flag buttons were retired
                    2026-07-07 in favor of that event model. -->
               <button id="midi-btn-midi-sync" class="midi-toolbar-btn" title="MIDI SYNC: broadcast 24-ppqn MIDI clock to every connected MIDI device while the song plays, tempo-locked to the beat grid × playback rate (SEMI-aware) — keeps loopers in sync with playback. Requires the MIDI sidecar (./performer.sh start).">MIDI Sync</button>
+              <!-- AI voice assistants — each fires its Keyboard Maestro
+                   voice-mode macro (whitelisted in server.js KM_MACROS). -->
+              <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=64" alt="ChatGPT"></button>
+              <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=64" alt="Perplexity"></button>
+              <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'claude'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Claude Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=claude.ai&amp;sz=64" alt="Claude"></button>
               <!-- Click trim ± + readout moved onto the OTHER strip corners
                    (Bill 2026-07-09). The `-` sits at the top-left of the
                    Other strip header, `+` at the top-right, so the click

@@ -6027,6 +6027,7 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
 const KM_MACROS = {
   chatgpt:    'ChatGPT Voice Mode',
   perplexity: 'Perplexity Voice Mode',
+  claude:     'Claude Voice Mode',
 };
 app.post('/api/desktop/km-macro', express.json(), (req, res) => {
   const name = KM_MACROS[(req.body && req.body.macro) || ''];
