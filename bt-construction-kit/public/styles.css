@@ -2365,13 +2365,17 @@ select {
      `top:0` measured against the padding box, so band tints + labels
      can paint there while waveform sits below. */
   padding-top: 20px;
+  /* Bottom strip reserves room for the playback slider so it doesn't
+     cover the Other stem's lane (Bill 2026-07-25). Canvas fills the
+     content box above it; the slider lives in this strip. */
+  padding-bottom: 15px;
 }
 
 /* "Visualizer" badge in the BOTTOM-right of the canvas area, paired
    with the STEMS/SUM toggle that sits just to its left. */
 .visualizer-label {
   position: absolute;
-  bottom: 6px; right: 8px;
+  bottom: 21px; right: 8px;
   z-index: 2;
   pointer-events: none;
   font-family: 'Space Grotesk', sans-serif;
@@ -2497,6 +2501,7 @@ select {
   left: 0;
   right: 0;
   bottom: 0;
+  height: 15px;
   z-index: 6;
   display: flex;
   align-items: center;
@@ -5083,7 +5088,7 @@ body.server-stale .player-active:hover::after {
    corner so the rest of the visualizer is clean. */
 .viz-mode-btn {
   position: absolute;
-  bottom: 6px;
+  bottom: 21px;
   right: 86px;     /* leave room for .visualizer-label at right: 8px */
   z-index: 4;
   background: rgba(0, 0, 0, 0.55);
