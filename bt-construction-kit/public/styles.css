@@ -2493,6 +2493,9 @@ select {
   display: flex;
   align-items: center;
   gap: 14px;
+  /* Sits DIRECTLY beneath the visualizer (Bill 2026-07-25) — keep the
+     gap tight so the slider reads as part of the visualizer. */
+  margin-top: 2px;
 }
 
 .time-label {
@@ -8530,6 +8533,10 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   padding: 4px 8px; border: 1px solid rgba(127, 140, 160, 0.45);
   border-radius: 10px; margin-right: 4px; }
 .midi-btn-group .holodeck-wrap { margin: 0; }
+/* KBM macros group — light orange so the AI chatbots read as one family. */
+.midi-btn-group.km-group { background: #ffe9d2; border-color: #f0a860; }
+.midi-btn-group.km-group .ai-voice-btn { background: rgba(255, 255, 255, 0.65); border-color: #e8b98a; }
+.midi-btn-group.km-group .ai-voice-btn:hover { border-color: #e07b1f; background: #fff; }
 
 /* AI voice buttons — next to MIDI Sync in the action toolbar. Each fires
    a Keyboard Maestro voice-mode macro via POST /api/desktop/km-macro. */

@@ -385,6 +385,16 @@
             <span class="time-label time-spacer" aria-hidden="true">0:00</span>
           </div>
 
+          <!-- Progress bar / Timeline. The slider's flex:1 wrapper claims
+               all remaining horizontal space — the automation toolbar lives
+               inside the visualizer above so this row stays untouched. -->
+          <div class="player-timeline-container">
+            <span id="time-current" class="time-label">0:00</span>
+            <div class="timeline-bar-wrapper">
+              <div id="timeline-tooltip" class="timeline-thumb-time">00:00</div>
+              <input type="range" id="player-timeline" class="timeline-slider" value="0" min="0" max="100" step="0.1">
+              <div id="timeline-progress" class="timeline-fill"></div>
+            </div>
           <!-- Automation toolbar — its own row directly under the visualizer.
                Right-aligned so it sits beneath the lane's marker area
                without overlapping the playback slider below. -->
@@ -420,7 +430,7 @@
               </span>
               <!-- KBM macros group — each fires its Keyboard Maestro
                    voice-mode macro (whitelisted in server.js KM_MACROS). -->
-              <span class="midi-btn-group" title="Keyboard Maestro voice-mode macros — ChatGPT · Claude · Perplexity">
+              <span class="midi-btn-group km-group" title="Keyboard Maestro voice-mode macros — ChatGPT · Claude · Perplexity">
               <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=64" alt="ChatGPT"></button>
               <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'claude'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Claude Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=claude.ai&amp;sz=64" alt="Claude"></button>
               <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=64" alt="Perplexity"></button>
@@ -452,16 +462,6 @@
             </div>
           </div>
           
-          <!-- Progress bar / Timeline. The slider's flex:1 wrapper claims
-               all remaining horizontal space — the automation toolbar lives
-               inside the visualizer above so this row stays untouched. -->
-          <div class="player-timeline-container">
-            <span id="time-current" class="time-label">0:00</span>
-            <div class="timeline-bar-wrapper">
-              <div id="timeline-tooltip" class="timeline-thumb-time">00:00</div>
-              <input type="range" id="player-timeline" class="timeline-slider" value="0" min="0" max="100" step="0.1">
-              <div id="timeline-progress" class="timeline-fill"></div>
-            </div>
             <span id="time-duration" class="time-label">0:00</span>
           </div>
 
