@@ -401,6 +401,7 @@
                    action at the playhead. The action's anchor is either
                    the START of the clip or the END (clip's audio finishes
                    at the playhead). -->
+              <span class="midi-btn-group" title="Timeline actions — drop events at the playhead + clock sync">
               <button id="midi-btn-add-clip" class="midi-toolbar-btn midi-action-add midi-action-clip" title="Drop a Play Clip action at the playhead. Pick a clip and choose whether the clip STARTS at the playhead or ENDS at the playhead.">+ Clip</button>
               <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the Action editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ Action</button>
               <!-- + Lyric: tap-along workflow. First press fetches lyrics
@@ -416,11 +417,21 @@
                    + Click / + Count-in section-flag buttons were retired
                    2026-07-07 in favor of that event model. -->
               <button id="midi-btn-midi-sync" class="midi-toolbar-btn" title="MIDI SYNC: broadcast 24-ppqn MIDI clock to every connected MIDI device while the song plays, tempo-locked to the beat grid × playback rate (SEMI-aware) — keeps loopers in sync with playback. Requires the MIDI sidecar (./performer.sh start).">MIDI Sync</button>
-              <!-- AI voice assistants — each fires its Keyboard Maestro
+              </span>
+              <!-- KBM macros group — each fires its Keyboard Maestro
                    voice-mode macro (whitelisted in server.js KM_MACROS). -->
+              <span class="midi-btn-group" title="Keyboard Maestro voice-mode macros — ChatGPT · Claude · Perplexity">
               <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'chatgpt'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="ChatGPT Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=chatgpt.com&amp;sz=64" alt="ChatGPT"></button>
-              <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=64" alt="Perplexity"></button>
               <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'claude'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Claude Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=claude.ai&amp;sz=64" alt="Claude"></button>
+              <button class="ai-voice-btn" onclick="fetch('/api/desktop/km-macro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({macro:'perplexity'})}).then(r=>r.json()).then(j=>{if(j&&j.error)alert(j.error)}).catch(()=>{})" title="Perplexity Voice Mode — fires the Keyboard Maestro macro"><img src="https://www.google.com/s2/favicons?domain=perplexity.ai&amp;sz=64" alt="Perplexity"></button>
+              </span>
+              <!-- HOLODECK voice control group — moved here from the looper
+                   side controls (Bill 2026-07-25) so all voice surfaces sit
+                   together next to the KBM macros. -->
+              <span class="midi-btn-group" id="holodeck-group" title="HOLODECK voice control — the portal's own voice commands"><div class="holodeck-wrap">
+                  <button id="btn-holodeck" class="control-btn toggle-btn looper-side-btn hover-glow" type="button" title="HOLODECK voice control — click to listen, then say &quot;HOLODECK, <command>&quot;:&#10;&#10;TRANSPORT: play · pause · stop · next · restart · play <song name>&#10;SECTIONS: jump to / go to <intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook> · loop section · stop looping&#10;MIXER (stems: vocals drums bass guitar piano other): mute/unmute <stem> · solo/unsolo <stem> · boost <stem> [five|ten] · <stem> up / <stem> down&#10;CLICK: click on · click off · count in&#10;TEMPO/PITCH: tempo up · tempo down · reset tempo · pitch up/down [half] · reset pitch&#10;LIBRARY: find <text> · search <text> · load <song> · favorite this · star this&#10;GIGS: switch to <bill|matt|dan|jd> songs · switch to round robin · switch to favorites · switch to recents&#10;SOUND CHECK: sound check&#10;QUESTIONS (spoken reply): what&#39;s the key · what&#39;s the tempo · who sings this&#10;SNAPSHOTS: save this as <name> · snapshot as <name> · restore <name> · undo / go back · what changed since <name>"><i data-lucide="mic"></i></button>
+                  <div class="holodeck-meter"><div id="holodeck-mic-level" class="holodeck-meter-fill"></div></div>
+                </div></span>
               <!-- Click trim ± + readout moved onto the OTHER strip corners
                    (Bill 2026-07-09). The `-` sits at the top-left of the
                    Other strip header, `+` at the top-right, so the click
@@ -504,13 +515,6 @@
                 <!-- The CLICK + COUNT-IN buttons moved onto the OTHER
                      channel strip header 2026-07-07 (Bill: the click IS
                      ch 6 audio, so its controls belong on that strip). -->
-                <!-- HOLODECK voice control. Click to start listening; say
-                     "HOLODECK, ..." to issue a command. The level meter
-                     under the icon shows the system is hearing the room. -->
-                <div class="holodeck-wrap">
-                  <button id="btn-holodeck" class="control-btn toggle-btn looper-side-btn hover-glow" type="button" title="HOLODECK voice control — click to listen, then say &quot;HOLODECK, <command>&quot;:&#10;&#10;TRANSPORT: play · pause · stop · next · restart · play <song name>&#10;SECTIONS: jump to / go to <intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook> · loop section · stop looping&#10;MIXER (stems: vocals drums bass guitar piano other): mute/unmute <stem> · solo/unsolo <stem> · boost <stem> [five|ten] · <stem> up / <stem> down&#10;CLICK: click on · click off · count in&#10;TEMPO/PITCH: tempo up · tempo down · reset tempo · pitch up/down [half] · reset pitch&#10;LIBRARY: find <text> · search <text> · load <song> · favorite this · star this&#10;GIGS: switch to <bill|matt|dan|jd> songs · switch to round robin · switch to favorites · switch to recents&#10;SOUND CHECK: sound check&#10;QUESTIONS (spoken reply): what&#39;s the key · what&#39;s the tempo · who sings this&#10;SNAPSHOTS: save this as <name> · snapshot as <name> · restore <name> · undo / go back · what changed since <name>"><i data-lucide="mic"></i></button>
-                  <div class="holodeck-meter"><div id="holodeck-mic-level" class="holodeck-meter-fill"></div></div>
-                </div>
               </div>
               <!-- OVERDUB looper panel (Bill 2026-07-05). Rides the section
                    LOOPER: seed = whatever stems are audible while the looper

@@ -8524,6 +8524,13 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 
 
 
+/* Toolbar button groupings (Bill 2026-07-25): boxed clusters in the
+   action row — [timeline actions + MIDI Sync] [KBM macros] [HOLODECK]. */
+.midi-btn-group { display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border: 1px solid rgba(127, 140, 160, 0.45);
+  border-radius: 10px; margin-right: 4px; }
+.midi-btn-group .holodeck-wrap { margin: 0; }
+
 /* AI voice buttons — next to MIDI Sync in the action toolbar. Each fires
    a Keyboard Maestro voice-mode macro via POST /api/desktop/km-macro. */
 .ai-voice-btn { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.18);
