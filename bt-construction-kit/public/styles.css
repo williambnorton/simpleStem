@@ -2489,13 +2489,25 @@ select {
 }
 
 /* Timeline Slider */
+/* Playback slider — lives INSIDE .canvas-wrap, glued to the bottom edge,
+   spanning exactly the waveform's width so slider position ⟷ playhead
+   position are 1:1 (Bill 2026-07-25). */
 .player-timeline-container {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 14px;
-  /* Sits DIRECTLY beneath the visualizer (Bill 2026-07-25) — keep the
-     gap tight so the slider reads as part of the visualizer. */
-  margin-top: 2px;
+  margin: 0;
+}
+.player-timeline-container .timeline-bar-wrapper { flex: 1; }
+/* Time readouts — slim line under the visualizer, current left / total right. */
+.time-readout-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 1px 6px 0;
 }
 
 .time-label {
