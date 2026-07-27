@@ -445,6 +445,7 @@ function mplResolveEllipses(toks) {
 const mplSlotGen = new Array(10).fill(0);
 const mplSlotRunning = new Array(10).fill(false);
 let mplBeatTimer = null, mplBeatPos = 0;
+let mplSessionStart = 0, mplSessionBpm = 120;   // bar grid: set by the first slot in
 const mplActiveCount = () => mplSlotRunning.filter(Boolean).length;
 const MPL_BANK_KEY = 'console.mplBank.v1';
 function mplBankLoad() {
@@ -520,18 +521,35 @@ async function mplSlotToggle(i) {
   const bpm = Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
   const home = +($('lg-mpl-home').value || 0);
   try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(startCh)); localStorage.setItem('console.mplHome.v1', String(home)); } catch (e) {}
-  const q = 60000 / bpm;
   const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
   const first = mplActiveCount() === 1;
-  toast(`🎼 MPL[${i}] looping @ ${bpm} bpm${first ? ' + MIDI clock' : ' (layered — ' + mplActiveCount() + ' running)'} · press ${i} again to stop`);
+  const q = 60000 / (first ? bpm : mplSessionBpm);
   try {
     if (first) {
+      mplSessionStart = performance.now();
+      mplSessionBpm = bpm;
       fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'start', bpm }) }).then(J).catch(() => {});
       mplBeatStart(bpm);
       mplNow('bpm', bpm);
       mplNow('ch', startCh);
+      toast(`🎼 MPL[${i}] looping @ ${bpm} bpm + MIDI clock · press ${i} again to stop`);
+    } else {
+      /* Sync the entry: an armed slot waits for the next BAR boundary of
+         the running session (4 beats at the session tempo), so layered
+         patterns land on the downbeat together. Pressing its number
+         while armed (⏳) cancels the join. */
+      const barMs = (60000 / mplSessionBpm) * 4;
+      const wait = barMs - ((performance.now() - mplSessionStart) % barMs);
+      if (wait > 25) {
+        const b = $('mpl-btn-' + i);
+        if (b) b.textContent = '⏳';
+        toast(`🎼 MPL[${i}] armed — joins at the next bar (${(wait / 1000).toFixed(1)}s) · ${mplActiveCount()} looping`);
+        await new Promise(r => setTimeout(r, wait));
+        if (gen !== mplSlotGen[i]) return;
+        mplSlotPaint();
+      }
     }
     while (gen === mplSlotGen[i]) {
       let ch = startCh;
