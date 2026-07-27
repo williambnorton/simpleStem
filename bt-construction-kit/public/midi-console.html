@@ -40,6 +40,9 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .nowbox { display: inline-block; min-width: 38px; text-align: center; background: #131824;
+    border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 2px 6px;
+    font: 11px Menlo, monospace; color: #00e676; }
   .beatbox { display: inline-flex; gap: 5px; margin-left: 6px; align-items: center; }
   .beatbox i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.12);
     transition: transform .06s, background .06s; }
@@ -200,6 +203,11 @@ record-armed Software Instrument track receives them.</div>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
       <span id="lg-mpl-beat" class="beatbox" title="Beat marker — amber = beat 1, green = beats 2-4"><i></i><i></i><i></i><i></i></span></div>
+    <div class="row" title="Live values as the sequence iterates — channel (m# / ...loops), program (p# / ...loops), the sounding note, and the clock tempo."><span class="k">now</span>
+      ch <span id="mpl-now-ch" class="nowbox">–</span>
+      pgm <span id="mpl-now-pgm" class="nowbox">–</span>
+      note <span id="mpl-now-note" class="nowbox">–</span>
+      bpm <span id="mpl-now-bpm" class="nowbox">–</span></div>
     <div id="mpl-bank"></div>
   </div>
 
@@ -401,13 +409,28 @@ function mplResolveEllipses(toks) {
     for (let j = out.length - 1; j >= 0 && prior.length < 2; j--) if (out[j].note != null) prior.push(out[j]);
     let next = null;
     for (let j = k + 1; j < toks.length; j++) if (toks[j].note != null) { next = toks[j]; break; }
-    if (prior.length < 2) throw new Error('"..." needs two notes before it to set the step');
+    if (!prior.length) throw new Error('"..." needs at least one note before it');
     if (!next) throw new Error('"..." needs a target note after it');
-    const step = prior[0].note - prior[1].note;
-    if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
-    if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
-    for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
-      out.push({ note: v, dur: prior[0].dur });
+    if (prior.length === 1) {
+      /* One prior note: walk the natural (white-key) scale toward the
+         target — m2,C...E plays C,D,E; C...C+ walks the C major scale. */
+      const from = prior[0].note, target = next.note;
+      if (from === target) throw new Error('"..." target equals the note before it');
+      const dir = target > from ? 1 : -1;
+      const WHITE = [0, 2, 4, 5, 7, 9, 11];
+      for (let v = from + dir; dir > 0 ? v < target : v > target; v += dir) {
+        if (v < 0 || v > 127) break;
+        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur });
+      }
+    } else {
+      /* Two priors: their interval is the step — E,F,... climbs half
+         steps; C,E,... climbs major thirds. */
+      const step = prior[0].note - prior[1].note;
+      if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
+      if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
+      for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
+        out.push({ note: v, dur: prior[0].dur });
+      }
     }
   }
   return out;
@@ -429,6 +452,12 @@ function lgMplBeat(idx) {
   const dots = document.querySelectorAll('#lg-mpl-beat i');
   dots.forEach((d, i) => d.classList.toggle('on', i === idx));
 }
+const MPL_NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function mplNow(field, val) {
+  const el = $('mpl-now-' + field);
+  if (el) el.textContent = (val == null) ? '–' : String(val);
+}
+function mplNowReset() { ['ch', 'pgm', 'note', 'bpm'].forEach(f => mplNow(f, null)); }
 function mplSlotPaint() {
   for (let i = 0; i < 10; i++) {
     const b = $('mpl-btn-' + i);
@@ -445,6 +474,7 @@ function lgMplStop() {
   mplActiveSlot = -1;
   mplSlotPaint();
   lgMplBeat(-1);
+  mplNowReset();
   fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'stop' }) }).catch(() => {});
   toast('🎼 MPL stopped');
@@ -475,18 +505,22 @@ async function mplSlotToggle(i) {
     const c = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'start', bpm }) }).then(J).catch(e => ({ error: e.message }));
     clockStarted = !c.error;
+    mplNow('bpm', bpm); mplNow('ch', startCh);
     let beats = 0;
     while (gen === lgMplGen) {
       let ch = startCh;
+      mplNow('ch', ch);
       for (const t of toks) {
         if (gen !== lgMplGen) return;
-        if (t.ch) { ch = t.ch; continue; }
+        if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
           if (r.error) { toast('⚠ MPL[' + i + ']: ' + r.error); return; }
+          mplNow('pgm', t.pc);
           continue;
         }
         lgMplBeat(Math.floor(beats) % 4);
+        if (!t.rest) mplNow('note', MPL_NOTE_NAMES[t.note % 12] + (Math.floor(t.note / 12) - 1));
         const durMs = q * (t.dur || 1);
         if (!t.rest) {
           const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: vel });
@@ -503,6 +537,7 @@ async function mplSlotToggle(i) {
       mplActiveSlot = -1;
       mplSlotPaint();
       lgMplBeat(-1);
+      mplNowReset();
       if (clockStarted) {
         fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'stop' }) }).catch(() => {});

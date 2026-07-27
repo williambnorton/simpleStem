@@ -1622,13 +1622,28 @@ function mplResolveEllipses(toks) {
     for (let j = out.length - 1; j >= 0 && prior.length < 2; j--) if (out[j].note != null) prior.push(out[j]);
     let next = null;
     for (let j = k + 1; j < toks.length; j++) if (toks[j].note != null) { next = toks[j]; break; }
-    if (prior.length < 2) throw new Error('"..." needs two notes before it to set the step');
+    if (!prior.length) throw new Error('"..." needs at least one note before it');
     if (!next) throw new Error('"..." needs a target note after it');
-    const step = prior[0].note - prior[1].note;
-    if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
-    if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
-    for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
-      out.push({ note: v, dur: prior[0].dur });
+    if (prior.length === 1) {
+      /* One prior note: walk the natural (white-key) scale toward the
+         target — m2,C...E plays C,D,E; C...C+ walks the C major scale. */
+      const from = prior[0].note, target = next.note;
+      if (from === target) throw new Error('"..." target equals the note before it');
+      const dir = target > from ? 1 : -1;
+      const WHITE = [0, 2, 4, 5, 7, 9, 11];
+      for (let v = from + dir; dir > 0 ? v < target : v > target; v += dir) {
+        if (v < 0 || v > 127) break;
+        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur });
+      }
+    } else {
+      /* Two priors: their interval is the step — E,F,... climbs half
+         steps; C,E,... climbs major thirds. */
+      const step = prior[0].note - prior[1].note;
+      if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
+      if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
+      for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
+        out.push({ note: v, dur: prior[0].dur });
+      }
     }
   }
   return out;
