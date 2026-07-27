@@ -202,6 +202,9 @@ record-armed Software Instrument track receives them.</div>
     <div class="row"><span class="k">clock</span>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
+      home <select id="lg-mpl-home" title="Home pitch — a global octave shift applied to every played note. ⌂ 0 = as written · +/- = one octave up/down · ++/-- = two octaves." style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
+        <option value="24">++</option><option value="12">+</option><option value="0" selected>0</option><option value="-12">-</option><option value="-24">--</option>
+      </select>
       <span id="lg-mpl-beat" class="beatbox" title="Beat marker — amber = beat 1, green = beats 2-4"><i></i><i></i><i></i><i></i></span></div>
     <div class="row" title="Live values as the sequence iterates — channel (m# / ...loops), program (p# / ...loops), the sounding note, and the clock tempo."><span class="k">now</span>
       ch <span id="mpl-now-ch" class="nowbox">–</span>
@@ -495,7 +498,8 @@ async function mplSlotToggle(i) {
   const startCh = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
   const vel = Math.min(127, Math.max(1, +($('lg-vel').value || 100)));
   const bpm = Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
-  try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(startCh)); } catch (e) {}
+  const home = +($('lg-mpl-home').value || 0);
+  try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(startCh)); localStorage.setItem('console.mplHome.v1', String(home)); } catch (e) {}
   const q = 60000 / bpm;
   const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
@@ -520,12 +524,17 @@ async function mplSlotToggle(i) {
           continue;
         }
         lgMplBeat(Math.floor(beats) % 4);
-        if (!t.rest) mplNow('note', MPL_NOTE_NAMES[t.note % 12] + (Math.floor(t.note / 12) - 1));
+        /* Home pitch: global octave shift, folded back into MIDI range so
+           extreme programs keep their pitch class instead of erroring. */
+        let hn = t.rest ? 0 : t.note + home;
+        while (hn > 127) hn -= 12;
+        while (hn < 0) hn += 12;
+        if (!t.rest) mplNow('note', MPL_NOTE_NAMES[hn % 12] + (Math.floor(hn / 12) - 1));
         const durMs = q * (t.dur || 1);
         if (!t.rest) {
-          const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: vel });
+          const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: vel });
           if (r.error) { toast('⚠ MPL[' + i + ']: ' + r.error); return; }
-          const n = t.note, c2 = ch;
+          const n = hn, c2 = ch;
           setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
         }
         await new Promise(r => setTimeout(r, durMs));
@@ -1006,6 +1015,8 @@ renderRecent();
     .map(b => `<option value="${b}" ${b === saved ? 'selected' : ''}>${b} bpm</option>`).join('');
   const savedCh = +(localStorage.getItem('console.mplCh.v1') || 2);
   if (savedCh >= 1 && savedCh <= 16) $('lg-mpl-ch').value = savedCh;
+  const savedHome = localStorage.getItem('console.mplHome.v1');
+  if (savedHome !== null && ['-24','-12','0','12','24'].includes(savedHome)) $('lg-mpl-home').value = savedHome;
 })();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
