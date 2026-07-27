@@ -40,6 +40,11 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .beatbox { display: inline-flex; gap: 5px; margin-left: 6px; align-items: center; }
+  .beatbox i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.12);
+    transition: transform .06s, background .06s; }
+  .beatbox i.on { background: #00e676; transform: scale(1.4); box-shadow: 0 0 8px rgba(0,230,118,.7); }
+  .beatbox i:first-child.on { background: #f1c40f; box-shadow: 0 0 8px rgba(241,196,15,.8); }
   .recent-row { gap: 5px !important;
     border-bottom: 1px dotted rgba(255,255,255,.08); padding-bottom: 4px;
     font-size: 10.5px !important; }
@@ -183,10 +188,15 @@ notes C-B, optional # and octave digit (C = middle C) — quarter notes at the c
 suffix e = eighth note (Ee) · suffix +/- = octave up/down, stackable (E+ C--) · standalone R or - = rest
 N(seq) = loop the group N times, 1-99, nestable
 ... = continue the trajectory: 2(E,F,...,E+) climbs half steps to E an octave up, twice
-m# = switch MIDI channel (m1C,D) · p# = send program change (p3C,D,E)"><span class="k">MPL</span>
+m# = switch MIDI channel (m1C,D) · p# = send program change (p3C,D,E)
+token...N(body) = incrementing loop: p1...3(A,B,C) plays A,B,C under programs 1,2,3 · m1...4(C) walks channels · C...5(-) climbs semitones"><span class="k">MPL</span>
       <textarea id="lg-mpl" rows="2" spellcheck="false" onkeydown="lgMplKey(event)" style="flex:1;min-width:200px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)</textarea>
       <button onclick="lgMplPlay()">▶ play</button>
       <button class="warn" onclick="lgMplStop()">⏹</button></div>
+    <div class="row" title="MPL transport — the sequence broadcasts MIDI clock (24 ppqn, tempo below) to every output while it plays. Note: MIDI clock is a channel-less system-realtime message by spec — the ch field sets the sequence's STARTING channel (m# still switches mid-program). Default ch 2: DLSMusicDevice responds to program changes on ch 2+, while Logic interferes on ch 1."><span class="k">MPL clock</span>
+      tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
+      ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2">
+      <span id="lg-mpl-beat" class="beatbox" title="Beat marker — amber = beat 1, green = beats 2-4"><i></i><i></i><i></i><i></i></span></div>
     <div class="row"><span class="k">prog change</span>
       ch <input type="number" id="lg-pch" min="1" max="16" value="1">
       pgm <input type="number" id="lg-pgm" min="0" max="127" value="0">
@@ -333,6 +343,35 @@ function mplParse(src) {
       }
       if (s.startsWith('...', i) || ch === '\u2026') {
         i += (ch === '\u2026') ? 1 : 3;
+        /* token...N(body) — the incrementing loop: the token immediately
+           before the ... is re-emitted at the top of every iteration with
+           its value advanced by 1 each time. p1...3(A,B,C) plays the body
+           under programs 1, 2, 3; m1...4(C) walks channels 1-4; C...5(-)
+           climbs semitones. Bare ... (no N( after) stays the trajectory
+           filler between notes. */
+        const look = /^\s*(\d+)\s*\(/.exec(s.slice(i));
+        if (look) {
+          i += look[0].length;
+          const inner = seq(true);
+          const reps = Math.min(99, Math.max(1, +look[1]));
+          const base = out.pop();
+          if (!base || (base.note == null && base.pc == null && base.ch == null)) {
+            throw new Error('"...N(" needs a note, p#, or m# immediately before it');
+          }
+          for (let k = 0; k < reps; k++) {
+            if (base.note != null) {
+              const v = base.note + k;
+              if (v < 0 || v > 127) throw new Error('"..." walked a note out of MIDI range');
+              out.push({ note: v, dur: base.dur });
+            } else if (base.pc != null) {
+              out.push({ pc: Math.min(127, base.pc + k) });
+            } else {
+              out.push({ ch: Math.min(16, base.ch + k) });
+            }
+            out.push(...inner.map(t => ({ ...t })));
+          }
+          continue;
+        }
         out.push({ ellipsis: true });
         continue;
       }
@@ -382,6 +421,10 @@ function mplResolveEllipses(toks) {
 }
 let lgMplGen = 0;
 function lgMplStop() { lgMplGen++; toast('🎼 MPL stopped'); }
+function lgMplBeat(idx) {
+  const dots = document.querySelectorAll('#lg-mpl-beat i');
+  dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+}
 async function lgMplPlay() {
   const gen = ++lgMplGen;
   const src = $('lg-mpl').value;
@@ -391,31 +434,47 @@ async function lgMplPlay() {
   if (!played) { toast('⚠ MPL: no notes to play'); return; }
   if (played > 2048) { toast('⚠ MPL: too long (' + played + ' notes, max 2048)'); return; }
   localStorage.setItem(MPL_KEY, src);
-  let ch = Math.min(16, Math.max(1, +($('lg-nch').value || 1)));
+  let ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
   const vel = Math.min(127, Math.max(1, +($('lg-vel').value || 100)));
-  const bpm = Math.min(300, Math.max(30, +($('ck-bpm').value || 120)));
+  const bpm = Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
+  try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(ch)); } catch (e) {}
   const q = 60000 / bpm;
   const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
-  toast(`🎼 MPL: ${played} notes @ ${bpm} bpm → Logic (IAC, start ch ${ch})`);
-  for (const t of toks) {
-    if (gen !== lgMplGen) return;
-    if (t.ch) { ch = t.ch; continue; }
-    if (t.pc != null) {
-      const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
-      if (r.error) { toast('⚠ MPL: ' + r.error); return; }
-      continue;
+  toast(`🎼 MPL: ${played} notes @ ${bpm} bpm + MIDI clock (IAC, start ch ${ch})`);
+  let clockStarted = false;
+  try {
+    const c = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'start', bpm }) }).then(J).catch(e => ({ error: e.message }));
+    clockStarted = !c.error;
+    let beats = 0;
+    for (const t of toks) {
+      if (gen !== lgMplGen) return;
+      if (t.ch) { ch = t.ch; continue; }
+      if (t.pc != null) {
+        const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
+        if (r.error) { toast('⚠ MPL: ' + r.error); return; }
+        continue;
+      }
+      lgMplBeat(Math.floor(beats) % 4);
+      const durMs = q * (t.dur || 1);
+      if (!t.rest) {
+        const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: vel });
+        if (r.error) { toast('⚠ MPL: ' + r.error); return; }
+        const n = t.note, c2 = ch;
+        setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
+      }
+      await new Promise(r => setTimeout(r, durMs));
+      beats += (t.dur || 1);
     }
-    const durMs = q * (t.dur || 1);
-    if (!t.rest) {
-      const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: vel });
-      if (r.error) { toast('⚠ MPL: ' + r.error); return; }
-      const n = t.note, c = ch;
-      setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c, note: n, velocity: 0 }), durMs * 0.85);
+    if (gen === lgMplGen) toast('🎼 MPL finished ✓');
+  } finally {
+    lgMplBeat(-1);
+    if (clockStarted) {
+      fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }) }).catch(() => {});
     }
-    await new Promise(r => setTimeout(r, durMs));
   }
-  if (gen === lgMplGen) toast('🎼 MPL finished ✓');
 }
 function lgMplKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); lgMplPlay(); }
@@ -861,6 +920,14 @@ hxMsgInit();
 hxRecallInit();
 renderRecent();
 try { const m = localStorage.getItem(MPL_KEY); if (m) $('lg-mpl').value = m; } catch (e) {}
+(function () {
+  const sel = $('lg-mpl-bpm');
+  const saved = +(localStorage.getItem('console.mplBpm.v1') || 120);
+  sel.innerHTML = [60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 180, 200]
+    .map(b => `<option value="${b}" ${b === saved ? 'selected' : ''}>${b} bpm</option>`).join('');
+  const savedCh = +(localStorage.getItem('console.mplCh.v1') || 2);
+  if (savedCh >= 1 && savedCh <= 16) $('lg-mpl-ch').value = savedCh;
+})();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>
