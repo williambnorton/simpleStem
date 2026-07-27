@@ -177,6 +177,10 @@ Stadium's own PC/CC69 sends once Send MIDI PC is on.</div>
       note <input type="number" id="lg-note" min="0" max="127" value="60">
       vel <input type="number" id="lg-vel" min="1" max="127" value="100">
       <button onclick="logicNote()">🎵 send (IAC)</button></div>
+    <div class="row" title="MPL — MIDI Programming Language. Quarter notes at the clock bpm, sent as note_on/note_off pairs over IAC (same path as note on above). Notes C-B with optional # and octave digit (C = middle C), R or - rests, N(...) repeats a group N times."><span class="k">MPL</span>
+      <input type="text" id="lg-mpl" spellcheck="false" value="4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)" style="flex:1;min-width:200px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:11px Menlo,monospace">
+      <button onclick="lgMplPlay()">▶ play</button>
+      <button class="warn" onclick="lgMplStop()">⏹</button></div>
     <div class="row"><span class="k">prog change</span>
       ch <input type="number" id="lg-pch" min="1" max="16" value="1">
       pgm <input type="number" id="lg-pgm" min="0" max="127" value="0">
@@ -281,6 +285,76 @@ async function logicNote() {
   recentRecord({ kind: 'note', ch, note, velocity: vel, port: 'IAC' });
   await send({ port: 'IAC', type: 'note_on', channel: ch, note, velocity: vel }, `note_on ${note} vel ${vel} ch ${ch} → Logic`);
   setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: ch, note, velocity: 0 }, 'note_off ' + note), 250);
+}
+/* ── MPL — MIDI Programming Language (shared grammar with the desk's
+   Logic card). Quarter-note sequences → note_on/note_off pairs over IAC,
+   the SAME send path as the note-on button above. Tempo = the clock bpm
+   field. Grammar: notes C-B (+# / octave digit, C = middle C), R or -
+   rests, N(seq) repeat groups (nestable). */
+const MPL_KEY = 'console.mpl.v1';
+const MPL_SEMIS = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+function mplParse(src) {
+  let i = 0; const s = String(src || '');
+  function seq(inGroup) {
+    const out = [];
+    while (i < s.length) {
+      const ch = s[i];
+      if (/[\s,]/.test(ch)) { i++; continue; }
+      if (ch === ')') { if (inGroup) { i++; return out; } throw new Error('unexpected ")" at char ' + (i + 1)); }
+      if (/\d/.test(ch)) {
+        let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        while (i < s.length && /\s/.test(s[i])) i++;
+        if (s[i] !== '(') throw new Error('expected "(" after repeat count ' + n);
+        i++;
+        const inner = seq(true);
+        const reps = Math.min(64, Math.max(1, +n));
+        for (let k = 0; k < reps; k++) out.push(...inner);
+        continue;
+      }
+      const m = /^([A-Ga-g])(#?)(\d?)/.exec(s.slice(i));
+      if (m) {
+        i += m[0].length;
+        const name = m[1].toUpperCase() + m[2];
+        const oct = m[3] === '' ? 4 : +m[3];
+        out.push({ note: 12 * (oct + 1) + MPL_SEMIS[name] });
+        continue;
+      }
+      if (/[Rr-]/.test(ch)) { i++; out.push({ rest: true }); continue; }
+      throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
+    }
+    if (inGroup) throw new Error('missing ")"');
+    return out;
+  }
+  return seq(false);
+}
+let lgMplGen = 0;
+function lgMplStop() { lgMplGen++; toast('🎼 MPL stopped'); }
+async function lgMplPlay() {
+  const gen = ++lgMplGen;
+  const src = $('lg-mpl').value;
+  let toks;
+  try { toks = mplParse(src); } catch (e) { toast('⚠ MPL: ' + e.message); return; }
+  if (!toks.length) { toast('⚠ MPL: empty program'); return; }
+  if (toks.length > 512) { toast('⚠ MPL: too long (' + toks.length + ' notes, max 512)'); return; }
+  localStorage.setItem(MPL_KEY, src);
+  const ch = Math.min(16, Math.max(1, +($('lg-nch').value || 1)));
+  const vel = Math.min(127, Math.max(1, +($('lg-vel').value || 100)));
+  const bpm = Math.min(300, Math.max(30, +($('ck-bpm').value || 120)));
+  const q = 60000 / bpm;
+  const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
+  toast(`🎼 MPL: ${toks.length} quarter notes @ ${bpm} bpm → Logic (IAC ch ${ch})`);
+  for (const t of toks) {
+    if (gen !== lgMplGen) return;
+    if (!t.rest) {
+      const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: vel });
+      if (r.error) { toast('⚠ MPL: ' + r.error); return; }
+      const n = t.note;
+      setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: ch, note: n, velocity: 0 }), q * 0.85);
+    }
+    await new Promise(r => setTimeout(r, q));
+  }
+  if (gen === lgMplGen) toast('🎼 MPL finished ✓');
 }
 const hxCh = () => Math.min(16, Math.max(1, +($('hx-ch').value || 5)));
 /* the Stadium's full researched command map as named, well-formed
@@ -722,6 +796,7 @@ mcFields();
 hxMsgInit();
 hxRecallInit();
 renderRecent();
+try { const m = localStorage.getItem(MPL_KEY); if (m) $('lg-mpl').value = m; } catch (e) {}
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);
 </script>
