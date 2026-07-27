@@ -1555,12 +1555,20 @@ function mplParse(src) {
         out.push({ pc: p });
         continue;
       }
-      let m = /^([A-Ga-g])(#?)(\d?)(e?)/.exec(s.slice(i));
-      if (m) {
+      if (s.startsWith('...', i) || ch === '\u2026') {
+        i += (ch === '\u2026') ? 1 : 3;
+        out.push({ ellipsis: true });
+        continue;
+      }
+      let m = /^([A-Ga-g])(#?)(\d?)((?:[+\-e])*)/.exec(s.slice(i));
+      if (m && m[1]) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
         const oct = m[3] === '' ? 4 : +m[3];
-        out.push({ note: 12 * (oct + 1) + MPL_SEMIS[name], dur: m[4] ? 0.5 : 1 });
+        let note = 12 * (oct + 1) + MPL_SEMIS[name], dur = 1;
+        for (const c of m[4]) { if (c === '+') note += 12; else if (c === '-') note -= 12; else dur = 0.5; }
+        if (note < 0 || note > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
+        out.push({ note, dur });
         continue;
       }
       m = /^[Rr-](e?)/.exec(s.slice(i));
@@ -1570,7 +1578,31 @@ function mplParse(src) {
     if (inGroup) throw new Error('missing ")"');
     return out;
   }
-  return seq(false);
+  return mplResolveEllipses(seq(false));
+}
+/* "..." — continue the trajectory: the two notes before it set the step,
+   and generated notes walk that step until (not including) the next
+   written note. 2(E,F,...,E+) climbs the chromatic scale to E an octave
+   up, twice. Generated notes inherit the previous note's duration. */
+function mplResolveEllipses(toks) {
+  const out = [];
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (!t.ellipsis) { out.push(t); continue; }
+    const prior = [];
+    for (let j = out.length - 1; j >= 0 && prior.length < 2; j--) if (out[j].note != null) prior.push(out[j]);
+    let next = null;
+    for (let j = k + 1; j < toks.length; j++) if (toks[j].note != null) { next = toks[j]; break; }
+    if (prior.length < 2) throw new Error('"..." needs two notes before it to set the step');
+    if (!next) throw new Error('"..." needs a target note after it');
+    const step = prior[0].note - prior[1].note;
+    if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
+    if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
+    for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
+      out.push({ note: v, dur: prior[0].dur });
+    }
+  }
+  return out;
 }
 let mplGen = 0;
 function mplStop() { mplGen++; hint('🎼 MPL stopped.'); }
@@ -1618,6 +1650,8 @@ function showMplCard() {
 <span class="meta-k">notes</span>: C C# D … B, optional octave digit (C4 = middle C, default 4)
 <span class="meta-k">rest</span>: R or - (Re = eighth rest)
 <span class="meta-k">eighth</span>: suffix e — Ee,Fe are eighth notes (quarter is the default)
+<span class="meta-k">octave</span>: suffix + / - shifts an octave, stackable — E+ C-- (standalone - is still a rest)
+<span class="meta-k">trajectory</span>: ... continues the step — 2(E,F,...,E+) climbs half steps to E an octave up
 <span class="meta-k">loop</span>: N(sequence) repeats it N times, 1-99 — groups nest
 <span class="meta-k">channel</span>: m# switches the MIDI channel (m1C,D)
 <span class="meta-k">program</span>: p# sends a program change (p3C,D,E)
