@@ -1537,19 +1537,34 @@ function mplParse(src) {
         if (s[i] !== '(') throw new Error('expected "(" after repeat count ' + n);
         i++;
         const inner = seq(true);
-        const reps = Math.min(64, Math.max(1, +n));
+        const reps = Math.min(99, Math.max(1, +n));
         for (let k = 0; k < reps; k++) out.push(...inner);
         continue;
       }
-      const m = /^([A-Ga-g])(#?)(\d?)/.exec(s.slice(i));
+      if (ch === 'm' || ch === 'M') {
+        i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        if (!n) throw new Error('m needs a channel 1-16 (char ' + (i + 1) + ')');
+        const c = +n; if (c < 1 || c > 16) throw new Error('channel ' + c + ' out of range 1-16');
+        out.push({ ch: c });
+        continue;
+      }
+      if (ch === 'p' || ch === 'P') {
+        i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        if (!n) throw new Error('p needs a program 0-127 (char ' + (i + 1) + ')');
+        const p = +n; if (p > 127) throw new Error('program ' + p + ' out of range 0-127');
+        out.push({ pc: p });
+        continue;
+      }
+      let m = /^([A-Ga-g])(#?)(\d?)(e?)/.exec(s.slice(i));
       if (m) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
         const oct = m[3] === '' ? 4 : +m[3];
-        out.push({ note: 12 * (oct + 1) + MPL_SEMIS[name], label: name + (m[3] || '') });
+        out.push({ note: 12 * (oct + 1) + MPL_SEMIS[name], dur: m[4] ? 0.5 : 1 });
         continue;
       }
-      if (/[Rr-]/.test(ch)) { i++; out.push({ rest: true, label: 'rest' }); continue; }
+      m = /^[Rr-](e?)/.exec(s.slice(i));
+      if (m) { i += m[0].length; out.push({ rest: true, dur: m[1] ? 0.5 : 1 }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -1563,25 +1578,37 @@ async function mplPlay(src) {
   const gen = ++mplGen;
   let toks;
   try { toks = mplParse(src); } catch (e) { hint('🎼 MPL error: ' + e.message); return; }
-  if (!toks.length) { hint('🎼 empty MPL program — nothing to play.'); return; }
-  if (toks.length > 512) { hint('🎼 MPL program too long (' + toks.length + ' notes, max 512).'); return; }
+  const played = toks.filter(t => t.note != null || t.rest).length;
+  if (!played) { hint('🎼 empty MPL program — nothing to play.'); return; }
+  if (played > 2048) { hint('🎼 MPL program too long (' + played + ' notes, max 2048).'); return; }
   localStorage.setItem(MPL_KEY, src);
   const bpm = +(cfgGet('clock', 'bpm') || 120);
   const q = 60000 / bpm;
+  let ch = 1;
   const send = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(r => r.json()).catch(e => ({ error: e.message }));
-  hint(`🎼 MPL: ${toks.length} quarter notes @ ${bpm} bpm over IAC — a record-armed Software Instrument track in Logic sounds them.`);
+  hint(`🎼 MPL: ${played} notes @ ${bpm} bpm over IAC — a record-armed Software Instrument track in Logic sounds them.`);
   for (const t of toks) {
     if (gen !== mplGen) return;
-    if (!t.rest) {
-      const r = await send({ port: 'IAC', type: 'note_on', channel: 1, note: t.note, velocity: 105 });
-      if (r.error) { hint('🎼 ' + r.error + ' — sidecar up? IAC online?'); return; }
-      const n = t.note;
-      setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: 1, note: n, velocity: 0 }), q * 0.85);
+    if (t.ch) { ch = t.ch; continue; }
+    if (t.pc != null) {
+      const r = await send({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
+      if (r.error) { hint('🎼 ' + r.error); return; }
+      continue;
     }
-    await new Promise(r => setTimeout(r, q));
+    const durMs = q * (t.dur || 1);
+    if (!t.rest) {
+      const r = await send({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: 105 });
+      if (r.error) { hint('🎼 ' + r.error + ' — sidecar up? IAC online?'); return; }
+      const n = t.note, c = ch;
+      setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: c, note: n, velocity: 0 }), durMs * 0.85);
+    }
+    await new Promise(r => setTimeout(r, durMs));
   }
   if (gen === mplGen) hint('🎼 MPL program finished.');
+}
+function mplKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mplPlay(document.getElementById('mpl-src').value); }
 }
 function showMplCard() {
   const saved = localStorage.getItem(MPL_KEY) || MPL_DEFAULT;
@@ -1589,10 +1616,14 @@ function showMplCard() {
     `<h3>🎼 MPL — MIDI Programming Language</h3>
      <div class="file" style="max-height:60vh;overflow-y:auto">Quarter-note sequences → Logic over IAC ch 1, at the desk clock's bpm.
 <span class="meta-k">notes</span>: C C# D … B, optional octave digit (C4 = middle C, default 4)
-<span class="meta-k">rest</span>: R or -
-<span class="meta-k">loop</span>: N(sequence) repeats it N times — groups nest
+<span class="meta-k">rest</span>: R or - (Re = eighth rest)
+<span class="meta-k">eighth</span>: suffix e — Ee,Fe are eighth notes (quarter is the default)
+<span class="meta-k">loop</span>: N(sequence) repeats it N times, 1-99 — groups nest
+<span class="meta-k">channel</span>: m# switches the MIDI channel (m1C,D)
+<span class="meta-k">program</span>: p# sends a program change (p3C,D,E)
+<span class="meta-k">keys</span>: Return plays · Shift+Return = new line
 <span class="meta-k">hear it</span>: record-arm a Software Instrument track in Logic first</div>
-     <textarea id="mpl-src" spellcheck="false" style="width:100%;height:70px;margin-top:8px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:8px;font:12px Menlo,monospace">${saved.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+     <textarea id="mpl-src" spellcheck="false" onkeydown="mplKey(event)" style="width:100%;height:70px;margin-top:8px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:8px;font:12px Menlo,monospace">${saved.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
      <div style="display:flex;gap:8px;margin-top:8px">
        <button onclick="mplPlay(document.getElementById('mpl-src').value)" style="background:rgba(0,230,118,.15);color:#aef7cd;border:1px solid rgba(0,230,118,.5);border-radius:8px;padding:6px 14px;font:700 12px -apple-system,sans-serif;cursor:pointer">▶ PLAY</button>
        <button onclick="mplStop()" style="background:rgba(255,82,82,.12);color:#ffb3b3;border:1px solid rgba(255,82,82,.4);border-radius:8px;padding:6px 14px;font:700 12px -apple-system,sans-serif;cursor:pointer">⏹ STOP</button>
