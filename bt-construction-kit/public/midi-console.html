@@ -198,7 +198,7 @@ record-armed Software Instrument track receives them.</div>
     <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest; N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill. MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop a slot · same key again stops</span></h3>
+  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest; N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill. MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
     <div class="row"><span class="k">clock</span>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
@@ -438,7 +438,14 @@ function mplResolveEllipses(toks) {
   }
   return out;
 }
-let lgMplGen = 0, mplActiveSlot = -1;
+/* Polyphonic bank (Bill 2026-07-27): every slot runs independently —
+   pressing a number toggles THAT slot only, so multiple patterns layer.
+   The MIDI clock + beat marker run while ANY slot is active (started by
+   the first, stopped by the last). */
+const mplSlotGen = new Array(10).fill(0);
+const mplSlotRunning = new Array(10).fill(false);
+let mplBeatTimer = null, mplBeatPos = 0;
+const mplActiveCount = () => mplSlotRunning.filter(Boolean).length;
 const MPL_BANK_KEY = 'console.mplBank.v1';
 function mplBankLoad() {
   try { const a = JSON.parse(localStorage.getItem(MPL_BANK_KEY) || 'null'); if (Array.isArray(a) && a.length === 10) return a; } catch (e) {}
@@ -465,25 +472,38 @@ function mplSlotPaint() {
   for (let i = 0; i < 10; i++) {
     const b = $('mpl-btn-' + i);
     if (!b) continue;
-    const on = i === mplActiveSlot;
+    const on = mplSlotRunning[i];
     b.textContent = on ? '⏹' : '▶';
     b.classList.toggle('warn', on);
     const row = b.closest('.row');
     if (row) row.style.background = on ? 'rgba(0,230,118,.08)' : '';
   }
 }
-function lgMplStop() {
-  lgMplGen++;
-  mplActiveSlot = -1;
+function mplBeatStart(bpm) {
+  if (mplBeatTimer) clearInterval(mplBeatTimer);
+  mplBeatPos = 0;
+  lgMplBeat(0);
+  mplBeatTimer = setInterval(() => { mplBeatPos = (mplBeatPos + 1) % 4; lgMplBeat(mplBeatPos); }, 60000 / bpm);
+}
+function mplSlotStop(i, silent) {
+  mplSlotGen[i]++;
+  mplSlotRunning[i] = false;
   mplSlotPaint();
-  lgMplBeat(-1);
-  mplNowReset();
-  fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'stop' }) }).catch(() => {});
-  toast('🎼 MPL stopped');
+  if (!mplActiveCount()) {
+    if (mplBeatTimer) { clearInterval(mplBeatTimer); mplBeatTimer = null; }
+    lgMplBeat(-1);
+    mplNowReset();
+    fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'stop' }) }).catch(() => {});
+  }
+  if (!silent) toast('🎼 MPL[' + i + '] stopped' + (mplActiveCount() ? ' — ' + mplActiveCount() + ' still looping' : ''));
+}
+function lgMplStop() {
+  for (let i = 0; i < 10; i++) if (mplSlotRunning[i]) mplSlotStop(i, true);
+  toast('🎼 MPL — all slots stopped');
 }
 async function mplSlotToggle(i) {
-  if (mplActiveSlot === i) { lgMplStop(); return; }
+  if (mplSlotRunning[i]) { mplSlotStop(i); return; }
   const el = $('mpl-slot-' + i);
   if (!el) return;
   let toks;
@@ -492,8 +512,8 @@ async function mplSlotToggle(i) {
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
   mplBankSave();
-  const gen = ++lgMplGen;
-  mplActiveSlot = i;
+  const gen = ++mplSlotGen[i];
+  mplSlotRunning[i] = true;
   mplSlotPaint();
   const startCh = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
   const vel = Math.min(127, Math.max(1, +($('lg-vel').value || 100)));
@@ -503,19 +523,20 @@ async function mplSlotToggle(i) {
   const q = 60000 / bpm;
   const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
-  toast(`🎼 MPL[${i}] looping — ${played} notes @ ${bpm} bpm + MIDI clock · press ${i} again to stop`);
-  let clockStarted = false;
+  const first = mplActiveCount() === 1;
+  toast(`🎼 MPL[${i}] looping @ ${bpm} bpm${first ? ' + MIDI clock' : ' (layered — ' + mplActiveCount() + ' running)'} · press ${i} again to stop`);
   try {
-    const c = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'start', bpm }) }).then(J).catch(e => ({ error: e.message }));
-    clockStarted = !c.error;
-    mplNow('bpm', bpm); mplNow('ch', startCh);
-    let beats = 0;
-    while (gen === lgMplGen) {
+    if (first) {
+      fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', bpm }) }).then(J).catch(() => {});
+      mplBeatStart(bpm);
+      mplNow('bpm', bpm);
+      mplNow('ch', startCh);
+    }
+    while (gen === mplSlotGen[i]) {
       let ch = startCh;
-      mplNow('ch', ch);
       for (const t of toks) {
-        if (gen !== lgMplGen) return;
+        if (gen !== mplSlotGen[i]) return;
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
@@ -523,9 +544,7 @@ async function mplSlotToggle(i) {
           mplNow('pgm', t.pc);
           continue;
         }
-        lgMplBeat(Math.floor(beats) % 4);
-        /* Home pitch: global octave shift, folded back into MIDI range so
-           extreme programs keep their pitch class instead of erroring. */
+        /* Home pitch: global octave shift, folded back into MIDI range. */
         let hn = t.rest ? 0 : t.note + home;
         while (hn > 127) hn -= 12;
         while (hn < 0) hn += 12;
@@ -538,20 +557,10 @@ async function mplSlotToggle(i) {
           setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
         }
         await new Promise(r => setTimeout(r, durMs));
-        beats += (t.dur || 1);
       }
     }
   } finally {
-    if (gen === lgMplGen) {
-      mplActiveSlot = -1;
-      mplSlotPaint();
-      lgMplBeat(-1);
-      mplNowReset();
-      if (clockStarted) {
-        fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'stop' }) }).catch(() => {});
-      }
-    }
+    if (gen === mplSlotGen[i] && mplSlotRunning[i]) mplSlotStop(i, true);
   }
 }
 function mplSlotKey(e, i) {
