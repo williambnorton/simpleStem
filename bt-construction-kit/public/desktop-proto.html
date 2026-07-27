@@ -2441,6 +2441,18 @@ desk.addEventListener('contextmenu', (e) => {
     }
     if (o.id === 'logic') {
       items.push({ label: '🔎 Instrumentation card', run: showLogicCard });
+      items.push({ label: '🎵 Play middle C (note on/off via IAC)', run: async () => {
+        // The chain-proof demo: note_on 60 rides the IAC bus into Logic,
+        // a record-armed Software Instrument track sounds it, and 400ms
+        // later the matching note_off releases it. Both legs appear in
+        // the wire log (→SENT + the IAC loopback ←HEARD).
+        const send = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body) }).then(r => r.json()).catch(e => ({ error: e.message }));
+        const r = await send({ port: 'IAC', type: 'note_on', channel: 1, note: 60, velocity: 100 });
+        if (r.error) { hint('🎵 ' + r.error + ' — is the sidecar up + IAC online in Audio MIDI Setup?'); return; }
+        setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: 1, note: 60, velocity: 0 }), 400);
+        hint('🎵 middle C → Logic over IAC (note_on 60, note_off after 400ms). Hear it: record-arm a Software Instrument track.');
+      } });
       items.push({ label: '⏺ Record (R)', run: () => logicKey({ action: 'record' }, 'RECORD') });
       items.push({ label: '⏯ Play / Stop (space)', run: () => logicKey({ action: 'playstop' }, 'PLAY/STOP') });
       items.push({ label: '⏮ Return to zero (return)', run: () => logicKey({ action: 'rtz' }, 'RETURN TO ZERO') });
