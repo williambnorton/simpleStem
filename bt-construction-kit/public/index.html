@@ -33,7 +33,7 @@
         <!-- The PORTALS tab bar IS the brand block now: wordmark + build
              version on the top line, the four system views as tabs below. -->
         <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
-  <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span></div>
+  <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
   <div class="tb-grid"><a class="pb pb-performer here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
@@ -313,13 +313,6 @@
                 <div>
                   <span id="wifi-pill-state" class="stat-val">…</span>
                   <span class="stat-lbl">WiFi</span>
-                </div>
-              </div>
-              <div id="reset-pill" class="meta-stat-pill hover-glow" title="RESET PERFORMER — stop + relaunch the MIDI sidecar and portal server fresh (an active Demucs render is left alone). The page reloads itself when the server is back, ~10s." onclick="performerReset()">
-                <i data-lucide="rotate-ccw"></i>
-                <div>
-                  <span class="stat-val">RESET</span>
-                  <span class="stat-lbl">Performer</span>
                 </div>
               </div>
               <div id="analog-clock-digital-wrap" class="meta-stat-pill digital-clock-pill" title="Local time">
@@ -611,7 +604,7 @@
                 <button id="btn-test-tone-mixer" class="restart-circle" title="Round-the-horn channel check. Speaks 'Left, Right, One, Two, Three, Four, Five, Six' onto XR18 outputs 1, 2, 11, 12, 13, 14, 15, 16 in turn. If everything lands on the same speaker, the XR18's USB Sends/Returns map is sending all USB channels to Main LR — open X-Air → Setup → Routing → USB Sends/Returns and map USB 11-16 to six channel strips of your choice." aria-label="Round-the-horn sound check">
                   <i data-lucide="bell"></i>
                 </button>
-                <button id="btn-restart-mixer" class="restart-circle" title="Restart the backend (performer.sh restart)" aria-label="Restart backend">
+                <button id="btn-restart-mixer" class="restart-circle" title="FULL RESTART (performer.sh restart) — stops and relaunches EVERYTHING including the render queue; an active Demucs render is killed. For the safe everyday reset (sidecar + server only, render kept) use the ⟳ reset in the upper-left corner." aria-label="Restart backend">
                   <i data-lucide="rotate-cw"></i>
                 </button>
                 <button id="btn-kick-coreaudio-mixer" class="restart-circle first-aid-circle" title="⚠ TRY USB UNPLUG/REPLUG FIRST. First aid kicks coreaudiod (sudo killall coreaudiod) — this resets the Mac side of Core Audio but can ORPHAN the XR18 when the board's USB endpoint is already flaky. Logic will show '(XR18)' in parens (= unavailable) afterward, and you'll need a physical USB replug to get it back.
