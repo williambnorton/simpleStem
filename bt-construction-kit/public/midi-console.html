@@ -198,7 +198,7 @@ record-armed Software Instrument track receives them.</div>
     <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill. MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
+  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill; @N calls slot N inline (2@2 plays slot 2 twice). MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
     <div class="row"><span class="k">clock</span>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
@@ -313,8 +313,19 @@ async function logicNote() {
    rests, N(seq) repeat groups (nestable). */
 const MPL_KEY = 'console.mpl.v1';
 const MPL_SEMIS = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
-function mplParse(src) {
+function mplParse(src, getSlot, _seen) {
   let i = 0; const s = String(src || '');
+  /* @N — the call: inline slot N's MPL at this point. A repeat count
+     works (2@2 plays slot 2 twice). getSlot supplies slot sources; the
+     seen-set breaks circular calls (@2 inside slot 2, or 1→2→1). */
+  const seen = _seen || new Set();
+  function callSlot(d) {
+    if (!getSlot) throw new Error('@' + d + ' — slot calls only work from the MPL BANK');
+    if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
+    const sub = getSlot(d);
+    if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
+    return mplParse(sub, getSlot, new Set([...seen, d]));
+  }
   function seq(inGroup) {
     const out = [];
     /* Consecutive commas are pauses: an empty slot between commas is one
@@ -330,11 +341,24 @@ function mplParse(src) {
       if (/\d/.test(ch)) {
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         while (i < s.length && /\s/.test(s[i])) i++;
-        if (s[i] !== '(') throw new Error('expected "(" after repeat count ' + n);
+        const reps = Math.min(99, Math.max(1, +n));
+        if (s[i] === '@') {
+          i++;
+          if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
+          const inner = callSlot(+s[i++]);
+          for (let k = 0; k < reps; k++) out.push(...inner.map(t => ({ ...t })));
+          continue;
+        }
+        if (s[i] !== '(') throw new Error('expected "(" or "@" after repeat count ' + n);
         i++;
         const inner = seq(true);
-        const reps = Math.min(99, Math.max(1, +n));
         for (let k = 0; k < reps; k++) out.push(...inner);
+        continue;
+      }
+      if (ch === '@') {
+        i++;
+        if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
+        out.push(...callSlot(+s[i++]).map(t => ({ ...t })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {
@@ -514,7 +538,9 @@ async function mplSlotToggle(i) {
   const el = $('mpl-slot-' + i);
   if (!el) return;
   let toks;
-  try { toks = mplParse(el.value); } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
+  try {
+    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+  } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
   const played = toks.filter(t => t.note != null || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }

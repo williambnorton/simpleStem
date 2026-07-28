@@ -1523,8 +1523,19 @@ async function showDittoCard() {
 const MPL_KEY = 'desk.mpl.v1';
 const MPL_DEFAULT = '4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)';
 const MPL_SEMIS = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
-function mplParse(src) {
+function mplParse(src, getSlot, _seen) {
   let i = 0; const s = String(src || '');
+  /* @N — the call: inline slot N's MPL at this point. A repeat count
+     works (2@2 plays slot 2 twice). getSlot supplies slot sources; the
+     seen-set breaks circular calls (@2 inside slot 2, or 1→2→1). */
+  const seen = _seen || new Set();
+  function callSlot(d) {
+    if (!getSlot) throw new Error('@' + d + ' — slot calls only work from the MPL BANK');
+    if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
+    const sub = getSlot(d);
+    if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
+    return mplParse(sub, getSlot, new Set([...seen, d]));
+  }
   function seq(inGroup) {
     const out = [];
     /* Consecutive commas are pauses: an empty slot between commas is one
@@ -1540,11 +1551,24 @@ function mplParse(src) {
       if (/\d/.test(ch)) {
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         while (i < s.length && /\s/.test(s[i])) i++;
-        if (s[i] !== '(') throw new Error('expected "(" after repeat count ' + n);
+        const reps = Math.min(99, Math.max(1, +n));
+        if (s[i] === '@') {
+          i++;
+          if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
+          const inner = callSlot(+s[i++]);
+          for (let k = 0; k < reps; k++) out.push(...inner.map(t => ({ ...t })));
+          continue;
+        }
+        if (s[i] !== '(') throw new Error('expected "(" or "@" after repeat count ' + n);
         i++;
         const inner = seq(true);
-        const reps = Math.min(99, Math.max(1, +n));
         for (let k = 0; k < reps; k++) out.push(...inner);
+        continue;
+      }
+      if (ch === '@') {
+        i++;
+        if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
+        out.push(...callSlot(+s[i++]).map(t => ({ ...t })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {
