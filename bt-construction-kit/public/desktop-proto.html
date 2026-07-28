@@ -1527,10 +1527,16 @@ function mplParse(src) {
   let i = 0; const s = String(src || '');
   function seq(inGroup) {
     const out = [];
+    /* Consecutive commas are pauses: an empty slot between commas is one
+       quarter rest — A,,,D plays A, two beats of silence, then D. */
+    let danglingComma = false;
     while (i < s.length) {
       const ch = s[i];
-      if (/[\s,]/.test(ch)) { i++; continue; }
+      if (ch === ',') { i++; if (danglingComma) out.push({ rest: true, dur: 1 }); danglingComma = true; continue; }
+      if (/\s/.test(ch)) { i++; continue; }
       if (ch === ')') { if (inGroup) { i++; return out; } throw new Error('unexpected ")" at char ' + (i + 1)); }
+      danglingComma = false;
+      if (ch === '(') { i++; out.push(...seq(true)); continue; }
       if (/\d/.test(ch)) {
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         while (i < s.length && /\s/.test(s[i])) i++;
@@ -1692,7 +1698,7 @@ function showMplCard() {
     `<h3>🎼 MPL — MIDI Programming Language</h3>
      <div class="file" style="max-height:60vh;overflow-y:auto">Quarter-note sequences → Logic over IAC ch 1, at the desk clock's bpm.
 <span class="meta-k">notes</span>: C C# D … B, optional octave digit (C4 = middle C, default 4)
-<span class="meta-k">rest</span>: R or - (Re = eighth rest)
+<span class="meta-k">rest</span>: R or - (Re = eighth rest) · consecutive commas pause: A,,,D = A, two rests, D
 <span class="meta-k">eighth</span>: suffix e — Ee,Fe are eighth notes (quarter is the default)
 <span class="meta-k">octave</span>: suffix + / - shifts an octave, stackable — E+ C-- (standalone - is still a rest)
 <span class="meta-k">trajectory</span>: ... continues the step — 2(E,F,...,E+) climbs half steps to E an octave up

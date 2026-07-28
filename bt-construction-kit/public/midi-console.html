@@ -198,7 +198,7 @@ record-armed Software Instrument track receives them.</div>
     <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest; N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill. MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
+  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill. MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
     <div class="row"><span class="k">clock</span>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
@@ -317,10 +317,16 @@ function mplParse(src) {
   let i = 0; const s = String(src || '');
   function seq(inGroup) {
     const out = [];
+    /* Consecutive commas are pauses: an empty slot between commas is one
+       quarter rest — A,,,D plays A, two beats of silence, then D. */
+    let danglingComma = false;
     while (i < s.length) {
       const ch = s[i];
-      if (/[\s,]/.test(ch)) { i++; continue; }
+      if (ch === ',') { i++; if (danglingComma) out.push({ rest: true, dur: 1 }); danglingComma = true; continue; }
+      if (/\s/.test(ch)) { i++; continue; }
       if (ch === ')') { if (inGroup) { i++; return out; } throw new Error('unexpected ")" at char ' + (i + 1)); }
+      danglingComma = false;
+      if (ch === '(') { i++; out.push(...seq(true)); continue; }
       if (/\d/.test(ch)) {
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         while (i < s.length && /\s/.test(s[i])) i++;
