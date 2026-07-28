@@ -6019,6 +6019,23 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
   }
 });
 
+// ── One-button Performer reset (Bill 2026-07-27) ────────────────────────
+// Relaunches the MIDI sidecar + this server via `performer.sh start` —
+// the SAFE reset: an active Demucs render is deliberately left alone
+// (performer.sh start never kills the runner). The child is detached and
+// delayed so it survives this very process dying mid-restart. The repo
+// root (where performer.sh lives) is one level above bt-construction-kit.
+app.post('/api/performer/reset', (req, res) => {
+  try {
+    const repoRoot = path.join(__dirname, '..');
+    const child = require('child_process').spawn('/bin/sh',
+      ['-c', 'sleep 1; exec ./performer.sh start'],
+      { cwd: repoRoot, detached: true, stdio: 'ignore' });
+    child.unref();
+    res.json({ ok: true, msg: 'restarting sidecar + server — back in ~10s (active render untouched)' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Keyboard Maestro macros (Bill 2026-07-24): the PORTALS strip's
 // ChatGPT/Perplexity buttons fire KM voice-mode macros instead of opening
 // browser tabs. Whitelisted ids → exact macro names (rename here if the

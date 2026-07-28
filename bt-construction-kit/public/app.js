@@ -1,3 +1,16 @@
+async function performerReset() {
+  if (!confirm('Restart the Performer services (MIDI sidecar + portal server)?\n\nAn active render is left alone. The page reloads itself when the server is back (~10s).')) return;
+  const r = await fetch('/api/performer/reset', { method: 'POST' }).then(x => x.json()).catch(e => ({ error: e.message }));
+  if (r.error) { alert('Reset failed: ' + r.error + '\nFallback: run ./performer.sh start in a terminal.'); return; }
+  const t0 = Date.now();
+  const poll = setInterval(async () => {
+    try {
+      const h = await fetch('/api/health', { cache: 'no-store' }).then(x => x.json());
+      if (h && h.ok && Date.now() - t0 > 4000) { clearInterval(poll); location.reload(); }
+    } catch (e) {}
+    if (Date.now() - t0 > 45000) clearInterval(poll);
+  }, 1500);
+}
 // Backing Track Construction Kit - Client Application Engine
 
 // State management

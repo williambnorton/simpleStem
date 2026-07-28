@@ -87,7 +87,7 @@
 </nav>
 <script>fetch('/api/health').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('portals-version');if(el&&j&&j.bootVersion)el.textContent=j.bootVersion;}).catch(function(){});</script>
 <h1>🎛 MIDI CONSOLE — the Performer's control room</h1>
-<div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a></div>
+<div class="sub">XR18 · Ditto X4 · Helix Stadium · Logic Pro — topology, live state received over MIDI, and controls. Health polls every 3 s · deep probes every 60 s · <a href="/desktop-proto.html">back to the desk</a> <button onclick="performerReset()" title="RESET PERFORMER — stop + relaunch the MIDI sidecar and portal server (active render untouched); the page reloads itself when the server answers again (~10s)." style="margin-left:10px">⟳ RESET PERFORMER</button></div>
 
 <svg id="topo" viewBox="0 0 1160 210" preserveAspectRatio="xMidYMid meet"></svg>
 
@@ -260,6 +260,20 @@ compare the pedal's own output against.</div>
 
 <script>
 let health = null, xrInfo = null, loop = null, mon = null;
+async function performerReset() {
+  if (!confirm('Restart the Performer services (MIDI sidecar + portal server)?\n\nAn active render is left alone. The page reloads itself when the server is back (~10s).')) return;
+  const r = await fetch('/api/performer/reset', { method: 'POST' }).then(x => x.json()).catch(e => ({ error: e.message }));
+  if (r.error) { toast('⚠ Reset failed: ' + r.error + '\nFallback: run ./performer.sh start in a terminal.'); return; }
+  const t0 = Date.now();
+  const poll = setInterval(async () => {
+    try {
+      const h = await fetch('/api/health', { cache: 'no-store' }).then(x => x.json());
+      if (h && h.ok && Date.now() - t0 > 4000) { clearInterval(poll); location.reload(); }
+    } catch (e) {}
+    if (Date.now() - t0 > 45000) clearInterval(poll);
+  }, 1500);
+}
+
 const $ = (id) => document.getElementById(id);
 function toast(t) { const el = $('toast'); el.innerHTML = t; el.style.display = 'block';
   clearTimeout(toast._t); toast._t = setTimeout(() => el.style.display = 'none', 3200); }
