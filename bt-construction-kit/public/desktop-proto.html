@@ -1599,7 +1599,7 @@ function mplParse(src, getSlot, _seen) {
           const inner = seq(true);
           const reps = Math.min(99, Math.max(1, +look[1]));
           const base = out.pop();
-          if (!base || (base.note == null && base.pc == null && base.ch == null)) {
+          if (!base || (base.note == null && !base.notes && base.pc == null && base.ch == null)) {
             throw new Error('"...N(" needs a note, p#, or m# immediately before it');
           }
           for (let k = 0; k < reps; k++) {
@@ -1607,6 +1607,10 @@ function mplParse(src, getSlot, _seen) {
               const v = base.note + k;
               if (v < 0 || v > 127) throw new Error('"..." walked a note out of MIDI range');
               out.push({ note: v, dur: base.dur });
+            } else if (base.notes) {
+              const vs = base.notes.map(v => v + k);
+              if (vs.some(v => v < 0 || v > 127)) throw new Error('"..." walked a chord out of MIDI range');
+              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur });
             } else if (base.pc != null) {
               out.push({ pc: Math.min(127, base.pc + k) });
             } else {
@@ -1619,19 +1623,31 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ellipsis: true });
         continue;
       }
-      let m = /^([A-Ga-g])(#?)(\d?)((?:[+\-e])*)/.exec(s.slice(i));
+      /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
+         C! = C major chord, Cm! = C minor (root, third, fifth). Duration
+         letters: w=whole q=quarter(default) e=eighth s=sixteenth.
+         "Cm" without "!" is NOT a chord — the m starts a channel command. */
+      let m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
       if (m && m[1]) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
         const oct = m[3] === '' ? 4 : +m[3];
-        let note = 12 * (oct + 1) + MPL_SEMIS[name], dur = 1;
-        for (const c of m[4]) { if (c === '+') note += 12; else if (c === '-') note -= 12; else dur = 0.5; }
-        if (note < 0 || note > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-        out.push({ note, dur });
+        let root = 12 * (oct + 1) + MPL_SEMIS[name];
+        for (const c of m[4]) root += (c === '+') ? 12 : -12;
+        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || 'q'];
+        if (m[5]) {
+          const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
+          const notes = iv.map(x => root + x);
+          if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
+          out.push({ notes, root, dur });
+        } else {
+          if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
+          out.push({ note: root, dur });
+        }
         continue;
       }
-      m = /^[Rr-](e?)/.exec(s.slice(i));
-      if (m) { i += m[0].length; out.push({ rest: true, dur: m[1] ? 0.5 : 1 }); continue; }
+      m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
+      if (m) { i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'] }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -1684,7 +1700,7 @@ async function mplPlay(src) {
   const gen = ++mplGen;
   let toks;
   try { toks = mplParse(src); } catch (e) { hint('🎼 MPL error: ' + e.message); return; }
-  const played = toks.filter(t => t.note != null || t.rest).length;
+  const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { hint('🎼 empty MPL program — nothing to play.'); return; }
   if (played > 2048) { hint('🎼 MPL program too long (' + played + ' notes, max 2048).'); return; }
   localStorage.setItem(MPL_KEY, src);
@@ -1703,10 +1719,11 @@ async function mplPlay(src) {
       continue;
     }
     const durMs = q * (t.dur || 1);
-    if (!t.rest) {
-      const r = await send({ port: 'IAC', type: 'note_on', channel: ch, note: t.note, velocity: 105 });
+    const sounding = t.notes ? t.notes : (t.rest ? [] : [t.note]);
+    for (const nn of sounding) {
+      const r = await send({ port: 'IAC', type: 'note_on', channel: ch, note: nn, velocity: 105 });
       if (r.error) { hint('🎼 ' + r.error + ' — sidecar up? IAC online?'); return; }
-      const n = t.note, c = ch;
+      const n = nn, c = ch;
       setTimeout(() => send({ port: 'IAC', type: 'note_off', channel: c, note: n, velocity: 0 }), durMs * 0.85);
     }
     await new Promise(r => setTimeout(r, durMs));
@@ -1723,7 +1740,8 @@ function showMplCard() {
      <div class="file" style="max-height:60vh;overflow-y:auto">Quarter-note sequences → Logic over IAC ch 1, at the desk clock's bpm.
 <span class="meta-k">notes</span>: C C# D … B, optional octave digit (C4 = middle C, default 4)
 <span class="meta-k">rest</span>: R or - (Re = eighth rest) · consecutive commas pause: A,,,D = A, two rests, D
-<span class="meta-k">eighth</span>: suffix e — Ee,Fe are eighth notes (quarter is the default)
+<span class="meta-k">duration</span>: suffix w/q/e/s — whole, quarter (default), eighth, sixteenth (Cw, Ee)
+<span class="meta-k">chords</span>: C! = C major, Cm! = C minor — root+3rd+5th, combinable (F#2m!w)
 <span class="meta-k">octave</span>: suffix + / - shifts an octave, stackable — E+ C-- (standalone - is still a rest)
 <span class="meta-k">trajectory</span>: ... continues the step — 2(E,F,...,E+) climbs half steps to E an octave up
 <span class="meta-k">incrementing loop</span>: token...N(body) — p1...3(A,B,C) plays A,B,C under programs 1,2,3; m1...4(C) walks channels

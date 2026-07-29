@@ -198,7 +198,7 @@ record-armed Software Instrument track receives them.</div>
     <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit, +/- octave shifts (stackable), e = eighth; R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill; @N calls slot N inline (2@2 plays slot 2 twice). MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
+  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit (F#2, C = middle C), +/- octave shifts (stackable: B+, C#--); durations w=whole q=quarter(default) e=eighth s=sixteenth (Cw, Ee); chords C! = C major, Cm! = C minor (combinable: F#2m!w); R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill; @N calls slot N inline (2@2 plays slot 2 twice). MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
     <div class="row"><span class="k">clock</span>
       tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
       ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
@@ -403,7 +403,7 @@ function mplParse(src, getSlot, _seen) {
           const inner = seq(true);
           const reps = Math.min(99, Math.max(1, +look[1]));
           const base = out.pop();
-          if (!base || (base.note == null && base.pc == null && base.ch == null)) {
+          if (!base || (base.note == null && !base.notes && base.pc == null && base.ch == null)) {
             throw new Error('"...N(" needs a note, p#, or m# immediately before it');
           }
           for (let k = 0; k < reps; k++) {
@@ -411,6 +411,10 @@ function mplParse(src, getSlot, _seen) {
               const v = base.note + k;
               if (v < 0 || v > 127) throw new Error('"..." walked a note out of MIDI range');
               out.push({ note: v, dur: base.dur });
+            } else if (base.notes) {
+              const vs = base.notes.map(v => v + k);
+              if (vs.some(v => v < 0 || v > 127)) throw new Error('"..." walked a chord out of MIDI range');
+              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur });
             } else if (base.pc != null) {
               out.push({ pc: Math.min(127, base.pc + k) });
             } else {
@@ -423,19 +427,31 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ellipsis: true });
         continue;
       }
-      let m = /^([A-Ga-g])(#?)(\d?)((?:[+\-e])*)/.exec(s.slice(i));
+      /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
+         C! = C major chord, Cm! = C minor (root, third, fifth). Duration
+         letters: w=whole q=quarter(default) e=eighth s=sixteenth.
+         "Cm" without "!" is NOT a chord — the m starts a channel command. */
+      let m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
       if (m && m[1]) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
         const oct = m[3] === '' ? 4 : +m[3];
-        let note = 12 * (oct + 1) + MPL_SEMIS[name], dur = 1;
-        for (const c of m[4]) { if (c === '+') note += 12; else if (c === '-') note -= 12; else dur = 0.5; }
-        if (note < 0 || note > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-        out.push({ note, dur });
+        let root = 12 * (oct + 1) + MPL_SEMIS[name];
+        for (const c of m[4]) root += (c === '+') ? 12 : -12;
+        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || 'q'];
+        if (m[5]) {
+          const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
+          const notes = iv.map(x => root + x);
+          if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
+          out.push({ notes, root, dur });
+        } else {
+          if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
+          out.push({ note: root, dur });
+        }
         continue;
       }
-      m = /^[Rr-](e?)/.exec(s.slice(i));
-      if (m) { i += m[0].length; out.push({ rest: true, dur: m[1] ? 0.5 : 1 }); continue; }
+      m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
+      if (m) { i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'] }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -555,7 +571,7 @@ async function mplSlotToggle(i) {
   try {
     toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
-  const played = toks.filter(t => t.note != null || t.rest).length;
+  const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
   mplBankSave();
@@ -608,13 +624,17 @@ async function mplSlotToggle(i) {
           mplNow('pgm', t.pc);
           continue;
         }
-        /* Home pitch: global octave shift, folded back into MIDI range. */
-        let hn = t.rest ? 0 : t.note + home;
-        while (hn > 127) hn -= 12;
-        while (hn < 0) hn += 12;
-        if (!t.rest) mplNow('note', MPL_NOTE_NAMES[hn % 12] + (Math.floor(hn / 12) - 1));
+        /* Home pitch: global octave shift, folded back into MIDI range.
+           Chords ({notes:[...]}) sound all their notes together in one
+           duration slot; singles are a one-element list of the same path. */
+        const fold = (v) => { v += home; while (v > 127) v -= 12; while (v < 0) v += 12; return v; };
+        const sounding = t.notes ? t.notes.map(fold) : (t.rest ? [] : [fold(t.note)]);
+        if (sounding.length) {
+          const lead = t.notes ? fold(t.root != null ? t.root : t.notes[0]) : sounding[0];
+          mplNow('note', MPL_NOTE_NAMES[lead % 12] + (Math.floor(lead / 12) - 1) + (t.notes ? '!' : ''));
+        }
         const durMs = q * (t.dur || 1);
-        if (!t.rest) {
+        for (const hn of sounding) {
           const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: vel });
           if (r.error) { toast('⚠ MPL[' + i + ']: ' + r.error); return; }
           const n = hn, c2 = ch;
