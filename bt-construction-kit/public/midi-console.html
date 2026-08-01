@@ -752,20 +752,20 @@ async function mplSlotToggle(i) {
       mplNow('ch', startCh);
       toast(`🎼 MPL[${i}] looping @ ${bpm} bpm + MIDI clock · press ${i} again to stop`);
     } else {
-      /* Sync the entry: an armed slot waits for the next BAR boundary of
-         the running session (4 beats at the session tempo), so layered
-         patterns land on the downbeat together. Pressing its number
-         while armed (⏳) cancels the join. */
-      const barMs = (60000 / mplSessionBpm) * 4;
-      const wait = barMs - ((performance.now() - mplSessionStart) % barMs);
+      /* Sync the entry: an armed slot waits for the next QUARTER-NOTE
+         beat of the running session (Bill 2026-07-29 — was a full bar),
+         so joins feel instant but still land on the grid. Pressing its
+         number while armed (⏳) cancels the join. */
+      const beatMs = 60000 / mplSessionBpm;
+      const wait = beatMs - ((performance.now() - mplSessionStart) % beatMs);
       if (wait > 25) {
         const b = $('mpl-btn-' + i);
         if (b) b.textContent = '⏳';
-        toast(`🎼 MPL[${i}] armed — joins at the next bar (${(wait / 1000).toFixed(1)}s) · ${mplActiveCount()} looping`);
         await new Promise(r => setTimeout(r, wait));
         if (gen !== mplSlotGen[i]) return;
         mplSlotPaint();
       }
+      toast(`🎼 MPL[${i}] joined on the beat · ${mplActiveCount()} looping`);
     }
     mplViewMode(i, true);
     const overrides = new Map();

@@ -103,9 +103,9 @@ trajectory  = "..." ;                          (* when NOT followed by count "("
 ## The bank as an instrument
 
 Slots 0-9 each hold one program. Number keys toggle: first slot in
-defines the bar grid (4 beats) and tempo and starts the MIDI clock;
-later slots arm (⏳) and join at the next bar; the same key stops just
-that slot; the last slot out stops the clock. Layers are free — drums
+defines the beat grid and tempo and starts the MIDI clock; later
+slots arm (⏳) and join on the next quarter-note beat; the same key
+stops just that slot; the last slot out stops the clock. Layers are free — drums
 on `m10`, bass under `home -`, chords, and a lead can all loop at once.
 
 ## Worked examples
