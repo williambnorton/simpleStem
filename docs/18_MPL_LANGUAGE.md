@@ -30,6 +30,12 @@ program
       │  ├─ ( sequence )                         (grouping, plays once)
       │  └─ N ( sequence )                       (loop: N = 1-99, groups nest)
       ├─ call             @ 0-9                  (subroutine: inline slot N's program; N@d repeats it)
+      ├─ range-loop       token .. N ( sequence )
+      │                                          (TWO dots: iterate the token's VALUE from its
+      │                                           written value to N inclusive, body after each —
+      │                                           p1..3(E,D) = body under programs 1,2,3;
+      │                                           descending allowed (p5..3); works on m# and notes.
+      │                                           ..N( always binds as a range end, never a N() loop)
       ├─ inc-loop         token ... N ( sequence )
       │                                          (the token before ... re-fires each iteration,
       │                                           value +1 each time — works on notes, chords, p#, m#:
@@ -62,12 +68,17 @@ program-change = "p" int ;                     (* 0-127 *)
 group       = [ count ] "(" sequence ")" ;
 count       = int ;                            (* clamped 1-99 *)
 call        = [ count ] "@" digit ;
+range-loop  = ( note-event | channel-set | program-change ) ".." int "(" sequence ")" ;
 inc-loop    = ( note-event | channel-set | program-change ) "..." count "(" sequence ")" ;
 trajectory  = "..." ;                          (* when NOT followed by count "(" *)
 ```
 
 ## Semantics
 
+- **Defaults row** (console bank): bpm ⌂120 · start channel ⌂2 ·
+  default octave ⌂4 (where a bare letter lands) · velocity ⌂100 ·
+  default duration ⌂q · home shift ⌂0. All persisted; parser-level
+  defaults (octave, duration) are read at play time.
 - **Time.** The grid is quarter notes at the session tempo (bank tempo
   pulldown, ⌂ 120; the desk card uses the desk clock's bpm). Duration
   letters scale one grid slot: w=4 beats, q=1, e=½, s=¼. Notes gate at
@@ -104,7 +115,8 @@ on `m10`, bass under `home -`, chords, and a lead can all loop at once.
 m2,C...E                             C,D,E on channel 2
 C...C+                               C major scale (white-key walk)
 E,F,...,E+                           chromatic climb, half-step trajectory
-p1...3(A,B,C)                        A,B,C under programs 1, 2, 3
+p1...3(A,B,C)                        A,B,C under programs 1, 2, 3 (3 iterations)
+F,P1..3(E,D,E,D)                     F, then E,D,E,D under programs 1→2→3 (range)
 2(A,D,,E),2@2                        riff ×2 (with a pause), then slot 2 ×2
 (A,,,D,,,A,,,D,,,E,,,A,,,)           sparse figure — notes every 3rd beat
 C!,,Am!,,F!,,G!w                     I-vi-IV-V, whole-note V

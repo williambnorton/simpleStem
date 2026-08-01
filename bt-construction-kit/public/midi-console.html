@@ -213,15 +213,22 @@ record-armed Software Instrument track receives them.</div>
     <div id="recent-logic"><div class="statebox">nothing sent yet.</div></div>
   </div>
 
-  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit (F#2, C = middle C), +/- octave shifts (stackable: B+, C#--); durations w=whole q=quarter(default) e=eighth s=sixteenth (Cw, Ee); chords C! = C major, Cm! = C minor (combinable: F#2m!w); R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); bare ... = trajectory fill; @N calls slot N inline (2@2 plays slot 2 twice). MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
-    <div class="row"><span class="k">clock</span>
-      tempo <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
-      ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Starting MIDI channel for the sequence (m# switches mid-program). Default 2 — Logic interferes with program changes on ch 1.">
+  <div class="panel" title="MPL BANK — ten looping quarter-note patterns played to Logic over IAC. Press number keys 0-9 anywhere on this page to loop that slot; press the same number (or its ⏹) to stop. Return inside a slot loops it, Shift+Return adds a line. Grammar: notes C-B with optional #, octave digit (F#2, C = middle C), +/- octave shifts (stackable: B+, C#--); durations w=whole q=quarter(default) e=eighth s=sixteenth (Cw, Ee); chords C! = C major, Cm! = C minor (combinable: F#2m!w); R or - = rest, and consecutive commas pause (A,,,D = A, two rests, D); N(seq) loops 1-99; m# = channel; p# = program change; token...N(body) = incrementing loop (p1...3(A,B,C)); token..N(body) = value RANGE, inclusive + descending (p1..3(E,D) = body under programs 1,2,3; ..3( binds as range end, not a 3() loop); bare ... = trajectory fill; @N calls slot N inline (2@2 plays slot 2 twice). MIDI clock broadcasts at the tempo below while a slot loops."><h3>🎼 MPL BANK <span style="opacity:.5;font-size:10px">press 0-9 to loop · layers stack · same key stops its slot</span></h3>
+    <div class="row" title="DEFAULTS — every unmarked token resolves against these: bare notes land in the default octave (+/- shift from there), note length defaults to the duration pick, sequences start on the default channel (inserted before each pass; m# overrides mid-program), notes strike at the default velocity, and the tempo drives the quarter-note grid + MIDI clock. Factory: 120 bpm · ch 2 · oct 4 · vel 100 · q · home 0."><span class="k">defaults</span>
+      bpm <select id="lg-mpl-bpm" style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace"></select>
+      ch <input type="number" id="lg-mpl-ch" min="1" max="16" value="2" title="Default MIDI channel — inserted before each sequence starts; m# switches mid-program. ⌂ 2 (Logic interferes with program changes on ch 1).">
+      oct <select id="lg-mpl-oct" title="Default octave — where a bare note letter lands (C = C in this octave); digits, + and - override per note. ⌂ 4 = middle C." style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
+        <option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option>
+      </select>
+      vel <input type="number" id="lg-mpl-vel" min="1" max="127" value="100" title="Default note velocity 1-127. ⌂ 100.">
+      dur <select id="lg-mpl-dur" title="Default note duration when a note carries no w/q/e/s letter. ⌂ q (quarter)." style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
+        <option value="w">w</option><option value="q" selected>q</option><option value="e">e</option><option value="s">s</option>
+      </select>
       home <select id="lg-mpl-home" title="Home pitch — a global octave shift applied to every played note. ⌂ 0 = as written · +/- = one octave up/down · ++/-- = two octaves." style="background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;font:12px Menlo,monospace">
         <option value="24">++</option><option value="12">+</option><option value="0" selected>0</option><option value="-12">-</option><option value="-24">--</option>
-      </select>
-      <span id="lg-mpl-beat" class="beatbox" title="Beat marker — amber = beat 1, green = beats 2-4"><i></i><i></i><i></i><i></i></span></div>
-    <div class="row" title="Live values as the sequence iterates — channel (m# / ...loops), program (p# / ...loops), the sounding note, and the clock tempo."><span class="k">now</span>
+      </select></div>
+    <div class="row" title="Live values as the sequence iterates — channel (m# / ...loops), program (p# / ...loops), the sounding note, and the clock tempo. The dots are the beat marker: amber = beat 1."><span class="k">now</span>
+      <span id="lg-mpl-beat" class="beatbox" title="Beat marker — amber = beat 1, green = beats 2-4"><i></i><i></i><i></i><i></i></span>
       ch <span id="mpl-now-ch" class="nowbox">–</span>
       pgm <span id="mpl-now-pgm" class="nowbox">–</span>
       note <span id="mpl-now-note" class="nowbox">–</span>
@@ -384,6 +391,7 @@ async function logicNote() {
    rests, N(seq) repeat groups (nestable). */
 const MPL_KEY = 'console.mpl.v1';
 const MPL_SEMIS = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+const MPL_DEFAULTS = { octave: 4, dur: 'q' };   // editable in the console's defaults row
 function mplParse(src, getSlot, _seen) {
   let i = 0; const s = String(src || '');
   /* @N — the call: inline slot N's MPL at this point. A repeat count
@@ -502,6 +510,43 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ellipsis: true, s: eS, e: i });
         continue;
       }
+      /* value range: token..N(body) — the two-dot RANGE (checked after the
+         three-dot forms so ... always wins). p1..3(E,D) plays the body
+         under programs 1,2,3 — inclusive, descending allowed (p5..3).
+         Precedence: the ..3( binds as a range end, never as a 3() loop. */
+      if (ch === '.' && s[i + 1] === '.' && s[i + 2] !== '.') {
+        i += 2;
+        const look = /^\s*(\d+)\s*\(/.exec(s.slice(i));
+        if (!look) throw new Error('".." needs an end value and "(" — e.g. p1..3(E,D)');
+        const numS = i + look[0].search(/\d/);
+        const numE = numS + look[1].length;
+        i += look[0].length;
+        const inner = seq(true);
+        const base = out.pop();
+        if (!base || (base.note == null && base.pc == null && base.ch == null)) {
+          throw new Error('".." range needs a note, p#, or m# immediately before it');
+        }
+        const from = (base.note != null) ? base.note : (base.pc != null ? base.pc : base.ch);
+        const end = +look[1];
+        const step = end >= from ? 1 : -1;
+        const total = Math.abs(end - from) + 1;
+        if (total > 99) throw new Error('".." range too long (' + total + ' steps, max 99)');
+        let k = 0;
+        for (let v = from; step > 0 ? v <= end : v >= end; v += step, k++) {
+          out.push({ loopMark: { s: numS, e: numE, remaining: total - k } });
+          if (base.note != null) {
+            if (v < 0 || v > 127) throw new Error('".." walked a note out of MIDI range');
+            out.push({ note: v, dur: base.dur, s: base.s, e: base.e });
+          } else if (base.pc != null) {
+            out.push({ pc: Math.max(0, Math.min(127, v)), s: base.s, e: base.e });
+          } else {
+            out.push({ ch: Math.max(1, Math.min(16, v)), s: base.s, e: base.e });
+          }
+          out.push(...inner.map(t => ({ ...t })));
+        }
+        out.push({ loopMark: { s: numS, e: numE, restore: true } });
+        continue;
+      }
       /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
          C! = C major chord, Cm! = C minor (root, third, fifth). Duration
          letters: w=whole q=quarter(default) e=eighth s=sixteenth.
@@ -511,10 +556,10 @@ function mplParse(src, getSlot, _seen) {
       if (m && m[1]) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
-        const oct = m[3] === '' ? 4 : +m[3];
+        const oct = m[3] === '' ? MPL_DEFAULTS.octave : +m[3];
         let root = 12 * (oct + 1) + MPL_SEMIS[name];
         for (const c of m[4]) root += (c === '+') ? 12 : -12;
-        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || 'q'];
+        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
         if (m[5]) {
           const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
           const notes = iv.map(x => root + x);
@@ -527,7 +572,7 @@ function mplParse(src, getSlot, _seen) {
         continue;
       }
       m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
-      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'], s: rp, e: i }); continue; }
+      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || MPL_DEFAULTS.dur], s: rp, e: i }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -673,6 +718,9 @@ async function mplSlotToggle(i) {
   const el = $('mpl-slot-' + i);
   if (!el) return;
   const src = el.value;
+  /* Defaults row feeds the PARSER (octave, duration) — set before parse. */
+  MPL_DEFAULTS.octave = Math.max(0, Math.min(8, +($('lg-mpl-oct').value || 4)));
+  MPL_DEFAULTS.dur = ['w', 'q', 'e', 's'].includes($('lg-mpl-dur').value) ? $('lg-mpl-dur').value : 'q';
   let toks;
   try {
     toks = mplParse(src, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
@@ -685,10 +733,10 @@ async function mplSlotToggle(i) {
   mplSlotRunning[i] = true;
   mplSlotPaint();
   const startCh = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
-  const vel = Math.min(127, Math.max(1, +($('lg-vel').value || 100)));
+  const vel = Math.min(127, Math.max(1, +($('lg-mpl-vel').value || 100)));
   const bpm = Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
   const home = +($('lg-mpl-home').value || 0);
-  try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(startCh)); localStorage.setItem('console.mplHome.v1', String(home)); } catch (e) {}
+  try { localStorage.setItem('console.mplBpm.v1', String(bpm)); localStorage.setItem('console.mplCh.v1', String(startCh)); localStorage.setItem('console.mplHome.v1', String(home)); localStorage.setItem('console.mplOct.v1', String(MPL_DEFAULTS.octave)); localStorage.setItem('console.mplVel.v1', String(vel)); localStorage.setItem('console.mplDur.v1', MPL_DEFAULTS.dur); } catch (e) {}
   const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
   const first = mplActiveCount() === 1;
@@ -1228,6 +1276,12 @@ renderRecent();
   if (savedCh >= 1 && savedCh <= 16) $('lg-mpl-ch').value = savedCh;
   const savedHome = localStorage.getItem('console.mplHome.v1');
   if (savedHome !== null && ['-24','-12','0','12','24'].includes(savedHome)) $('lg-mpl-home').value = savedHome;
+  const so = +(localStorage.getItem('console.mplOct.v1') || 4);
+  if (so >= 1 && so <= 7) $('lg-mpl-oct').value = String(so);
+  const sv = +(localStorage.getItem('console.mplVel.v1') || 100);
+  if (sv >= 1 && sv <= 127) $('lg-mpl-vel').value = sv;
+  const sd = localStorage.getItem('console.mplDur.v1');
+  if (['w','q','e','s'].includes(sd)) $('lg-mpl-dur').value = sd;
 })();
 setInterval(pollFast, 3000); setInterval(pollSlow, 60000);
 pollFast(); setTimeout(pollSlow, 1200);

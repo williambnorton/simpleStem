@@ -1676,6 +1676,7 @@ async function showDittoCard() {
 const MPL_KEY = 'desk.mpl.v1';
 const MPL_DEFAULT = '4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)';
 const MPL_SEMIS = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+const MPL_DEFAULTS = { octave: 4, dur: 'q' };   // editable in the console's defaults row
 function mplParse(src, getSlot, _seen) {
   let i = 0; const s = String(src || '');
   /* @N — the call: inline slot N's MPL at this point. A repeat count
@@ -1794,6 +1795,43 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ellipsis: true, s: eS, e: i });
         continue;
       }
+      /* value range: token..N(body) — the two-dot RANGE (checked after the
+         three-dot forms so ... always wins). p1..3(E,D) plays the body
+         under programs 1,2,3 — inclusive, descending allowed (p5..3).
+         Precedence: the ..3( binds as a range end, never as a 3() loop. */
+      if (ch === '.' && s[i + 1] === '.' && s[i + 2] !== '.') {
+        i += 2;
+        const look = /^\s*(\d+)\s*\(/.exec(s.slice(i));
+        if (!look) throw new Error('".." needs an end value and "(" — e.g. p1..3(E,D)');
+        const numS = i + look[0].search(/\d/);
+        const numE = numS + look[1].length;
+        i += look[0].length;
+        const inner = seq(true);
+        const base = out.pop();
+        if (!base || (base.note == null && base.pc == null && base.ch == null)) {
+          throw new Error('".." range needs a note, p#, or m# immediately before it');
+        }
+        const from = (base.note != null) ? base.note : (base.pc != null ? base.pc : base.ch);
+        const end = +look[1];
+        const step = end >= from ? 1 : -1;
+        const total = Math.abs(end - from) + 1;
+        if (total > 99) throw new Error('".." range too long (' + total + ' steps, max 99)');
+        let k = 0;
+        for (let v = from; step > 0 ? v <= end : v >= end; v += step, k++) {
+          out.push({ loopMark: { s: numS, e: numE, remaining: total - k } });
+          if (base.note != null) {
+            if (v < 0 || v > 127) throw new Error('".." walked a note out of MIDI range');
+            out.push({ note: v, dur: base.dur, s: base.s, e: base.e });
+          } else if (base.pc != null) {
+            out.push({ pc: Math.max(0, Math.min(127, v)), s: base.s, e: base.e });
+          } else {
+            out.push({ ch: Math.max(1, Math.min(16, v)), s: base.s, e: base.e });
+          }
+          out.push(...inner.map(t => ({ ...t })));
+        }
+        out.push({ loopMark: { s: numS, e: numE, restore: true } });
+        continue;
+      }
       /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
          C! = C major chord, Cm! = C minor (root, third, fifth). Duration
          letters: w=whole q=quarter(default) e=eighth s=sixteenth.
@@ -1803,10 +1841,10 @@ function mplParse(src, getSlot, _seen) {
       if (m && m[1]) {
         i += m[0].length;
         const name = m[1].toUpperCase() + m[2];
-        const oct = m[3] === '' ? 4 : +m[3];
+        const oct = m[3] === '' ? MPL_DEFAULTS.octave : +m[3];
         let root = 12 * (oct + 1) + MPL_SEMIS[name];
         for (const c of m[4]) root += (c === '+') ? 12 : -12;
-        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || 'q'];
+        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
         if (m[5]) {
           const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
           const notes = iv.map(x => root + x);
@@ -1819,7 +1857,7 @@ function mplParse(src, getSlot, _seen) {
         continue;
       }
       m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
-      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'], s: rp, e: i }); continue; }
+      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || MPL_DEFAULTS.dur], s: rp, e: i }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
