@@ -40,6 +40,11 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .mpl-view { display: none; flex: 1; min-width: 120px; background: #0e1420; color: #c7d2de;
+    border: 1px solid rgba(0,230,118,.45); border-radius: 6px; padding: 3px 6px;
+    font: 11px/1.5 Menlo, monospace; white-space: pre-wrap; cursor: pointer; }
+  .mpl-view .mpl-cur { text-decoration: underline; text-underline-offset: 2px; color: #00e676; font-weight: 700; }
+  .mpl-view .mpl-cnt { color: #f1c40f; font-weight: 700; }
   .nowbox { display: inline-block; min-width: 38px; text-align: center; background: #131824;
     border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 2px 6px;
     font: 11px Menlo, monospace; color: #00e676; }
@@ -107,6 +112,16 @@
     <div class="row"><span class="k">Main mute</span>
       <button class="warn" onclick="xrSet('/lr/mix/on', 0, 'XR18 Main LR MUTE')">🔇 mute</button>
       <button onclick="xrSet('/lr/mix/on', 1, 'XR18 Main LR unmute')">🔊 unmute</button></div>
+    <div class="row"><span class="k">amp program</span>
+      <button class="warn" onclick="xrAmpProgram('lr-odd-even')" title="Main L into aux 1/3/5, Main R into aux 2/4/6 at -10 dB.">📢 all on</button>
+      <button class="warn" onclick="xrAmpProgram('split-by-stem')" title="One stem per wedge: vocals->1, drums->2, bass->3, guitar->4, piano->5, other->6.">🎸 split by stem</button>
+      <button onclick="xrAmpProgram('reset')" title="Close every wedge send. Main L/R still feeds FOH.">🚫 reset</button></div>
+    <div class="row"><span class="k">rotate</span>
+      <button onclick="xrAmpRotate(-1)" title="Shift every stem one wedge counter-clockwise around the ring.">↺ left</button>
+      <button onclick="xrAmpRotate(1)" title="Shift every stem one wedge clockwise around the ring.">↻ right</button>
+      <button onclick="xrAmpProbe()" title="Read all 48 wedge sends back and report which program the BOARD is actually in.">🔎 probe</button>
+      <button onclick="xrAmpPreflight()" title="Check for the channel/bus link settings that silently defeat a program (CONTRACTS EX-10).">✓ preflight</button>
+      <span id="xr-amp-now" style="opacity:.6;font-size:10px"></span></div>
     <div class="row"><span class="k">rx state</span></div>
     <div class="statebox" id="xr-state">USB-DIN Pass Thru is ON: the board IGNORES MIDI (it's a pure
 MIDI interface now) — all XR18 control rides OSC. Join the
@@ -309,6 +324,48 @@ async function xrSetIp() {
 }
 function xrSnap() { const n = +$('xr-snap').value; if (n >= 1 && n <= 64) xrSet('/-snap/load', n, 'XR18 snapshot ' + n + ' (OSC)'); }
 function xrLrDb(db) { xrSet('/lr/mix/fader', undefined, 'XR18 Main LR → ' + db + ' dB', db); }
+// Amp programs (Bill 2026-07-30). A program is a COMPLETE state of the six wedge
+// sends, so programs are mutually exclusive. The registry, the 48 OSC writes and
+// their readback verification live in the sidecar, so all surfaces share one
+// implementation and cannot drift. LOUD: never mid-song.
+const AMP_PROG_KEY = 'simpleStem.ampProgram.v1';
+function ampCache() {
+  try { const o = JSON.parse(localStorage.getItem(AMP_PROG_KEY) || '{}'); if (o && o.program) return o; } catch (e) {}
+  return { program: 'reset', step: 0 };
+}
+function ampNote(program, step) {
+  const el = $('xr-amp-now');
+  if (el) el.textContent = program ? (program + (step ? ' step ' + step : '')) : '';
+}
+async function xrAmpProgram(program, step) {
+  const r = await fetch('/api/xr18/amp-program', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ program, step: step | 0 }) }).then(J).catch(e => ({ error: e.message }));
+  if (!r.ok) {
+    if (r.partial) { try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify({ program: '?', step: 0 })); } catch (e) {} ampNote('?', 0); }
+    toast('⚠ amps: ' + (r.error || 'failed') + (r.partial ? ' — PARTIAL after ' + r.applied + ' of 48 writes; re-run' : ''));
+    return r;
+  }
+  try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify({ program, step: step | 0 })); } catch (e) {}
+  ampNote(program, step | 0);
+  toast('✓ amps → ' + program + ((step | 0) ? ' step ' + step : '') + ' (48/48 verified)');
+  return r;
+}
+const xrAmpRotate = (delta) => xrAmpProgram('split-by-stem', (ampCache().step | 0) + delta);
+async function xrAmpProbe() {
+  const r = await fetch('/api/xr18/amp-program').then(J).catch(e => ({ error: e.message }));
+  if (!r.ok) { toast('⚠ amps probe: ' + (r.error || 'failed')); return; }
+  const had = ampCache();
+  try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify({ program: r.program, step: r.step || 0 })); } catch (e) {}
+  ampNote(r.program, r.step || 0);
+  const drift = had.program !== r.program || (had.step | 0) !== (r.step | 0);
+  toast('🔎 board says ' + r.program + (r.step ? ' step ' + r.step : '') + (drift ? ' (cache disagreed — corrected)' : ''));
+}
+async function xrAmpPreflight() {
+  const r = await fetch('/api/xr18/preflight').then(J).catch(e => ({ error: e.message }));
+  if (!r.ok) { toast('⚠ preflight: ' + (r.error || 'failed')); return; }
+  toast(r.clear ? '✓ preflight clear — no channel or bus links in the way'
+                : '⚠ ' + r.warnings.join(' · '));
+}
 async function logicKey(action, what) {
   const r = await fetch('/api/desktop/logic-key', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action }) }).then(J).catch(e => ({ error: e.message }));
@@ -338,7 +395,7 @@ function mplParse(src, getSlot, _seen) {
     if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
     const sub = getSlot(d);
     if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
-    return mplParse(sub, getSlot, new Set([...seen, d]));
+    return mplParse(sub, getSlot, new Set([...seen, d])).filter(t => !t.loopMark);
   }
   function seq(inGroup) {
     const out = [];
@@ -353,40 +410,53 @@ function mplParse(src, getSlot, _seen) {
       danglingComma = false;
       if (ch === '(') { i++; out.push(...seq(true)); continue; }
       if (/\d/.test(ch)) {
+        const numS = i;
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        const numE = i;
         while (i < s.length && /\s/.test(s[i])) i++;
         const reps = Math.min(99, Math.max(1, +n));
         if (s[i] === '@') {
           i++;
           if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-          const inner = callSlot(+s[i++]);
-          for (let k = 0; k < reps; k++) out.push(...inner.map(t => ({ ...t })));
+          const inner = callSlot(+s[i++]).map(t => ({ ...t, s: numS, e: i }));
+          for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+            out.push(...inner.map(t => ({ ...t })));
+          }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
           continue;
         }
         if (s[i] !== '(') throw new Error('expected "(" or "@" after repeat count ' + n);
         i++;
         const inner = seq(true);
-        for (let k = 0; k < reps; k++) out.push(...inner);
+        for (let k = 0; k < reps; k++) {
+          out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+          out.push(...inner.map(t => ({ ...t })));
+        }
+        out.push({ loopMark: { s: numS, e: numE, restore: true } });
         continue;
       }
       if (ch === '@') {
+        const p0 = i;
         i++;
         if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-        out.push(...callSlot(+s[i++]).map(t => ({ ...t })));
+        out.push(...callSlot(+s[i++]).map(t => ({ ...t, s: p0, e: i })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {
+        const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         if (!n) throw new Error('m needs a channel 1-16 (char ' + (i + 1) + ')');
         const c = +n; if (c < 1 || c > 16) throw new Error('channel ' + c + ' out of range 1-16');
-        out.push({ ch: c });
+        out.push({ ch: c, s: p0, e: i });
         continue;
       }
       if (ch === 'p' || ch === 'P') {
+        const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         if (!n) throw new Error('p needs a program 0-127 (char ' + (i + 1) + ')');
         const p = +n; if (p > 127) throw new Error('program ' + p + ' out of range 0-127');
-        out.push({ pc: p });
+        out.push({ pc: p, s: p0, e: i });
         continue;
       }
       if (s.startsWith('...', i) || ch === '\u2026') {
@@ -397,8 +467,11 @@ function mplParse(src, getSlot, _seen) {
            under programs 1, 2, 3; m1...4(C) walks channels 1-4; C...5(-)
            climbs semitones. Bare ... (no N( after) stays the trajectory
            filler between notes. */
+        const eS = i - 3;
         const look = /^\s*(\d+)\s*\(/.exec(s.slice(i));
         if (look) {
+          const numS = i + look[0].search(/\d/);
+          const numE = numS + look[1].length;
           i += look[0].length;
           const inner = seq(true);
           const reps = Math.min(99, Math.max(1, +look[1]));
@@ -407,30 +480,33 @@ function mplParse(src, getSlot, _seen) {
             throw new Error('"...N(" needs a note, p#, or m# immediately before it');
           }
           for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
             if (base.note != null) {
               const v = base.note + k;
               if (v < 0 || v > 127) throw new Error('"..." walked a note out of MIDI range');
-              out.push({ note: v, dur: base.dur });
+              out.push({ note: v, dur: base.dur, s: base.s, e: base.e });
             } else if (base.notes) {
               const vs = base.notes.map(v => v + k);
               if (vs.some(v => v < 0 || v > 127)) throw new Error('"..." walked a chord out of MIDI range');
-              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur });
+              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur, s: base.s, e: base.e });
             } else if (base.pc != null) {
-              out.push({ pc: Math.min(127, base.pc + k) });
+              out.push({ pc: Math.min(127, base.pc + k), s: base.s, e: base.e });
             } else {
-              out.push({ ch: Math.min(16, base.ch + k) });
+              out.push({ ch: Math.min(16, base.ch + k), s: base.s, e: base.e });
             }
             out.push(...inner.map(t => ({ ...t })));
           }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
           continue;
         }
-        out.push({ ellipsis: true });
+        out.push({ ellipsis: true, s: eS, e: i });
         continue;
       }
       /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
          C! = C major chord, Cm! = C minor (root, third, fifth). Duration
          letters: w=whole q=quarter(default) e=eighth s=sixteenth.
          "Cm" without "!" is NOT a chord — the m starts a channel command. */
+      const noteS = i;
       let m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
       if (m && m[1]) {
         i += m[0].length;
@@ -443,15 +519,15 @@ function mplParse(src, getSlot, _seen) {
           const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
           const notes = iv.map(x => root + x);
           if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
-          out.push({ notes, root, dur });
+          out.push({ notes, root, dur, s: noteS, e: i });
         } else {
           if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-          out.push({ note: root, dur });
+          out.push({ note: root, dur, s: noteS, e: i });
         }
         continue;
       }
       m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
-      if (m) { i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'] }); continue; }
+      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'], s: rp, e: i }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -483,7 +559,7 @@ function mplResolveEllipses(toks) {
       const WHITE = [0, 2, 4, 5, 7, 9, 11];
       for (let v = from + dir; dir > 0 ? v < target : v > target; v += dir) {
         if (v < 0 || v > 127) break;
-        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur });
+        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur, s: t.s, e: t.e });
       }
     } else {
       /* Two priors: their interval is the step — E,F,... climbs half
@@ -492,7 +568,7 @@ function mplResolveEllipses(toks) {
       if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
       if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
       for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
-        out.push({ note: v, dur: prior[0].dur });
+        out.push({ note: v, dur: prior[0].dur, s: t.s, e: t.e });
       }
     }
   }
@@ -546,10 +622,39 @@ function mplBeatStart(bpm) {
   lgMplBeat(0);
   mplBeatTimer = setInterval(() => { mplBeatPos = (mplBeatPos + 1) % 4; lgMplBeat(mplBeatPos); }, 60000 / bpm);
 }
+function mplViewMode(i, on) {
+  const ta = $('mpl-slot-' + i), v = $('mpl-view-' + i);
+  if (!ta || !v) return;
+  ta.style.display = on ? 'none' : '';
+  v.style.display = on ? 'block' : 'none';
+  if (!on) v.innerHTML = '';
+}
+/* Render the play view: the slot's source with the CURRENT token
+   underlined and loop counts replaced by their remaining iterations. */
+function mplViewPaint(i, src, hl, overrides) {
+  const el = $('mpl-view-' + i);
+  if (!el) return;
+  const esc = (c) => c === '&' ? '&amp;' : c === '<' ? '&lt;' : c;
+  let html = '', p = 0;
+  while (p < src.length) {
+    const ov = overrides.get(p);
+    if (ov) { html += '<span class="mpl-cnt">' + ov.text + '</span>'; p = ov.e; continue; }
+    if (hl && p === hl.s && hl.e > hl.s) {
+      let seg = '';
+      for (let k = hl.s; k < Math.min(hl.e, src.length); k++) seg += esc(src[k]);
+      html += '<span class="mpl-cur">' + seg + '</span>';
+      p = hl.e;
+      continue;
+    }
+    html += esc(src[p]); p++;
+  }
+  el.innerHTML = html;
+}
 function mplSlotStop(i, silent) {
   mplSlotGen[i]++;
   mplSlotRunning[i] = false;
   mplSlotPaint();
+  mplViewMode(i, false);
   if (!mplActiveCount()) {
     if (mplBeatTimer) { clearInterval(mplBeatTimer); mplBeatTimer = null; }
     lgMplBeat(-1);
@@ -567,9 +672,10 @@ async function mplSlotToggle(i) {
   if (mplSlotRunning[i]) { mplSlotStop(i); return; }
   const el = $('mpl-slot-' + i);
   if (!el) return;
+  const src = el.value;
   let toks;
   try {
-    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+    toks = mplParse(src, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
@@ -613,10 +719,21 @@ async function mplSlotToggle(i) {
         mplSlotPaint();
       }
     }
+    mplViewMode(i, true);
+    const overrides = new Map();
+    let curHl = null;
     while (gen === mplSlotGen[i]) {
       let ch = startCh;
+      overrides.clear();
       for (const t of toks) {
         if (gen !== mplSlotGen[i]) return;
+        if (t.loopMark) {
+          if (t.loopMark.restore) overrides.delete(t.loopMark.s);
+          else overrides.set(t.loopMark.s, { e: t.loopMark.e, text: String(t.loopMark.remaining) });
+          mplViewPaint(i, src, curHl, overrides);
+          continue;
+        }
+        if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, src, curHl, overrides); }
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
@@ -645,6 +762,7 @@ async function mplSlotToggle(i) {
     }
   } finally {
     if (gen === mplSlotGen[i] && mplSlotRunning[i]) mplSlotStop(i, true);
+    else if (gen === mplSlotGen[i]) mplViewMode(i, false);
   }
 }
 function mplSlotKey(e, i) {
@@ -1100,7 +1218,7 @@ renderRecent();
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   $('mpl-bank').innerHTML = mplBankLoad().map((v, i) =>
     `<div class="row" style="flex-wrap:nowrap"><span class="k" style="min-width:14px;text-align:center">${i}</span>
-     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" placeholder="MPL pattern ${i}" style="flex:1;min-width:120px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea>
+     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" placeholder="MPL pattern ${i}" style="flex:1;min-width:120px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="Playing — the underline is the playhead, amber numbers are loops remaining. Click to stop and edit."></div>
      <button id="mpl-btn-${i}" onclick="mplSlotToggle(${i})" title="Loop slot ${i} (or press the ${i} key) · press again to stop">▶</button></div>`).join('');
   const sel = $('lg-mpl-bpm');
   const saved = +(localStorage.getItem('console.mplBpm.v1') || 120);

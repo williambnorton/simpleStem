@@ -348,3 +348,170 @@ Fix (two plug moves → canonical single chain, all software unchanged):
 Ditto THRU → Stadium IN, Stadium OUT/THRU → U2MIDI IN. The U2MIDI OUT
 plug and XR18 DIN IN retire. After rewiring, the loop test finally
 proves the WHOLE chain including the pedal.
+
+---
+
+# The wedges over OSC — the signal-flow correction (2026-07-30)
+
+**The ask that started this:** say "all amps" and have Main Left appear in
+aux 1/3/5 and Main Right in aux 2/4/6, so every monitor on stage carries the
+track.
+
+**The correction that shapes everything below:** the XR18 has **no Main L/R →
+bus send**. Main L/R is a *sink*, not a source — a bus mix is built from
+**channel** sends (`/ch/NN/mix/0M/level`). So "put Main Left in aux 1" is really
+"raise ch 1's send into bus 1", ch 1/2 being the stereo pair that feeds Main L/R
+in the first place. The six stems arrive on USB returns ch 11-16 (vocals 11
+through other 16 — see `docs/03_PLAYER_REFERENCE.md`), so those are the channels
+a per-stem program writes. See CONTRACTS EX-7.
+
+**Both dB values land on exact fader floats** through the house curve, which is
+why they were chosen: **−10 dB = 0.5** and **−90 dB = 0.0** (reported back as
+`"-inf"`). That makes a readback comparison unambiguous.
+
+**The send on/off question is settled: there isn't one.** `/ch/NN/mix/0M/on` is
+an **X32-only** address — it does not appear in the X-Air command set at all,
+whose four send subpaths are `level`, `pan`, `tap` and `grpon`. The omission is
+systematic (the FX-return block has the same four and no `on`), so writing level
+alone is correct on the XR18. Do **not** mistake `grpon` for it: that is "sends
+**group** on/off", the aux-vs-subgroup assignment. `/ch/NN/mix/0M/level` is also
+confirmed valid for the whole channel range 01-16, not just the main pair.
+
+---
+
+# Amp programs — what the six wedges are carrying (2026-07-30)
+
+**What a program is.** A COMPLETE state of the wedge send matrix: all eight
+sources — Main L/R on ch 1-2, the six stems on USB returns ch 11-16 — against
+all six aux buses. 48 writes, every time, whatever the program. Complete rather
+than incremental because programs must be mutually exclusive (CONTRACTS EX-11):
+switching from all-on to split-by-stem must not leave Main L/R still sitting in
+the wedges, doubling everything. It also makes each program idempotent and
+self-healing, which matters because UDP loss is silent and unreported —
+re-sending the whole matrix is how a dropped datagram gets corrected.
+
+| id | what the wedges carry |
+|---|---|
+| `reset` | nothing. Every wedge send closed. Main L/R still feeds FOH. |
+| `lr-odd-even` | Main L in aux 1/3/5, Main R in aux 2/4/6 (the original "all amps") |
+| `split-by-stem` | one stem per wedge: vocals→1, drums→2, bass→3, guitar→4, piano→5, other→6. **Rotatable.** |
+
+`split-by-stem` takes a `step`: stem *i* lands in bus `((i + step) mod 6) + 1`.
+Positive steps walk clockwise around the ring, negative counter-clockwise, so
+**rotate-left is a decreasing step**. Period is 6; step 6 == step 0.
+
+**Endpoints.** `GET /api/xr18/amp-programs` is the registry — the UI reads it
+rather than hardcoding the list, so the sidecar stays the single source of truth.
+`POST /api/xr18/amp-program {program, step?, fast?}` applies one.
+`GET /api/xr18/amp-program` reads all 48 sends back and answers which program
+the **board** is actually in (or `custom`, or `unknown`).
+`GET /api/xr18/preflight` checks the link settings — see below.
+There is deliberately no separate boolean "all amps" endpoint: "all on" is just
+the `lr-odd-even` program, and a second way to say the same thing is a second
+thing to keep in sync.
+
+**`fast: true` is the one exception to EX-8.** A verified program is 48 writes ×
+2 round trips = 96 exchanges, which cannot fit inside a 1 Hz rotation tick. So
+rotation ticks skip readback and go down a single socket via `xr_send_many()`,
+which also deliberately stays out of the wire log (at one tick per second the
+log would drown). Entry and exit are verified; the ticks between are trusted,
+and each tick re-sends the whole matrix so a dropped datagram self-corrects on
+the next one. Sustained per-parameter traffic is not a concern at this rate —
+the desk's own subscription mechanism runs about 20 Hz per parameter.
+
+**Region entry and exit are verified; only the ticks between are not.** If the
+board isn't listening, the `amp-rotate-on` event finds out and says so — a
+rotation whose entry was also unverified would write into the void with nothing
+but a console warning. And a tick that fails rolls the scheduler's cursor back
+so the next tick retries that same step: a tick only fires when the computed
+step *changes*, so without the rollback one dropped tick would strand the
+wedges on a stale step for the rest of the region.
+
+**Two things to know about the sidecar's HTTP server.** It is single-threaded,
+so a verified 48-write walk **blocks every other sidecar request** for its
+duration, including MIDI `/send` — hence the tight 0.5 s readback timeout (a
+reply on the wired path is ~1 ms, so slow means broken). `_amps_lock` therefore
+never actually contends today; it is kept because it stays correct if the server
+ever grows threads. Only the first six writes of a walk reach the wire log:
+three log records per item x 48 would be 144 entries into a 150-slot ring
+buffer and would erase the whole MIDI/OSC history. Since `amp_plan()` orders ON
+sends first, those six are exactly the live ones.
+
+## Preflight: the hazard that passes verification (CONTRACTS EX-10)
+
+Two console settings make a write to one send **also write its partner**:
+
+- `/config/buslink/N-M` ON — buses N and M are one stereo pair, so two wedges
+  cannot carry independent signals.
+- `/config/chlink/1-2` ON **together with** `/config/linkcfg/fdrmute` ON — that
+  pref is literally "Fader, Mute, **Sends**". Writing Main L's send also writes
+  Main R's, so the deliberate opposite-side OFF write is clobbered by its own
+  partner.
+
+This is nastier than an ordinary failure because **`amp_apply` still passes**: it
+reads back the very path it wrote, and that path really does hold the value.
+Verified against a simulated linked board — `lr-odd-even` reports 48/48 verified
+while the board is actually sitting in `reset`. `amp_preflight()` reads those
+config paths and names the problem; the desk runs it once on load and both
+right-click menus expose it.
+
+## On the timeline
+
+Three automation event types, in `metadata.json` alongside every other action:
+
+```json
+{ "t": 12.5, "type": "amp-program",    "program": "split-by-stem", "step": 0, "label": "" }
+{ "t": 30.0, "type": "amp-rotate-on",  "program": "split-by-stem", "dir": "left", "period": 1, "label": "bridge" }
+{ "t": 46.0, "type": "amp-rotate-off", "label": "" }
+```
+
+`amp-program` is an ordinary one-shot: the 33 Hz dispatcher fires it, verified.
+
+**Rotation is a region, not an event**, and that distinction is the whole design.
+The dispatcher latches `fired` per event and never revisits it, which is exactly
+the model a sustained action does not fit. So rotation follows the click track's
+construction (CONTRACTS EX-2a): the on/off pair are ordinary one-shot markers,
+and a separate 100 ms scheduler derives **which step should be live right now as
+a pure function of song time** — `floor((t - t_on) / period)`, signed by
+direction. No state machine, therefore nothing to resync: scrubbing, looping,
+pausing and seeking backwards are all correct by construction. `period` has a
+floor of 0.25 s (each tick is 48 writes; below that the wedges chatter rather
+than rotate).
+
+`amp-rotate-off` settles the rotating program at step 0. To end somewhere else,
+drop an ordinary `amp-program` event just after it — more explicit, visible on
+the lane, and no extra field to carry.
+
+## Surfaces
+
+- **Timeline** — `+ Action` on the yellow lane, three types under "XR18 amps".
+  Lane markers are teal: `AS`/`ALR`/`A0` for programs, `A↺`/`A↻` for a rotation
+  start, `A⏹` for its end.
+- **HOLODECK voice** — `all amps` · `split by stem` · `rotate amps left|right`
+  (one step from wherever the wedges are) · `reset amps` and the whole off
+  family. Continuous rotation is deliberately NOT a voice command: it needs a
+  start and an end, which is what the lane pair is for.
+- **MIDI Console** — amp program row + rotate/probe/preflight row.
+- **Sound Desktop** — right-click the XR18 or the AUX 1-6 object.
+
+**The desk ring tells the truth per program.** It redraws with the tag each
+wedge is actually carrying — L/R under `lr-odd-even`, the stem letters
+V/D/B/G/P/O under `split-by-stem`, walking around the ring as the rotation
+steps. A ring tagged L/R while split-by-stem is live would be a lie, so the
+mapping is asserted against the sidecar's own `amp_matrix()` for every program
+and step.
+
+## Still open
+
+- **FX (a phaser on a stem) is deliberately not built.** Research is done and
+  the mechanism is confirmed: `/ch/NN/insert/fxslot` (enum 0-8 = OFF, Fx1A…Fx4B)
+  plus `/ch/NN/insert/on`, with `/fx/N/type` selecting the algorithm. Two things
+  to settle first: the manual's spec table excludes insert effects from its
+  latency figure, so an insert adds **unspecified latency to that channel only**
+  — a stem inserted this way drifts against the other five, which needs
+  measuring before a gig; and the type enum for PHAS (**15**) is derived from the
+  X32 table rather than confirmed on X-Air. Send mode avoids the latency but is
+  a parallel wet blend and sums to mono on the way in.
+- The XR18's own hardware snapshots (1-64) are a **third** unrelated "snapshot"
+  namespace, and recalling one rewrites all 48 sends — which is why the desk
+  reconciles after a recall.

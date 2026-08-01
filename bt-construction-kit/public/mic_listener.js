@@ -693,6 +693,64 @@
     } catch (e) { tts('Diff failed.'); }
   }
 
+  // --- XR18 amp programs: the six monitor wedges -------------------------
+  // A program is a COMPLETE state of the wedge send matrix, so programs are
+  // mutually exclusive — "split by stem" cannot leave Main L/R hanging in a
+  // wedge. The registry, the 48 OSC writes and their readback verification all
+  // live in the sidecar (POST /api/xr18/amp-program): it owns the dB curve, so
+  // it can verify each write against its readback, and it holds a lock so two
+  // changes can't interleave. See docs/14_XR18_CONTROL.md. Safety class: loud.
+  const AMP_PROG_KEY = 'simpleStem.ampProgram.v1';   // cache; the board is truth
+
+  function ampCache() {
+    try {
+      const o = JSON.parse(localStorage.getItem(AMP_PROG_KEY) || '{}');
+      if (o && o.program) return o;
+    } catch (e) {}
+    return { program: 'reset', step: 0 };
+  }
+
+  const AMP_SPOKEN = {
+    'lr-odd-even': 'All amps on.',
+    'split-by-stem': 'Split by stem.',
+    'reset': 'Amps reset.',
+  };
+
+  async function ampProgram(program, step) {
+    showStatus(`Amps → ${program}${step ? ' step ' + step : ''}: writing and verifying 48 sends...`);
+    let r;
+    try {
+      r = await fetch('/api/xr18/amp-program', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ program, step: step | 0 }),
+      }).then(res => res.json());
+    } catch (e) { r = { error: e.message }; }
+    if (!r || !r.ok) {
+      // '?' rather than a definite state: after a partial walk nobody knows
+      // what the wedges are doing, and claiming "off" is the dangerous lie.
+      if (r && r.partial) {
+        try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify({ program: '?', step: 0 })); } catch (e) {}
+      }
+      showStatus('✗ Amps: ' + ((r && r.error) || 'no answer') + (r && r.partial ? ' — PARTIAL, re-run' : ''), 7000, true);
+      tts(r && r.partial ? 'Amps failed part way. Some wedges may still be live.'
+                         : 'Amps failed. The board is not answering.');
+      return;
+    }
+    try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify({ program, step: step | 0 })); } catch (e) {}
+    showStatus(`✓ Amps → ${program}${step ? ' step ' + step : ''} (48/48 verified)`);
+    tts(AMP_SPOKEN[program] || 'Amps set.');
+  }
+
+  // Rotate is a single step from wherever the wedges are now. The CONTINUOUS
+  // rotation ("shift every second through the bridge") is a timeline thing, not
+  // a voice thing — it needs a start and an end, which is what the
+  // amp-rotate-on/off action pair on the yellow lane is for.
+  function ampRotate(dir) {
+    const cur = ampCache();
+    const step = (cur.step | 0) + (dir === 'right' ? 1 : -1);
+    return ampProgram('split-by-stem', step);
+  }
+
   // --- command vocabulary -----------------------------------------------
   const STEM = '(vocals|drums|bass|guitar|piano|other)';
   const SEC  = '(intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook)';
@@ -731,6 +789,28 @@
                                                   fn: (m) => boostStrip(m[1], m[2] && m[2].includes('ten') ? 10 : 5) },
     { re: new RegExp('^'        + STEM + ' (up|down)$'),
                                                   fn: (m) => nudgeFader(m[1], m[2] === 'up' ? 0.1 : -0.1) },
+
+    // XR18 amps (the six monitor wedges). LOUD: "all amps" opens the backing
+    // track into every wedge on stage.
+    //
+    // Two deliberate choices here, both about not doing the loud thing by
+    // accident. (1) The OFF command is listed FIRST and matches every natural
+    // phrasing, because "all amps" is a substring of its own antonym — with
+    // the on-command first, the fuzzy leading/trailing-words pass turned
+    // "turn off all amps" into amps ON. (2) The on-command is NOT fuzzy: it
+    // is exact-match only, so no near-miss can open six wedges. Fuzzy on the
+    // off-command is fine — a false positive there just closes sends.
+    // "know amps" is in there because recognizers hear the homophone.
+    { re: new RegExp('^(?:(?:turn|shut|shot) )?(?:off|down) (?:all )?(?:the )?amps$'
+                     + '|^(?:turn |shut )?(?:all )?(?:the )?amps (?:off|down)$'
+                     + '|^(?:no|know) amps$'
+                     + '|^(?:kill|mute|close|stop) (?:all )?(?:the )?amps$'),
+      fuzzy: true, fn: () => ampProgram('reset', 0) },
+    { re: new RegExp('^all amps$'), fn: () => ampProgram('lr-odd-even', 0) },
+    { re: new RegExp('^split by stems?$|^amps? by stems?$'), fn: () => ampProgram('split-by-stem', 0) },
+    { re: new RegExp('^rotate( the)? amps? left$|^rotate left$'),  fn: () => ampRotate('left')  },
+    { re: new RegExp('^rotate( the)? amps? right$|^rotate right$'), fn: () => ampRotate('right') },
+    { re: new RegExp('^reset( the)? amps$|^amps reset$'), fn: () => ampProgram('reset', 0) },
 
     // Master volume: half-way semantics (Bill 2026-07-12). "volume up"
     // moves half-way to 100% (33 → 66); "volume down" moves half-way to
@@ -1261,6 +1341,13 @@
       ['solo <stem> / unsolo <stem>', 'strip solo on/off'],
       ['boost <stem> [five|ten]', 'engage the +5 or +10 dB boost'],
       ['<stem> up / <stem> down', 'nudge the fader by 10%'],
+    ]],
+    ['XR18 amps — the six monitor wedges (loud)', [
+      ['all amps', 'Main Left → aux 1/3/5, Main Right → aux 2/4/6 at −10 dB'],
+      ['split by stem', 'one stem per wedge — vocals→1, drums→2, bass→3, guitar→4, piano→5, other→6'],
+      ['rotate amps left / rotate amps right', 'shift every stem one wedge around the ring'],
+      ['reset amps / no amps / amps off / turn off all amps', 'close all six wedge sends'],
+      ['(continuous rotation)', 'not a voice command — it needs a start and an end, so use the Amp rotate START/STOP actions on the yellow lane'],
     ]],
     ['Click track', [
       ['click on / click off', 'toggle the click track at the playhead (records the action)'],

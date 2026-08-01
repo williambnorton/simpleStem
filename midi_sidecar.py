@@ -219,7 +219,248 @@ def db_to_fader(db):
         f = (db + 90.0) / 480.0
     return max(0.0, min(1.0, f))
 
-# Lazy-open outputs so we don't grab every device at startup. Cached by the
+# --- Amp programs: what the six monitor wedges are carrying -----------------
+# Bill 2026-07-30. Signal flow first, because the obvious mental model is wrong:
+# the XR18 has NO Main L/R -> bus send. Main L/R is a sink, not a source; a bus
+# mix is built from CHANNEL sends. So "Main Left into aux 1" really means "raise
+# ch 1's send into bus 1". See CONTRACTS EX-7.
+#
+# A "program" is a COMPLETE state of the send matrix: all eight sources
+# (Main L/R on ch 1-2, the six stems on USB returns ch 11-16) against all six
+# wedge buses. Complete rather than incremental, because programs have to be
+# mutually exclusive -- switching from split-by-stem to lr-odd-even must not
+# leave stem sends hanging in the wedges. Every program is therefore the same
+# 48 writes with different values, which also makes each one idempotent and
+# self-healing: UDP loss is silent and unreported, so re-sending the full
+# matrix is how a dropped datagram gets corrected.
+#
+# This lives in the sidecar, not in the UI surfaces, because it owns the OSC
+# socket and the dB curve (so writes can be verified against their readback)
+# and one implementation cannot drift from itself. Safety class: loud.
+AMP_ON_DB = -10.0     # db_to_fader(-10) == 0.5 exactly
+AMP_OFF_DB = -90.0    # db_to_fader(-90) == 0.0 exactly -> reads back "-inf"
+AMP_BUSES = 6
+AMP_MAIN_CH = ("01", "02")                                    # Main L, Main R
+AMP_STEM_CH = ("11", "12", "13", "14", "15", "16")            # USB returns
+AMP_STEM_NAMES = ("vocals", "drums", "bass", "guitar", "piano", "other")
+AMP_SOURCES = AMP_MAIN_CH + AMP_STEM_CH
+_amps_lock = threading.Lock()
+
+# rotatable: the program takes a `step`, so a rotation can walk it.
+AMP_PROGRAMS = {
+    "reset": {
+        "label": "RESET",
+        "desc": "every wedge send closed — the amps carry nothing; Main L/R still feeds FOH",
+        "rotatable": False,
+    },
+    "lr-odd-even": {
+        "label": "All on · L/R to odd/even",
+        "desc": "Main Left into aux 1/3/5, Main Right into aux 2/4/6 — the whole band hears the track",
+        "rotatable": False,
+    },
+    "split-by-stem": {
+        "label": "Split by stem",
+        "desc": "one stem per wedge: vocals→1, drums→2, bass→3, guitar→4, piano→5, other→6",
+        "rotatable": True,
+    },
+}
+
+
+def amp_matrix(program, step=0):
+    """{(source_ch, bus): db} for all 8 sources x 6 buses — a complete state."""
+    if program not in AMP_PROGRAMS:
+        raise ValueError("unknown amp program %r (have: %s)"
+                         % (program, ", ".join(sorted(AMP_PROGRAMS))))
+    m = {(src, bus): AMP_OFF_DB
+         for src in AMP_SOURCES for bus in range(1, AMP_BUSES + 1)}
+    if program == "reset":
+        pass
+    elif program == "lr-odd-even":
+        # Odd buses carry Main L, even buses carry Main R.
+        for bus in range(1, AMP_BUSES + 1):
+            m[(AMP_MAIN_CH[0] if bus % 2 else AMP_MAIN_CH[1], bus)] = AMP_ON_DB
+    elif program == "split-by-stem":
+        # Stem i lands in bus ((i + step) mod 6) + 1. step>0 walks the stems
+        # toward higher-numbered wedges ("right" around the ring); rotate-left
+        # is the caller passing a decreasing step.
+        for i, src in enumerate(AMP_STEM_CH):
+            m[(src, ((i + int(step)) % AMP_BUSES) + 1)] = AMP_ON_DB
+    return m
+
+
+def amp_plan(program, step=0):
+    """[(osc_path, db)] — 48 writes, the ON sends FIRST.
+
+    Ordering matters during a rotation: raising a stem's new wedge before
+    closing its old one means the stem is never momentarily nowhere.
+    """
+    m = amp_matrix(program, step)
+    items = sorted(m.items(), key=lambda kv: (kv[1] != AMP_ON_DB, kv[0]))
+    return [("/ch/%s/mix/%02d/level" % (src, bus), db) for (src, bus), db in items]
+
+
+def xr_send_many(plan):
+    """Blast a plan down ONE socket, no readbacks. Returns writes sent, or None.
+
+    The fast path, for rotation ticks only. A verified write costs two round
+    trips, so the 48 writes of one program step would be 96 exchanges -- far
+    too slow for a 1 Hz rotation, and `amps` verification would serialize
+    behind its own timeouts. Deliberately does NOT touch the wire log: at one
+    step per second the log would drown (docs/14 keeps the 60 s deep-probe
+    quiet for the same reason). Entry and exit ARE verified; the ticks between
+    are trusted, and each tick re-sends the whole matrix so a dropped
+    datagram self-corrects on the next one.
+    """
+    addr = xr_discover()
+    if not addr:
+        return None
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        for path, db in plan:
+            sk.sendto(osc_encode(path, [db_to_fader(db)]), addr)
+        return len(plan)
+    except Exception:
+        return None
+    finally:
+        sk.close()
+
+
+def amp_apply(program, step=0, verify=True):
+    """Put the wedges into `program`. Verified unless this is a rotation tick.
+
+    Verified mode reads every write back and compares it to the fader float it
+    should have produced. That check is not paranoia: POST /xr18/set reports ok
+    as soon as the datagram leaves, and xr_discover() caches the mixer address
+    for 300 s, so a power-cycled board still accepts sendto and answers
+    nothing. Unverified "successes" would light the desk up over six wedges
+    that never moved -- and the reverse, RESET reported clean while the wedges
+    stay hot, is the dangerous direction. See CONTRACTS EX-8.
+    """
+    try:
+        plan = amp_plan(program, step)
+    except ValueError as e:
+        return {"ok": False, "error": str(e), "applied": 0, "partial": False}
+
+    if not verify:
+        n = xr_send_many(plan)
+        if n is None:
+            return {"ok": False, "error": "XR18 unreachable", "applied": 0,
+                    "partial": False, "verified": False}
+        return {"ok": True, "program": program, "step": int(step),
+                "applied": n, "partial": False, "verified": False}
+
+    # Only the first six writes go to the wire log. Three log records per item
+    # (write tx, read tx, read rx) x 48 items would be 144 entries into a
+    # 150-slot ring buffer — one program would erase the entire MIDI/OSC
+    # history the console and docs/15 depend on. Because amp_plan() puts the ON
+    # sends first, those six ARE the live ones for any program that has six;
+    # for RESET they are simply evidence the walk ran.
+    # Readback timeout is tight (0.5 s): on the wired/link-local path a reply is
+    # ~1 ms, so a slow reply means something is wrong, and the sidecar's HTTP
+    # server is single-threaded — a long walk blocks every other request,
+    # including MIDI /send.
+    for i, (path, db) in enumerate(plan):
+        want = db_to_fader(db)
+        chatty = (i < 6)
+        if xr_exchange(path, [want], expect_reply=False, log=chatty) is None:
+            return {"ok": False, "error": "XR18 unreachable", "applied": i,
+                    "partial": i > 0, "at": path, "verified": True}
+        back = xr_exchange(path, timeout=0.5, log=chatty)
+        got = (back or {}).get("args")
+        got = got[0] if got else None
+        # partial=True even at i == 0 on these two: unlike the unreachable
+        # branch above, the datagram DID leave, so this send may well have
+        # moved even though we can't confirm it. Callers must treat the amp
+        # state as unknown, not as unchanged.
+        if got is None:
+            return {"ok": False, "applied": i, "partial": True, "at": path,
+                    "verified": True,
+                    "error": "no readback from %s — board is not answering "
+                             "(powered off, or off this network)" % path}
+        if abs(float(got) - want) > 0.001:
+            return {"ok": False, "applied": i, "partial": True, "at": path,
+                    "verified": True,
+                    "error": "%s read back %s, expected %s" % (path, got, want)}
+    return {"ok": True, "program": program, "step": int(step),
+            "applied": len(plan), "partial": False, "verified": True}
+
+
+def amp_state():
+    """Read the 48 sends and say which program the BOARD is actually in.
+
+    The UI caches the program name, but a snapshot recall, an X-AIR-Edit edit
+    or a power cycle moves these sends behind the app's back, so the cache is
+    only ever a cache. This is the reconciliation path. See CONTRACTS EX-9.
+    """
+    reads = {}
+    for src in AMP_SOURCES:
+        for bus in range(1, AMP_BUSES + 1):
+            path = "/ch/%s/mix/%02d/level" % (src, bus)
+            back = xr_exchange(path, timeout=0.6)
+            args = (back or {}).get("args")
+            if not args:
+                return {"ok": False, "error": "XR18 unreachable", "program": "unknown"}
+            reads[(src, bus)] = float(args[0])
+
+    def matches(program, step=0):
+        return all(abs(reads[k] - db_to_fader(v)) <= 0.001
+                   for k, v in amp_matrix(program, step).items())
+
+    for pid, meta in AMP_PROGRAMS.items():
+        steps = range(AMP_BUSES) if meta["rotatable"] else (0,)
+        for st in steps:
+            if matches(pid, st):
+                return {"ok": True, "program": pid, "step": st,
+                        "label": meta["label"],
+                        "sends": {"/ch/%s/mix/%02d/level" % k: fader_to_db(v)
+                                  for k, v in reads.items()}}
+    return {"ok": True, "program": "custom", "step": None,
+            "label": "custom — not one of the known programs",
+            "sends": {"/ch/%s/mix/%02d/level" % k: fader_to_db(v)
+                      for k, v in reads.items()}}
+
+
+def amp_preflight():
+    """Catch the console settings that silently defeat a program.
+
+    Two link settings make a write to one channel or bus also write its
+    partner, which an amp program cannot see because amp_apply reads back the
+    very path it wrote -- it passes verification while producing the wrong
+    result. See CONTRACTS EX-10.
+
+      * /config/buslink/N-M ON  -> buses N,M are one stereo pair, so "Main L in
+        aux 1, Main R in aux 2" stops being two independent sends.
+      * /config/chlink/1-2 ON together with /config/linkcfg/fdrmute ON (the
+        pref is literally "Fader, Mute, Sends") -> writing ch 1's send also
+        writes ch 2's, so the deliberate opposite-side OFF write is clobbered
+        by its own partner.
+    """
+    checks, warnings = {}, []
+    for pair in ("1-2", "3-4", "5-6"):
+        back = xr_exchange("/config/buslink/%s" % pair, timeout=0.8)
+        args = (back or {}).get("args")
+        if args is None:
+            return {"ok": False, "error": "XR18 unreachable"}
+        checks["buslink/%s" % pair] = int(args[0]) if args else 0
+    fdr = xr_exchange("/config/linkcfg/fdrmute", timeout=0.8)
+    checks["linkcfg/fdrmute"] = int((fdr or {}).get("args", [0])[0] or 0)
+    chl = xr_exchange("/config/chlink/1-2", timeout=0.8)
+    checks["chlink/1-2"] = int((chl or {}).get("args", [0])[0] or 0)
+
+    for pair in ("1-2", "3-4", "5-6"):
+        if checks["buslink/%s" % pair]:
+            warnings.append("buses %s are STEREO-LINKED — those two wedges cannot "
+                            "carry independent signals; unlink them in X-AIR-Edit "
+                            "(Setup > Config > Bus links)" % pair)
+    if checks["chlink/1-2"] and checks["linkcfg/fdrmute"]:
+        warnings.append("ch 1-2 are stereo-linked AND the link pref includes Sends — "
+                        "writing Main L's send also writes Main R's, so the L/R "
+                        "spread will silently collapse. Unlink ch 1-2, or turn off "
+                        "'Sends' in the link preferences.")
+    return {"ok": True, "clear": not warnings, "checks": checks, "warnings": warnings}
+
+
+# Lazy-open outputs so we don't grab every device at startup.# Lazy-open outputs so we don't grab every device at startup. Cached by the
 # canonical port name (what mido reports) so multiple substring queries that
 # resolve to the same port share one handle.
 _outputs = {}
@@ -574,6 +815,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._chain_test()
         if self.path == "/xr18/info":
             return self._xr18_info()
+        if self.path == "/xr18/amp-programs":
+            return self._json(200, {"ok": True, "programs": [
+                dict(id=pid, **meta) for pid, meta in AMP_PROGRAMS.items()],
+                "on_db": AMP_ON_DB, "buses": AMP_BUSES,
+                "stems": list(AMP_STEM_NAMES)})
+        if self.path == "/xr18/amp-program":
+            st = amp_state()
+            return self._json(200 if st.get("ok") else 503, st)
+        if self.path == "/xr18/preflight":
+            pf = amp_preflight()
+            return self._json(200 if pf.get("ok") else 503, pf)
         if self.path.startswith("/xr18/query?"):
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(self.path).query)
@@ -712,6 +964,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "ip": ip or None,
                                     "probe": probe.get("args") if probe else None,
                                     "reachable": probe is not None})
+        if self.path == "/xr18/amp-program":
+            program = str(body.get("program") or "")
+            try:
+                step = int(body.get("step") or 0)
+            except (TypeError, ValueError):
+                return self._json(400, {"ok": False, "error": "step must be an integer"})
+            # Rotation ticks opt out of readback verification; everything else
+            # is verified. See xr_send_many() for why.
+            verify = not bool(body.get("fast"))
+            # Belt and braces. The HTTP server is single-threaded today, so
+            # requests already serialize and this lock is never contended --
+            # but two interleaved walks over the same 48 paths would leave a
+            # board state that depends on packet ordering, so the guard stays
+            # correct if the server ever grows threads.
+            if not _amps_lock.acquire(blocking=False):
+                return self._json(409, {"ok": False, "error": "an amp change is already running"})
+            try:
+                r = amp_apply(program, step, verify=verify)
+            finally:
+                _amps_lock.release()
+            if not r.get("ok") and "unknown amp program" in (r.get("error") or ""):
+                return self._json(400, r)
+            return self._json(200 if r.get("ok") else 503, r)
         if self.path == "/xr18/set":
             osc_path = str(body.get("path") or "")
             if not osc_path.startswith("/"):

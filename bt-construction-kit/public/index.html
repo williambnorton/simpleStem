@@ -440,7 +440,7 @@
                    side controls (Bill 2026-07-25) so all voice surfaces sit
                    together next to the KBM macros. -->
               <span class="midi-btn-group" id="holodeck-group" title="HOLODECK voice control — the portal's own voice commands"><div class="holodeck-wrap">
-                  <button id="btn-holodeck" class="control-btn toggle-btn looper-side-btn hover-glow" type="button" title="HOLODECK voice control — click to listen, then say &quot;HOLODECK, <command>&quot;:&#10;&#10;TRANSPORT: play · pause · stop · next · restart · play <song name>&#10;SECTIONS: jump to / go to <intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook> · loop section · stop looping&#10;MIXER (stems: vocals drums bass guitar piano other): mute/unmute <stem> · solo/unsolo <stem> · boost <stem> [five|ten] · <stem> up / <stem> down&#10;CLICK: click on · click off · count in&#10;TEMPO/PITCH: tempo up · tempo down · reset tempo · pitch up/down [half] · reset pitch&#10;LIBRARY: find <text> · search <text> · load <song> · favorite this · star this&#10;GIGS: switch to <bill|matt|dan|jd> songs · switch to round robin · switch to favorites · switch to recents&#10;SOUND CHECK: sound check&#10;QUESTIONS (spoken reply): what&#39;s the key · what&#39;s the tempo · who sings this&#10;SNAPSHOTS: save this as <name> · snapshot as <name> · restore <name> · undo / go back · what changed since <name>"><i data-lucide="mic"></i></button>
+                  <button id="btn-holodeck" class="control-btn toggle-btn looper-side-btn hover-glow" type="button" title="HOLODECK voice control — click to listen, then say &quot;HOLODECK, <command>&quot;:&#10;&#10;TRANSPORT: play · pause · stop · next · restart · play <song name>&#10;SECTIONS: jump to / go to <intro|verse|chorus|bridge|solo|outro|pre|tag|break|hook> · loop section · stop looping&#10;MIXER (stems: vocals drums bass guitar piano other): mute/unmute <stem> · solo/unsolo <stem> · boost <stem> [five|ten] · <stem> up / <stem> down&#10;AMPS (LOUD): all amps — Main L into aux 1/3/5, Main R into aux 2/4/6 at -10 dB · no amps / amps off&#10;CLICK: click on · click off · count in&#10;TEMPO/PITCH: tempo up · tempo down · reset tempo · pitch up/down [half] · reset pitch&#10;LIBRARY: find <text> · search <text> · load <song> · favorite this · star this&#10;GIGS: switch to <bill|matt|dan|jd> songs · switch to round robin · switch to favorites · switch to recents&#10;SOUND CHECK: sound check&#10;QUESTIONS (spoken reply): what&#39;s the key · what&#39;s the tempo · who sings this&#10;SNAPSHOTS: save this as <name> · snapshot as <name> · restore <name> · undo / go back · what changed since <name>"><i data-lucide="mic"></i></button>
                   <div class="holodeck-meter"><div id="holodeck-mic-level" class="holodeck-meter-fill"></div></div>
                 </div></span>
               <!-- Click trim ± + readout moved onto the OTHER strip corners
@@ -1182,12 +1182,54 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
         <optgroup label="Sampler">
           <option value="play-clip">Play clip (in parallel with track)</option>
         </optgroup>
+        <optgroup label="XR18 amps (the six monitor wedges — LOUD)">
+          <option value="amp-program">Amp program (set the wedges)</option>
+          <option value="amp-rotate-on">Amp rotate START</option>
+          <option value="amp-rotate-off">Amp rotate STOP</option>
+        </optgroup>
       </select>
     </div>
     <!-- Clip picker row. Visible only when type=play-clip. Populated
          from /api/custom-loops/list whenever the modal opens. The
          clip plays through its own Audio element on top of the
          backing track (mode=overlay) when the playhead crosses t. -->
+    <!-- XR18 amp program rows. The program list is fetched from the sidecar
+         registry (/api/xr18/amp-programs) when the modal opens, so the board's
+         capabilities stay the single source of truth; the markup below is only
+         a fallback for when the sidecar is unreachable. -->
+    <div class="midi-row midi-row-amp" style="display:none;">
+      <label>Program</label>
+      <select id="midi-f-amp-program" title="A program is a COMPLETE state of the six wedge sends — switching programs never leaves a stray send behind.">
+        <option value="lr-odd-even">All on · Main L→aux 1/3/5, R→aux 2/4/6</option>
+        <option value="split-by-stem">Split by stem · vocals→1, drums→2, bass→3, guitar→4, piano→5, other→6</option>
+        <option value="reset">RESET · every wedge send closed</option>
+      </select>
+    </div>
+    <div class="midi-row midi-row-amp-step" style="display:none;">
+      <label>Step</label>
+      <select id="midi-f-amp-step" title="Rotation offset for a rotatable program. 0 is the program's home position; each step shifts every stem one wedge around the ring.">
+        <option value="0" selected>0 (home)</option>
+        <option value="1">+1</option><option value="2">+2</option><option value="3">+3</option>
+        <option value="-1">−1</option><option value="-2">−2</option><option value="-3">−3</option>
+      </select>
+    </div>
+    <div class="midi-row midi-row-amp-rot" style="display:none;">
+      <label>Direction</label>
+      <select id="midi-f-amp-dir" title="Left walks each stem counter-clockwise around the ring of amps; right walks it clockwise.">
+        <option value="left" selected>Left ↺ (counter-clockwise)</option>
+        <option value="right">Right ↻ (clockwise)</option>
+      </select>
+    </div>
+    <div class="midi-row midi-row-amp-rot" style="display:none;">
+      <label>Shift every</label>
+      <select id="midi-f-amp-period" title="How long each amp holds the signal before it shifts to the next one. Floor is 0.25 s — each shift is 48 OSC writes, and below a quarter second the wedges chatter rather than rotate.">
+        <option value="0.5">0.5 s</option>
+        <option value="1" selected>1 s</option>
+        <option value="2">2 s</option>
+        <option value="4">4 s</option>
+        <option value="8">8 s</option>
+      </select>
+    </div>
     <div class="midi-row midi-row-clip" style="display:none;">
       <label>Clip</label>
       <select id="midi-f-clip">

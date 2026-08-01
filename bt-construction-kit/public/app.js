@@ -11627,6 +11627,9 @@ function eventMarkerLabel(e) {
   if (e.type === 'click-on')  return '⏱+';
   if (e.type === 'click-off') return '⏱−';
   if (e.type === 'lyric-line') return e.mode === 'append' ? 'L+' : 'L';
+  if (e.type === 'amp-program')    return 'A' + (AMP_PROGRAM_GLYPH[e.program] || '?');
+  if (e.type === 'amp-rotate-on')  return e.dir === 'right' ? 'A↻' : 'A↺';
+  if (e.type === 'amp-rotate-off') return 'A⏹';
   const ch = e.channel || 1;
   if (e.type === 'pc')       return `M${ch}P${e.program ?? '?'}`;
   if (e.type === 'cc')       return `M${ch}C${e.controller ?? '?'}`;
@@ -11652,6 +11655,8 @@ function eventClass(e) {
   if (e.type === 'click-on')     return 'evt-unmute';
   if (e.type === 'click-off')    return 'evt-mute';
   if (e.type === 'lyric-line')   return 'evt-lyric';
+  if (e.type === 'amp-program' || e.type === 'amp-rotate-on') return 'evt-amp';
+  if (e.type === 'amp-rotate-off') return 'evt-amp-off';
   return 'evt-midi';
 }
 
@@ -11666,8 +11671,27 @@ function eventSummary(e) {
   if (e.type === 'click-on')  return 'CLICK TRACK ON from here (audible on the Other strip)';
   if (e.type === 'click-off') return 'CLICK TRACK OFF from here';
   if (e.type === 'lyric-line') return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
+  if (e.type === 'amp-program') {
+    const name = AMP_PROGRAM_LABEL[e.program] || e.program || '?';
+    return `AMPS → ${name}${e.step ? ` (step ${e.step})` : ''}`;
+  }
+  if (e.type === 'amp-rotate-on') {
+    return `AMPS ROTATE ${e.dir === 'right' ? 'RIGHT ↻' : 'LEFT ↺'} — ${AMP_PROGRAM_LABEL[e.program] || e.program || 'split by stem'}, one shift every ${e.period || 1}s`;
+  }
+  if (e.type === 'amp-rotate-off') return 'AMPS ROTATE OFF — settles the program at step 0';
   return e.type || 'event';
 }
+
+// Program ids come from the sidecar registry (GET /api/xr18/amp-programs);
+// these two maps are display-only sugar for the lane. An id with no entry
+// still renders — it just gets '?' and its raw id — so the sidecar stays the
+// single source of truth for which programs exist.
+const AMP_PROGRAM_LABEL = {
+  'reset': 'RESET (wedges carry nothing)',
+  'lr-odd-even': 'All on · Main L→1/3/5, R→2/4/6',
+  'split-by-stem': 'Split by stem',
+};
+const AMP_PROGRAM_GLYPH = { 'reset': '0', 'lr-odd-even': 'LR', 'split-by-stem': 'S' };
 
 // Index of the currently-selected marker, or null. Used by the Delete key
 // handler so the user can point-and-delete an action.
@@ -12414,6 +12438,20 @@ function openMidiModal(idx) {
   }
   const clipBoostSel = document.getElementById('midi-f-clip-boost');
   if (clipBoostSel) clipBoostSel.value = String(e.boost != null ? e.boost : 0);
+  // Amp program fields. Same async shape as the clip picker: pre-stash the
+  // saved value so it survives the registry fetch replacing the options.
+  const ampSel = document.getElementById('midi-f-amp-program');
+  if (ampSel) {
+    const want = e.program || (e.type === 'amp-rotate-on' ? 'split-by-stem' : 'lr-odd-even');
+    ampSel.value = want;
+    populateAmpProgramPicker().then(() => { ampSel.value = want; });
+  }
+  const ampStepSel = document.getElementById('midi-f-amp-step');
+  if (ampStepSel) ampStepSel.value = String(e.step != null ? e.step : 0);
+  const ampDirSel = document.getElementById('midi-f-amp-dir');
+  if (ampDirSel) ampDirSel.value = (e.dir === 'right') ? 'right' : 'left';
+  const ampPerSel = document.getElementById('midi-f-amp-period');
+  if (ampPerSel) ampPerSel.value = String(e.period != null ? e.period : 1);
   midiModalTypeChanged();
   modal.style.display = 'flex';
   document.getElementById('midi-modal-status').textContent = '';
@@ -12524,18 +12562,27 @@ function midiModalTypeChanged() {
   const isStem = (t === 'mute' || t === 'unmute');
   const isNote = (t === 'note_on' || t === 'note_off');
   const isClip = (t === 'play-clip');
+  const isAmp    = (t === 'amp-program');
+  const isAmpRot = (t === 'amp-rotate-on');
+  const isAmpAny = (isAmp || isAmpRot || t === 'amp-rotate-off');
   document.querySelectorAll('.midi-row-pc').forEach(n => n.style.display = t === 'pc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-cc-preset').forEach(n => n.style.display = t === 'cc' ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-note').forEach(n => n.style.display = isNote ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-stem').forEach(n => n.style.display = isStem ? 'grid' : 'none');
   document.querySelectorAll('.midi-row-clip').forEach(n => n.style.display = isClip ? 'grid' : 'none');
+  // Amp rows: the program picker shows for a one-shot program AND for a
+  // rotation (a rotation rotates *some* program); Step is one-shot only, since
+  // a rotation computes its own step from song time.
+  document.querySelectorAll('.midi-row-amp').forEach(n => n.style.display = (isAmp || isAmpRot) ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-amp-step').forEach(n => n.style.display = isAmp ? 'grid' : 'none');
+  document.querySelectorAll('.midi-row-amp-rot').forEach(n => n.style.display = isAmpRot ? 'grid' : 'none');
   // MIDI-only fields (Device + Channel) only apply to MIDI types.
   document.querySelectorAll('.midi-row').forEach(row => {
     const lbl = row.querySelector('label')?.textContent;
     if (!lbl) return;
     const midiOnly = (lbl === 'Device' || lbl === 'Channel');
-    if (midiOnly) row.style.display = (isStem || isClip) ? 'none' : 'grid';
+    if (midiOnly) row.style.display = (isStem || isClip || isAmpAny) ? 'none' : 'grid';
   });
   if (isStem) {
     const labelEl = document.getElementById('midi-f-label');
@@ -12598,7 +12645,17 @@ function readMidiModalForm() {
     out.clip = document.getElementById('midi-f-clip').value || '';
     const boostEl = document.getElementById('midi-f-clip-boost');
     out.boost = boostEl ? Number(boostEl.value) || 0 : 0;
+  } else if (type === 'amp-program') {
+    // Falls back to 'reset', deliberately: if the picker somehow has no value
+    // the safe default is closing the wedges, not opening all six.
+    out.program = document.getElementById('midi-f-amp-program').value || 'reset';
+    out.step = parseInt(document.getElementById('midi-f-amp-step').value, 10) || 0;
+  } else if (type === 'amp-rotate-on') {
+    out.program = document.getElementById('midi-f-amp-program').value || 'split-by-stem';
+    out.dir = document.getElementById('midi-f-amp-dir').value === 'right' ? 'right' : 'left';
+    out.period = Number(document.getElementById('midi-f-amp-period').value) || 1;
   }
+  // amp-rotate-off carries nothing beyond t — the region end is the whole event.
   return out;
 }
 
@@ -13488,6 +13545,152 @@ async function fireAutomationEvent(e) {
     else endSongNow();
     return;
   }
+  // AMP-PROGRAM — put the six XR18 monitor wedges into a named program.
+  if (e.type === 'amp-program') {
+    return applyAmpProgram(e.program, e.step || 0, { verify: true });
+  }
+  // AMP-ROTATE-ON / -OFF — like click-on/click-off, these are region markers,
+  // not the thing that does the work. The rotation scheduler below derives the
+  // live step from song time, so firing them just settles the boundary state.
+  if (e.type === 'amp-rotate-on') {
+    // Region ENTRY is verified. The ticks that follow are fire-and-forget, so
+    // entry is the only chance to discover that the board isn't listening —
+    // without this the whole rotation would write into the void with nothing
+    // but a console warning (EX-8's exception is the ticks, not the entry).
+    // Committing the cursor at step 0 also stops the scheduler from
+    // immediately re-sending the same matrix on its next tick.
+    const prog = e.program || 'split-by-stem';
+    const r = await applyAmpProgram(prog, 0, { verify: true });
+    ampRotateLastKey = (r && r.ok) ? `${e.t}:${prog}:0` : null;
+    return;
+  }
+  if (e.type === 'amp-rotate-off') {
+    ampRotateResetCursor();
+    return applyAmpProgram(e.program || ampRotateProgramBefore(e.t), 0, { verify: true });
+  }
+}
+
+// ─── XR18 amp programs on the timeline ───────────────────────────────────
+// A program is a complete state of the wedge send matrix; the registry, the 48
+// OSC writes and their readback verification all live in the sidecar (see
+// docs/14_XR18_CONTROL.md and CONTRACTS EX-7/8/9). The browser only ever names
+// a program and a step.
+//
+// `fast: true` skips the sidecar's readback verification and is ONLY for
+// rotation ticks: a verified program is 48 writes x 2 round trips, which cannot
+// fit in a 1 Hz tick. Entry and exit are verified; the ticks between are
+// trusted, and because every tick re-sends the whole matrix a dropped UDP
+// datagram self-corrects on the next one.
+let ampProgramCache = { program: null, step: 0 };   // cache, never truth
+async function applyAmpProgram(program, step, opts) {
+  if (!program) return;
+  const fast = !!(opts && opts.fast);
+  let r;
+  try {
+    r = await fetch('/api/xr18/amp-program', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ program, step: step || 0, fast }),
+    }).then(res => res.json());
+  } catch (err) { r = { error: err.message }; }
+  if (!r || !r.ok) {
+    // 409 means a walk is already running — expected when a verified program
+    // and a rotation tick race at a region boundary, and harmless: the next
+    // tick re-sends the whole matrix anyway. Don't shout about it.
+    const busy = /already running/i.test(r && r.error || '');
+    if (!busy) {
+      ampProgramCache = { program: r && r.partial ? '?' : ampProgramCache.program, step: 0 };
+      console.warn('[amps] program failed:', r && r.error);
+      if (!fast) showToast(`⚠ Amps: ${(r && r.error) || 'no answer'}${r && r.partial ? ' — PARTIAL' : ''}`);
+    }
+    return r;
+  }
+  ampProgramCache = { program, step: step || 0 };
+  try { localStorage.setItem('simpleStem.ampProgram.v1', JSON.stringify(ampProgramCache)); } catch (err) {}
+  return r;
+}
+
+// Fill the program picker from the sidecar registry so the board's
+// capabilities stay the single source of truth (the hardcoded <option>s in
+// index.html are only the offline fallback). Cached for the session: the
+// registry is a constant, and the modal opens often.
+let _ampRegistry = null;
+async function populateAmpProgramPicker() {
+  const sel = document.getElementById('midi-f-amp-program');
+  if (!sel) return;
+  if (!_ampRegistry) {
+    try {
+      const r = await fetch('/api/xr18/amp-programs').then(res => res.json());
+      if (r && r.ok && Array.isArray(r.programs) && r.programs.length) _ampRegistry = r.programs;
+    } catch (err) { /* offline: keep the fallback options */ }
+  }
+  if (!_ampRegistry) return;
+  const keep = sel.value;
+  sel.innerHTML = _ampRegistry.map(p =>
+    `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)} · ${escapeHtml(p.desc)}</option>`
+  ).join('');
+  sel.value = keep;
+}
+
+// Which program is rotating at song-time t, or null. Pure function of the
+// event list and t — the same construction as clickStateAt(): the most recent
+// rotate event at-or-before t decides, so scrubbing, looping and pausing are
+// all correct with no state machine to resync.
+function ampRotateStateAt(t) {
+  let live = null;
+  for (const e of automationEvents) {
+    if (e.t > t) break;                      // automationEvents is sorted by t
+    if (e.type === 'amp-rotate-on')  live = e;
+    else if (e.type === 'amp-rotate-off') live = null;
+  }
+  return live;
+}
+function ampRotateProgramBefore(t) {
+  const on = ampRotateStateAt(t - 0.001);
+  return (on && on.program) || 'split-by-stem';
+}
+// Which rotation step should be live at song-time t. floor() of elapsed
+// periods, signed by direction: 'left' walks the stems counter-clockwise
+// around the ring (a decreasing step), 'right' clockwise.
+function ampRotateStepAt(t, on) {
+  const period = (on.period > 0) ? on.period : 1;
+  const n = Math.floor((t - on.t) / period);
+  return (on.dir === 'right') ? n : -n;
+}
+
+let ampRotateLastKey = null;
+function ampRotateResetCursor() { ampRotateLastKey = null; }
+
+// The scheduler. A separate interval from the 33 Hz automation dispatcher
+// because this is a sustained region, not a one-shot: the dispatcher latches
+// `fired` and never looks at an event again, which is exactly the model a
+// rotation does not fit. 100 ms is plenty — the floor on `period` is 250 ms,
+// so a step boundary can never be missed, and each tick is a no-op unless the
+// computed step actually changed.
+let ampRotateTimer = null;
+function startAmpRotateScheduler() {
+  if (ampRotateTimer) return;
+  ampRotateTimer = setInterval(() => {
+    if (!automationEvents.length) return;
+    let masterAe = null;
+    try {
+      const tracks = Object.keys(audioElements || {}).filter(k => audioHasSrc(audioElements[k]));
+      if (tracks.length) masterAe = audioElements[tracks[0]];
+    } catch (err) {}
+    if (!masterAe || masterAe.paused) { ampRotateLastKey = null; return; }
+    const on = ampRotateStateAt(masterAe.currentTime);
+    if (!on) { ampRotateLastKey = null; return; }
+    const step = ampRotateStepAt(masterAe.currentTime, on);
+    const key = `${on.t}:${on.program}:${step}`;
+    if (key === ampRotateLastKey) return;          // same step, nothing to send
+    ampRotateLastKey = key;
+    applyAmpProgram(on.program || 'split-by-stem', step, { fast: true }).then(r => {
+      // Roll the cursor back if the tick didn't land, so the NEXT tick retries
+      // this same step. Without this one dropped tick is permanent: a tick only
+      // fires when the computed step CHANGES, so nothing would ever re-send it,
+      // and the wedges would sit on a stale step for the rest of the region.
+      if (!r || !r.ok) ampRotateLastKey = null;
+    });
+  }, 100);
 }
 
 // Stem ducking — drops every channel strip's gain to 50% of its current
@@ -14160,6 +14363,23 @@ function setupMidiUI() {
   document.getElementById('midi-btn-test').addEventListener('click', async () => {
     const ev = readMidiModalForm();
     const s = document.getElementById('midi-modal-status');
+    // Amp actions are OSC, not MIDI — sendMidiNow would fail with a confusing
+    // port error. Fire them through the same handler the dispatcher uses so
+    // Test send actually moves the wedges, which is the point of testing it.
+    if (ev.type === 'amp-program' || ev.type === 'amp-rotate-on' || ev.type === 'amp-rotate-off') {
+      try {
+        await fireAutomationEvent(ev.type === 'amp-rotate-on'
+          ? { ...ev, type: 'amp-program', step: 0 } : ev);
+        s.textContent = ev.type === 'amp-rotate-on'
+          ? `sent ${ev.program} at step 0 (rotation itself only runs during playback)`
+          : `sent ${ev.program || 'reset'} to the XR18 wedges`;
+        s.className = 'midi-modal-status ok';
+      } catch (err) {
+        s.textContent = `amp program failed: ${err.message}`;
+        s.className = 'midi-modal-status error';
+      }
+      return;
+    }
     try {
       const r = await sendMidiNow(ev);
       if (r.ok) {
@@ -14215,6 +14435,10 @@ function setupMidiUI() {
     automationLastTime = now;
     if (anyFired) renderAutomationLane();
   }, 33);
+  // The amp-rotation scheduler runs alongside, on its own cadence. It cannot
+  // live in the loop above: that loop latches `fired` per event and never
+  // revisits it, which is precisely the model a sustained region does not fit.
+  startAmpRotateScheduler();
 }
 
 // ──────────────────────────────────────────────────────────────────────────

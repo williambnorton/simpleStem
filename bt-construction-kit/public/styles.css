@@ -6659,6 +6659,9 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 }
 .midi-action-lyric-show:hover { background: rgba(46, 204, 113, 0.34); color: #fff; }
 .midi-event-marker.evt-lyric { background: #b16fd1; color: #fff; box-shadow: 0 0 4px rgba(177, 111, 209, 0.6); }
+/* XR18 amp programs — teal, to read as "routing" rather than mix or MIDI. */
+.midi-event-marker.evt-amp { background: #00b894; color: #04211a; font-weight: 800; box-shadow: 0 0 4px rgba(0, 184, 148, 0.6); }
+.midi-event-marker.evt-amp-off { background: #4a6b63; color: #d8f3ec; box-shadow: 0 0 4px rgba(74, 107, 99, 0.5); }
 /* Live counter inside the lyrics editor — shows how many displayed
    lines the current textarea will produce after stripping blanks +
    [Verse] headers. Yellow when zero so the operator knows Save is

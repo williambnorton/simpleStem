@@ -212,6 +212,16 @@
   .stem-ill .p-in { animation: paperIn 2.2s linear infinite; }
   .stem-ill .p-out { animation: paperOut 2.2s ease-out infinite; }
   .stem-ill .spk { animation: spkPulse 1.1s ease-in-out infinite; transform-origin: center; }
+  /* amps-live: the six wedges drawn as a ring of amps, all radiating in
+     lockstep (one shared animation, no per-amp delay -- the whole ring
+     breathes together, which is the point: every amp is on). */
+  @keyframes ampWave { 0%,100% { opacity: .22; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.08); } }
+  @keyframes ampRing { 0%,100% { opacity: .2; } 50% { opacity: .75; } }
+  .obj.amps-live .art .wave { animation: ampWave 900ms ease-in-out infinite; transform-origin: 0 0; }
+  .obj.amps-live .art .ring { animation: ampRing 900ms ease-in-out infinite; }
+  .obj.amps-live .label { color: #00e676; }
+  .obj.amps-unknown .label { color: #ffd54f; }
+  .obj.amps-unknown .sub { color: #ffd54f; opacity: .9; }
 
   /* DOCS reader: the full manual inside the UI */
   #docreader { position: fixed; left: 50%; top: 52%; transform: translate(-50%,-50%);
@@ -470,7 +480,7 @@ function machineDef(id, art, label, sub, x, y, accepts, work) {
     y = Math.min(Math.max(sv.fy * innerHeight, 0), innerHeight - 90);
   }
   const m = place(id, `<div class="art">${art}</div><div class="label">${label}</div><div class="sub">${sub}</div>`, x, y, 'machine', 'machine');
-  m.accepts = accepts; m.work = work; m.art = art; m.label = label;
+  m.accepts = accepts; m.work = work; m.art = art; m.label = label; m.sub = sub;
   machines.push(m);
   return m;
 }
@@ -721,6 +731,149 @@ setTimeout(() => {
 }, 600);
 const mains   = machineDef('mains', '🔊', 'MAIN L/R', 'front of house', W*0.79, H*0.42, [], 'info');
 const wedges  = machineDef('wedges', '📢', 'AUX 1–6', 'six monitor wedges (click to the drummer)', W*0.79, H*0.70, [], 'info');
+
+// -- Amp programs: what the six monitor wedges are carrying -----------------
+// Bill 2026-07-30. A program is a COMPLETE state of the wedge send matrix (all
+// eight sources x six buses), so programs are mutually exclusive and switching
+// never leaves a stray send in a wedge. The registry, the 48 OSC writes and
+// their readback verification all live in the sidecar; this page only ever
+// names a program. See docs/14_XR18_CONTROL.md and CONTRACTS EX-7/8/9/10.
+const AMP_PROG_KEY = 'simpleStem.ampProgram.v1';   // cache only; the board is truth
+const WEDGES_SUB_IDLE_DEFAULT = 'six monitor wedges (click to the drummer)';
+const AMP_STEM_LETTER = ['V', 'D', 'B', 'G', 'P', 'O'];
+const AMP_STEM_COLOR  = ['#4fc3f7', '#ff8a65', '#aed581', '#ce93d8', '#ffd54f', '#e8eef4'];
+
+// Which label each wedge carries under a given program, aux 1..6.
+// This is the whole reason the ring is redrawn per program rather than being a
+// fixed picture: a ring tagged L/R while split-by-stem is live would be a lie.
+function ampRingTags(program, step) {
+  if (program === 'lr-odd-even') {
+    return [1, 2, 3, 4, 5, 6].map(bus => bus % 2
+      ? { text: 'L', col: '#4fc3f7' } : { text: 'R', col: '#ffd54f' });
+  }
+  if (program === 'split-by-stem') {
+    // stem i lands in bus ((i + step) mod 6) + 1, so bus b carries
+    // i = (b - 1 - step) mod 6.
+    return [1, 2, 3, 4, 5, 6].map(bus => {
+      const i = ((bus - 1 - (step | 0)) % 6 + 6) % 6;
+      return { text: AMP_STEM_LETTER[i], col: AMP_STEM_COLOR[i] };
+    });
+  }
+  return null;
+}
+
+// Six amps on a circle, aux 1 at the top, clockwise. Each amp faces outward and
+// throws three arcs; its tag is counter-rotated so it reads upright wherever it
+// sits on the ring. One shared animation with no per-amp delay — the whole ring
+// breathes together, which is the point: every amp is live.
+function ampRingArt(program, step) {
+  const tags = ampRingTags(program, step);
+  if (!tags) return null;
+  let g = '';
+  for (let bus = 1; bus <= 6; bus++) {
+    const { text, col } = tags[bus - 1];
+    const a = -90 + (bus - 1) * 60;
+    g += `<g transform="rotate(${a}) translate(21 0)">`
+       +   `<rect x="-5.5" y="-4.5" width="9" height="9" rx="1.5" fill="#38434f" stroke="#7d8fa3" stroke-width=".7"/>`
+       +   `<circle cx="-1.2" cy="0" r="2.3" fill="#5a6a7d" stroke="#9fb3c8" stroke-width=".6"/>`
+       +   `<g class="wave" fill="none" stroke="${col}" stroke-width="1.1" stroke-linecap="round">`
+       +     `<path d="M 5.5 -3 Q 8 0 5.5 3"/><path d="M 8.5 -5.5 Q 12 0 8.5 5.5"/><path d="M 11.5 -8 Q 16 0 11.5 8"/>`
+       +   `</g>`
+       +   `<g transform="translate(-11 0) rotate(${-a})"><text x="0" y="2.4" text-anchor="middle" font-size="7" font-weight="800" fill="${col}">${text}</text></g>`
+       + `</g>`;
+  }
+  return `<svg width="112" height="112" viewBox="-39 -39 78 78" style="display:block">`
+       + `<circle class="ring" cx="0" cy="0" r="21" fill="none" stroke="#00e676" stroke-width="1" stroke-dasharray="2 3" opacity=".3"/>`
+       + g + `</svg>`;
+}
+
+const AMP_SUB = {
+  'lr-odd-even': 'ALL AMPS · L→1/3/5 · R→2/4/6 · −10 dB',
+  'split-by-stem': 'SPLIT BY STEM · one stem per wedge',
+  'reset': WEDGES_SUB_IDLE_DEFAULT,
+};
+
+// state: a program id · 'reset' · '?' unknown · 'custom' (board is in something
+// that is not a known program). '?' and 'custom' must NOT read as "off" — that
+// is the lie that leaves six wedges hot while the desk looks idle.
+function readAmpCache() {
+  try {
+    const raw = localStorage.getItem(AMP_PROG_KEY);
+    if (raw) { const o = JSON.parse(raw); if (o && o.program) return o; }
+  } catch (e) {}
+  return { program: 'reset', step: 0 };
+}
+function paintAmps(state) {
+  if (!wedges || !wedges.el) return;
+  const program = (state && state.program) || 'reset';
+  const step = (state && state.step) | 0;
+  const art = ampRingArt(program, step);
+  const live = !!art;
+  const unknown = (program === '?' || program === 'custom');
+  wedges.el.classList.toggle('amps-live', live);
+  wedges.el.classList.toggle('amps-unknown', unknown);
+  const artEl = wedges.el.querySelector('.art');
+  const subEl = wedges.el.querySelector('.sub');
+  if (artEl) artEl.innerHTML = live ? art : wedges.art;
+  if (subEl) subEl.textContent = unknown
+    ? (program === '?' ? '⚠ amps state UNKNOWN — re-run or probe'
+                       : '⚠ amps in a CUSTOM state — probe to see')
+    : (AMP_SUB[program] || wedges.sub) + (live && step ? ` · step ${step}` : '');
+}
+function setAmpProgram(program, step) {
+  const st = { program, step: step | 0 };
+  try { localStorage.setItem(AMP_PROG_KEY, JSON.stringify(st)); } catch (e) {}
+  paintAmps(st);
+}
+async function deskAmpProgram(program, step) {
+  hint('📢 amps → <b>' + program + '</b>: writing and verifying 48 wedge sends…');
+  const r = await fetch('/api/xr18/amp-program', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ program, step: step | 0 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
+  if (!r.ok) {
+    // Only claim a definite state when nothing left the machine. A partial walk
+    // means unknown, NOT off.
+    setAmpProgram(r.partial ? '?' : readAmpCache().program, 0);
+    hint('📢 amps: ' + (r.error || 'failed')
+         + (r.partial ? ` — <b>PARTIAL</b> after ${r.applied} of 48 writes; some wedges may still be live. Re-run.`
+                      : '. In pass-thru mode the board only listens on OSC; join its network.'));
+    return;
+  }
+  setAmpProgram(program, step | 0);
+  hint('📢 amps → <b>' + program + '</b>' + ((step | 0) ? ' step ' + step : '') + ' — 48/48 writes verified.');
+}
+// Ask the board what it is actually doing and correct the cache. Worth doing on
+// load and after anything that rewrites the mixer wholesale (snapshot recall).
+async function reconcileAmps(quiet) {
+  const r = await fetch('/api/xr18/amp-program').then(r => r.json()).catch(e => ({ error: e.message }));
+  if (!r.ok) { if (!quiet) hint('📢 amps: ' + (r.error || 'could not read the board')); return; }
+  const had = readAmpCache();
+  setAmpProgram(r.program, r.step || 0);
+  const drifted = had.program !== r.program || (had.step | 0) !== (r.step | 0);
+  if (!quiet || drifted) {
+    hint('📢 amps: board says <b>' + r.program + '</b>' + (r.step ? ' step ' + r.step : '')
+         + (drifted ? ' (cache disagreed — corrected)' : '') + '.');
+  }
+}
+// The console settings that silently defeat a program — a linked channel pair
+// makes a write to one send also write its partner, which amp_apply cannot see
+// because it reads back the very path it wrote. See CONTRACTS EX-10.
+async function ampPreflight(quiet) {
+  const r = await fetch('/api/xr18/preflight').then(r => r.json()).catch(e => ({ error: e.message }));
+  if (!r.ok) { if (!quiet) hint('🔎 amps preflight: ' + (r.error || 'could not read the board')); return r; }
+  if (r.clear) { if (!quiet) hint('🔎 amps preflight: <b>clear</b> — no channel or bus links in the way.'); return r; }
+  hint('⚠ amps preflight: <b>' + r.warnings.join(' · ') + '</b>');
+  return r;
+}
+// HOLODECK on the player page and the MIDI Console write the same key, so the
+// desk follows along from another tab without a reload.
+window.addEventListener('storage', (e) => {
+  if (e.key !== AMP_PROG_KEY) return;
+  try { paintAmps(JSON.parse(e.newValue || '{}')); } catch (err) {}
+});
+paintAmps(readAmpCache());
+// Paint from the cache immediately, then let the board have the last word — and
+// check the link settings once, since that hazard is invisible otherwise.
+setTimeout(() => { reconcileAmps(true); ampPreflight(true); }, 2500);
 
 // wires: from → to, kind (analog/usb/outs), label, label offset
 const WIRES = [
@@ -1534,7 +1687,7 @@ function mplParse(src, getSlot, _seen) {
     if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
     const sub = getSlot(d);
     if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
-    return mplParse(sub, getSlot, new Set([...seen, d]));
+    return mplParse(sub, getSlot, new Set([...seen, d])).filter(t => !t.loopMark);
   }
   function seq(inGroup) {
     const out = [];
@@ -1549,40 +1702,53 @@ function mplParse(src, getSlot, _seen) {
       danglingComma = false;
       if (ch === '(') { i++; out.push(...seq(true)); continue; }
       if (/\d/.test(ch)) {
+        const numS = i;
         let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        const numE = i;
         while (i < s.length && /\s/.test(s[i])) i++;
         const reps = Math.min(99, Math.max(1, +n));
         if (s[i] === '@') {
           i++;
           if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-          const inner = callSlot(+s[i++]);
-          for (let k = 0; k < reps; k++) out.push(...inner.map(t => ({ ...t })));
+          const inner = callSlot(+s[i++]).map(t => ({ ...t, s: numS, e: i }));
+          for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+            out.push(...inner.map(t => ({ ...t })));
+          }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
           continue;
         }
         if (s[i] !== '(') throw new Error('expected "(" or "@" after repeat count ' + n);
         i++;
         const inner = seq(true);
-        for (let k = 0; k < reps; k++) out.push(...inner);
+        for (let k = 0; k < reps; k++) {
+          out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+          out.push(...inner.map(t => ({ ...t })));
+        }
+        out.push({ loopMark: { s: numS, e: numE, restore: true } });
         continue;
       }
       if (ch === '@') {
+        const p0 = i;
         i++;
         if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-        out.push(...callSlot(+s[i++]).map(t => ({ ...t })));
+        out.push(...callSlot(+s[i++]).map(t => ({ ...t, s: p0, e: i })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {
+        const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         if (!n) throw new Error('m needs a channel 1-16 (char ' + (i + 1) + ')');
         const c = +n; if (c < 1 || c > 16) throw new Error('channel ' + c + ' out of range 1-16');
-        out.push({ ch: c });
+        out.push({ ch: c, s: p0, e: i });
         continue;
       }
       if (ch === 'p' || ch === 'P') {
+        const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
         if (!n) throw new Error('p needs a program 0-127 (char ' + (i + 1) + ')');
         const p = +n; if (p > 127) throw new Error('program ' + p + ' out of range 0-127');
-        out.push({ pc: p });
+        out.push({ pc: p, s: p0, e: i });
         continue;
       }
       if (s.startsWith('...', i) || ch === '\u2026') {
@@ -1593,8 +1759,11 @@ function mplParse(src, getSlot, _seen) {
            under programs 1, 2, 3; m1...4(C) walks channels 1-4; C...5(-)
            climbs semitones. Bare ... (no N( after) stays the trajectory
            filler between notes. */
+        const eS = i - 3;
         const look = /^\s*(\d+)\s*\(/.exec(s.slice(i));
         if (look) {
+          const numS = i + look[0].search(/\d/);
+          const numE = numS + look[1].length;
           i += look[0].length;
           const inner = seq(true);
           const reps = Math.min(99, Math.max(1, +look[1]));
@@ -1603,30 +1772,33 @@ function mplParse(src, getSlot, _seen) {
             throw new Error('"...N(" needs a note, p#, or m# immediately before it');
           }
           for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
             if (base.note != null) {
               const v = base.note + k;
               if (v < 0 || v > 127) throw new Error('"..." walked a note out of MIDI range');
-              out.push({ note: v, dur: base.dur });
+              out.push({ note: v, dur: base.dur, s: base.s, e: base.e });
             } else if (base.notes) {
               const vs = base.notes.map(v => v + k);
               if (vs.some(v => v < 0 || v > 127)) throw new Error('"..." walked a chord out of MIDI range');
-              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur });
+              out.push({ notes: vs, root: (base.root || 0) + k, dur: base.dur, s: base.s, e: base.e });
             } else if (base.pc != null) {
-              out.push({ pc: Math.min(127, base.pc + k) });
+              out.push({ pc: Math.min(127, base.pc + k), s: base.s, e: base.e });
             } else {
-              out.push({ ch: Math.min(16, base.ch + k) });
+              out.push({ ch: Math.min(16, base.ch + k), s: base.s, e: base.e });
             }
             out.push(...inner.map(t => ({ ...t })));
           }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
           continue;
         }
-        out.push({ ellipsis: true });
+        out.push({ ellipsis: true, s: eS, e: i });
         continue;
       }
       /* note := letter #? octave-digit? (+|-)* (m! | !)? (w|q|e|s)?
          C! = C major chord, Cm! = C minor (root, third, fifth). Duration
          letters: w=whole q=quarter(default) e=eighth s=sixteenth.
          "Cm" without "!" is NOT a chord — the m starts a channel command. */
+      const noteS = i;
       let m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
       if (m && m[1]) {
         i += m[0].length;
@@ -1639,15 +1811,15 @@ function mplParse(src, getSlot, _seen) {
           const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
           const notes = iv.map(x => root + x);
           if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
-          out.push({ notes, root, dur });
+          out.push({ notes, root, dur, s: noteS, e: i });
         } else {
           if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-          out.push({ note: root, dur });
+          out.push({ note: root, dur, s: noteS, e: i });
         }
         continue;
       }
       m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
-      if (m) { i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'] }); continue; }
+      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || 'q'], s: rp, e: i }); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
@@ -1679,7 +1851,7 @@ function mplResolveEllipses(toks) {
       const WHITE = [0, 2, 4, 5, 7, 9, 11];
       for (let v = from + dir; dir > 0 ? v < target : v > target; v += dir) {
         if (v < 0 || v > 127) break;
-        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur });
+        if (WHITE.includes(((v % 12) + 12) % 12)) out.push({ note: v, dur: prior[0].dur, s: t.s, e: t.e });
       }
     } else {
       /* Two priors: their interval is the step — E,F,... climbs half
@@ -1688,7 +1860,7 @@ function mplResolveEllipses(toks) {
       if (!step) throw new Error('"..." step is zero — the two notes before it are identical');
       if ((step > 0) !== (next.note > prior[0].note)) throw new Error('"..." target is not in the direction of travel');
       for (let v = prior[0].note + step; step > 0 ? v < next.note : v > next.note; v += step) {
-        out.push({ note: v, dur: prior[0].dur });
+        out.push({ note: v, dur: prior[0].dur, s: t.s, e: t.e });
       }
     }
   }
@@ -1718,6 +1890,7 @@ async function mplPlay(src) {
       if (r.error) { hint('🎼 ' + r.error); return; }
       continue;
     }
+    if (t.loopMark) continue;
     const durMs = q * (t.dur || 1);
     const sounding = t.notes ? t.notes : (t.rest ? [] : [t.note]);
     for (const nn of sounding) {
@@ -2647,6 +2820,9 @@ desk.addEventListener('contextmenu', (e) => {
         if (!(n >= 1 && n <= 64)) return;
         const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/-snap/load', value: n }) }).then(r => r.json()).catch(e => ({ error: e.message }));
         hint(r.ok ? `📸 snapshot <b>${n}</b> loaded over OSC.` : '📸 ' + (r.error || 'failed') + ' — in pass-thru mode the board only listens on OSC; join its network.'); setTimeout(showXr18Card, 800);
+        // A snapshot recall rewrites every send, including the twelve this
+        // feature owns, so the amps cache is stale the moment it lands.
+        if (r.ok) setTimeout(() => reconcileAmps(true), 1200);
       } });
       items.push({ label: '🎚 Set Main LR fader… (OSC)', run: async () => {
         const db = parseFloat(prompt('Main LR fader in dB (-90 … +10). 0 = unity:', '0'));
@@ -2662,6 +2838,23 @@ desk.addEventListener('contextmenu', (e) => {
         const r = await fetch('/api/xr18/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/lr/mix/on', value: 1 }) }).then(r => r.json()).catch(e => ({ error: e.message }));
         hint(r.ok ? '🔊 Main LR open.' : '🔊 ' + (r.error || 'failed')); setTimeout(showXr18Card, 500);
       } });
+      items.push({ label: '📢 Amps: All on — Main L→aux 1/3/5, R→aux 2/4/6', run: () => deskAmpProgram('lr-odd-even', 0) });
+      items.push({ label: '🎸 Amps: Split by stem — one stem per wedge', run: () => deskAmpProgram('split-by-stem', 0) });
+      items.push({ label: '↺ Amps: Rotate left one step', run: () => deskAmpProgram('split-by-stem', (readAmpCache().step | 0) - 1) });
+      items.push({ label: '↻ Amps: Rotate right one step', run: () => deskAmpProgram('split-by-stem', (readAmpCache().step | 0) + 1) });
+      items.push({ label: '🚫 Amps: RESET — close every wedge send', run: () => deskAmpProgram('reset', 0) });
+      items.push({ label: '🔎 Probe amps state on the board (OSC)', run: () => reconcileAmps(false) });
+      items.push({ label: '✓ Amps preflight — check for channel/bus links', run: () => ampPreflight(false) });
+      items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
+    }
+    if (o.id === 'wedges') {
+      items.push({ label: '📢 Amps: All on — Main L→aux 1/3/5, R→aux 2/4/6', run: () => deskAmpProgram('lr-odd-even', 0) });
+      items.push({ label: '🎸 Amps: Split by stem — one stem per wedge', run: () => deskAmpProgram('split-by-stem', 0) });
+      items.push({ label: '↺ Amps: Rotate left one step', run: () => deskAmpProgram('split-by-stem', (readAmpCache().step | 0) - 1) });
+      items.push({ label: '↻ Amps: Rotate right one step', run: () => deskAmpProgram('split-by-stem', (readAmpCache().step | 0) + 1) });
+      items.push({ label: '🚫 Amps: RESET — close every wedge send', run: () => deskAmpProgram('reset', 0) });
+      items.push({ label: '🔎 Probe amps state on the board (OSC)', run: () => reconcileAmps(false) });
+      items.push({ label: '✓ Amps preflight — check for channel/bus links', run: () => ampPreflight(false) });
       items.push({ label: '🎛 Open X-AIR-Edit', run: () => openSpecial('__XR18__', 'X-AIR-Edit') });
     }
     if (o.id === 'helix') {

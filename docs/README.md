@@ -51,3 +51,15 @@ When pointing at UI elements in conversation, use the names defined in
 gig picker, library row, meta pills row, visualizer, action bar, transport
 row, LOOPER card, pitch knobs, Stem Mixer Console, mixer header, XR18 state
 badge. The player reference names every one of them by its on-screen label.
+
+## 12-18 (added later; this index had lapsed)
+
+| Doc | Covers |
+|---|---|
+| `12_CLICK_TRACK.md` | click regions, the beat grid, count-in |
+| `13_SOUND_DESKTOP.md` | the desk: objects, wires, right-click methods |
+| `14_XR18_CONTROL.md` | XR18 over OSC — address space, the dB curve, amp programs, preflight |
+| `15_DESK_METHOD_TEST_PLAN.md` | every desk/console method, its wire-log signature and safety class |
+| `16_SYSTEM_ARCHITECTURE.md` | the two-machine picture |
+| `17_EAVFA_OBJECT_MODEL.md` | object model |
+| `18_MPL_LANGUAGE.md` | MPL syntax, EBNF, semantics |

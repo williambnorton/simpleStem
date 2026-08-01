@@ -5017,6 +5017,34 @@ app.put('/api/song/:base/automation', (req, res) => {
           // The target is computed dynamically at fire time from the
           // current section list, so editing sections doesn't break
           // saved skips.
+        } else if (e.type === 'amp-program') {
+          // Put the six XR18 monitor wedges into a named program. `program` is
+          // an id from the sidecar's registry (GET /api/xr18/amp-programs); it
+          // is NOT whitelisted here on purpose — the registry lives in the
+          // sidecar, and duplicating the list in this file is exactly the
+          // drift D-2 exists to prevent. The sidecar rejects unknown ids with
+          // a 400, so a bad id fails loudly at fire time rather than being
+          // silently rewritten to something that moves the wedges.
+          base.program = String(e.program || '').slice(0, 32);
+          const st = parseInt(e.step, 10);
+          base.step = Number.isFinite(st) ? Math.max(-5, Math.min(5, st)) : 0;
+        } else if (e.type === 'amp-rotate-on') {
+          // Start rotating a program. Paired with an 'amp-rotate-off'; the
+          // scheduler derives the live step from song time, so these two are
+          // ordinary one-shot events and scrubbing stays correct with no state
+          // machine (same construction as the click track's on/off regions).
+          base.program = String(e.program || 'split-by-stem').slice(0, 32);
+          base.dir = (e.dir === 'right') ? 'right' : 'left';
+          const per = Number(e.period);
+          // Floor of 0.25 s: each tick is 48 UDP writes, and below a quarter
+          // second the wedges are chattering rather than rotating.
+          base.period = (Number.isFinite(per) && per >= 0.25 && per <= 30)
+            ? Math.round(per * 100) / 100 : 1;
+        } else if (e.type === 'amp-rotate-off') {
+          // No extra fields — t alone ends the rotation region. The wedges
+          // settle into the rotating program at step 0. To end somewhere else,
+          // drop an ordinary 'amp-program' event just after the rotate-off:
+          // more explicit, visible on the lane, and no new field to carry.
         }
         return base;
       })
@@ -5963,6 +5991,61 @@ app.post('/api/xr18/set', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body || {}),
     }, 5000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+// Amp programs (Bill 2026-07-30). A program is a COMPLETE state of the wedge
+// send matrix — all 8 sources (Main L/R on ch 1-2, six stems on ch 11-16) against
+// all 6 aux buses — so programs are mutually exclusive and switching between them
+// can't leave stray sends in a wedge. The registry, the 48 writes and their
+// readback verification all live in the sidecar; these are pure proxies.
+//   GET  /amp-programs  → the registry (what the UI offers)
+//   GET  /amp-program   → what program the BOARD is in (reconciliation)
+//   POST /amp-program   → {program, step?, fast?}; fast skips verification and is
+//                         ONLY for rotation ticks (48 verified writes = 96 round
+//                         trips, far too slow for a 1 Hz rotation)
+//   GET  /preflight     → console link settings that would silently defeat a
+//                         program (see CONTRACTS EX-10)
+app.get('/api/xr18/amp-programs', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/amp-programs', undefined, 4000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+app.get('/api/xr18/amp-program', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/amp-program', undefined, 40000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+app.post('/api/xr18/amp-program', async (req, res) => {
+  // Rotation ticks must return well inside one tick, so they get a tight
+  // timeout; a verified 48-write walk needs a generous one.
+  const fast = !!(req.body && req.body.fast);
+  try {
+    const r = await sidecarFetch('/xr18/amp-program', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    }, fast ? 3000 : 60000);
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
+  }
+});
+
+app.get('/api/xr18/preflight', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/xr18/preflight', undefined, 8000);
     res.status(r.status).json(r.body);
   } catch (e) {
     res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
