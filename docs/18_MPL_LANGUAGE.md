@@ -30,6 +30,8 @@ program
       │  ├─ ( sequence )                         (grouping, plays once)
       │  └─ N ( sequence )                       (loop: N = 1-99, groups nest)
       ├─ call             @ 0-9                  (subroutine: inline slot N's program; N@d repeats it)
+      ├─ note-repeat      N note-event | N rest  (bare count, no parens: 2Ae = two eighth-note As,
+      │                                           3R = three rests, 2C! = two chords)
       ├─ range-loop       token .. N ( sequence )
       │                                          (TWO dots: iterate the token's VALUE from its
       │                                           written value to N inclusive, body after each —
@@ -68,6 +70,7 @@ program-change = "p" int ;                     (* 0-127 *)
 group       = [ count ] "(" sequence ")" ;
 count       = int ;                            (* clamped 1-99 *)
 call        = [ count ] "@" digit ;
+note-repeat = count ( note-event | rest ) ;
 range-loop  = ( note-event | channel-set | program-change ) ".." int "(" sequence ")" ;
 inc-loop    = ( note-event | channel-set | program-change ) "..." count "(" sequence ")" ;
 trajectory  = "..." ;                          (* when NOT followed by count "(" *)
@@ -121,5 +124,6 @@ F,P1..3(E,D,E,D)                     F, then E,D,E,D under programs 1→2→3 (r
 (A,,,D,,,A,,,D,,,E,,,A,,,)           sparse figure — notes every 3rd beat
 C!,,Am!,,F!,,G!w                     I-vi-IV-V, whole-note V
 m10 F#2e,F#2e,As2e,F#2e              hats-and-snare figure on GM drums
+m10,2Ae,B                            two eighth-note As then a B on the drum channel
 p56 C,Ee,Ge,C+                       trumpet, mixed durations
 ```

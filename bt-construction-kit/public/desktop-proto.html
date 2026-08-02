@@ -1690,6 +1690,35 @@ function mplParse(src, getSlot, _seen) {
     if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
     return mplParse(sub, getSlot, new Set([...seen, d])).filter(t => !t.loopMark);
   }
+  /* One note/chord or rest token at the cursor — shared by the main loop
+     and the bare repeat-count form (2Ae = two eighth-note As). */
+  function noteToken() {
+    const noteS = i;
+    const m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
+    if (!m || !m[1]) return null;
+    i += m[0].length;
+    const name = m[1].toUpperCase() + m[2];
+    const oct = m[3] === '' ? MPL_DEFAULTS.octave : +m[3];
+    let root = 12 * (oct + 1) + MPL_SEMIS[name];
+    for (const c of m[4]) root += (c === '+') ? 12 : -12;
+    const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
+    if (m[5]) {
+      const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
+      const notes = iv.map(x => root + x);
+      if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
+      return { notes, root, dur, s: noteS, e: i };
+    }
+    if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
+    return { note: root, dur, s: noteS, e: i };
+  }
+  function restToken() {
+    const m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
+    if (!m) return null;
+    const rp = i;
+    i += m[0].length;
+    return { rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || MPL_DEFAULTS.dur], s: rp, e: i };
+  }
+
   function seq(inGroup) {
     const out = [];
     /* Consecutive commas are pauses: an empty slot between commas is one
@@ -1719,15 +1748,28 @@ function mplParse(src, getSlot, _seen) {
           out.push({ loopMark: { s: numS, e: numE, restore: true } });
           continue;
         }
-        if (s[i] !== '(') throw new Error('expected "(" or "@" after repeat count ' + n);
-        i++;
-        const inner = seq(true);
-        for (let k = 0; k < reps; k++) {
-          out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
-          out.push(...inner.map(t => ({ ...t })));
+        if (s[i] === '(') {
+          i++;
+          const inner = seq(true);
+          for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+            out.push(...inner.map(t => ({ ...t })));
+          }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
+          continue;
         }
-        out.push({ loopMark: { s: numS, e: numE, restore: true } });
-        continue;
+        /* bare repeat: count + single note/chord/rest — 2Ae = two
+           eighth-note As, 3R = three rests (Bill 2026-07-29). */
+        const single = noteToken() || restToken();
+        if (single) {
+          for (let k = 0; k < reps; k++) {
+            out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
+            out.push({ ...single });
+          }
+          out.push({ loopMark: { s: numS, e: numE, restore: true } });
+          continue;
+        }
+        throw new Error('expected "(", "@", or a note after repeat count ' + n);
       }
       if (ch === '@') {
         const p0 = i;
@@ -1836,28 +1878,10 @@ function mplParse(src, getSlot, _seen) {
          C! = C major chord, Cm! = C minor (root, third, fifth). Duration
          letters: w=whole q=quarter(default) e=eighth s=sixteenth.
          "Cm" without "!" is NOT a chord — the m starts a channel command. */
-      const noteS = i;
-      let m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
-      if (m && m[1]) {
-        i += m[0].length;
-        const name = m[1].toUpperCase() + m[2];
-        const oct = m[3] === '' ? MPL_DEFAULTS.octave : +m[3];
-        let root = 12 * (oct + 1) + MPL_SEMIS[name];
-        for (const c of m[4]) root += (c === '+') ? 12 : -12;
-        const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
-        if (m[5]) {
-          const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
-          const notes = iv.map(x => root + x);
-          if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
-          out.push({ notes, root, dur, s: noteS, e: i });
-        } else {
-          if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-          out.push({ note: root, dur, s: noteS, e: i });
-        }
-        continue;
-      }
-      m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
-      if (m) { const rp = i; i += m[0].length; out.push({ rest: true, dur: { e: 0.5, s: 0.25, w: 4, q: 1 }[m[1] || MPL_DEFAULTS.dur], s: rp, e: i }); continue; }
+      const nt = noteToken();
+      if (nt) { out.push(nt); continue; }
+      const rt = restToken();
+      if (rt) { out.push(rt); continue; }
       throw new Error('unexpected "' + ch + '" at char ' + (i + 1));
     }
     if (inGroup) throw new Error('missing ")"');
