@@ -25,7 +25,7 @@ RUN="$BASE/.run"                            # runtime state stays with the code
 QUEUE="$DATA/STEM_QUEUE"
 STEMS="$DATA/STEMS"
 PORT="${PORT:-3000}"            # portal port (server.js reads $PORT too)
-SERVICES="runner midi server caffeinate"
+SERVICES="runner midi server caffeinate midiwatch"
 mkdir -p "$RUN"
 
 # Version = newest mtime across the code files, formatted YYMMDD.HHMM (local).
@@ -96,6 +96,13 @@ start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
     midi)   echo "exec '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
+    midiwatch)
+            # Sidecar watchdog (Bill 2026-07-29, third sidecar death):
+            # probes :5555/health every 20s; two consecutive failures
+            # trigger `performer.sh restart-midi`. Heals CoreMIDI resets
+            # (e.g. Logic's "Reset All MIDI Drivers"), crashes, and
+            # post-sleep wedges within ~50s, hands-free.
+            echo "exec '$BASE/midi_watchdog.sh'" ;;
     server) echo "cd '$BASE/bt-construction-kit' && exec '${NODE_BIN:-node}' server.js" ;;
     caffeinate)
             # Gig insurance (Bill 2026-07-04): while the Performer rig runs,
@@ -270,6 +277,9 @@ case "${1:-}" in
   stop)
     echo "Stopping Performer…"
     for s in $SERVICES; do stop_one "$s"; done ;;
+  restart-midi)
+    stop_one midi
+    start_one midi ;;
   restart)
     echo "Restarting Performer… (full restart — stops the runner too)"
     for s in $SERVICES; do stop_one "$s"; done

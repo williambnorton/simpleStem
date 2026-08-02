@@ -625,6 +625,10 @@ function mplResolveEllipses(toks) {
    the first, stopped by the last). */
 const mplSlotGen = new Array(10).fill(0);
 const mplSlotRunning = new Array(10).fill(false);
+/* Live-edit stores: the running loop re-reads these at each pass top, so
+   a Return-key hot-swap takes effect on the next pass without stopping. */
+const mplSlotToks = new Array(10).fill(null);
+const mplSlotSrc = new Array(10).fill('');
 let mplBeatTimer = null, mplBeatPos = 0;
 let mplSessionStart = 0, mplSessionBpm = 120;   // bar grid: set by the first slot in
 const mplActiveCount = () => mplSlotRunning.filter(Boolean).length;
@@ -668,9 +672,8 @@ function mplBeatStart(bpm) {
   mplBeatTimer = setInterval(() => { mplBeatPos = (mplBeatPos + 1) % 4; lgMplBeat(mplBeatPos); }, 60000 / bpm);
 }
 function mplViewMode(i, on) {
-  const ta = $('mpl-slot-' + i), v = $('mpl-view-' + i);
-  if (!ta || !v) return;
-  ta.style.display = on ? 'none' : '';
+  const v = $('mpl-view-' + i);
+  if (!v) return;
   v.style.display = on ? 'block' : 'none';
   if (!on) v.innerHTML = '';
 }
@@ -717,14 +720,15 @@ async function mplSlotToggle(i) {
   if (mplSlotRunning[i]) { mplSlotStop(i); return; }
   const el = $('mpl-slot-' + i);
   if (!el) return;
-  const src = el.value;
   /* Defaults row feeds the PARSER (octave, duration) — set before parse. */
   MPL_DEFAULTS.octave = Math.max(0, Math.min(8, +($('lg-mpl-oct').value || 4)));
   MPL_DEFAULTS.dur = ['w', 'q', 'e', 's'].includes($('lg-mpl-dur').value) ? $('lg-mpl-dur').value : 'q';
   let toks;
   try {
-    toks = mplParse(src, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
+  mplSlotToks[i] = toks;
+  mplSlotSrc[i] = el.value;
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
@@ -773,15 +777,19 @@ async function mplSlotToggle(i) {
     while (gen === mplSlotGen[i]) {
       let ch = startCh;
       overrides.clear();
-      for (const t of toks) {
+      /* Pass-top snapshot: hot-swapped tokens (Return while playing)
+         take over here, with their matching source for the play view. */
+      const passToks = mplSlotToks[i] || toks;
+      const passSrc = mplSlotSrc[i];
+      for (const t of passToks) {
         if (gen !== mplSlotGen[i]) return;
         if (t.loopMark) {
           if (t.loopMark.restore) overrides.delete(t.loopMark.s);
           else overrides.set(t.loopMark.s, { e: t.loopMark.e, text: String(t.loopMark.remaining) });
-          mplViewPaint(i, src, curHl, overrides);
+          mplViewPaint(i, passSrc, curHl, overrides);
           continue;
         }
-        if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, src, curHl, overrides); }
+        if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
@@ -813,8 +821,29 @@ async function mplSlotToggle(i) {
     else if (gen === mplSlotGen[i]) mplViewMode(i, false);
   }
 }
+function mplSlotHotSwap(i) {
+  const el = $('mpl-slot-' + i);
+  if (!el) return;
+  let toks;
+  try {
+    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+  } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message + ' — still playing the old pattern'); return; }
+  const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
+  if (!played) { toast('⚠ MPL[' + i + '] is empty — still playing the old pattern'); return; }
+  if (played > 2048) { toast('⚠ MPL[' + i + '] too long — still playing the old pattern'); return; }
+  MPL_DEFAULTS.octave = Math.max(0, Math.min(8, +($('lg-mpl-oct').value || 4)));
+  MPL_DEFAULTS.dur = ['w', 'q', 'e', 's'].includes($('lg-mpl-dur').value) ? $('lg-mpl-dur').value : 'q';
+  mplSlotToks[i] = toks;
+  mplSlotSrc[i] = el.value;
+  mplBankSave();
+  toast(`🎼 MPL[${i}] updated — new pattern takes over at the next pass`);
+}
 function mplSlotKey(e, i) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mplSlotToggle(i); }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (mplSlotRunning[i]) mplSlotHotSwap(i);
+    else mplSlotToggle(i);
+  }
 }
 document.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
@@ -1266,7 +1295,9 @@ renderRecent();
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   $('mpl-bank').innerHTML = mplBankLoad().map((v, i) =>
     `<div class="row" style="flex-wrap:nowrap"><span class="k" style="min-width:14px;text-align:center">${i}</span>
-     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" placeholder="MPL pattern ${i}" style="flex:1;min-width:120px;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="Playing — the underline is the playhead, amber numbers are loops remaining. Click to stop and edit."></div>
+     <span style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px">
+     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" placeholder="MPL pattern ${i}" style="width:100%;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="The playhead — underline = current token, amber = loops remaining. Edit the text above while it plays; Return applies the new pattern at the next pass. Click here to stop."></div>
+     </span>
      <button id="mpl-btn-${i}" onclick="mplSlotToggle(${i})" title="Loop slot ${i} (or press the ${i} key) · press again to stop">▶</button></div>`).join('');
   const sel = $('lg-mpl-bpm');
   const saved = +(localStorage.getItem('console.mplBpm.v1') || 120);
