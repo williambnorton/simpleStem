@@ -817,7 +817,7 @@ async function mplSlotToggle(i) {
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
-          if (r.error) { toast('⚠ MPL[' + i + ']: ' + r.error); return; }
+          if (r.error) { toast('⚠ MPL[' + i + '] STOPPED — ' + r.error + ' · press the ⟳ reset (upper-left) to revive the sidecar'); const bb = $('mpl-btn-' + i); if (bb) { const row = bb.closest('.row'); if (row) { row.style.background = 'rgba(255,82,82,.15)'; setTimeout(() => { row.style.background = ''; }, 4000); } } return; }
           mplNow('pgm', t.pc);
           continue;
         }
@@ -837,7 +837,7 @@ async function mplSlotToggle(i) {
         const durMs = qNow * (t.dur || 1);
         for (const hn of sounding) {
           const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: velNow });
-          if (r.error) { toast('⚠ MPL[' + i + ']: ' + r.error); return; }
+          if (r.error) { toast('⚠ MPL[' + i + '] STOPPED — ' + r.error + ' · press the ⟳ reset (upper-left) to revive the sidecar'); const bb = $('mpl-btn-' + i); if (bb) { const row = bb.closest('.row'); if (row) { row.style.background = 'rgba(255,82,82,.15)'; setTimeout(() => { row.style.background = ''; }, 4000); } } return; }
           const n = hn, c2 = ch;
           setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
         }
