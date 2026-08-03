@@ -40,6 +40,13 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .gm-fam { display: flex; align-items: center; gap: 2px; margin: 1px 0; }
+  .gm-fam-name { width: 64px; font: 9px -apple-system, sans-serif; color: #9fb3c8; text-align: right; padding-right: 4px; flex: none; }
+  .gm-btn { width: 26px; height: 17px; padding: 0; font: 9px Menlo, monospace; border-radius: 4px;
+    background: rgba(255,255,255,.05); color: #9fb3c8; border: 1px solid rgba(255,255,255,.15); cursor: pointer; }
+  .gm-btn:hover { background: rgba(0,230,118,.18); color: #aef7cd; }
+  .gm-btn.gm-on { background: rgba(241,196,15,.35); color: #fff; border-color: #f1c40f; }
+  #mpl-kbd svg { display: block; }
   .mpl-view { display: none; flex: 1; min-width: 120px; background: #0e1420; color: #c7d2de;
     border: 1px solid rgba(0,230,118,.45); border-radius: 6px; padding: 3px 6px;
     font: 11px/1.5 Menlo, monospace; white-space: pre-wrap; cursor: pointer; }
@@ -117,7 +124,15 @@
       pgm <span id="mpl-now-pgm" class="nowbox">–</span>
       note <span id="mpl-now-note" class="nowbox">–</span>
       bpm <span id="mpl-now-bpm" class="nowbox">–</span></div>
-    <div id="mpl-bank"></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+      <div id="mpl-bank" style="flex:1 1 480px;min-width:380px"></div>
+      <div id="mpl-tools" style="flex:0 1 400px;min-width:340px">
+        <div class="recent-head">🎹 GM PATCH MATRIX <span class="hint">· DLSMusicDevice programs — click sends the PC on the default channel</span></div>
+        <div id="gm-matrix"></div>
+        <div class="recent-head" style="margin-top:10px">⌨️ MAPPING KEYBOARD <span class="hint">· E- to E+ · click plays the note on the default channel — <span id="kb-last" style="color:#00e676">—</span></span></div>
+        <div id="mpl-kbd"></div>
+      </div>
+    </div>
   </div>
 
   <div class="panel" title="XR18 control panel — everything here rides OSC (Open Sound Control) over UDP :10024 to the mixer's static IP. In pass-thru mode OSC is the ONLY way the app controls the board."><h3>🎚️ XR18 <span id="xr-tag"></span></h3>
@@ -1357,6 +1372,78 @@ mcFields();
 hxMsgInit();
 hxRecallInit();
 renderRecent();
+/* ── GM patch matrix + mapping keyboard (Bill 2026-07-29) ─────────────
+   DLSMusicDevice is a General MIDI synth: 128 programs in 16 families
+   of 8. Click = program change on the bank's default channel. The
+   keyboard spans E- to E+ (E3..E5 around the middle-C home octave) and
+   plays clicked notes so drum maps and patches can be explored by ear. */
+const GM_NAMES = ['Acoustic Grand Piano','Bright Acoustic Piano','Electric Grand Piano','Honky-tonk Piano','Electric Piano 1','Electric Piano 2','Harpsichord','Clavinet',
+'Celesta','Glockenspiel','Music Box','Vibraphone','Marimba','Xylophone','Tubular Bells','Dulcimer',
+'Drawbar Organ','Percussive Organ','Rock Organ','Church Organ','Reed Organ','Accordion','Harmonica','Tango Accordion',
+'Nylon Guitar','Steel Guitar','Jazz Guitar','Clean Guitar','Muted Guitar','Overdriven Guitar','Distortion Guitar','Guitar Harmonics',
+'Acoustic Bass','Fingered Bass','Picked Bass','Fretless Bass','Slap Bass 1','Slap Bass 2','Synth Bass 1','Synth Bass 2',
+'Violin','Viola','Cello','Contrabass','Tremolo Strings','Pizzicato Strings','Orchestral Harp','Timpani',
+'String Ensemble 1','String Ensemble 2','Synth Strings 1','Synth Strings 2','Choir Aahs','Voice Oohs','Synth Voice','Orchestra Hit',
+'Trumpet','Trombone','Tuba','Muted Trumpet','French Horn','Brass Section','Synth Brass 1','Synth Brass 2',
+'Soprano Sax','Alto Sax','Tenor Sax','Baritone Sax','Oboe','English Horn','Bassoon','Clarinet',
+'Piccolo','Flute','Recorder','Pan Flute','Blown Bottle','Shakuhachi','Whistle','Ocarina',
+'Square Lead','Sawtooth Lead','Calliope','Chiff','Charang','Voice Lead','Fifths','Bass+Lead',
+'New Age Pad','Warm Pad','Polysynth','Choir Pad','Bowed Pad','Metallic Pad','Halo Pad','Sweep Pad',
+'Rain FX','Soundtrack','Crystal','Atmosphere','Brightness','Goblins','Echoes','Sci-Fi',
+'Sitar','Banjo','Shamisen','Koto','Kalimba','Bag Pipe','Fiddle','Shanai',
+'Tinkle Bell','Agogo','Steel Drums','Woodblock','Taiko Drum','Melodic Tom','Synth Drum','Reverse Cymbal',
+'Guitar Fret Noise','Breath Noise','Seashore','Bird Tweet','Telephone','Helicopter','Applause','Gunshot'];
+const GM_FAMILIES = ['Piano','Chromatic','Organ','Guitar','Bass','Strings','Ensemble','Brass','Reed','Pipe','Synth Lead','Synth Pad','Synth FX','Ethnic','Percussive','Sound FX'];
+async function gmSendPC(n) {
+  const ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
+  const r = await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ port: 'IAC', type: 'pc', channel: ch, program: n }) }).then(J).catch(e => ({ error: e.message }));
+  if (r.error) { toast('⚠ ' + r.error + ' — sidecar up?'); return; }
+  document.querySelectorAll('.gm-btn.gm-on').forEach(b => b.classList.remove('gm-on'));
+  const b = $('gm-' + n);
+  if (b) b.classList.add('gm-on');
+  mplNow('pgm', n);
+  toast('🎹 PC ' + n + ' — ' + GM_NAMES[n] + ' (ch ' + ch + ')');
+}
+function mplNoteName(n) {
+  const oct = Math.floor(n / 12) - 1;
+  const home = MPL_DEFAULTS.octave || 4;
+  const suff = oct === home ? '' : oct === home - 1 ? '-' : oct === home + 1 ? '+' : String(oct);
+  return MPL_NOTE_NAMES[n % 12] + suff;
+}
+async function kbNote(n) {
+  const ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
+  const vel = Math.min(127, Math.max(1, +($('lg-mpl-vel').value || 100)));
+  $('kb-last').textContent = mplNoteName(n) + ' = ' + n;
+  const post = (b) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(b) }).then(J).catch(e => ({ error: e.message }));
+  const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: n, velocity: vel });
+  if (r.error) { toast('⚠ ' + r.error + ' — sidecar up?'); return; }
+  setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: ch, note: n, velocity: 0 }), 300);
+}
+(function () {
+  $('gm-matrix').innerHTML = GM_FAMILIES.map((fam, f) =>
+    '<div class="gm-fam"><span class="gm-fam-name">' + fam + '</span>' +
+    Array.from({ length: 8 }, (_, k) => { const n = f * 8 + k;
+      return `<button id="gm-${n}" class="gm-btn" onclick="gmSendPC(${n})" title="PC ${n} · ${GM_NAMES[n]}">${n}</button>`;
+    }).join('') + '</div>').join('');
+  /* keyboard E3(52)..E5(76): whites drawn first, blacks overlaid */
+  const LO = 52, HI = 76, WK = 24, H = 74;
+  const isBlack = (n) => [1, 3, 6, 8, 10].includes(n % 12);
+  let wx = 0; const whites = [], blacks = [];
+  for (let n = LO; n <= HI; n++) {
+    if (!isBlack(n)) {
+      whites.push(`<g onclick="kbNote(${n})" style="cursor:pointer"><title>${mplNoteName(n)} = ${n}</title>
+        <rect x="${wx}" y="0" width="${WK - 1}" height="${H}" rx="2" fill="#e8eef5" stroke="#555"/>
+        <text x="${wx + WK / 2 - 0.5}" y="${H - 6}" text-anchor="middle" font-size="8" font-family="Menlo" fill="#333">${mplNoteName(n)}</text></g>`);
+      wx += WK;
+    } else {
+      blacks.push(`<g onclick="kbNote(${n})" style="cursor:pointer"><title>${mplNoteName(n)} = ${n}</title>
+        <rect x="${wx - 7}" y="0" width="14" height="${H * 0.58}" rx="2" fill="#1a1f2b" stroke="#000"/></g>`);
+    }
+  }
+  $('mpl-kbd').innerHTML = `<svg width="${wx}" height="${H}" viewBox="0 0 ${wx} ${H}">` + whites.join('') + blacks.join('') + '</svg>';
+})();
 function mplNamesLoad() {
   try { const a = JSON.parse(localStorage.getItem('console.mplNames.v1') || 'null'); if (Array.isArray(a) && a.length === 10) return a; } catch (e) {}
   return new Array(10).fill('');
