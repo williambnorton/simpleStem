@@ -897,6 +897,18 @@ function mplSlotKey(e, i) {
     e.preventDefault();
     if (mplSlotRunning[i]) mplSlotHotSwap(i);
     else mplSlotToggle(i);
+    return;
+  }
+  /* Escape = abandon the edit: restore the committed text (what's
+     actually playing if the slot runs, else the saved bank value) and
+     drop focus so the number keys work again. */
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    const el = $('mpl-slot-' + i);
+    if (!el) return;
+    el.value = mplSlotRunning[i] ? mplSlotSrc[i] : (mplBankLoad()[i] || '');
+    el.blur();
+    toast('🎼 MPL[' + i + '] edit discarded');
   }
 }
 document.addEventListener('keydown', (e) => {
