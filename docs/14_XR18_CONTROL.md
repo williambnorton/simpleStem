@@ -515,3 +515,39 @@ and step.
 - The XR18's own hardware snapshots (1-64) are a **third** unrelated "snapshot"
   namespace, and recalling one rewrites all 48 sends — which is why the desk
   reconciles after a recall.
+
+---
+
+# TWIN LOOPS — the canonical 5-wire plan (2026-07-30)
+
+The single daisy-chain is retired. Two independent, individually
+provable loops, one per Mac interface:
+
+```
+LOOP 1 — the Ditto loop (chain head, MIDI clock + ch4)
+  wire 1: XR18 DIN OUT  → Ditto IN
+  wire 2: Ditto THRU    → XR18 DIN IN
+
+LOOP 2 — the Stadium loop (recalls, telemetry, MUSE food)
+  wire 3: U2MIDI OUT    → Stadium MIDI IN
+  wire 4: Stadium OUT/THRU → U2MIDI IN
+
+  wire 5: SPARE — coiled in the gig bag. Cables are the #1 field
+          failure; any of wires 1-4 can be swapped in seconds.
+```
+
+Stadium settings: MIDI Thru ON (so commands echo home — provable),
+Send MIDI PC + Send Snapshot CC ON (telemetry + MUSE).
+
+Why twin loops beat the chain: each pedal is reachable even if the
+other is unplugged; each loop is proven independently (chain-test
+covers loop 1 end-to-end; a marker out U2MIDI proves loop 2); clock
+spam to the Ditto never shares a wire with Stadium recalls; and the
+Stadium's own transmissions come home on a dedicated input — which is
+exactly what MPL MUSE harvests.
+
+Software routing: sidecar `get_output` honors device pins —
+`MIDI_HELIX_PORT="U2MIDI Pro"` (set by performer.sh) binds every
+'helix'-addressed send to the U2MIDI pair; Ditto + clock ride the
+chain head (XR18). Console + desk Stadium surfaces all send
+port:'helix' and route accordingly.

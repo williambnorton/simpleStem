@@ -535,6 +535,19 @@ def get_output(needle, allow_chain=True):
         routed = "logic-virtual"
         if not name:
             return None, None
+    if not name:
+        # Device pins (Twin Loops wiring 2026-07-30): a named device can be
+        # bound to a specific interface via env, e.g. MIDI_HELIX_PORT=
+        # "U2MIDI Pro" when the Stadium hangs off the U2MIDI pair while
+        # the Ditto rides the XR18 DIN loop.
+        for dev, envkey in (("helix", "MIDI_HELIX_PORT"), ("stadium", "MIDI_HELIX_PORT"), ("ditto", "MIDI_DITTO_PORT")):
+            if dev in low:
+                pinned = os.environ.get(envkey)
+                if pinned:
+                    name = find_port(pinned)
+                    if name:
+                        routed = "pinned"
+                break
     if not name and allow_chain:
         name = chain_port()
         routed = "chain"

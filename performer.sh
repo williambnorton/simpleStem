@@ -95,7 +95,7 @@ PYTHON_MIDI="$(find_python_with_mido)"
 start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
-    midi)   echo "exec '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
+    midi)   echo "exec env MIDI_HELIX_PORT='U2MIDI Pro' '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
     midiwatch)
             # Sidecar watchdog (Bill 2026-07-29, third sidecar death):
             # probes :5555/health every 20s; two consecutive failures

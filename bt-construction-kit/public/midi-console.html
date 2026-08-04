@@ -989,17 +989,17 @@ async function hxRecallSend() {
   const ch = hxCh();
   if (v.startsWith('p:')) {
     const pgm = +v.slice(2);
-    recentRecord({ kind: 'bankpc', ch, bank: 1, program: pgm, port: 'chain' });
-    await send({ port: 'chain', type: 'cc', channel: ch, controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
+    recentRecord({ kind: 'bankpc', ch, bank: 1, program: pgm, port: 'helix' });
+    await send({ port: 'helix', type: 'cc', channel: ch, controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
     await new Promise(r => setTimeout(r, 40));
-    await send({ port: 'chain', type: 'cc', channel: ch, controller: 32, value: 1 }, 'Stadium bank LSB CC32=1');
+    await send({ port: 'helix', type: 'cc', channel: ch, controller: 32, value: 1 }, 'Stadium bank LSB CC32=1');
     await new Promise(r => setTimeout(r, 40));
-    await send({ port: 'chain', type: 'pc', channel: ch, program: pgm }, 'Stadium preset PC ' + pgm + ' (setlist 1)');
+    await send({ port: 'helix', type: 'pc', channel: ch, program: pgm }, 'Stadium preset PC ' + pgm + ' (setlist 1)');
   } else {
     const n = +v.slice(2);
     const cc69 = n <= 8 ? n - 1 : (n === 9 ? 8 : 9);
-    recentRecord({ kind: 'snap', ch, snap: n, port: 'chain' });
-    await send({ port: 'chain', type: 'cc', channel: ch, controller: 69, value: cc69 },
+    recentRecord({ kind: 'snap', ch, snap: n, port: 'helix' });
+    await send({ port: 'helix', type: 'cc', channel: ch, controller: 69, value: cc69 },
       'Stadium ' + (n <= 8 ? 'snapshot ' + n : n === 9 ? 'next snapshot' : 'prev snapshot'));
   }
 }
@@ -1039,21 +1039,21 @@ async function hxMsgSend() {
   const v = m.val !== undefined ? m.val : (m.map ? m.map(raw) : raw);
   if (m.kind === 'bankpc') {
     const bank = +$('hx-msg-param2').value;
-    recentRecord({ kind: 'bankpc', ch: hxCh(), bank, program: v, port: 'chain' });
+    recentRecord({ kind: 'bankpc', ch: hxCh(), bank, program: v, port: 'helix' });
     // The Stadium's OWN preset-change transmission (seen in the wire log)
     // is the full trio: CC0 (bank MSB) + CC32 (bank LSB) + PC. Mirror it.
-    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
+    await send({ port: 'helix', type: 'cc', channel: hxCh(), controller: 0, value: 0 }, 'Stadium bank MSB CC0=0');
     await new Promise(r => setTimeout(r, 40));
-    await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank LSB CC32=' + bank);
+    await send({ port: 'helix', type: 'cc', channel: hxCh(), controller: 32, value: bank }, 'Stadium bank LSB CC32=' + bank);
     await new Promise(r => setTimeout(r, 40));
-    await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium preset PC ' + v + ' (bank ' + bank + ')');
+    await send({ port: 'helix', type: 'pc', channel: hxCh(), program: v }, 'Stadium preset PC ' + v + ' (bank ' + bank + ')');
     return;
   }
-  if (m.kind === 'pc') { recentRecord({ kind: 'pc', ch: hxCh(), program: v, port: 'chain' }); await send({ port: 'chain', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v); }
-  else { recentRecord({ kind: 'cc', ch: hxCh(), controller: m.cc, value: v, port: 'chain' }); await send({ port: 'chain', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label); }
+  if (m.kind === 'pc') { recentRecord({ kind: 'pc', ch: hxCh(), program: v, port: 'helix' }); await send({ port: 'helix', type: 'pc', channel: hxCh(), program: v }, 'Stadium ' + m.label + ' → ' + v); }
+  else { recentRecord({ kind: 'cc', ch: hxCh(), controller: m.cc, value: v, port: 'helix' }); await send({ port: 'helix', type: 'cc', channel: hxCh(), controller: m.cc, value: v }, 'Stadium ' + m.label); }
 }
-const hx = (cc, val, what) => sendCC(hxCh(), cc, val, what);
-function hxPC() { send({ port: 'chain', type: 'pc', channel: hxCh(), program: +$('hx-pgm').value }, 'Stadium preset PC ' + $('hx-pgm').value); }
+const hx = (cc, val, what) => { recentRecord({ kind: 'cc', ch: hxCh(), controller: cc, value: val, port: 'helix' }); return send({ port: 'helix', type: 'cc', channel: hxCh(), controller: cc, value: val }, what); };
+function hxPC() { send({ port: 'helix', type: 'pc', channel: hxCh(), program: +$('hx-pgm').value }, 'Stadium preset PC ' + $('hx-pgm').value); }
 function logicPC() { recentRecord({ kind: 'pc', ch: +$('lg-pch').value, program: +$('lg-pgm').value, port: 'IAC' }); send({ port: 'IAC', type: 'pc', channel: +$('lg-pch').value, program: +$('lg-pgm').value }, 'PC ' + $('lg-pgm').value + ' → Logic'); }
 async function clockCtl(action) {
   const r = await fetch('/api/midi/clock', { method: 'POST', headers: { 'Content-Type': 'application/json' },
