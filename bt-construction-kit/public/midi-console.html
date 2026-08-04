@@ -131,6 +131,8 @@
       <div id="mpl-tools" style="flex:0 1 400px;min-width:340px">
         <div class="recent-head">🎹 GM PATCH MATRIX <span class="hint">· DLSMusicDevice programs — click sends the PC on the default channel</span></div>
         <div id="gm-matrix"></div>
+        <div class="recent-head" style="margin-top:10px">🧠 MUSE <span class="hint">· next-token + next-character prediction · Tab accepts the ghost text</span></div>
+        <div id="muse-stats" class="statebox" style="font-size:10px">corpus —</div>
         <div class="recent-head" style="margin-top:10px">⌨️ MAPPING KEYBOARD <span class="hint">· E- to E+ · click plays the note on the default channel — <span id="kb-last" style="color:#00e676">—</span></span></div>
         <div id="mpl-kbd"></div>
       </div>
@@ -518,6 +520,21 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ch: c, s: p0, e: i });
         continue;
       }
+      /* control change: c<num>=<val> — MPL gained this so the corpus can
+         express everything the wire says (Stadium snapshots CC69=2, etc.)
+         and so sequences can drive real CCs. Zero time, like p#/m#. */
+      if ((ch === 'c' || ch === 'C') && /^[cC]\d+=/.test(s.slice(i))) {
+        const p0 = i;
+        i++;
+        let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        i++;   // '='
+        let v = ''; while (i < s.length && /\d/.test(s[i])) v += s[i++];
+        if (!v) throw new Error('c' + n + '= needs a value 0-127 (char ' + (i + 1) + ')');
+        const cc = +n, val = +v;
+        if (cc > 127 || val > 127) throw new Error('CC ' + cc + '=' + val + ' out of range 0-127');
+        out.push({ cc, val, s: p0, e: i });
+        continue;
+      }
       if (ch === 'p' || ch === 'P') {
         const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
@@ -833,6 +850,11 @@ async function mplSlotToggle(i) {
         }
         if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
+        if (t.cc != null) {
+          const r = await post({ port: 'IAC', type: 'cc', channel: ch, controller: t.cc, value: t.val });
+          if (r.error) { toast('⚠ MPL[' + i + '] STOPPED — ' + r.error + ' · press the ⟳ reset (upper-left) to revive the sidecar'); return; }
+          continue;
+        }
         if (t.pc != null) {
           const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
           if (r.error) { toast('⚠ MPL[' + i + '] STOPPED — ' + r.error + ' · press the ⟳ reset (upper-left) to revive the sidecar'); const bb = $('mpl-btn-' + i); if (bb) { const row = bb.closest('.row'); if (row) { row.style.background = 'rgba(255,82,82,.15)'; setTimeout(() => { row.style.background = ''; }, 4000); } } return; }
@@ -1506,6 +1528,7 @@ function museRecord(src, w) {
   if (museCorpus.length > 300) museCorpus = museCorpus.slice(-300);
   try { localStorage.setItem(MPL_CORPUS_KEY, JSON.stringify(museCorpus)); } catch (e) {}
   museModel = null;
+  museChar = null;
 }
 const MUSE_RE = /^(\.\.\.|\.\.|\d+@\d|\d+\(|@\d|[mMpP]\d+|[A-Ga-g]#?\d?[+\-]*(?:m!|!)?[ewqs]?|[Rr][ewqs]?|-[ewqs]?|\(|\)|\d+)/;
 function museLex(src) {
@@ -1581,31 +1604,93 @@ function museJoin(toks) {
   }
   return r;
 }
+/* ── character model: order-5 char Markov over the same corpus, used to
+   finish the token you are mid-way through typing ("C#" → "-e"), after
+   which the token model takes over for the rest of the phrase. */
+let museChar = null, museCharTail = false;
+const MUSE_ORD = 5;
+function museCharBuild() {
+  if (!museCorpus) museCorpus = museLoad();
+  const M = new Map();
+  for (const entry of museCorpus) {
+    const txt = entry.s, w = entry.w || 1;
+    for (let k = 0; k < txt.length; k++) {
+      for (let o = 1; o <= MUSE_ORD; o++) {
+        if (k - o < 0) continue;
+        const ctx = o + '|' + txt.slice(k - o, k);
+        const m2 = M.get(ctx) || new Map();
+        m2.set(txt[k], (m2.get(txt[k]) || 0) + w * o);   // longer context = heavier vote
+        M.set(ctx, m2);
+      }
+    }
+  }
+  museChar = M;
+}
+function museCharNext(txt) {
+  if (!museChar) museCharBuild();
+  for (let o = MUSE_ORD; o >= 1; o--) {
+    if (txt.length < o) continue;
+    const best = museTop(museChar.get(o + '|' + txt.slice(txt.length - o)));
+    if (best != null) return best;
+  }
+  return null;
+}
+/* finish the current token only — stop at a separator */
+function museFinishToken(txt) {
+  let out = '', cur = txt;
+  for (let k = 0; k < 12; k++) {
+    const c = museCharNext(cur);
+    if (c == null || c === ',' || c === ' ') break;
+    out += c; cur += c;
+  }
+  return out;
+}
 let museTimer = null;
 function museSuggest(i) {
   clearTimeout(museTimer);
   museTimer = setTimeout(() => {
     const el = $('mpl-slot-' + i), g = $('mpl-ghost-' + i);
     if (!el || !g || document.activeElement !== el) return;
-    const txt = museJoin(musePredict(el.value, 10));
+    /* mid-token? finish the token with the char model, then continue
+       with whole tokens. On a separator, go straight to tokens. */
+    const v = el.value;
+    const midToken = v && !/[,\s(]$/.test(v);
+    const tail = midToken ? museFinishToken(v) : '';
+    museCharTail = !!tail;
+    const rest = museJoin(musePredict(v + tail, 8));
+    const txt = tail + (tail && rest ? ',' : '') + rest;
     g.textContent = txt;
     g.style.display = txt ? 'block' : 'none';
   }, 120);
 }
-/* ── the wire is the teacher: harvest note_on phrases HEARD on the
-   hardware return inputs (never the IAC loopback of our own playback),
-   convert to MPL, and feed the corpus at 3× weight. Inter-onset gaps
-   quantize to s/e/q/w against the current bpm; >4 silent beats or a
-   channel change closes the phrase. */
+/* ── the wire is the teacher (v2, Bill 2026-07-30): harvest EVERY MIDI
+   message heard on hardware inputs — note_on/note_off pairs (real held
+   durations, not just onset gaps), program changes, control changes,
+   channel switches — and transcribe the stream into MPL. That corpus
+   feeds both the token model and a character model, so prediction works
+   mid-token as well as mid-phrase. IAC loopback of our own playback is
+   excluded: the machine learns from the ROOM, not from itself. */
 let museRxLast = Date.now() / 1000, musePhrase = [], musePhraseCh = null, musePhraseLastT = 0;
+const museHeld = new Map();          // ch|note -> { t, idx }
+const museStats = { note: 0, cc: 0, pc: 0, phrases: 0 };
+function museQuant(beats) {
+  if (beats <= 0) return '';
+  if (beats < 0.375) return 's';
+  if (beats < 0.75) return 'e';
+  if (beats < 2.5) return '';        // quarter = the default, written bare
+  return 'w';
+}
 function museFlushPhrase() {
   if (musePhrase.length >= 3) {
     const txt = (musePhraseCh ? 'm' + musePhraseCh + ',' : '') + musePhrase.join(',');
     museRecord(txt, 3);
-    toast('🎼 MUSE learned a phrase from the wire (' + musePhrase.length + ' notes)');
+    museStats.phrases++;
+    museStatsPaint();
+    toast('🎼 MUSE learned from the wire: ' + musePhrase.length + ' events');
   }
   musePhrase = [];
   musePhraseCh = null;
+  museHeld.clear();
 }
 function museHarvest(mon) {
   const evs = (mon && mon.events) || [];
@@ -1615,23 +1700,54 @@ function museHarvest(mon) {
   for (const e of evs) {
     if (!e.t || e.t <= museRxLast) continue;
     if (e.t > maxT) maxT = e.t;
-    if (e.dir !== 'rx' || e.type !== 'note_on') continue;
-    if (/iac|logic/i.test(e.port || '')) continue;
+    if (e.dir !== 'rx') continue;
+    if (/iac|logic/i.test(e.port || '')) continue;      // never our own echo
     const gap = musePhraseLastT ? (e.t - musePhraseLastT) : 0;
-    if (musePhrase.length && (gap > beat * 4 || (musePhraseCh && e.channel !== musePhraseCh))) museFlushPhrase();
-    if (musePhrase.length) {
-      const beats = gap / beat;
-      const q = beats < 0.375 ? 's' : beats < 0.75 ? 'e' : beats < 2.5 ? '' : 'w';
-      const prev = musePhrase[musePhrase.length - 1];
-      if (q && !/[ewqs]$/.test(prev)) musePhrase[musePhrase.length - 1] = prev + q;
-    }
-    musePhrase.push(mplNoteName(e.note));
-    musePhraseCh = e.channel;
+    if (musePhrase.length && (gap > beat * 4 || (musePhraseCh && e.channel && e.channel !== musePhraseCh))) museFlushPhrase();
+
+    if (e.type === 'note_on' && e.velocity > 0) {
+      /* rests: silence between the last release and this onset */
+      if (musePhrase.length && gap > beat * 1.4) {
+        const rq = museQuant(gap - 1);
+        musePhrase.push('R' + (rq || ''));
+      }
+      museHeld.set(e.channel + '|' + e.note, { t: e.t, idx: musePhrase.length });
+      musePhrase.push(mplNoteName(e.note));
+      musePhraseCh = e.channel;
+      museStats.note++;
+    } else if (e.type === 'note_off' || (e.type === 'note_on' && e.velocity === 0)) {
+      /* real duration = how long the key was actually held */
+      const k = museHeld.get(e.channel + '|' + e.note);
+      if (k) {
+        const q = museQuant((e.t - k.t) / beat);
+        const tok = musePhrase[k.idx];
+        if (q && tok && !/[ewqs]$/.test(tok)) musePhrase[k.idx] = tok + q;
+        museHeld.delete(e.channel + '|' + e.note);
+      }
+    } else if (e.type === 'program_change') {
+      musePhrase.push('p' + e.program);
+      musePhraseCh = e.channel || musePhraseCh;
+      museStats.pc++;
+    } else if (e.type === 'control_change') {
+      if (e.control === 119 || e.control === 32 || e.control === 0) { /* markers + bank select: noise */ }
+      else { musePhrase.push('c' + e.control + '=' + e.value); museStats.cc++; }
+      musePhraseCh = e.channel || musePhraseCh;
+    } else continue;
+
     musePhraseLastT = e.t;
-    if (musePhrase.length >= 32) museFlushPhrase();
+    if (musePhrase.length >= 40) museFlushPhrase();
   }
   museRxLast = maxT;
   if (musePhrase.length && (Date.now() / 1000 - musePhraseLastT) > beat * 8) museFlushPhrase();
+  museStatsPaint();
+}
+function museStatsPaint() {
+  const el = $('muse-stats');
+  if (!el) return;
+  if (!museCorpus) museCorpus = museLoad();
+  const wire = museCorpus.filter(x => (x.w || 1) > 1).length;
+  el.innerHTML = `corpus <b>${museCorpus.length}</b> programs (<span style="color:#00e676">${wire} from the wire ×3</span>) · heard ` +
+    `${museStats.note} notes · ${museStats.cc} CC · ${museStats.pc} PC · ${museStats.phrases} phrases learned`;
 }
 function museHide(i) {
   setTimeout(() => { const g = $('mpl-ghost-' + i); if (g) g.style.display = 'none'; }, 200);
@@ -1639,8 +1755,11 @@ function museHide(i) {
 function museAccept(i) {
   const el = $('mpl-slot-' + i), g = $('mpl-ghost-' + i);
   if (!el || !g || g.style.display === 'none' || !g.textContent) return false;
-  const needsComma = el.value.trim() && !/[,(]\s*$/.test(el.value);
-  el.value = el.value + (needsComma ? ',' : '') + g.textContent;
+  /* a char-model tail glues directly; token continuations need a comma */
+  const txt = g.textContent;
+  const glue = /^[^,]/.test(txt) && el.value && !/[,\s(]$/.test(el.value) && museCharTail;
+  const needsComma = !glue && el.value.trim() && !/[,(]\s*$/.test(el.value);
+  el.value = el.value + (needsComma ? ',' : '') + txt;
   museSuggest(i);
   return true;
 }

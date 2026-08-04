@@ -26,6 +26,8 @@ program
       │  └─ ,,                                   (each EXTRA comma = one quarter rest: A,,,D)
       ├─ channel-set      m 1-16                 (m2 → all following notes on ch 2)
       ├─ program-change   p 0-127                (p3 → send PC 3 on the current channel)
+      ├─ control-change   c 0-127 = 0-127        (c69=2 → send CC69 value 2; zero time, like p#/m#.
+      │                                           Added so MUSE can transcribe everything it hears)
       ├─ group
       │  ├─ ( sequence )                         (grouping, plays once)
       │  └─ N ( sequence )                       (loop: N = 1-99, groups nest)
@@ -66,6 +68,7 @@ rest        = ( "R" | "-" ) [ dur ] ;          (* plus the empty-slot comma rule
 
 channel-set = "m" int ;                        (* 1-16 *)
 program-change = "p" int ;                     (* 0-127 *)
+control-change = "c" int "=" int ;             (* controller 0-127 = value 0-127 *)
 
 group       = [ count ] "(" sequence ")" ;
 count       = int ;                            (* clamped 1-99 *)
@@ -103,6 +106,31 @@ trajectory  = "..." ;                          (* when NOT followed by count "("
 - **Errors.** Every parse error names the offending character position
   or construct in plain English; nothing plays on a bad program.
 
+## MUSE — next-token and next-character prediction
+
+The console's MPL fields carry ghost-text completions from MUSE, a
+two-model predictor trained on a persisted corpus:
+
+- **Corpus.** Every program you play (weight 1) plus every phrase
+  OBSERVED on the hardware return path (weight 3 — the wire outvotes
+  the keyboard). The harvester transcribes the full message stream:
+  note_on/note_off pairs give real held durations (w/q/e/s), silences
+  become rests, program changes become `p#`, control changes become
+  `c#=v`, channel switches become `m#`. IAC loopback of our own
+  playback is excluded — MUSE learns from the room, not itself.
+- **Token model.** Order-2 Markov over MPL lexemes; continues a phrase
+  token by token, paren-aware so every completion parses.
+- **Character model.** Order-5 character Markov over the same corpus;
+  finishes the token you are mid-way through typing, after which the
+  token model continues.
+- **UI.** Ghost text under the active slot, Tab accepts, Escape
+  discards. The MUSE line in the tools column reports corpus size,
+  how much came from the wire, and message counts heard.
+
+Roadmap: swap `musePredict` for a server endpoint backed by a real
+model (Claude, or a small transformer trained on MIDI corpora
+transcoded to MPL) — the UI contract is just text in, tokens out.
+
 ## The bank as an instrument
 
 Slots 0-9 each hold one program. Number keys toggle: first slot in
@@ -126,4 +154,5 @@ C!,,Am!,,F!,,G!w                     I-vi-IV-V, whole-note V
 m10 F#2e,F#2e,As2e,F#2e              hats-and-snare figure on GM drums
 m10,2Ae,B                            two eighth-note As then a B on the drum channel
 p56 C,Ee,Ge,C+                       trumpet, mixed durations
+m5,p5,Ee,D,c69=2,C                   what MUSE heard on the wire, as MPL
 ```

@@ -1786,6 +1786,21 @@ function mplParse(src, getSlot, _seen) {
         out.push({ ch: c, s: p0, e: i });
         continue;
       }
+      /* control change: c<num>=<val> — MPL gained this so the corpus can
+         express everything the wire says (Stadium snapshots CC69=2, etc.)
+         and so sequences can drive real CCs. Zero time, like p#/m#. */
+      if ((ch === 'c' || ch === 'C') && /^[cC]\d+=/.test(s.slice(i))) {
+        const p0 = i;
+        i++;
+        let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
+        i++;   // '='
+        let v = ''; while (i < s.length && /\d/.test(s[i])) v += s[i++];
+        if (!v) throw new Error('c' + n + '= needs a value 0-127 (char ' + (i + 1) + ')');
+        const cc = +n, val = +v;
+        if (cc > 127 || val > 127) throw new Error('CC ' + cc + '=' + val + ' out of range 0-127');
+        out.push({ cc, val, s: p0, e: i });
+        continue;
+      }
       if (ch === 'p' || ch === 'P') {
         const p0 = i;
         i++; let n = ''; while (i < s.length && /\d/.test(s[i])) n += s[i++];
@@ -1947,6 +1962,11 @@ async function mplPlay(src) {
   for (const t of toks) {
     if (gen !== mplGen) return;
     if (t.ch) { ch = t.ch; continue; }
+    if (t.cc != null) {
+      const r = await send({ port: 'IAC', type: 'cc', channel: ch, controller: t.cc, value: t.val });
+      if (r.error) { hint('🎼 ' + r.error); return; }
+      continue;
+    }
     if (t.pc != null) {
       const r = await send({ port: 'IAC', type: 'pc', channel: ch, program: t.pc });
       if (r.error) { hint('🎼 ' + r.error); return; }
