@@ -40,6 +40,8 @@
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(18,22,30,.97);
     border: 1px solid rgba(0,230,118,.5); border-radius: 10px; padding: 8px 16px; display: none; z-index: 50; }
   .statebox { font: 10.5px/1.6 Menlo, monospace; color: #9fb3c8; }
+  .mpl-ghost { display: none; font: 10px/1.4 Menlo, monospace; color: #57a37b; padding: 0 6px; }
+  .mpl-ghost::before { content: "⇥ "; color: #3d7257; }
   .gm-fam { display: flex; align-items: center; gap: 2px; margin: 1px 0; }
   .gm-fam-name { width: 64px; font: 9px -apple-system, sans-serif; color: #9fb3c8; text-align: right; padding-right: 4px; flex: none; }
   .gm-btn { width: 26px; height: 17px; padding: 0; font: 9px Menlo, monospace; border-radius: 4px;
@@ -768,6 +770,7 @@ async function mplSlotToggle(i) {
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
   mplSlotToks[i] = toks;
   mplSlotSrc[i] = el.value;
+  museRecord(el.value);
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
@@ -905,6 +908,7 @@ function mplSlotHotSwap(i, quiet) {
   mplSlotToks[i] = toks;
   mplSlotSrc[i] = el.value;
   mplBankSave();
+  museRecord(el.value);
   if (!quiet) toast(`🎼 MPL[${i}] updated — new pattern takes over at the next pass`);
 }
 function mplSlotKey(e, i) {
@@ -913,6 +917,9 @@ function mplSlotKey(e, i) {
     if (mplSlotRunning[i]) mplSlotHotSwap(i);
     else mplSlotToggle(i);
     return;
+  }
+  if (e.key === 'Tab' && !e.shiftKey) {
+    if (museAccept(i)) { e.preventDefault(); return; }
   }
   /* Escape = abandon the edit: restore the committed text (what's
      actually playing if the slot runs, else the saved bank value) and
@@ -1444,6 +1451,128 @@ async function kbNote(n) {
   }
   $('mpl-kbd').innerHTML = `<svg width="${wx}" height="${H}" viewBox="0 0 ${wx} ${H}">` + whites.join('') + blacks.join('') + '</svg>';
 })();
+/* ── MPL MUSE v1 (Bill 2026-07-30): next-token prediction, the seed of
+   the music-LLM idea. An order-2 Markov chain over MPL lexemes, trained
+   on the corpus of every program Bill has PLAYED (persisted, seeded with
+   the doc's worked examples). Ghost text under the active slot suggests
+   a continuation; Tab accepts. The /api hook for a real trained model or
+   a Claude-backed completer can replace musePredict without touching the
+   UI — same in/out: (source text) → (token list). */
+const MPL_CORPUS_KEY = 'console.mplCorpus.v1';
+const MUSE_SEED = ['4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)', 'm2,C...E', 'C...C+', 'E,F,...,E+',
+  'p1...3(A,B,C)', 'F,P1..3(E,D,E,D)', '2(A,D,,E),2@2', '(A,,,D,,,A,,,D,,,E,,,A,,,)',
+  'C!,,Am!,,F!,,G!w', 'm10 F#2e,F#2e,A2e,F#2e', 'm10,2Ae,B', 'p56 C,Ee,Ge,C+',
+  'C,E,G,C+', 'C2,,G2,,A2,,G2', 'C!,Am!,F!,G!'];
+let museCorpus = null, museModel = null;
+function museLoad() {
+  try { const a = JSON.parse(localStorage.getItem(MPL_CORPUS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a; } catch (e) {}
+  return MUSE_SEED.slice();
+}
+function museRecord(src) {
+  src = String(src || '').trim();
+  if (!src) return;
+  if (!museCorpus) museCorpus = museLoad();
+  museCorpus = museCorpus.filter(x => x !== src);
+  museCorpus.push(src);
+  if (museCorpus.length > 200) museCorpus = museCorpus.slice(-200);
+  try { localStorage.setItem(MPL_CORPUS_KEY, JSON.stringify(museCorpus)); } catch (e) {}
+  museModel = null;
+}
+const MUSE_RE = /^(\.\.\.|\.\.|\d+@\d|\d+\(|@\d|[mMpP]\d+|[A-Ga-g]#?\d?[+\-]*(?:m!|!)?[ewqs]?|[Rr][ewqs]?|-[ewqs]?|\(|\)|\d+)/;
+function museLex(src) {
+  const out = []; let i = 0; const s2 = String(src);
+  while (i < s2.length) {
+    if (/\s/.test(s2[i])) { i++; continue; }
+    const m = MUSE_RE.exec(s2.slice(i));
+    if (!m) { i++; continue; }
+    out.push(m[1]);
+    i += m[1].length;
+  }
+  return out;
+}
+function museBuild() {
+  if (!museCorpus) museCorpus = museLoad();
+  const M = { bi: new Map(), uni: new Map(), starts: new Map() };
+  for (const prog of museCorpus) {
+    const t = museLex(prog);
+    if (!t.length) continue;
+    M.starts.set(t[0], (M.starts.get(t[0]) || 0) + 1);
+    for (let k = 0; k < t.length; k++) {
+      if (k + 1 < t.length) {
+        const u = M.uni.get(t[k]) || new Map();
+        u.set(t[k + 1], (u.get(t[k + 1]) || 0) + 1);
+        M.uni.set(t[k], u);
+      }
+      if (k + 2 < t.length) {
+        const key = t[k] + '\u0000' + t[k + 1];
+        const b = M.bi.get(key) || new Map();
+        b.set(t[k + 2], (b.get(t[k + 2]) || 0) + 1);
+        M.bi.set(key, b);
+      }
+    }
+  }
+  museModel = M;
+}
+function museTop(map) {
+  if (!map) return null;
+  let best = null, n = -1;
+  for (const [k, v] of map) if (v > n) { n = v; best = k; }
+  return best;
+}
+function musePredict(src, maxToks) {
+  if (!museModel) museBuild();
+  const t = museLex(src);
+  const out = [];
+  /* paren depth of the text so far — a suggested ")" that would close a
+     paren the user never opened is where the suggestion ends. */
+  let depth = 0;
+  for (const x of t) { if (x.endsWith('(')) depth++; else if (x === ')') depth--; }
+  let a = t.length > 1 ? t[t.length - 2] : null, b = t.length ? t[t.length - 1] : null;
+  for (let k = 0; k < (maxToks || 10); k++) {
+    let nxt = null;
+    if (a != null && b != null) nxt = museTop(museModel.bi.get(a + '\u0000' + b));
+    if (nxt == null && b != null) nxt = museTop(museModel.uni.get(b));
+    if (nxt == null && !t.length && !out.length) nxt = museTop(museModel.starts);
+    if (nxt == null) break;
+    if (nxt === ')' && depth <= 0) break;
+    if (nxt.endsWith('(')) depth++; else if (nxt === ')') depth--;
+    out.push(nxt);
+    a = b; b = nxt;
+  }
+  return out;
+}
+function museJoin(toks) {
+  let r = '', glue = false;
+  for (const t of toks) {
+    if (t === ')') { r += ')'; glue = false; continue; }
+    if (r && !glue && !r.endsWith('(')) r += ',';
+    r += t;
+    glue = /^\d+$/.test(t);   // a bare count glues to the token it repeats
+  }
+  return r;
+}
+let museTimer = null;
+function museSuggest(i) {
+  clearTimeout(museTimer);
+  museTimer = setTimeout(() => {
+    const el = $('mpl-slot-' + i), g = $('mpl-ghost-' + i);
+    if (!el || !g || document.activeElement !== el) return;
+    const txt = museJoin(musePredict(el.value, 10));
+    g.textContent = txt;
+    g.style.display = txt ? 'block' : 'none';
+  }, 120);
+}
+function museHide(i) {
+  setTimeout(() => { const g = $('mpl-ghost-' + i); if (g) g.style.display = 'none'; }, 200);
+}
+function museAccept(i) {
+  const el = $('mpl-slot-' + i), g = $('mpl-ghost-' + i);
+  if (!el || !g || g.style.display === 'none' || !g.textContent) return false;
+  const needsComma = el.value.trim() && !/[,(]\s*$/.test(el.value);
+  el.value = el.value + (needsComma ? ',' : '') + g.textContent;
+  museSuggest(i);
+  return true;
+}
 function mplNamesLoad() {
   try { const a = JSON.parse(localStorage.getItem('console.mplNames.v1') || 'null'); if (Array.isArray(a) && a.length === 10) return a; } catch (e) {}
   return new Array(10).fill('');
@@ -1460,7 +1589,8 @@ function mplNamesSave() {
     `<div class="row" style="flex-wrap:nowrap"><span class="k" style="min-width:14px;text-align:center">${i}</span>
      <input type="text" id="mpl-name-${i}" maxlength="16" placeholder="name" value="${esc(names[i] || '')}" onchange="mplNamesSave()" title="Slot name — 16 characters, yours to label the part (bass, hats, chorus pad…)" style="width:130px;background:#131824;color:#f1c40f;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px Menlo,monospace">
      <span style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px">
-     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" placeholder="MPL pattern ${i}" style="width:100%;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="The playhead — underline = current token, amber = loops remaining. Edit the text above while it plays; Return applies the new pattern at the next pass. Click here to stop."></div>
+     <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" oninput="museSuggest(${i})" onfocus="museSuggest(${i})" onblur="museHide(${i})" placeholder="MPL pattern ${i}" style="width:100%;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="The playhead — underline = current token, amber = loops remaining. Edit the text above while it plays; Return applies the new pattern at the next pass. Click here to stop."></div>
+     <div class="mpl-ghost" id="mpl-ghost-${i}" title="MUSE suggestion — press Tab to accept. Predicted from the patterns you have played (order-2 Markov over MPL tokens)."></div>
      </span>
      <button id="mpl-btn-${i}" onclick="mplSlotToggle(${i})" title="Loop slot ${i} (or press the ${i} key) · press again to stop">▶</button></div>`).join('');
   const sel = $('lg-mpl-bpm');
