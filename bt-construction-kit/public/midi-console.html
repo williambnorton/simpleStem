@@ -1336,6 +1336,7 @@ async function pollFast() {
   const ipEl = $('xr-ip');
   if (health && health.ok && health.xr18_ip && !ipEl.value && document.activeElement !== ipEl) ipEl.value = health.xr18_ip;
   mon = await fetch('/api/midi/monitor').then(J).catch(() => null);
+  try { museHarvest(mon); } catch (e) {}
   drawTopo(); paintState(); mcPorts();
 }
 async function pollSlow() {
@@ -1464,17 +1465,23 @@ const MUSE_SEED = ['4(C,C#,D,D#,E,F,F#,G,G#,A,A#,B)', 'm2,C...E', 'C...C+', 'E,F
   'C!,,Am!,,F!,,G!w', 'm10 F#2e,F#2e,A2e,F#2e', 'm10,2Ae,B', 'p56 C,Ee,Ge,C+',
   'C,E,G,C+', 'C2,,G2,,A2,,G2', 'C!,Am!,F!,G!'];
 let museCorpus = null, museModel = null;
+/* Corpus entries are { s: program text, w: weight }. Typed MPL = weight 1;
+   phrases OBSERVED as note_on events on the hardware return path = weight
+   3 (Bill 2026-07-30: "most should be from observing the wire"). */
 function museLoad() {
-  try { const a = JSON.parse(localStorage.getItem(MPL_CORPUS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a; } catch (e) {}
-  return MUSE_SEED.slice();
+  try {
+    const a = JSON.parse(localStorage.getItem(MPL_CORPUS_KEY) || 'null');
+    if (Array.isArray(a) && a.length) return a.map(x => typeof x === 'string' ? { s: x, w: 1 } : x);
+  } catch (e) {}
+  return MUSE_SEED.map(x => ({ s: x, w: 1 }));
 }
-function museRecord(src) {
+function museRecord(src, w) {
   src = String(src || '').trim();
   if (!src) return;
   if (!museCorpus) museCorpus = museLoad();
-  museCorpus = museCorpus.filter(x => x !== src);
-  museCorpus.push(src);
-  if (museCorpus.length > 200) museCorpus = museCorpus.slice(-200);
+  museCorpus = museCorpus.filter(x => x.s !== src);
+  museCorpus.push({ s: src, w: w || 1 });
+  if (museCorpus.length > 300) museCorpus = museCorpus.slice(-300);
   try { localStorage.setItem(MPL_CORPUS_KEY, JSON.stringify(museCorpus)); } catch (e) {}
   museModel = null;
 }
@@ -1493,20 +1500,21 @@ function museLex(src) {
 function museBuild() {
   if (!museCorpus) museCorpus = museLoad();
   const M = { bi: new Map(), uni: new Map(), starts: new Map() };
-  for (const prog of museCorpus) {
-    const t = museLex(prog);
+  for (const entry of museCorpus) {
+    const t = museLex(entry.s);
+    const w = entry.w || 1;
     if (!t.length) continue;
-    M.starts.set(t[0], (M.starts.get(t[0]) || 0) + 1);
+    M.starts.set(t[0], (M.starts.get(t[0]) || 0) + w);
     for (let k = 0; k < t.length; k++) {
       if (k + 1 < t.length) {
         const u = M.uni.get(t[k]) || new Map();
-        u.set(t[k + 1], (u.get(t[k + 1]) || 0) + 1);
+        u.set(t[k + 1], (u.get(t[k + 1]) || 0) + w);
         M.uni.set(t[k], u);
       }
       if (k + 2 < t.length) {
         const key = t[k] + '\u0000' + t[k + 1];
         const b = M.bi.get(key) || new Map();
-        b.set(t[k + 2], (b.get(t[k + 2]) || 0) + 1);
+        b.set(t[k + 2], (b.get(t[k + 2]) || 0) + w);
         M.bi.set(key, b);
       }
     }
@@ -1561,6 +1569,47 @@ function museSuggest(i) {
     g.textContent = txt;
     g.style.display = txt ? 'block' : 'none';
   }, 120);
+}
+/* ── the wire is the teacher: harvest note_on phrases HEARD on the
+   hardware return inputs (never the IAC loopback of our own playback),
+   convert to MPL, and feed the corpus at 3× weight. Inter-onset gaps
+   quantize to s/e/q/w against the current bpm; >4 silent beats or a
+   channel change closes the phrase. */
+let museRxLast = Date.now() / 1000, musePhrase = [], musePhraseCh = null, musePhraseLastT = 0;
+function museFlushPhrase() {
+  if (musePhrase.length >= 3) {
+    const txt = (musePhraseCh ? 'm' + musePhraseCh + ',' : '') + musePhrase.join(',');
+    museRecord(txt, 3);
+    toast('🎼 MUSE learned a phrase from the wire (' + musePhrase.length + ' notes)');
+  }
+  musePhrase = [];
+  musePhraseCh = null;
+}
+function museHarvest(mon) {
+  const evs = (mon && mon.events) || [];
+  const bpm = Math.min(300, Math.max(30, +(($('lg-mpl-bpm') || {}).value || 120)));
+  const beat = 60 / bpm;
+  let maxT = museRxLast;
+  for (const e of evs) {
+    if (!e.t || e.t <= museRxLast) continue;
+    if (e.t > maxT) maxT = e.t;
+    if (e.dir !== 'rx' || e.type !== 'note_on') continue;
+    if (/iac|logic/i.test(e.port || '')) continue;
+    const gap = musePhraseLastT ? (e.t - musePhraseLastT) : 0;
+    if (musePhrase.length && (gap > beat * 4 || (musePhraseCh && e.channel !== musePhraseCh))) museFlushPhrase();
+    if (musePhrase.length) {
+      const beats = gap / beat;
+      const q = beats < 0.375 ? 's' : beats < 0.75 ? 'e' : beats < 2.5 ? '' : 'w';
+      const prev = musePhrase[musePhrase.length - 1];
+      if (q && !/[ewqs]$/.test(prev)) musePhrase[musePhrase.length - 1] = prev + q;
+    }
+    musePhrase.push(mplNoteName(e.note));
+    musePhraseCh = e.channel;
+    musePhraseLastT = e.t;
+    if (musePhrase.length >= 32) museFlushPhrase();
+  }
+  museRxLast = maxT;
+  if (musePhrase.length && (Date.now() / 1000 - musePhraseLastT) > beat * 8) museFlushPhrase();
 }
 function museHide(i) {
   setTimeout(() => { const g = $('mpl-ghost-' + i); if (g) g.style.display = 'none'; }, 200);
