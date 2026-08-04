@@ -298,7 +298,7 @@ compare the pedal's own output against.</div>
 <div id="toast"></div>
 
 <script>
-let health = null, xrInfo = null, loop = null, mon = null;
+let health = null, xrInfo = null, loop = null, loop2 = null, mon = null;
 async function performerReset() {
   if (!confirm('Restart the Performer services (MIDI sidecar + portal server)?\n\nAn active render is left alone. The page reloads itself when the server is back (~10s).')) return;
   const r = await fetch('/api/performer/reset', { method: 'POST' }).then(x => x.json()).catch(e => ({ error: e.message }));
@@ -1115,39 +1115,44 @@ function verdict(re, chainDev = true) {
 function tag(v) { return v === 'ok' ? '<span class="ok">✓</span>' : v === 'chain' ? '<span class="chain">⛓</span>' : '<span class="bad">✗</span>'; }
 
 function drawTopo() {
-  const vX = verdict(/xr\s?18|x\s?air/i), vH = verdict(/helix|stadium|hx/i), vD = verdict(/ditto/i), vL = verdict(/iac/i, false);
-  const chainName = health && health.chain_port ? health.chain_port : 'no chain port';
-  const loopOk = loop && loop.loop === 'intact';
+  const vX = verdict(/xr\s?18|x\s?air/i), vH = verdict(/u2midi/i), vD = verdict(/xr\s?18/i), vL = verdict(/iac/i, false);
+  const sidecarUp = !!(health && health.ok);
+  const loop1Ok = loop && loop.loop === 'intact';
+  const loop2Ok = loop2 && loop2.intact;
   const NODE_TIPS = {
-    mac: 'The Performer MacBook — runs the portal, the MIDI sidecar (the Python daemon that owns every MIDI port + the OSC socket), Demucs renders, and the Web Audio stem mix.',
-    xr18: 'Behringer XR18 — 18-channel digital mixer. USB carries 18ch audio + MIDI; in USB-DIN Pass Thru mode its DIN jacks become a MIDI interface for the chain and the board itself is controlled over OSC (UDP :10024).',
-    ditto: 'TC Electronic Ditto X4 — two-track looper pedal. Listens on MIDI channel 4 (fixed), write-only, syncs loop lengths to MIDI clock.',
-    helix: 'Line 6 Helix Stadium — guitar amp/FX rig. Desk addresses it on MIDI channel 5; snapshots CC69, presets PC, looper CC52-62. Its MIDI Thru forwards the stream to the return leg.',
-    ret: 'The return leg — the chain loops back to a Mac MIDI input, which lets the loop test PROVE the whole chain passes (send a marker, hear the echo) and carries device telemetry home.',
-    logic: 'Logic Pro — the automated sound engineer. Wired via the IAC bus (Inter-Application Communication: macOS\'s virtual MIDI cable), it receives timeline automation + notes and returns the mixed 18ch USB audio.',
+    mac: 'The Performer MacBook — runs the portal, the MIDI sidecar (the Python daemon that owns every MIDI port + the OSC socket), Demucs renders, and the Web Audio stem mix. Two USB MIDI interfaces hang off it: the XR18 (pass-thru DIN pair) and the U2MIDI Pro.',
+    xr18: 'Behringer XR18 — 18ch mixer. USB carries audio + MIDI; in USB-DIN Pass Thru mode its DIN jacks are the Mac interface for LOOP 1 (the Ditto). The board itself is controlled over OSC (UDP :10024).',
+    ditto: 'TC Electronic Ditto X4 — two-track looper. LOOP 1: XR18 DIN OUT → Ditto IN, Ditto THRU → XR18 DIN IN. Channel 4 (fixed), write-only, loop lengths lock to MIDI clock.',
+    u2midi: 'CME U2MIDI Pro — USB-DIN cable, the Mac interface for LOOP 2 (the Stadium). OUT plug → Stadium IN, Stadium OUT/THRU → IN plug.',
+    helix: 'Line 6 Helix Stadium — LOOP 2 over the U2MIDI pair: trio recalls (CC0+CC32+PC) + CCs on ch 5/6 go out; its own PC/snapshot announcements come home and feed MPL MUSE. MIDI Thru ON so commands echo (provable).',
+    logic: 'Logic Pro — the automated sound engineer, wired via the IAC virtual bus: MPL bank playback, timeline automation, notes, PCs.',
   };
   const N = (x, y, id, cls, name, sub) =>
-    `<g class="n-${cls}" data-id="${id}"><title>${NODE_TIPS[id] || ''}</title><rect x="${x}" y="${y}" width="150" height="52"/>` +
-    `<text x="${x + 75}" y="${y + 21}" text-anchor="middle">${name}</text>` +
-    `<text class="nsub" x="${x + 75}" y="${y + 38}" text-anchor="middle">${sub}</text></g>`;
-  const E = (x1, y1, x2, y2, dead, label) =>
+    `<g class="n-${cls}" data-id="${id}"><title>${NODE_TIPS[id] || ''}</title><rect x="${x}" y="${y}" width="170" height="46"/>` +
+    `<text x="${x + 85}" y="${y + 19}" text-anchor="middle">${name}</text>` +
+    `<text class="nsub" x="${x + 85}" y="${y + 35}" text-anchor="middle">${sub}</text></g>`;
+  const E = (x1, y1, x2, y2, dead, label, ly) =>
     `<path class="wire ${dead ? 'dead' : ''}" d="M ${x1} ${y1} C ${x1 + 45} ${y1}, ${x2 - 45} ${y2}, ${x2} ${y2}"/>` +
-    (label ? `<text class="elabel" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" text-anchor="middle">${label}</text>` : '');
-  const sidecarUp = !!(health && health.ok);
+    (label ? `<text class="elabel" x="${(x1 + x2) / 2}" y="${(ly != null ? ly : (y1 + y2) / 2 - 6)}" text-anchor="middle">${label}</text>` : '');
   $('topo').innerHTML =
-    N(20, 75, 'mac', sidecarUp ? 'ok' : 'bad', '💻 MACBOOK PRO', sidecarUp ? 'sidecar :5555 ✓' : 'sidecar down') +
-    E(170, 92, 250, 92, !sidecarUp, 'USB') +
-    N(250, 66, 'xr18', vX, '🎚️ XR18', vX === 'ok' ? 'pass-thru interface · ctrl=OSC' : 'via ' + chainName) +
-    E(400, 92, 480, 92, vX === 'bad', 'DIN OUT (pass-thru)') +
-    N(480, 66, 'ditto', vD, '🔁 DITTO X4', 'ch 4 fixed') +
-    E(630, 92, 710, 92, vD === 'bad', 'THRU') +
-    N(710, 66, 'helix', vH, '🏟️ HELIX STADIUM', 'global ch (set 5)') +
-    E(860, 92, 940, 92, !loopOk, 'return') +
-    N(940, 66, 'ret', loopOk ? 'ok' : (loop && loop.loop === 'broken') ? 'bad' : 'chain', '↩ RETURN IN', loopOk ? 'loop ' + loop.roundtrip_ms + ' ms ✓ via ' + String(loop.heard_on || '').slice(0, 12) : (health && (health.inputs || []).filter(n => !/iac|network|bluetooth|ump|session/i.test(n)).slice(0, 2).join(' · ')) || 'no hw input') +
-    E(170, 130, 250, 160, vL === 'bad', 'IAC bus (virtual)') +
-    N(250, 140, 'logic', vL, '🎹 LOGIC PRO', vL === 'ok' ? 'notes · PC · automation' : 'enable IAC in Audio MIDI Setup') +
-    `<text class="elabel" x="580" y="200" text-anchor="middle">${loopOk ? '⛓✓ chain LOOP-VERIFIED — every Thru passing' : 'chain devices are send-only until the loop test passes'}</text>`;
-  $('xr-tag').innerHTML = tag(vX); $('dt-tag').innerHTML = tag(vD); $('lg-tag').innerHTML = tag(vL); $('hx-tag').innerHTML = tag(vH);
+    N(20, 82, 'mac', sidecarUp ? 'ok' : 'bad', '💻 MACBOOK PRO', sidecarUp ? 'sidecar :5555 ✓' : 'sidecar down') +
+    E(190, 96, 300, 40, !sidecarUp, 'USB', 52) +
+    N(300, 18, 'xr18', vX, '🎚️ XR18', vX === 'ok' ? 'pass-thru DIN pair · ctrl=OSC' : 'not connected') +
+    E(470, 30, 620, 30, vX === 'bad', 'wire 1 · DIN OUT → IN', 20) +
+    E(620, 52, 470, 52, !loop1Ok, '↩ wire 2 · THRU → DIN IN', 66) +
+    N(620, 18, 'ditto', loop1Ok ? 'ok' : vX === 'ok' ? 'chain' : 'bad', '🔁 DITTO X4 — LOOP 1',
+      loop1Ok ? 'loop ' + loop.roundtrip_ms + ' ms ✓ · ch 4 · clock' : 'ch 4 · loop unproven — 🔄 test') +
+    E(190, 104, 300, 118, !sidecarUp, 'USB', 100) +
+    N(300, 96, 'u2midi', vH, '🔌 U2MIDI PRO', vH === 'ok' ? 'DIN pair on the Mac' : 'not connected') +
+    E(470, 108, 620, 108, vH === 'bad', 'wire 3 · OUT → IN', 98) +
+    E(620, 130, 470, 130, !loop2Ok, '↩ wire 4 · OUT/THRU → IN', 144) +
+    N(620, 96, 'helix', loop2Ok ? 'ok' : vH === 'ok' ? 'chain' : 'bad', '🏟️ HELIX STADIUM — LOOP 2',
+      loop2Ok ? 'loop ' + loop2.ms + ' ms ✓ · ch 5/6 · telemetry' : 'ch 5/6 · loop unproven') +
+    E(190, 112, 300, 176, vL === 'bad', 'IAC (virtual)', 160) +
+    N(300, 156, 'logic', vL, '🎹 LOGIC PRO', vL === 'ok' ? 'MPL bank · notes · PC · automation' : 'enable IAC in Audio MIDI Setup') +
+    `<text class="elabel" x="920" y="60" text-anchor="middle">${loop1Ok ? '⛓✓ LOOP 1 verified' : 'LOOP 1 unproven'} · ${loop2Ok ? '⛓✓ LOOP 2 verified' : 'LOOP 2 unproven'}</text>` +
+    `<text class="elabel" x="920" y="80" text-anchor="middle">wire 5 = spare in the gig bag</text>`;
+  $('xr-tag').innerHTML = tag(vX); $('dt-tag').innerHTML = tag(loop1Ok ? 'ok' : vX); $('lg-tag').innerHTML = tag(vL); $('hx-tag').innerHTML = tag(loop2Ok ? 'ok' : vH);
 }
 
 function paintState() {
@@ -1342,7 +1347,24 @@ async function pollFast() {
 async function pollSlow() {
   xrInfo = await fetch('/api/xr18/info').then(J).catch(() => null);
   loop = await fetch('/api/midi/chain-test').then(J).catch(() => loop);
+  await loop2Test();
   paintLoop(); drawTopo(); paintState();
+}
+/* LOOP 2 prover: marker out the U2MIDI pair, listen for its echo in the
+   monitor. CC119 ch16 value 43 (loop 1's tester uses the sidecar's own
+   marker) — the Stadium's MIDI Thru brings it home if wires 3+4 hold. */
+async function loop2Test() {
+  try {
+    if (!health || !health.ok || !(health.ports || []).some(n => /u2midi/i.test(n))) { loop2 = null; return; }
+    const t0 = Date.now() / 1000;
+    await fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port: 'U2MIDI Pro', type: 'cc', channel: 16, controller: 119, value: 43 }) }).then(J);
+    await new Promise(r => setTimeout(r, 450));
+    const m2 = await fetch('/api/midi/monitor').then(J).catch(() => null);
+    const hit = ((m2 && m2.events) || []).find(e => e.dir === 'rx' && e.t > t0 && e.type === 'control_change' &&
+      e.control === 119 && e.value === 43 && /u2midi/i.test(e.port || ''));
+    loop2 = hit ? { intact: true, ms: Math.max(1, Math.round((hit.t - t0) * 1000)) } : { intact: false };
+  } catch (e) { loop2 = null; }
 }
 /* topology nodes are interactive (Bill 2026-07-18): click = highlight
    the device's panel, double-click = open the REAL thing behind it */

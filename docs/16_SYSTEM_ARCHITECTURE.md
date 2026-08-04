@@ -33,11 +33,11 @@ flowchart LR
     IAC{{IAC bus<br/>virtual MIDI}}
   end
 
-  subgraph STAGE["STAGE RIG — physical"]
-    NUX[NUX B-8 / U2MIDI<br/>MIDI interface]
+  subgraph STAGE["STAGE RIG — physical (TWIN LOOPS, 2026-07-30)"]
+    U2MIDI[U2MIDI Pro<br/>USB-DIN pair]
     XR18[Behringer XR18<br/>mixer + USB audio/MIDI]
     DITTO[Ditto X4 looper<br/>MIDI ch 4]
-    HELIX[Helix Stadium<br/>MIDI ch 5]
+    HELIX[Helix Stadium<br/>MIDI ch 5/6]
     MICS[mics + instruments]
     PA[Main L/R + AUX 1-6 wedges]
   end
@@ -54,7 +54,9 @@ flowchart LR
   PORTAL -->|automation events| SIDECAR
   SIDECAR -->|OSC UDP :10024| XR18
   SIDECAR -->|USB MIDI| XR18
-  XR18 -->|DIN OUT pass-thru| DITTO -->|THRU| HELIX -->|OUT return| NUX -->|USB| SIDECAR
+  XR18 -->|w1: DIN OUT| DITTO -->|w2: THRU return| XR18
+  SIDECAR -->|USB| U2MIDI
+  U2MIDI -->|w3: OUT| HELIX -->|w4: OUT/THRU return| U2MIDI
   SIDECAR <-->|IAC| LOGIC
   MICS --> HELIX --> DITTO
   MICS --> XR18
