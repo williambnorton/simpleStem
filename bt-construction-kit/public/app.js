@@ -12099,6 +12099,9 @@ function toggleSectionLooper() {
       label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s · automation recording paused`;
       label.classList.add('looper-active-label');
     }
+    sectionLooperRange.origEndT = range.endT;
+    const st = document.getElementById('loop-seam-tools');
+    if (st) st.style.display = '';
     setupSeamlessLoop(range.startT, range.endT).catch(err =>
       console.warn('[loop] seamless setup failed (will fall back to seek):', err)
     );
@@ -12110,8 +12113,42 @@ function toggleSectionLooper() {
       label.textContent = 'play through';
       label.classList.remove('looper-active-label', 'looper-recording-disabled');
     }
+    const st2 = document.getElementById('loop-seam-tools');
+    if (st2) st2.style.display = 'none';
     tearDownSeamlessLoop();
   }
+}
+
+// ── Seam nudge (Bill 2026-07-30, Wicked Game): live takes drift from the
+// stored bpm, so a section marker placed on a novelty peak can sit a beat
+// off the musical bar — the loop then stumbles over an extra beat at the
+// seam. These trim the RUNNING loop's end by ±1 beat (instant, ear-
+// driven), and "set marker" writes the fix back to the section divider
+// so SAVE makes it permanent.
+function loopSeamNudge(dir) {
+  if (!sectionLooperActive || !sectionLooperRange) return;
+  const v = currentSong || {};
+  const bpm = v.practiceBpm || v.bpm || 120;
+  const beat = 60 / bpm;
+  const newEnd = sectionLooperRange.endT + dir * beat;
+  if (newEnd <= sectionLooperRange.startT + beat) return;
+  sectionLooperRange.endT = newEnd;
+  const label = document.getElementById('looper-section-text');
+  if (label) {
+    const trim = ((sectionLooperRange.endT - sectionLooperRange.origEndT) / beat).toFixed(1).replace(/\.0$/, '');
+    label.textContent = `${sectionLooperRange.startT.toFixed(1)}s → ${sectionLooperRange.endT.toFixed(1)}s (seam ${trim > 0 ? '+' : ''}${trim} beat)`;
+  }
+  setupSeamlessLoop(sectionLooperRange.startT, sectionLooperRange.endT).catch(() => {});
+}
+function loopSeamWrite() {
+  if (!sectionLooperActive || !sectionLooperRange || sectionLooperRange.origEndT == null) return;
+  const m = (automationSections || []).find(x => Math.abs(x.t - sectionLooperRange.origEndT) < 0.05);
+  if (!m) { showToast('No section marker at the loop end (song-end loop) — nothing to move.'); return; }
+  m.t = Math.round(sectionLooperRange.endT * 1000) / 1000;
+  sectionLooperRange.origEndT = sectionLooperRange.endT;
+  automationDirty = true;
+  try { renderAutomationLane(); refreshAutomationToolbar(); } catch (e) {}
+  showToast('Section divider moved to ' + m.t.toFixed(2) + 's — press SAVE to make it permanent.');
 }
 
 // Stored so we can restore the volumes the user had before LOOPER engaged.

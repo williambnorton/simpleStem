@@ -31,7 +31,17 @@ program
       ├─ group
       │  ├─ ( sequence )                         (grouping, plays once)
       │  └─ N ( sequence )                       (loop: N = 1-99, groups nest)
-      ├─ call             @ 0-9                  (subroutine: inline slot N's program; N@d repeats it)
+      ├─ call             @ (0-9 | name)         (subroutine — runs and returns: inline the slot's
+      │                                           program by number or its case-insensitive shorthand
+      │                                           NAME (@1 ≡ @verse ≡ @Verse); N@x repeats it N times)
+      ├─ launch           call &                  (fire-and-forget: start the called sequence as an
+      │                                           independent voice and continue immediately —
+      │                                           @1&@2&@3 starts three parts together; max 8 voices,
+      │                                           voices die when their parent slot stops)
+      ├─ exclusive        #+                      (a standalone run of #s marks the sequence's
+      │                                           exclusivity group: starting a # sequence stops any
+      │                                           running # sequence; ### only evicts other ###s.
+      │                                           Note accidentals (C#) are untouched)
       ├─ note-repeat      N note-event | N rest  (bare count, no parens: 2Ae = two eighth-note As,
       │                                           3R = three rests, 2C! = two chords)
       ├─ range-loop       token .. N ( sequence )
@@ -72,7 +82,10 @@ control-change = "c" int "=" int ;             (* controller 0-127 = value 0-127
 
 group       = [ count ] "(" sequence ")" ;
 count       = int ;                            (* clamped 1-99 *)
-call        = [ count ] "@" digit ;
+call        = [ count ] "@" ( digit | name ) ;
+name        = letter { letter | digit | "_" } ;  (* a slot's shorthand name, case-insensitive *)
+launch      = call "&" ;
+exclusive   = "#" { "#" } ;                       (* standalone only; C# stays a note *)
 note-repeat = count ( note-event | rest ) ;
 range-loop  = ( note-event | channel-set | program-change ) ".." int "(" sequence ")" ;
 inc-loop    = ( note-event | channel-set | program-change ) "..." count "(" sequence ")" ;
@@ -155,4 +168,6 @@ m10 F#2e,F#2e,As2e,F#2e              hats-and-snare figure on GM drums
 m10,2Ae,B                            two eighth-note As then a B on the drum channel
 p56 C,Ee,Ge,C+                       trumpet, mixed durations
 m5,p5,Ee,D,c69=2,C                   what MUSE heard on the wire, as MPL
+@verse&@chorus&                      start two named parts together, return instantly
+#,4@verse,4@chorus                   exclusive arrangement: starting it evicts other # slots
 ```

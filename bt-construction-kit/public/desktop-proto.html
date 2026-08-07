@@ -1683,12 +1683,21 @@ function mplParse(src, getSlot, _seen) {
      works (2@2 plays slot 2 twice). getSlot supplies slot sources; the
      seen-set breaks circular calls (@2 inside slot 2, or 1→2→1). */
   const seen = _seen || new Set();
-  function callSlot(d) {
-    if (!getSlot) throw new Error('@' + d + ' — slot calls only work from the MPL BANK');
-    if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
-    const sub = getSlot(d);
-    if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
-    return mplParse(sub, getSlot, new Set([...seen, d])).filter(t => !t.loopMark);
+  function callSlot(key) {
+    if (!getSlot) throw new Error('@' + key + ' — slot calls only work from the MPL BANK');
+    const got = getSlot(key);
+    if (!got) throw new Error('@' + key + ' — no slot numbered or named "' + key + '"');
+    if (seen.has(got.id)) throw new Error('@' + key + ' is a circular call');
+    if (!String(got.src || '').trim()) throw new Error('@' + key + ' — that slot is empty');
+    return mplParse(got.src, getSlot, new Set([...seen, got.id])).filter(t => !t.loopMark);
+  }
+  /* call target: a single digit or a shorthand NAME (the slot's name
+     field, case-insensitive) — @1 ≡ @verse ≡ @Verse. */
+  function callTarget() {
+    const m = /^(\d|[A-Za-z][A-Za-z0-9_]{0,15})/.exec(s.slice(i));
+    if (!m) throw new Error('@ needs a slot number 0-9 or a slot name');
+    i += m[1].length;
+    return m[1];
   }
   /* One note/chord or rest token at the cursor — shared by the main loop
      and the bare repeat-count form (2Ae = two eighth-note As). */
@@ -1739,8 +1748,13 @@ function mplParse(src, getSlot, _seen) {
         const reps = Math.min(99, Math.max(1, +n));
         if (s[i] === '@') {
           i++;
-          if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-          const inner = callSlot(+s[i++]).map(t => ({ ...t, s: numS, e: i }));
+          const key = callTarget();
+          if (s[i] === '&') {
+            i++;
+            out.push({ launch: key, count: reps, s: numS, e: i });
+            continue;
+          }
+          const inner = callSlot(key).map(t => ({ ...t, s: numS, e: i }));
           for (let k = 0; k < reps; k++) {
             out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
             out.push(...inner.map(t => ({ ...t })));
@@ -1771,11 +1785,23 @@ function mplParse(src, getSlot, _seen) {
         }
         throw new Error('expected "(", "@", or a note after repeat count ' + n);
       }
+      if (ch === '#') {
+        const p0 = i;
+        let n2 = 0;
+        while (i < s.length && s[i] === '#') { n2++; i++; }
+        out.push({ excl: n2, s: p0, e: i });
+        continue;
+      }
       if (ch === '@') {
         const p0 = i;
         i++;
-        if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-        out.push(...callSlot(+s[i++]).map(t => ({ ...t, s: p0, e: i })));
+        const key = callTarget();
+        if (s[i] === '&') {
+          i++;
+          out.push({ launch: key, count: 1, s: p0, e: i });
+          continue;
+        }
+        out.push(...callSlot(key).map(t => ({ ...t, s: p0, e: i })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {

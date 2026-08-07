@@ -509,6 +509,11 @@
                   <i data-lucide="repeat-2"></i>
                   <span class="looper-btn-label">LOOPER</span>
                   <span class="looper-btn-sub" id="looper-section-text">no section</span>
+                  <span id="loop-seam-tools" style="display:none">
+                    <button type="button" class="midi-toolbar-btn" onclick="loopSeamNudge(-1)" title="Trim ONE BEAT off the loop end — for live takes where the section marker sits a beat late and the seam stumbles. Adjusts the running loop instantly; ear-driven.">seam −beat</button>
+                    <button type="button" class="midi-toolbar-btn" onclick="loopSeamNudge(1)" title="Add one beat to the loop end.">+beat</button>
+                    <button type="button" class="midi-toolbar-btn" onclick="loopSeamWrite()" title="Write the adjusted seam back to the section marker (moves the divider). Press SAVE afterwards to persist it to the song.">set marker</button>
+                  </span>
                 </button>
                 <!-- The CLICK + COUNT-IN buttons moved onto the OTHER
                      channel strip header 2026-07-07 (Bill: the click IS

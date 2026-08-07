@@ -417,12 +417,21 @@ function mplParse(src, getSlot, _seen) {
      works (2@2 plays slot 2 twice). getSlot supplies slot sources; the
      seen-set breaks circular calls (@2 inside slot 2, or 1→2→1). */
   const seen = _seen || new Set();
-  function callSlot(d) {
-    if (!getSlot) throw new Error('@' + d + ' — slot calls only work from the MPL BANK');
-    if (seen.has(d)) throw new Error('@' + d + ' is a circular call');
-    const sub = getSlot(d);
-    if (sub == null || !String(sub).trim()) throw new Error('@' + d + ' — slot ' + d + ' is empty');
-    return mplParse(sub, getSlot, new Set([...seen, d])).filter(t => !t.loopMark);
+  function callSlot(key) {
+    if (!getSlot) throw new Error('@' + key + ' — slot calls only work from the MPL BANK');
+    const got = getSlot(key);
+    if (!got) throw new Error('@' + key + ' — no slot numbered or named "' + key + '"');
+    if (seen.has(got.id)) throw new Error('@' + key + ' is a circular call');
+    if (!String(got.src || '').trim()) throw new Error('@' + key + ' — that slot is empty');
+    return mplParse(got.src, getSlot, new Set([...seen, got.id])).filter(t => !t.loopMark);
+  }
+  /* call target: a single digit or a shorthand NAME (the slot's name
+     field, case-insensitive) — @1 ≡ @verse ≡ @Verse. */
+  function callTarget() {
+    const m = /^(\d|[A-Za-z][A-Za-z0-9_]{0,15})/.exec(s.slice(i));
+    if (!m) throw new Error('@ needs a slot number 0-9 or a slot name');
+    i += m[1].length;
+    return m[1];
   }
   /* One note/chord or rest token at the cursor — shared by the main loop
      and the bare repeat-count form (2Ae = two eighth-note As). */
@@ -473,8 +482,13 @@ function mplParse(src, getSlot, _seen) {
         const reps = Math.min(99, Math.max(1, +n));
         if (s[i] === '@') {
           i++;
-          if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-          const inner = callSlot(+s[i++]).map(t => ({ ...t, s: numS, e: i }));
+          const key = callTarget();
+          if (s[i] === '&') {
+            i++;
+            out.push({ launch: key, count: reps, s: numS, e: i });
+            continue;
+          }
+          const inner = callSlot(key).map(t => ({ ...t, s: numS, e: i }));
           for (let k = 0; k < reps; k++) {
             out.push({ loopMark: { s: numS, e: numE, remaining: reps - k } });
             out.push(...inner.map(t => ({ ...t })));
@@ -505,11 +519,23 @@ function mplParse(src, getSlot, _seen) {
         }
         throw new Error('expected "(", "@", or a note after repeat count ' + n);
       }
+      if (ch === '#') {
+        const p0 = i;
+        let n2 = 0;
+        while (i < s.length && s[i] === '#') { n2++; i++; }
+        out.push({ excl: n2, s: p0, e: i });
+        continue;
+      }
       if (ch === '@') {
         const p0 = i;
         i++;
-        if (!/\d/.test(s[i])) throw new Error('@ needs a slot number 0-9');
-        out.push(...callSlot(+s[i++]).map(t => ({ ...t, s: p0, e: i })));
+        const key = callTarget();
+        if (s[i] === '&') {
+          i++;
+          out.push({ launch: key, count: 1, s: p0, e: i });
+          continue;
+        }
+        out.push(...callSlot(key).map(t => ({ ...t, s: p0, e: i })));
         continue;
       }
       if (ch === 'm' || ch === 'M') {
@@ -756,6 +782,69 @@ function mplViewPaint(i, src, hl, overrides) {
   }
   el.innerHTML = html;
 }
+/* named-slot resolver: a call key is a digit or a slot's shorthand name
+   (the 16-char field), case-insensitive. Returns {src, id} or null. */
+function mplResolveSlotId(key) {
+  const k = String(key).trim().toLowerCase();
+  if (/^\d$/.test(k)) return +k;
+  for (let j = 0; j < 10; j++) {
+    const el = $('mpl-name-' + j);
+    if (el && el.value.trim().toLowerCase() === k) return j;
+  }
+  return -1;
+}
+function mplGetSlot(key) {
+  const id = mplResolveSlotId(key);
+  if (id < 0) return null;
+  const el = $('mpl-slot-' + id);
+  return el ? { src: el.value, id } : null;
+}
+/* & launches: fire a call as an independent one-shot voice and continue.
+   Voices die with their parent slot's generation; 8 max at once. */
+let mplVoices = 0;
+const mplSlotExcl = new Array(10).fill(null);
+async function mplRunVoice(toks, parentI, gen) {
+  if (mplVoices >= 8) { toast('⚠ MPL: too many & voices (max 8)'); return; }
+  mplVoices++;
+  try {
+    const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
+    let ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
+    for (const t of toks) {
+      if (gen !== mplSlotGen[parentI]) return;
+      if (t.loopMark || t.excl) continue;
+      if (t.ch) { ch = t.ch; continue; }
+      if (t.launch) { mplLaunch(t, parentI, gen); continue; }
+      if (t.cc != null) { const r = await post({ port: 'IAC', type: 'cc', channel: ch, controller: t.cc, value: t.val }); if (r.error) return; continue; }
+      if (t.pc != null) { const r = await post({ port: 'IAC', type: 'pc', channel: ch, program: t.pc }); if (r.error) return; continue; }
+      const homeNow = +($('lg-mpl-home').value || 0);
+      const velNow = Math.min(127, Math.max(1, +($('lg-mpl-vel').value || 100)));
+      const qNow = 60000 / Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
+      const fold = (v) => { v += homeNow; while (v > 127) v -= 12; while (v < 0) v += 12; return v; };
+      const sounding = t.notes ? t.notes.map(fold) : (t.rest ? [] : [fold(t.note)]);
+      const durMs = qNow * (t.dur || 1);
+      for (const hn of sounding) {
+        const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: velNow });
+        if (r.error) return;
+        const n = hn, c2 = ch;
+        setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
+      }
+      await new Promise(r => setTimeout(r, durMs));
+    }
+  } finally { mplVoices--; }
+}
+function mplLaunch(t, parentI, gen) {
+  const got = mplGetSlot(t.launch);
+  if (!got || !String(got.src || '').trim()) { toast('⚠ &: no slot "' + t.launch + '" (or empty)'); return; }
+  let toks;
+  try { toks = mplParse(got.src, mplGetSlot, new Set([got.id])); } catch (e) { toast('⚠ & @' + t.launch + ': ' + e.message); return; }
+  (async () => {
+    for (let k = 0; k < (t.count || 1); k++) {
+      if (gen !== mplSlotGen[parentI]) return;
+      await mplRunVoice(toks, parentI, gen);
+    }
+  })();
+}
 function mplSlotStop(i, silent) {
   mplSlotGen[i]++;
   mplSlotRunning[i] = false;
@@ -783,11 +872,21 @@ async function mplSlotToggle(i) {
   MPL_DEFAULTS.dur = ['w', 'q', 'e', 's'].includes($('lg-mpl-dur').value) ? $('lg-mpl-dur').value : 'q';
   let toks;
   try {
-    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+    toks = mplParse(el.value, mplGetSlot, new Set([i]));
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message); return; }
   mplSlotToks[i] = toks;
   mplSlotSrc[i] = el.value;
   museRecord(el.value);
+  /* # exclusivity: this slot's group evicts every running slot in the
+     same group (same number of #s) before this one starts. */
+  const exTok = toks.find(t => t.excl);
+  mplSlotExcl[i] = exTok ? exTok.excl : null;
+  if (exTok) {
+    for (let k = 0; k < 10; k++) {
+      if (k !== i && mplSlotRunning[k] && mplSlotExcl[k] === exTok.excl) mplSlotStop(k, true);
+    }
+    toast('🎼 MPL[' + i + '] takes over exclusivity group ' + '#'.repeat(exTok.excl));
+  }
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
@@ -846,6 +945,12 @@ async function mplSlotToggle(i) {
           if (t.loopMark.restore) overrides.delete(t.loopMark.s);
           else overrides.set(t.loopMark.s, { e: t.loopMark.e, text: String(t.loopMark.remaining) });
           mplViewPaint(i, passSrc, curHl, overrides);
+          continue;
+        }
+        if (t.excl) continue;
+        if (t.launch) {
+          if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
+          mplLaunch(t, i, gen);
           continue;
         }
         if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
@@ -920,7 +1025,7 @@ function mplSlotHotSwap(i, quiet) {
   if (!el) return;
   let toks;
   try {
-    toks = mplParse(el.value, (n) => { const sl = $('mpl-slot-' + n); return sl ? sl.value : null; }, new Set([i]));
+    toks = mplParse(el.value, mplGetSlot, new Set([i]));
   } catch (e) { toast('⚠ MPL[' + i + ']: ' + e.message + ' — still playing the old pattern'); return; }
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
   if (!played) { toast('⚠ MPL[' + i + '] is empty — still playing the old pattern'); return; }
@@ -929,6 +1034,8 @@ function mplSlotHotSwap(i, quiet) {
   MPL_DEFAULTS.dur = ['w', 'q', 'e', 's'].includes($('lg-mpl-dur').value) ? $('lg-mpl-dur').value : 'q';
   mplSlotToks[i] = toks;
   mplSlotSrc[i] = el.value;
+  const exTok2 = toks.find(t => t.excl);
+  mplSlotExcl[i] = exTok2 ? exTok2.excl : null;
   mplBankSave();
   museRecord(el.value);
   if (!quiet) toast(`🎼 MPL[${i}] updated — new pattern takes over at the next pass`);
@@ -1777,7 +1884,7 @@ function mplNamesSave() {
   const names = mplNamesLoad();
   $('mpl-bank').innerHTML = mplBankLoad().map((v, i) =>
     `<div class="row" style="flex-wrap:nowrap"><span class="k" style="min-width:14px;text-align:center">${i}</span>
-     <input type="text" id="mpl-name-${i}" maxlength="16" placeholder="name" value="${esc(names[i] || '')}" onchange="mplNamesSave()" title="Slot name — 16 characters, yours to label the part (bass, hats, chorus pad…)" style="width:130px;background:#131824;color:#f1c40f;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px Menlo,monospace">
+     <input type="text" id="mpl-name-${i}" maxlength="16" placeholder="name" value="${esc(names[i] || '')}" onchange="mplNamesSave()" title="Slot name — 16 chars, callable: @verse ≡ @1 (case-insensitive). Also the label for the part." style="width:130px;background:#131824;color:#f1c40f;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px Menlo,monospace">
      <span style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px">
      <textarea id="mpl-slot-${i}" rows="1" spellcheck="false" onkeydown="mplSlotKey(event,${i})" onchange="mplBankSave()" oninput="museSuggest(${i})" onfocus="museSuggest(${i})" onblur="museHide(${i})" placeholder="MPL pattern ${i}" style="width:100%;background:#131824;color:#c7d2de;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font:11px/1.5 Menlo,monospace;resize:vertical">${esc(v)}</textarea><div class="mpl-view" id="mpl-view-${i}" onclick="mplSlotStop(${i})" title="The playhead — underline = current token, amber = loops remaining. Edit the text above while it plays; Return applies the new pattern at the next pass. Click here to stop."></div>
      <div class="mpl-ghost" id="mpl-ghost-${i}" title="MUSE suggestion — press Tab to accept. Predicted from the patterns you have played (order-2 Markov over MPL tokens)."></div>
