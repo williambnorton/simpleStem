@@ -1708,7 +1708,7 @@ function mplParse(src, getSlot, _seen) {
      and the bare repeat-count form (2Ae = two eighth-note As). */
   function noteToken() {
     const noteS = i;
-    const m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
+    const m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)((?:[\/\\|])*)/.exec(s.slice(i));
     if (!m || !m[1]) return null;
     i += m[0].length;
     const name = m[1].toUpperCase() + m[2];
@@ -1716,14 +1716,26 @@ function mplParse(src, getSlot, _seen) {
     let root = 12 * (oct + 1) + MPL_SEMIS[name];
     for (const c of m[4]) root += (c === '+') ? 12 : -12;
     const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
+    /* feel suffix: each / leans ahead 1 tick (1/24 beat), each \\ lays
+       back 1 tick, | = dead straight. Per-note override of the sticky
+       feel; capped at ±4 ticks. */
+    let feel = null;
+    if (m[7]) {
+      if (m[7].includes('|')) feel = 0;
+      else {
+        feel = 0;
+        for (const c of m[7]) feel += (c === '/') ? -1 : 1;
+        feel = Math.max(-4, Math.min(4, feel));
+      }
+    }
     if (m[5]) {
       const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
       const notes = iv.map(x => root + x);
       if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
-      return { notes, root, dur, s: noteS, e: i };
+      return feel != null ? { notes, root, dur, feel, s: noteS, e: i } : { notes, root, dur, s: noteS, e: i };
     }
     if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-    return { note: root, dur, s: noteS, e: i };
+    return feel != null ? { note: root, dur, feel, s: noteS, e: i } : { note: root, dur, s: noteS, e: i };
   }
   function restToken() {
     const m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
@@ -1789,6 +1801,19 @@ function mplParse(src, getSlot, _seen) {
           continue;
         }
         throw new Error('expected "(", "@", or a note after repeat count ' + n);
+      }
+      /* standalone feel mode: | straight · / ahead · \\ behind — sticky
+         for all following notes until changed (per-note suffix wins). */
+      if (ch === '/' || ch === '\\' || ch === '|') {
+        const p0 = i;
+        let v = 0, bar = false;
+        while (i < s.length && (s[i] === '/' || s[i] === '\\' || s[i] === '|')) {
+          if (s[i] === '|') bar = true;
+          else v += (s[i] === '/') ? -1 : 1;
+          i++;
+        }
+        out.push({ feelSet: bar ? 0 : Math.max(-4, Math.min(4, v)), s: p0, e: i });
+        continue;
       }
       if (ch === '#') {
         const p0 = i;

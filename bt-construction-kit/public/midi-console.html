@@ -442,7 +442,7 @@ function mplParse(src, getSlot, _seen) {
      and the bare repeat-count form (2Ae = two eighth-note As). */
   function noteToken() {
     const noteS = i;
-    const m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)/.exec(s.slice(i));
+    const m = /^([A-Ga-g])(#?)(\d?)([+\-]*)(m!|!)?([ewqs]?)((?:[\/\\|])*)/.exec(s.slice(i));
     if (!m || !m[1]) return null;
     i += m[0].length;
     const name = m[1].toUpperCase() + m[2];
@@ -450,14 +450,26 @@ function mplParse(src, getSlot, _seen) {
     let root = 12 * (oct + 1) + MPL_SEMIS[name];
     for (const c of m[4]) root += (c === '+') ? 12 : -12;
     const dur = { e: 0.5, s: 0.25, w: 4, q: 1 }[m[6] || MPL_DEFAULTS.dur];
+    /* feel suffix: each / leans ahead 1 tick (1/24 beat), each \\ lays
+       back 1 tick, | = dead straight. Per-note override of the sticky
+       feel; capped at ±4 ticks. */
+    let feel = null;
+    if (m[7]) {
+      if (m[7].includes('|')) feel = 0;
+      else {
+        feel = 0;
+        for (const c of m[7]) feel += (c === '/') ? -1 : 1;
+        feel = Math.max(-4, Math.min(4, feel));
+      }
+    }
     if (m[5]) {
       const iv = (m[5] === 'm!') ? [0, 3, 7] : [0, 4, 7];
       const notes = iv.map(x => root + x);
       if (notes.some(v => v < 0 || v > 127)) throw new Error(name + ' chord out of MIDI range 0-127');
-      return { notes, root, dur, s: noteS, e: i };
+      return feel != null ? { notes, root, dur, feel, s: noteS, e: i } : { notes, root, dur, s: noteS, e: i };
     }
     if (root < 0 || root > 127) throw new Error(name + ' shifted out of MIDI range 0-127');
-    return { note: root, dur, s: noteS, e: i };
+    return feel != null ? { note: root, dur, feel, s: noteS, e: i } : { note: root, dur, s: noteS, e: i };
   }
   function restToken() {
     const m = /^[Rr-]([ewqs]?)/.exec(s.slice(i));
@@ -523,6 +535,19 @@ function mplParse(src, getSlot, _seen) {
           continue;
         }
         throw new Error('expected "(", "@", or a note after repeat count ' + n);
+      }
+      /* standalone feel mode: | straight · / ahead · \\ behind — sticky
+         for all following notes until changed (per-note suffix wins). */
+      if (ch === '/' || ch === '\\' || ch === '|') {
+        const p0 = i;
+        let v = 0, bar = false;
+        while (i < s.length && (s[i] === '/' || s[i] === '\\' || s[i] === '|')) {
+          if (s[i] === '|') bar = true;
+          else v += (s[i] === '/') ? -1 : 1;
+          i++;
+        }
+        out.push({ feelSet: bar ? 0 : Math.max(-4, Math.min(4, v)), s: p0, e: i });
+        continue;
       }
       if (ch === '#') {
         const p0 = i;
@@ -815,9 +840,11 @@ async function mplRunVoice(toks, parentI, gen) {
     const post = (body) => fetch('/api/midi/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
     let ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
+    let feelSticky = 0, prevDurB = 0, prevFeelT = 0;
     for (const t of toks) {
       if (gen !== mplSlotGen[parentI]) return;
       if (t.loopMark || t.excl) continue;
+      if (t.feelSet != null) { feelSticky = t.feelSet; continue; }
       if (t.ch) { ch = t.ch; continue; }
       if (t.launch) { mplLaunch(t, parentI, gen); continue; }
       if (t.cc != null) { const r = await post({ port: 'IAC', type: 'cc', channel: ch, controller: t.cc, value: t.val }); if (r.error) return; continue; }
@@ -827,14 +854,24 @@ async function mplRunVoice(toks, parentI, gen) {
       const qNow = 60000 / Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
       const fold = (v) => { v += homeNow; while (v > 127) v -= 12; while (v < 0) v += 12; return v; };
       const sounding = t.notes ? t.notes.map(fold) : (t.rest ? [] : [fold(t.note)]);
-      const durMs = qNow * (t.dur || 1);
+      const durB = (t.dur || 1);
+      const fT = (t.feel != null) ? t.feel : feelSticky;
+      const gapB = prevDurB + (fT - prevFeelT) / 24;
+      prevDurB = durB; prevFeelT = fT;
+      if (gapB > 0) await new Promise(r => setTimeout(r, gapB * qNow));
+      if (gen !== mplSlotGen[parentI]) return;
+      const durMs = qNow * durB;
       for (const hn of sounding) {
         const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: velNow });
         if (r.error) return;
         const n = hn, c2 = ch;
         setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
       }
-      await new Promise(r => setTimeout(r, durMs));
+    }
+    if (prevDurB > 0) {
+      const drainB = prevDurB - prevFeelT / 24;
+      const q2 = 60000 / Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
+      if (drainB > 0) await new Promise(r => setTimeout(r, drainB * q2));
     }
   } finally { mplVoices--; }
 }
@@ -945,6 +982,11 @@ async function mplSlotToggle(i) {
       /* launch-only trigger pattern: fire the voices once, wait for them
          to finish, then stop — never spin a zero-duration loop. */
       const hasTimed = (mplSlotToks[i] || toks).some(t => t.note != null || t.notes || t.rest);
+      /* feel scheduling: notes fire at grid + feel/24 beats. We sleep the
+         INTER-ONSET GAP before each event (prevDur + Δfeel), so / notes
+         genuinely land early and \ notes late, while pass length stays
+         grid-true via the drain below. */
+      let feelSticky = 0, prevDurB = 0, prevFeelT = 0;
       /* Pass-top snapshot: hot-swapped tokens (Return while playing)
          take over here, with their matching source for the play view. */
       const passToks = mplSlotToks[i] || toks;
@@ -958,6 +1000,7 @@ async function mplSlotToggle(i) {
           continue;
         }
         if (t.excl) continue;
+        if (t.feelSet != null) { feelSticky = t.feelSet; continue; }
         if (t.launch) {
           if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
           mplLaunch(t, i, gen);
@@ -999,18 +1042,29 @@ async function mplSlotToggle(i) {
         const qNow = 60000 / Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
         const fold = (v) => { v += homeNow; while (v > 127) v -= 12; while (v < 0) v += 12; return v; };
         const sounding = t.notes ? t.notes.map(fold) : (t.rest ? [] : [fold(t.note)]);
+        const durB = (t.dur || 1);
+        const fT = (t.feel != null) ? t.feel : feelSticky;
+        const gapB = prevDurB + (fT - prevFeelT) / 24;
+        prevDurB = durB; prevFeelT = fT;
+        if (gapB > 0) await new Promise(r => setTimeout(r, gapB * qNow));
+        if (gen !== mplSlotGen[i]) return;
         if (sounding.length) {
           const lead = t.notes ? fold(t.root != null ? t.root : t.notes[0]) : sounding[0];
           mplNow('note', MPL_NOTE_NAMES[lead % 12] + (Math.floor(lead / 12) - 1) + (t.notes ? '!' : ''));
         }
-        const durMs = qNow * (t.dur || 1);
+        const durMs = qNow * durB;
         for (const hn of sounding) {
           const r = await post({ port: 'IAC', type: 'note_on', channel: ch, note: hn, velocity: velNow });
           if (r.error) { toast('⚠ MPL[' + i + '] STOPPED — ' + r.error + ' · press the ⟳ reset (upper-left) to revive the sidecar'); const bb = $('mpl-btn-' + i); if (bb) { const row = bb.closest('.row'); if (row) { row.style.background = 'rgba(255,82,82,.15)'; setTimeout(() => { row.style.background = ''; }, 4000); } } return; }
           const n = hn, c2 = ch;
           setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
         }
-        await new Promise(r => setTimeout(r, durMs));
+      }
+      /* drain: finish the pass on the grid so loops + bar-sync stay true */
+      if (prevDurB > 0) {
+        const drainB = prevDurB - prevFeelT / 24;
+        const qEnd = 60000 / Math.min(300, Math.max(30, +($('lg-mpl-bpm').value || 120)));
+        if (drainB > 0) await new Promise(r => setTimeout(r, drainB * qEnd));
       }
       if (!hasTimed) {
         await new Promise(r => setTimeout(r, 150));
@@ -1092,6 +1146,14 @@ function mplSlotKey(e, i) {
     toast('🎼 MPL[' + i + '] edit discarded');
   }
 }
+/* Chrome throttles timers in hidden tabs to ~1s granularity — MPL
+   timing smears if the console is backgrounded while slots loop. */
+document.addEventListener('visibilitychange', () => {
+  if (mplActiveCount()) {
+    if (document.hidden) console.warn('[mpl] tab hidden — timing will smear (Chrome throttles background timers)');
+    else toast('⚠ this tab was hidden — MPL timing smears in background tabs; keep the console visible while performing');
+  }
+});
 document.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
@@ -1667,7 +1729,7 @@ function museRecord(src, w) {
   museModel = null;
   museChar = null;
 }
-const MUSE_RE = /^(\.\.\.|\.\.|\d+@\d|\d+\(|@\d|[mMpP]\d+|[A-Ga-g]#?\d?[+\-]*(?:m!|!)?[ewqs]?|[Rr][ewqs]?|-[ewqs]?|\(|\)|\d+)/;
+const MUSE_RE = /^(\.\.\.|\.\.|\d+@\d|\d+\(|@\d|[mMpP]\d+|[cC]\d+=\d+|[A-Ga-g]#?\d?[+\-]*(?:m!|!)?[ewqs]?[\/\\|]*|[Rr][ewqs]?|-[ewqs]?|[\/\\|]+|#+|\(|\)|\d+)/;
 function museLex(src) {
   const out = []; let i = 0; const s2 = String(src);
   while (i < s2.length) {

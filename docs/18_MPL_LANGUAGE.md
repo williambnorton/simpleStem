@@ -42,6 +42,14 @@ program
       │                                           exclusivity group: starting a # sequence stops any
       │                                           running # sequence; ### only evicts other ###s.
       │                                           Note accidentals (C#) are untouched)
+      ├─ feel             | · / · \\              (timing feel, 1 mark = 1/24 beat = one MIDI-clock
+      │                                           tick. / leans AHEAD of the beat (pushing, upbeat),
+      │                                           \\ lays BEHIND (bluesy pocket), | dead straight.
+      │                                           Standalone = sticky mode for following notes;
+      │                                           attached to a note (Ee/, E\\\\) = that note only.
+      │                                           Stackable to ±4 ticks. The PLAYER applies the
+      │                                           micro-timing; pass length stays grid-true so
+      │                                           loops and bar-sync never drift)
       ├─ note-repeat      N note-event | N rest  (bare count, no parens: 2Ae = two eighth-note As,
       │                                           3R = three rests, 2C! = two chords)
       ├─ range-loop       token .. N ( sequence )
@@ -86,6 +94,7 @@ call        = [ count ] "@" ( digit | name ) ;
 name        = letter { letter | digit | "_" } ;  (* a slot's shorthand name, case-insensitive *)
 launch      = call "&" ;
 exclusive   = "#" { "#" } ;                       (* standalone only; C# stays a note *)
+feel        = ( "|" | "/" | "\\" ) { "|" | "/" | "\\" } ;   (* sticky when standalone, per-note as suffix *)
 note-repeat = count ( note-event | rest ) ;
 range-loop  = ( note-event | channel-set | program-change ) ".." int "(" sequence ")" ;
 inc-loop    = ( note-event | channel-set | program-change ) "..." count "(" sequence ")" ;
@@ -194,6 +203,7 @@ F,P1..3(E,D,E,D)                     F, then E,D,E,D under programs 1→2→3 (r
 2(A,D,,E),2@2                        riff ×2 (with a pause), then slot 2 ×2
 (A,,,D,,,A,,,D,,,E,,,A,,,)           sparse figure — notes every 3rd beat
 C!,,Am!,,F!,,G!w                     I-vi-IV-V, whole-note V
+\\,C2,,G2,A#2e/,G2e                  laid-back bass, one pushed eighth
 m10 F#2e,F#2e,As2e,F#2e              hats-and-snare figure on GM drums
 m10,2Ae,B                            two eighth-note As then a B on the drum channel
 p56 C,Ee,Ge,C+                       trumpet, mixed durations
