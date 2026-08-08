@@ -119,6 +119,27 @@ trajectory  = "..." ;                          (* when NOT followed by count "("
 - **Errors.** Every parse error names the offending character position
   or construct in plain English; nothing plays on a bad program.
 
+## Design direction — MPL as a Unix for music (Bill 2026-08-07)
+
+MPL deliberately follows Unix job-control instincts, and grows that way:
+
+- **`&`** backgrounds a job (done). **`@`** is a subroutine call (done).
+  **`#`** groups are mutually exclusive job classes (done).
+- **Pipes / filters (planned):** a command-line-style composition where
+  a filter takes MPL in and emits transformed MPL out — `@verse | swing`
+  (push off-beats late), `| densify` (fill with sixteenths), `| passing`
+  (insert passing tones between chord tones), `| humanize` (velocity +
+  micro-timing). Filters compose; output lands in a companion slot so
+  the original is never destroyed. Same contract as MUSE: text in,
+  text out — so filters can be deterministic algorithms or model-backed.
+- **Timeline insertion (planned):** find a special effect for a spot in
+  a song's timeline and inject it there — as a timeline action or
+  spliced into an MPL slot at the matching bar.
+- **Performer analysis (planned):** MUSE already transcribes the wire;
+  next is ANALYSIS of a performer playing along with a song — what they
+  play against what the song is, extracting style (intervals, rhythmic
+  feel, note choices over chords) to drive the filters and companions.
+
 ## MUSE — next-token and next-character prediction
 
 The console's MPL fields carry ghost-text completions from MUSE, a
