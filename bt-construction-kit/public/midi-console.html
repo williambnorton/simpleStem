@@ -423,7 +423,12 @@ function mplParse(src, getSlot, _seen) {
     if (!got) throw new Error('@' + key + ' — no slot numbered or named "' + key + '"');
     if (seen.has(got.id)) throw new Error('@' + key + ' is a circular call');
     if (!String(got.src || '').trim()) throw new Error('@' + key + ' — that slot is empty');
-    return mplParse(got.src, getSlot, new Set([...seen, got.id])).filter(t => !t.loopMark);
+    /* each inlined token remembers its home: the callee slot id + its
+       span in the CALLEE's source, so the play view can underline the
+       called slot's text while the call runs. */
+    return mplParse(got.src, getSlot, new Set([...seen, got.id]))
+      .filter(t => !t.loopMark)
+      .map(t => ({ ...t, cslot: got.id, cs: t.s, ce: t.e }));
   }
   /* call target: a single digit or a shorthand NAME (the slot's name
      field, case-insensitive) — @1 ≡ @verse ≡ @Verse. */
@@ -903,6 +908,7 @@ async function mplSlotToggle(i) {
     body: JSON.stringify(body) }).then(J).catch(e => ({ error: e.message }));
   const first = mplActiveCount() === 1;
   const q = 60000 / (first ? bpm : mplSessionBpm);
+  let calleeShown = null;   // which called slot's view we are echoing into
   try {
     if (first) {
       mplSessionStart = performance.now();
@@ -954,6 +960,20 @@ async function mplSlotToggle(i) {
           continue;
         }
         if (t.s != null) { curHl = { s: t.s, e: t.e }; mplViewPaint(i, passSrc, curHl, overrides); }
+        /* @-call playback: light up the CALLED slot's view too, walking
+           its own characters (unless that slot is running on its own). */
+        if (t.cslot != null && !mplSlotRunning[t.cslot]) {
+          if (calleeShown !== t.cslot) {
+            if (calleeShown != null) mplViewMode(calleeShown, false);
+            mplViewMode(t.cslot, true);
+            calleeShown = t.cslot;
+          }
+          const cEl = $('mpl-slot-' + t.cslot);
+          if (cEl && t.cs != null) mplViewPaint(t.cslot, cEl.value, { s: t.cs, e: t.ce }, new Map());
+        } else if (calleeShown != null && t.cslot == null) {
+          mplViewMode(calleeShown, false);
+          calleeShown = null;
+        }
         if (t.ch) { ch = t.ch; mplNow('ch', ch); continue; }
         if (t.cc != null) {
           const r = await post({ port: 'IAC', type: 'cc', channel: ch, controller: t.cc, value: t.val });
@@ -990,6 +1010,7 @@ async function mplSlotToggle(i) {
       }
     }
   } finally {
+    if (calleeShown != null && !mplSlotRunning[calleeShown]) mplViewMode(calleeShown, false);
     if (gen === mplSlotGen[i] && mplSlotRunning[i]) mplSlotStop(i, true);
     else if (gen === mplSlotGen[i]) mplViewMode(i, false);
   }

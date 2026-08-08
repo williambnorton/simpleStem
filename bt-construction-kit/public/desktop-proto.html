@@ -1689,7 +1689,12 @@ function mplParse(src, getSlot, _seen) {
     if (!got) throw new Error('@' + key + ' — no slot numbered or named "' + key + '"');
     if (seen.has(got.id)) throw new Error('@' + key + ' is a circular call');
     if (!String(got.src || '').trim()) throw new Error('@' + key + ' — that slot is empty');
-    return mplParse(got.src, getSlot, new Set([...seen, got.id])).filter(t => !t.loopMark);
+    /* each inlined token remembers its home: the callee slot id + its
+       span in the CALLEE's source, so the play view can underline the
+       called slot's text while the call runs. */
+    return mplParse(got.src, getSlot, new Set([...seen, got.id]))
+      .filter(t => !t.loopMark)
+      .map(t => ({ ...t, cslot: got.id, cs: t.s, ce: t.e }));
   }
   /* call target: a single digit or a shorthand NAME (the slot's name
      field, case-insensitive) — @1 ≡ @verse ≡ @Verse. */
