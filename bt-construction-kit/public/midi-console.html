@@ -893,7 +893,8 @@ async function mplSlotToggle(i) {
     toast('🎼 MPL[' + i + '] takes over exclusivity group ' + '#'.repeat(exTok.excl));
   }
   const played = toks.filter(t => t.note != null || t.notes || t.rest).length;
-  if (!played) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
+  const nLaunches = toks.filter(t => t.launch).length;
+  if (!played && !nLaunches) { toast('⚠ MPL[' + i + '] is empty — type a pattern first'); return; }
   if (played > 2048) { toast('⚠ MPL[' + i + '] too long (' + played + ' notes, max 2048)'); return; }
   mplBankSave();
   const gen = ++mplSlotGen[i];
@@ -941,6 +942,9 @@ async function mplSlotToggle(i) {
     while (gen === mplSlotGen[i]) {
       let ch = Math.min(16, Math.max(1, +($('lg-mpl-ch').value || 2)));
       overrides.clear();
+      /* launch-only trigger pattern: fire the voices once, wait for them
+         to finish, then stop — never spin a zero-duration loop. */
+      const hasTimed = (mplSlotToks[i] || toks).some(t => t.note != null || t.notes || t.rest);
       /* Pass-top snapshot: hot-swapped tokens (Return while playing)
          take over here, with their matching source for the play view. */
       const passToks = mplSlotToks[i] || toks;
@@ -1007,6 +1011,11 @@ async function mplSlotToggle(i) {
           setTimeout(() => post({ port: 'IAC', type: 'note_off', channel: c2, note: n, velocity: 0 }), durMs * 0.85);
         }
         await new Promise(r => setTimeout(r, durMs));
+      }
+      if (!hasTimed) {
+        await new Promise(r => setTimeout(r, 150));
+        while (gen === mplSlotGen[i] && mplVoices > 0) await new Promise(r => setTimeout(r, 200));
+        break;
       }
     }
   } finally {

@@ -144,6 +144,15 @@ Roadmap: swap `musePredict` for a server endpoint backed by a real
 model (Claude, or a small transformer trained on MIDI corpora
 transcoded to MPL) — the UI contract is just text in, tokens out.
 
+Next (Bill 2026-08-07): **generated companions** — beneath each user
+sequence, MUSE proposes derived slots: variations (rhythmic/harmonic
+mutations of the pattern) and transition alternatives (fills that
+bridge into another named slot). Each proposal is a normal MPL slot —
+auditionable alone, layerable with the original via the polyphonic
+bank and bar-sync, and callable/launchable (@name, name&) so two or
+more can be tried together seamlessly. The # exclusivity groups make
+A/B-ing alternatives one keypress.
+
 ## The bank as an instrument
 
 Slots 0-9 each hold one program. Number keys toggle: first slot in
