@@ -5621,8 +5621,13 @@ function updateTimelineTimeUI(t) {
   const cur = document.getElementById('time-current');
   const durEl = document.getElementById('time-duration');
   const dur = activeDurationSec();
-  if (cur) cur.textContent = formatTimeMMSS(t);
-  if (durEl && dur > 0) durEl.textContent = formatTimeMMSS(dur);
+  // #time-current / #time-duration use formatTime (m:ss) — the SAME
+  // format as the sync-loop writer at els.timeCurrent. Two writers with
+  // different formats ("0:00" vs "00:00") alternated four times a second
+  // and read as a flashing readout (Bill 2026-08-09). The floating
+  // tooltip keeps mm:ss below.
+  if (cur) cur.textContent = formatTime(t);
+  if (durEl && dur > 0) durEl.textContent = formatTime(dur);
   if (tt) {
     tt.textContent = formatTimeMMSS(t);
     const pct = dur > 0 ? Math.min(100, Math.max(0, (t / dur) * 100)) : 0;
@@ -5702,6 +5707,120 @@ function midiClockReconcile(st) {
   }
 }
 
+// ── Audio-engine wedge watchdog (2026-08-09) ─────────────────────────────
+// Postmortem: coreaudiod stopped consuming samples on the XR18. Chrome
+// force-suspended every AudioContext (resume() "succeeds", then Chrome
+// re-suspends ~1 s later), the six stem elements froze at their position
+// and eventually flipped to MEDIA_ERR_DECODE — and the portal kept
+// showing the pause icon with the readout stuck at 00:00. Nothing
+// noticed, nothing recovered. Two stages, per Bill's loud-failure rule:
+//   Stage 1 (self-heal, silent): transport says playing but the playhead
+//     hasn't moved ~2 s → resume the AudioContext and revive any stem
+//     element carrying a MediaError (load() → seek back → play()).
+//   Stage 2 (operator, loud): still frozen ~5 s → red banner with ONE
+//     button, KICK AUDIO ENGINE → POST /api/audio/kick-coreaudio (the
+//     software equivalent of re-plugging the XR18 USB cable), wait for
+//     re-enumeration, resume, revive, replay from the stuck position.
+// The banner clears itself the moment the playhead moves again.
+const audioWedge = { lastPos: -1, stalls: 0, healing: false, lastHeal: 0, banner: null };
+
+async function audioWedgeRecoverElements() {
+  if (audioCtx && audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (e) {}
+  }
+  const jobs = [];
+  for (const ch of CHANNELS) {
+    const ae = audioElements[ch];
+    if (!ae || !ae.src || !ae.error) continue;
+    jobs.push(new Promise(res => {
+      const t = ae.currentTime || 0;
+      const wasPlaying = isPlaying;
+      const onOk = () => {
+        ae.removeEventListener('canplay', onOk);
+        try { ae.currentTime = t; } catch (e) {}
+        if (wasPlaying) ae.play().catch(() => {});
+        res(true);
+      };
+      ae.addEventListener('canplay', onOk);
+      setTimeout(() => { ae.removeEventListener('canplay', onOk); res(false); }, 5000);
+      try { ae.load(); } catch (e) { res(false); }
+    }));
+  }
+  if (jobs.length) {
+    console.warn('[audio-wedge] reviving', jobs.length, 'errored stem element(s)');
+    await Promise.all(jobs);
+  }
+}
+
+function audioWedgeBanner(show) {
+  if (!show) {
+    if (audioWedge.banner) { audioWedge.banner.remove(); audioWedge.banner = null; }
+    return;
+  }
+  if (audioWedge.banner) return;
+  const bar = document.createElement('div');
+  bar.id = 'audio-wedge-banner';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+    'background:#c62828;color:#fff;font:600 15px/1.4 system-ui;' +
+    'padding:10px 16px;display:flex;align-items:center;gap:14px;justify-content:center;' +
+    'box-shadow:0 2px 12px rgba(0,0,0,.4)';
+  const msg = document.createElement('span');
+  msg.textContent = 'AUDIO ENGINE WEDGED — playback is frozen (output device not consuming samples)';
+  const btn = document.createElement('button');
+  btn.textContent = 'KICK AUDIO ENGINE';
+  btn.style.cssText = 'background:#fff;color:#c62828;border:0;border-radius:6px;' +
+    'padding:6px 14px;font:700 14px system-ui;cursor:pointer';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'KICKING…';
+    try {
+      const r = await fetch('/api/audio/kick-coreaudio', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      await new Promise(res => setTimeout(res, 4000));
+      await audioWedgeRecoverElements();
+      if (audioCtx && audioCtx.state === 'suspended') { try { await audioCtx.resume(); } catch (e) {} }
+      if (isPlaying) {
+        for (const ch of CHANNELS) {
+          const ae = audioElements[ch];
+          if (ae && ae.src && ae.paused) ae.play().catch(() => {});
+        }
+      }
+      btn.textContent = 'KICKED — recovering…';
+      setTimeout(() => { if (audioWedge.banner) { btn.disabled = false; btn.textContent = 'KICK AUDIO ENGINE'; } }, 6000);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'KICK FAILED — RETRY';
+      console.warn('[audio-wedge] kick failed:', e.message);
+    }
+  });
+  bar.appendChild(msg); bar.appendChild(btn);
+  document.body.appendChild(bar);
+  audioWedge.banner = bar;
+  console.warn('[audio-wedge] banner shown — playback frozen, operator action offered');
+}
+
+function audioWedgeWatchdog(st) {
+  if (!st.playing) {
+    audioWedge.stalls = 0; audioWedge.lastPos = -1;
+    audioWedgeBanner(false);
+    return;
+  }
+  const moved = Math.abs(st.pos - audioWedge.lastPos) > 0.05;
+  if (moved || audioWedge.lastPos < 0) {
+    audioWedge.stalls = 0;
+    audioWedgeBanner(false);
+  } else {
+    audioWedge.stalls++;
+  }
+  audioWedge.lastPos = st.pos;
+  const now = Date.now();
+  if (audioWedge.stalls >= 2 && !audioWedge.healing && now - audioWedge.lastHeal > 3000) {
+    audioWedge.healing = true; audioWedge.lastHeal = now;
+    console.warn('[audio-wedge] playhead frozen at', st.pos.toFixed(2), '— self-heal pass');
+    audioWedgeRecoverElements().finally(() => { audioWedge.healing = false; });
+  }
+  if (audioWedge.stalls >= 5) audioWedgeBanner(true);
+}
+
 // ── The scheduler ────────────────────────────────────────────────────────
 // One permanent 60 ms interval (NOT requestAnimationFrame — rAF stops
 // entirely when the tab is hidden or the window is covered, which would
@@ -5723,6 +5842,7 @@ function startClickScheduler() {
     ++clickBtnSyncCounter;
     if (clickBtnSyncCounter % 4 === 0) updateTimelineTimeUI(st.playing ? st.pos : clickPlayheadPos());
     if (clickBtnSyncCounter % 8 === 0) updateClickButton();
+    if (clickBtnSyncCounter % 16 === 0) { try { audioWedgeWatchdog(st); } catch (e) {} }
     if (!st.playing || !audioCtx) return;
     if (st.pos < clickLastSongTime - 0.1) clickLastScheduledBeat = -1;
     clickLastSongTime = st.pos;
