@@ -4673,7 +4673,13 @@ function applyFilters() {
       const tagSav = songTags.some(t => /^savou?ry$/i.test(t));
       const isUp = tagUp || (!tagSav && bpmBar > 110);
       const isSav = tagSav || (!tagUp && bpmBar > 0 && bpmBar <= 110);
-      matchesTempo = (libraryTempoFilters.has('upbeat') && isUp) ||
+      // Unknown tempo (no BPM analysis yet, no Upbeat/Savory tag) matches
+      // ANY tempo filter — an unanalyzed song must never vanish from the
+      // library for lacking a BPM (found 2026-08-10: a cache-rebuilt song
+      // with bpm:null was invisible with every filter checkbox checked).
+      const tempoUnknown = !tagUp && !tagSav && !(bpmBar > 0);
+      matchesTempo = tempoUnknown ||
+                     (libraryTempoFilters.has('upbeat') && isUp) ||
                      (libraryTempoFilters.has('savory') && isSav);
     }
 
