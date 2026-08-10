@@ -5266,11 +5266,37 @@ async function switchSystemAudioOutput(deviceName) {
 // bass→ch 13, guitar→ch 14, piano→ch 15, other→ch 16). Result on each
 // strip: L, R, and the stem's own letter (V/D/B/G/P/O) are lit. The other
 // XR18 channels are reserved for monitor mixes / FOH at the board.
+// When the XR18 switch fails, diagnose WHICH failure mode this is and put
+// the proven remedy in the operator's face (learned 2026-08-10, after a
+// gig-day sequence of wedges): the XR18 is a composite USB device whose
+// AUDIO function can crash while MIDI stays up — the device still shows
+// on USB but reports 0 audio channels and vanishes from the output list.
+// Mac/Logic reboots re-enumerate the same half-dead device; ONLY
+// power-cycling the XR18 restarts its audio engine.
+async function xr18FailureAdvice() {
+  try {
+    const s = await fetch('/api/audio/xr18-status').then(r => r.json());
+    if (s && s.present && (!s.channels || s.channels === 0)) {
+      return 'DIAGNOSIS: the XR18 is visible on USB but reports 0 audio channels — ' +
+        'its internal USB audio engine has crashed.\n\n' +
+        'FIX: power-cycle the XR18 (proven). Rebooting the Mac or Logic does NOT help.\n' +
+        'After it boots, click the XR18 button again.';
+    }
+    if (s && !s.present) {
+      return 'DIAGNOSIS: the XR18 is not on the USB bus at all.\n\n' +
+        'FIX: re-seat the USB cable (or swap it), check the XR18 has power, ' +
+        'then click the XR18 button again. If it keeps dropping, replace the cable.';
+    }
+  } catch (e) {}
+  return 'Open System Settings → Sound → Output and pick XR18 manually.';
+}
+
 async function presetSpreadToSixAux() {
   const res = await switchSystemAudioOutput('XR18');
   if (!res.ok) {
     const hint = res.hint ? `\n\n${res.hint}` : '';
-    alert(`Couldn't switch the macOS default output to XR18.\n\n${res.error}${hint}\n\nFalling back to in-app routing only — open System Settings → Sound → Output and pick XR18 manually.`);
+    const advice = await xr18FailureAdvice();
+    alert(`Couldn't switch the macOS default output to XR18.\n\n${res.error}${hint}\n\n${advice}\n\nFalling back to in-app routing until then.`);
   }
   Object.keys(audioElements).forEach(ch => {
     const home = HOME_CHAN[ch];
@@ -5802,6 +5828,19 @@ function audioWedgeBanner(show) {
   document.body.appendChild(bar);
   audioWedge.banner = bar;
   console.warn('[audio-wedge] banner shown — playback frozen, operator action offered');
+  // Refine the message if this is the XR18-side crash (device on USB but
+  // 0 audio channels): kicking coreaudiod can't fix that — only a power
+  // cycle of the XR18 restarts its audio engine.
+  (async () => {
+    try {
+      const s = await fetch('/api/audio/xr18-status').then(r => r.json());
+      if (audioWedge.banner === bar && s && s.present && (!s.channels || s.channels === 0)) {
+        msg.textContent = 'XR18 USB AUDIO ENGINE CRASHED — power-cycle the XR18 (Mac reboot won\'t help), then press play';
+      } else if (audioWedge.banner === bar && s && !s.present) {
+        msg.textContent = 'XR18 IS OFF THE USB BUS — re-seat the cable / check power, then press play';
+      }
+    } catch (e) {}
+  })();
 }
 
 function audioWedgeWatchdog(st) {
