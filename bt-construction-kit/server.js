@@ -5412,6 +5412,57 @@ app.get('/api/debug/playback-state', (req, res) => {
   res.json({ ok: true, state: _playbackState, ageMs: _playbackState.at ? Date.now() - _playbackState.at : null });
 });
 
+// Read-only diagnostics bundle (2026-08-09). One GET returns everything a
+// remote debugging session needs: disk headroom (answers "did the cache
+// run out of space?"), tails of the local debug/boot logs, tails of the
+// .run service logs, and the STEM_QUEUE failure folder listing. Bounded
+// reads only — tail bytes, never whole files; never blocks on Drive for
+// more than the two bounded dir listings.
+app.get('/api/debug/logs', (req, res) => {
+  const lines = Math.min(500, Math.max(10, parseInt(req.query.lines, 10) || 120));
+  const tail = (p) => {
+    try {
+      if (!fs.existsSync(p)) return '(absent)';
+      const st = fs.statSync(p);
+      const want = Math.min(st.size, 64 * 1024);
+      const fd = fs.openSync(p, 'r');
+      const buf = Buffer.alloc(want);
+      fs.readSync(fd, buf, 0, want, st.size - want);
+      fs.closeSync(fd);
+      const all = buf.toString('utf8').split('\n');
+      return all.slice(-lines).join('\n');
+    } catch (e) { return '(error: ' + e.message + ')'; }
+  };
+  const listDir = (p) => {
+    try {
+      if (!fs.existsSync(p)) return '(absent)';
+      return fs.readdirSync(p).slice(0, 50);
+    } catch (e) { return '(error: ' + e.message + ')'; }
+  };
+  const { execFile } = require('child_process');
+  execFile('df', ['-k', os.homedir(), SIMPLE_STEM_ROOT], (dfErr, dfOut) => {
+    const runDir = path.join(SIMPLE_STEM_ROOT, '.run');
+    const runLogs = {};
+    try {
+      if (fs.existsSync(runDir)) {
+        for (const f of fs.readdirSync(runDir)) {
+          if (f.endsWith('.log')) runLogs[f] = tail(path.join(runDir, f));
+        }
+      }
+    } catch (e) { runLogs.error = e.message; }
+    res.json({
+      ok: true,
+      when: new Date().toISOString(),
+      disk: dfErr ? ('df failed: ' + dfErr.message) : dfOut,
+      debugSnapshots: tail(DEBUG_SNAPSHOT_PATH),
+      bootTrace: tail(BOOT_TRACE_PATH),
+      runLogs,
+      queueFailed: listDir(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_failed')),
+      queueDone: (listDir(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_done')) || []).length,
+    });
+  });
+});
+
 // Play-count tracker. POST /api/song/:base/play increments the count
 // and updates last_played_at. Client calls this on the FIRST 'playing'
 // event per song-load (debounced — six stems firing 'playing' must not
