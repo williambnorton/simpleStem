@@ -1346,18 +1346,132 @@ function pruneCache() {
     }
     // invalidate any .cached sentinels whose folder we evicted stems from
     if (removed) {
-      if (fs.existsSync(AUDIO_CACHE_STEMS)) for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
-        const folder = path.join(AUDIO_CACHE_STEMS, d);
-        try {
-          const stems = fs.readdirSync(folder).filter(f => /\.m4a$/i.test(f));
-          if (stems.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
-        } catch (e) {}
-      }
+      cleanupCacheSentinels();
       console.log(`[cache] pruned ${removed} file(s) to keep total cache under ${Math.round(CACHE_CAP_BYTES/1e9)}GB`);
     }
   } catch (e) { console.warn('[cache] prune failed:', e.message); }
 }
-setInterval(pruneCache, 10 * 60 * 1000);   // every 10 min
+// pruneCache() is RETAINED but no longer on a timer — the consent-gated
+// checker below replaces the silent 10-minute prune (Bill 2026-08-09:
+// "I do not wish the library cache to silently delete cache entries").
+
+// ── Consent-gated cache pruning ──────────────────────────────────────────
+// The cache NEVER silently deletes. When the tree exceeds the cap the
+// checker only ARMS an eviction plan (oldest-untouched files first) and
+// surfaces it at GET /api/cache/prune-pending together with live disk
+// stats. The portal shows a 30-second timed dialog: on timeout or
+// "Clean now" it POSTs /api/cache/prune-execute (hands-free at a gig —
+// informed first, then oldest-unused removal proceeds); "I'll free space
+// myself" POSTs /api/cache/prune-defer, which deletes NOTHING and
+// suppresses re-arming for 24 h so the operator can manage files on
+// their own terms.
+let cachePrunePending = null;
+let pruneDeferredUntil = 0;
+
+function cacheWalkFiles() {
+  const files = [];
+  const walk = dir => {
+    if (!fs.existsSync(dir)) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name !== '.cached') {
+        try { const st = fs.statSync(p); files.push({ p, size: st.size, used: st.atimeMs || st.mtimeMs }); }
+        catch (e) {}
+      }
+    }
+  };
+  walk(AUDIO_CACHE_DIR);
+  return files;
+}
+
+function cleanupCacheSentinels() {
+  if (!fs.existsSync(AUDIO_CACHE_STEMS)) return;
+  for (const d of fs.readdirSync(AUDIO_CACHE_STEMS)) {
+    const folder = path.join(AUDIO_CACHE_STEMS, d);
+    try {
+      const stems = fs.readdirSync(folder).filter(f => /\.m4a$/i.test(f));
+      if (stems.length === 0) fs.rmSync(path.join(folder, '.cached'), { force: true });
+    } catch (e) {}
+  }
+}
+
+function pruneCacheCheck() {
+  try {
+    if (Date.now() < pruneDeferredUntil) return;
+    if (cachePrunePending) return;   // already armed; waiting on the portal
+    const files = cacheWalkFiles();
+    const total = files.reduce((a, f) => a + f.size, 0);
+    if (total <= CACHE_CAP_BYTES) return;
+    files.sort((a, b) => a.used - b.used);   // oldest-used first
+    let need = total - CACHE_CAP_BYTES;
+    const plan = [];
+    for (const f of files) {
+      if (need <= 0) break;
+      plan.push(f); need -= f.size;
+    }
+    const bySong = {};
+    for (const f of plan) {
+      const rel = path.relative(AUDIO_CACHE_DIR, f.p);
+      const parts = rel.split(path.sep);
+      const song = parts.length > 1 ? parts.slice(0, 2).join('/') : parts[0];
+      const g = bySong[song] || (bySong[song] = { song, bytes: 0, files: 0, oldestUsed: f.used });
+      g.bytes += f.size; g.files++;
+      g.oldestUsed = Math.min(g.oldestUsed, f.used);
+    }
+    const { execFile } = require('child_process');
+    execFile('df', ['-k', AUDIO_CACHE_DIR], (dfErr, dfOut) => {
+      let disk = null;
+      if (!dfErr && dfOut) {
+        const cols = (dfOut.split('\n')[1] || '').trim().split(/\s+/);
+        if (cols.length >= 5) {
+          disk = { totalBytes: +cols[1] * 1024, usedBytes: +cols[2] * 1024, freeBytes: +cols[3] * 1024, capacity: cols[4] };
+        }
+      }
+      cachePrunePending = {
+        createdAt: new Date().toISOString(),
+        totalBytes: total,
+        capBytes: CACHE_CAP_BYTES,
+        overBytes: total - CACHE_CAP_BYTES,
+        planBytes: plan.reduce((a, f) => a + f.size, 0),
+        planFiles: plan.length,
+        planPaths: plan.map(f => f.p),
+        songs: Object.values(bySong).sort((a, b) => a.oldestUsed - b.oldestUsed),
+        disk,
+      };
+      console.log(`[cache] over cap by ${((total - CACHE_CAP_BYTES) / 1e9).toFixed(1)}GB — eviction plan armed (${plan.length} files, ${Object.keys(bySong).length} songs); awaiting portal confirmation`);
+    });
+  } catch (e) { console.warn('[cache] prune check failed:', e.message); }
+}
+setInterval(pruneCacheCheck, 10 * 60 * 1000);   // every 10 min
+
+app.get('/api/cache/prune-pending', (req, res) => {
+  const p = cachePrunePending
+    ? { ...cachePrunePending, planPaths: undefined, songs: cachePrunePending.songs.slice(0, 40) }
+    : null;
+  res.json({ ok: true, pending: p, deferredUntil: pruneDeferredUntil || null });
+});
+
+app.post('/api/cache/prune-execute', (req, res) => {
+  const plan = cachePrunePending;
+  cachePrunePending = null;
+  if (!plan) return res.json({ ok: true, removed: 0, freedBytes: 0, note: 'no pending plan' });
+  let removed = 0, freed = 0;
+  for (const p of plan.planPaths) {
+    try { const sz = fs.statSync(p).size; fs.unlinkSync(p); removed++; freed += sz; } catch (e) {}
+  }
+  try { cleanupCacheSentinels(); } catch (e) {}
+  console.log(`[cache] prune EXECUTED via portal — removed ${removed} file(s), freed ${(freed / 1e9).toFixed(1)}GB`);
+  try { logActivity('warn', 'cache', `cache prune executed: removed ${removed} files, freed ${(freed / 1e9).toFixed(1)}GB`); } catch (e) {}
+  res.json({ ok: true, removed, freedBytes: freed });
+});
+
+app.post('/api/cache/prune-defer', (req, res) => {
+  cachePrunePending = null;
+  pruneDeferredUntil = Date.now() + 24 * 3600 * 1000;
+  console.log('[cache] prune DEFERRED by operator — nothing deleted, re-check suppressed 24h');
+  res.json({ ok: true, deferredUntil: pruneDeferredUntil });
+});
 
 // SYNC version — used by the on-demand audio request handler when the
 // file isn't cached yet. Blocks the request until the copy is done, since

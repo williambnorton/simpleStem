@@ -5821,6 +5821,85 @@ function audioWedgeWatchdog(st) {
   if (audioWedge.stalls >= 5) audioWedgeBanner(true);
 }
 
+// ── Cache-prune timed dialog (Bill 2026-08-09) ───────────────────────────
+// The server never silently deletes cache entries. When ~/.bt-cache
+// exceeds its cap the server arms an eviction plan and this dialog
+// surfaces it: cache + disk stats, the oldest-untouched songs slated for
+// removal, and a 30-second countdown. Timeout or CLEAN NOW → the plan
+// executes (hands-free mid-gig). "I'LL FREE SPACE MYSELF" → nothing is
+// deleted and the server stays quiet for 24 h.
+let pruneDialogEl = null;
+
+function fmtGB(bytes) { return (bytes / 1e9).toFixed(1) + ' GB'; }
+
+async function checkPrunePending() {
+  if (pruneDialogEl) return;
+  try {
+    const d = await fetch('/api/cache/prune-pending').then(r => r.json());
+    if (d && d.pending) showPruneDialog(d.pending);
+  } catch (e) {}
+}
+setInterval(checkPrunePending, 60 * 1000);
+setTimeout(checkPrunePending, 8000);
+
+function showPruneDialog(p) {
+  if (pruneDialogEl) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'cache-prune-dialog';
+  wrap.style.cssText = 'position:fixed;top:12%;left:50%;transform:translateX(-50%);z-index:99998;' +
+    'width:520px;max-width:92vw;background:#263238;color:#eceff1;border-radius:12px;' +
+    'box-shadow:0 8px 40px rgba(0,0,0,.5);font:14px/1.5 system-ui;padding:18px 20px;' +
+    'border:2px solid #ffb300';
+  const days = (used) => Math.max(0, Math.round((Date.now() - used) / 86400000));
+  const songList = (p.songs || []).slice(0, 6)
+    .map(s => `<div style="display:flex;justify-content:space-between;gap:10px">` +
+      `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.song.replace(/^STEMS\//, '')}</span>` +
+      `<span style="color:#90a4ae;flex:none">${fmtGB(s.bytes)} · untouched ${days(s.oldestUsed)}d</span></div>`)
+    .join('');
+  const more = (p.songs || []).length > 6 ? `<div style="color:#90a4ae">… and ${p.songs.length - 6} more</div>` : '';
+  const disk = p.disk
+    ? `${fmtGB(p.disk.freeBytes)} free of ${fmtGB(p.disk.totalBytes)} (${p.disk.capacity} used)`
+    : 'unknown';
+  wrap.innerHTML =
+    `<div style="font-weight:700;font-size:16px;color:#ffb300;margin-bottom:6px">CACHE CLEANUP PENDING</div>` +
+    `<div>Stem cache is <b>${fmtGB(p.totalBytes)}</b> — over its ${fmtGB(p.capBytes)} cap by <b>${fmtGB(p.overBytes)}</b>.<br>` +
+    `Disk: ${disk}</div>` +
+    `<div style="margin:10px 0 4px;color:#90a4ae">Oldest untouched songs slated for removal ` +
+    `(${p.planFiles} files, ${fmtGB(p.planBytes)}):</div>` +
+    `<div style="max-height:150px;overflow:auto;background:#1c262b;border-radius:8px;padding:8px 10px">${songList}${more}</div>` +
+    `<div style="display:flex;align-items:center;gap:12px;margin-top:14px">` +
+    `<button id="prune-now-btn" style="background:#ffb300;color:#263238;border:0;border-radius:6px;padding:8px 14px;font:700 14px system-ui;cursor:pointer">CLEAN NOW</button>` +
+    `<button id="prune-defer-btn" style="background:transparent;color:#eceff1;border:1px solid #607d8b;border-radius:6px;padding:8px 14px;font:600 14px system-ui;cursor:pointer">I'LL FREE SPACE MYSELF</button>` +
+    `<span id="prune-countdown" style="margin-left:auto;color:#90a4ae"></span></div>`;
+  document.body.appendChild(wrap);
+  pruneDialogEl = wrap;
+
+  let remaining = 30;
+  const cd = wrap.querySelector('#prune-countdown');
+  cd.textContent = `auto-cleans in ${remaining}s`;
+  const timer = setInterval(() => {
+    remaining--;
+    if (remaining > 0) { cd.textContent = `auto-cleans in ${remaining}s`; return; }
+    clearInterval(timer);
+    doExecute();
+  }, 1000);
+  const close = () => { clearInterval(timer); try { wrap.remove(); } catch (e) {} pruneDialogEl = null; };
+  const doExecute = async () => {
+    cd.textContent = 'cleaning…';
+    try {
+      const r = await fetch('/api/cache/prune-execute', { method: 'POST' }).then(r => r.json());
+      showToast(`Cache cleaned: removed ${r.removed} files, freed ${fmtGB(r.freedBytes || 0)}`);
+    } catch (e) { showToast('Cache clean failed: ' + e.message); }
+    close();
+  };
+  wrap.querySelector('#prune-now-btn').addEventListener('click', () => { clearInterval(timer); doExecute(); });
+  wrap.querySelector('#prune-defer-btn').addEventListener('click', async () => {
+    try { await fetch('/api/cache/prune-defer', { method: 'POST' }); } catch (e) {}
+    showToast('Nothing deleted — cache checks paused for 24h so you can free space yourself');
+    close();
+  });
+}
+
 // ── The scheduler ────────────────────────────────────────────────────────
 // One permanent 60 ms interval (NOT requestAnimationFrame — rAF stops
 // entirely when the tab is hidden or the window is covered, which would
