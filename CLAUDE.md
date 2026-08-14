@@ -599,6 +599,54 @@ respect them or update this list.
   `mode-fetch` style AND clicks straight into the editor (no confirm),
   matching the visual/behavior of a song that never had lyrics at all.
 
+## Test mandate (Bill 2026-08-10)
+
+Born from a practice-day cascade: frozen playback behind a happy pause
+icon, silent cache eviction, and a diagnostics endpoint whose own sync
+Drive reads wedged the event loop. These bugs must not reach a practice
+again. **No change is "done" — and Claude must never say "all is OK" —
+until the tests below have actually run.** A report that claims success
+without stating what was tested and how is itself a bug.
+
+**1. Minimal unit test — EVERY change, EVERY affected module:**
+
+- `server.js` → `node --check`, then restart (or `/api/performer/reset`)
+  and hit every touched endpoint with a real request: assert the
+  response shape AND that it returns inside its time budget while
+  `/api/health` stays <100 ms (event-loop liveness).
+- `public/*.js` / `*.html` → `node --check` on the JS, reload the live
+  page, exercise the changed feature in the running portal with DOM or
+  behavior assertions, and finish with a zero-console-errors check.
+- Parsers (MPL and friends) → run the parse suite: every syntax family
+  plus the new construct, positive AND negative cases, in every page
+  that duplicates the parser (console + desk must both pass).
+- Python / shell scripts → `python3 -m py_compile` / `bash -n`, then a
+  dry-run against real data before any `--go`.
+
+**2. Regression pass — larger changes** (new subsystems, or anything
+touching playback, cache, Drive I/O, timing, or a hot endpoint): before
+declaring OK, re-verify the standing invariants — each one is a past
+production bug:
+
+- No sync Drive reads (`existsSync`/`statSync`/`readdirSync`/`readSync`
+  against Drive paths) anywhere in the diff's hot paths. (2026-06-28 gig
+  wedge; 2026-08-10 debug-logs wedge.)
+- Offline contract: a library song plays end-to-end from `~/.bt-cache`.
+- Playhead advances whenever the transport claims playing; the wedge
+  watchdog banner appears on a forced stall and clears on recovery;
+  the time readout stays single-format. (2026-08-09 00:00 flash.)
+- The cache deletes NOTHING without the 30-second timed dialog.
+  (2026-08-09 silent-prune mandate.)
+- A song with null BPM / no tags stays visible in the library with all
+  filters checked. (2026-08-10 tempo-filter vanish.)
+- Every produced m4a is faststart (`moov` at front). (2026-06-28.)
+
+**3. What automation cannot verify, say so.** Background/CDP tabs
+cannot decode media or keep timers honest — playback feel, audible
+timing, and micro-timing (feel marks) need Bill's ears in a foreground
+tab. Never claim those verified; hand Bill a 30-second ear-check
+instead, clearly labeled as the remaining step.
+
 ## Git & sync
 
 The repo tracks **code only**; the big/transient data dirs are git-ignored (see
