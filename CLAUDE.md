@@ -599,6 +599,29 @@ respect them or update this list.
   `mode-fetch` style AND clicks straight into the editor (no confirm),
   matching the visual/behavior of a song that never had lyrics at all.
 
+## Writing style (Bill 2026-08-10)
+
+Applies to everything Claude writes for this project: chat replies,
+docs, commit messages, UI copy, comments, reports.
+
+1. **Never use em-dashes.** Not "—", not "--" as punctuation. Use a
+   comma, a period, a colon, or parentheses instead. (Existing files
+   are full of them; do not mass-rewrite old text, just never add new
+   ones.)
+2. **Never use the word "delve"** in any form.
+3. **Avoid stock AI phrasing and cadence** (the patterns AI detectors
+   key on). Banned or suspect: "dive into", "let's dive in", "unlock",
+   "unleash", "leverage" as a verb, "seamless(ly)", "robust",
+   "game-changer", "elevate", "landscape", "tapestry", "crucial",
+   "navigate the complexities", "in today's fast-paced world", "it's
+   important to note", "in conclusion", "overall," as an opener,
+   "not just X, it's Y" symmetry, "not only X but also Y". Also avoid
+   the structural tells: rule-of-three lists in every sentence,
+   bold-led bullet points for everything, uniform paragraph lengths,
+   and closing summaries that restate what was just said. Write like
+   a person who is busy: plain verbs, concrete nouns, varied sentence
+   length, no filler.
+
 ## Test mandate (Bill 2026-08-10)
 
 Born from a practice-day cascade: frozen playback behind a happy pause
