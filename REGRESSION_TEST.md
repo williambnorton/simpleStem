@@ -162,6 +162,17 @@ operator's only mode indicator at a dark gig.
 | SL8 | `__round_robin__` | Bill→Matt→Dan→JD interleave, all four buckets drained |
 | GR1 | Gig rename | pencil button renames; slug + picker + sidebar follow; disabled on pseudo-gigs; restore after |
 
+## Phase 8b — Song deletion (DEL) — added 2026-08-14
+
+Test with a sacrificial folder (ZZ_TEST_DELETE_ME pattern), never a real song.
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| DEL1 | Confirm guard | wrong confirm 400, missing confirm 400, unknown base with no library row 404; target song untouched after all three |
+| DEL2 | Performer cleanup | after DELETE with correct confirm: Drive STEMS folder gone, `~/.bt-cache/STEMS/<base>` gone, `~/.bt-cache/LOOPSESS/<base>` gone, matching M4A + caches gone, library row gone immediately |
+| DEL3 | No ghost resurrection | after a catalog mirror reload (stale CATALOG.json still listing the song), the deleted row stays gone (tombstone filter). Repeat DELETE on the already-deleted base returns ghostRowCleared when a stale row exists |
+| DEL4 | Librarian propagation | OPERATOR: within a few minutes of Drive sync, `ls STEMS | grep <base>` on the mini is empty; the next catalog pass drops the row from CATALOG.json |
+
 ## Phase 9 — Librarian dashboard (LB)
 
 | ID | Test | Pass criterion |

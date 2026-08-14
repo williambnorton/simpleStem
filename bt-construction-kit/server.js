@@ -771,6 +771,12 @@ const LIBRARY_CACHE_FILE = path.join(__dirname, 'library_cache.json');
 const LIBRARY_REFRESH_MS = 60 * 60 * 1000; // 1 hour
 let libraryCache = null;       // { scannedAt: ISO string, data: { stats, songs } }
 let libraryRefreshing = false; // re-entrancy guard
+// Tombstones for deleted songs: base -> Date.now() at deletion. Filters
+// stale CATALOG.json rows so a deleted song cannot resurrect in the
+// library before the Librarian's next catalog pass. TTL comfortably
+// exceeds the hourly catalog cadence.
+const recentSongDeletes = new Map();
+const SONG_DELETE_TOMBSTONE_MS = 2 * 60 * 60 * 1000;
 // Fresh stems (2026-07-24, Bill: "fresh stemmed song is a to-do list for
 // setting levels"): a song is "fresh" until its automation carries an
 // 'init' event — i.e. until the operator sets levels and presses SAVE.
@@ -933,6 +939,29 @@ function refreshLibraryCache(reason, force) {
                 fromCatalog.data.stats.uncachedSongs = total - cachedN;
               }
             } catch (e) { console.warn('[lib] cachedSongs augment failed:', e.message); }
+            // Tombstone filter (2026-08-14): a song deleted via
+            // DELETE /api/song/:base vanishes from disk instantly, but the
+            // Librarian's CATALOG.json can list it for up to an hour until
+            // the next catalog pass. Reloading that stale catalog here
+            // resurrected the deleted row as an unplayable ghost in the
+            // library (proven live with a test folder). Filter any base in
+            // recentSongDeletes out of every catalog load until the TTL
+            // passes, by which time the catalog itself has caught up.
+            try {
+              if (recentSongDeletes.size && fromCatalog.data && Array.isArray(fromCatalog.data.songs)) {
+                const now = Date.now();
+                for (const [b, t] of recentSongDeletes) {
+                  if (now - t > SONG_DELETE_TOMBSTONE_MS) recentSongDeletes.delete(b);
+                }
+                if (recentSongDeletes.size) {
+                  const before = fromCatalog.data.songs.length;
+                  fromCatalog.data.songs = fromCatalog.data.songs.filter(
+                    x => !(x.folderName && recentSongDeletes.has(x.folderName)));
+                  const dropped = before - fromCatalog.data.songs.length;
+                  if (dropped) console.log(`[lib] tombstone filter dropped ${dropped} recently deleted song(s) from the stale catalog`);
+                }
+              }
+            } catch (e) { console.warn('[lib] tombstone filter failed:', e.message); }
             libraryCache = {
               scannedAt: fromCatalog.scannedAt || new Date().toISOString(),
               checkedAt: new Date().toISOString(),
@@ -6688,6 +6717,19 @@ app.delete('/api/song/:base', (req, res) => {
     }
   } catch (e) {}
   if (!stemsExists && m4aMatches.length === 0) {
+    // Nothing on disk. If a stale catalog row still lists the song, this
+    // delete is ghost-row cleanup: tombstone it and patch the live cache
+    // (2026-08-14, after watching a deleted test song resurrect from a
+    // catalog built during its lifetime).
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs) && songs.some(x => x.type === 'stems' && x.folderName === s.b)) {
+        recentSongDeletes.set(s.b, Date.now());
+        libraryCache.data.songs = songs.filter(x => !(x.type === 'stems' && x.folderName === s.b));
+        console.log(`[delete] ${s.b}: no files on disk; cleared ghost library row + tombstoned`);
+        return res.json({ ok: true, base: s.b, ghostRowCleared: true });
+      }
+    } catch (e) {}
     return res.status(404).json({ error: 'nothing to delete: no stems folder and no matching m4a files' });
   }
   try {
@@ -6702,6 +6744,11 @@ app.delete('/api/song/:base', (req, res) => {
       removedM4a++;
     }
     console.log(`[delete] ${s.b}: ${stemsExists ? 'removed STEMS folder + ' : ''}${removedM4a} m4a`);
+    // Loop-overdub layers for the song die with it (found in the 2026-08-14
+    // deletion audit: LOOPSESS survived a delete and orphaned the layers).
+    try { fs.rmSync(path.join(AUDIO_CACHE_LOOPSESS, s.b), { recursive: true, force: true }); } catch (e) {}
+    // Tombstone so a stale CATALOG.json cannot resurrect the row.
+    recentSongDeletes.set(s.b, Date.now());
     // Patch libraryCache in place so the deleted song disappears from the
     // portal immediately, even before the next CATALOG.json rebuild.
     try {
