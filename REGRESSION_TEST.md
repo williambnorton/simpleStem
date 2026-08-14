@@ -62,6 +62,9 @@ The order is deliberate. Four principles:
 | P5 | Librarian portal alive | `GET /librarian` returns the page |
 | P6 | Boot precaches all succeeded | perf-server.log has no `precache] failed:` line |
 | P7 | Media pipeline sane | a generated WAV blob reaches `readyState ≥ 3` in < 2 s in a throwaway `Audio()`. **If this fails, STOP and run the first-aid ladder (docs/postmortem_hangs.pdf) — no playback result below is meaningful.** |
+| P8 | Gig test verdict (added 2026-08-14) | `./performer.sh test` prints GIG READY (exit 0). One command covering services, health latency budget, offline cache sample, faststart, XR18, sidecar, disk, power |
+| P9 | Disk headroom (added 2026-08-14) | `df -k` shows ≥ 20 GB TRULY free on the Data volume. Finder's number includes purgeable and lies: the 2026-08-09 15 GB state evicted Drive files, failed 8 renders, and wedged coreaudiod |
+| P10 | XR18 audio function alive (added 2026-08-14) | `/api/audio/xr18-status`: present AND channels > 0. Present with 0 channels = the mixer's USB audio engine crashed: POWER-CYCLE THE XR18 (Mac reboot re-enumerates the same half-dead device). Absent = cable/power |
 
 ## Phase 2 — Ingest kick-off (I1–I3)
 
@@ -85,6 +88,8 @@ if all are present, pick any well-known song absent from the library.
 | L4 | Star persists | toggle ☆, reload, still ★ — then restore |
 | L5 | Singer pulldown persists | set Matt, reload, still Matt — then restore |
 | L6 | Drum chip | `120@130`-style chip renders for songs that have it |
+| L7 | Null-BPM visibility (added 2026-08-14) | a song with bpm null and no tempo tag stays listed with every filter checkbox checked (2026-08-10: a cache-rebuilt song vanished through both tempo buckets) |
+| L8 | Filter arithmetic (added 2026-08-14) | unchecking a singer box drops "Found N" by exactly that singer's count; re-checking restores the full count |
 
 ## Phase 4 — Playback core (PB)
 
@@ -102,6 +107,8 @@ if all are present, pick any well-known song absent from the library.
 | PB10 | Looper wrap | playhead cycles inside the section (see LC too) |
 | PB11 | Routing | →XR18 probe reports isDefaultOutput true; →Sys Out restores |
 | PB12 | Boosts | +5 = ×1.78, +10 = ×3.16, mutually exclusive, fader untouched |
+| PB13 | Wedge watchdog self-heal (added 2026-08-14) | with a song playing, `audioCtx.suspend()` from the console: playhead resumes within ~4 s (stage-1 heal), no banner. Synthetic 5-stall drive of `audioWedgeWatchdog` raises the red banner; one moving sample clears it |
+| PB14 | Readout single-format (added 2026-08-14) | while playing, #time-current stays `m:ss` across 10 samples at 200 ms; no `00:00`-style flash from a second writer |
 
 ## Phase 5 — Playback sources & mode pills (SRC) — added 2026-07-04
 
@@ -173,6 +180,12 @@ operator's only mode indicator at a dark gig.
 | LB12 | Daemon heartbeat cards | green with "pid N on <host> · hb Ns ago" when the mini's heartbeat file is fresh; red with stale-age otherwise (added 2026-07-04) |
 | LB13 | Auto-update evidence | `.code-version` marker on Drive matches origin/main after mini pull cycle (added 2026-07-04) |
 
+## Phase 9b — Librarian daemon staleness (added 2026-08-14)
+
+| ID | Test | Pass criterion |
+|---|---|---|
+| LB-S1 | Heartbeat freshness | no Librarian service heartbeat older than 24 h on the dashboard. Found 2026-08-14: entries at 4 d and 15 h while everything looked green at a glance. Stale mpbsync = sheet edits silently not landing |
+
 ## Phase 10 — System controls (SYS) — added 2026-07-04
 
 | ID | Test | Pass criterion |
@@ -181,6 +194,8 @@ operator's only mode indicator at a dark gig.
 | SYS2 | Snapshot | POST fires 200 (visible feedback is a known gap) |
 | SYS3 | WIFI pill | GET /api/system/wifi returns device + state; pill mirrors it. Radio FLIP is operator-only — automation must not cut its own control channel |
 | SYS4 | Caffeinate service | perf-caffeinate pid alive while performer.sh runs |
+| SYS5 | Diagnostics stay async (added 2026-08-14) | `/api/debug/logs` answers < 5 s AND `/api/health` stays < 100 ms during it. Its first version's sync Drive reads blocked the event loop and hung page loads (2026-08-10) |
+| SYS6 | Consent-gated prune (added 2026-08-14) | `/api/cache/prune-pending` reports null or an armed plan; `prune-execute` with no plan removes 0 files; a synthetic `showPruneDialog` plan renders stats + countdown, and DEFER deletes nothing. The cache must never delete without the 30 s dialog |
 
 ## Phase 11 — Robustness (R)
 
@@ -190,6 +205,7 @@ operator's only mode indicator at a dark gig.
 | R2 | Reload mid-playback | last song auto-restores; Play resumes |
 | R4 | Failed-render triage | /failed-renders.html lists; retry/clear work |
 | R5 | XR18 degrade/recover | ORPHANED banner on bad enumeration; recovers or SysOut fallback (observational — do NOT yank USB in automation) |
+| R6 | Hostile input battery (added 2026-08-14) | path traversal on `/api/audio/stems` → 403; garbage/empty `/api/enqueue` → 400; bad song ids on favorite/singer PUTs → 404; automation GET for a nonexistent song → 404 (was 200 with fabricated defaults, found 2026-08-14) |
 
 ## Phase 12 — Ingest completion & offline contract (I4–I6 + OC)
 

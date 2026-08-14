@@ -5019,7 +5019,13 @@ app.get('/api/song/:base/automation', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.json({ base: s.b, automation: [] });
+  if (!fs.existsSync(mp)) {
+    // A folder mid-render legitimately has no metadata yet: empty automation.
+    // A folder that does not exist at all is a caller bug (typo'd base) and
+    // must 404 instead of fabricating a valid-looking song (found 2026-08-14).
+    if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'no such song', base: s.b });
+    return res.json({ base: s.b, automation: [] });
+  }
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
     res.json({
