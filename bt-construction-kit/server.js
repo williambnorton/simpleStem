@@ -5532,48 +5532,58 @@ app.get('/api/debug/playback-state', (req, res) => {
 // .run service logs, and the STEM_QUEUE failure folder listing. Bounded
 // reads only — tail bytes, never whole files; never blocks on Drive for
 // more than the two bounded dir listings.
-app.get('/api/debug/logs', (req, res) => {
+// FULLY ASYNC + time-budgeted (rewritten 2026-08-10). The first version
+// used existsSync/statSync/readSync on Drive paths (.run, STEM_QUEUE) —
+// a violation of the no-sync-Drive-reads rule that blocked the ENTIRE
+// event loop whenever Drive was slow, hanging every request including
+// page loads. Now every read is fs.promises (libuv threadpool, event
+// loop stays free) and raced against a per-op timeout so the response
+// always returns, marking slow sources '(timeout — Drive slow)'.
+app.get('/api/debug/logs', async (req, res) => {
   const lines = Math.min(500, Math.max(10, parseInt(req.query.lines, 10) || 120));
-  const tail = (p) => {
+  const BUDGET_MS = 3000;
+  const T = (p, fallback) => Promise.race([
+    p.catch(e => '(error: ' + e.message + ')'),
+    new Promise(r => setTimeout(() => r(fallback), BUDGET_MS)),
+  ]);
+  const tailAsync = async (p) => {
+    const st = await fsp.stat(p);
+    const want = Math.min(st.size, 64 * 1024);
+    const fh = await fsp.open(p, 'r');
     try {
-      if (!fs.existsSync(p)) return '(absent)';
-      const st = fs.statSync(p);
-      const want = Math.min(st.size, 64 * 1024);
-      const fd = fs.openSync(p, 'r');
       const buf = Buffer.alloc(want);
-      fs.readSync(fd, buf, 0, want, st.size - want);
-      fs.closeSync(fd);
-      const all = buf.toString('utf8').split('\n');
-      return all.slice(-lines).join('\n');
-    } catch (e) { return '(error: ' + e.message + ')'; }
+      await fh.read(buf, 0, want, st.size - want);
+      return buf.toString('utf8').split('\n').slice(-lines).join('\n');
+    } finally { await fh.close().catch(() => {}); }
   };
-  const listDir = (p) => {
-    try {
-      if (!fs.existsSync(p)) return '(absent)';
-      return fs.readdirSync(p).slice(0, 50);
-    } catch (e) { return '(error: ' + e.message + ')'; }
-  };
-  const { execFile } = require('child_process');
-  execFile('df', ['-k', os.homedir(), SIMPLE_STEM_ROOT], (dfErr, dfOut) => {
-    const runDir = path.join(SIMPLE_STEM_ROOT, '.run');
-    const runLogs = {};
-    try {
-      if (fs.existsSync(runDir)) {
-        for (const f of fs.readdirSync(runDir)) {
-          if (f.endsWith('.log')) runLogs[f] = tail(path.join(runDir, f));
-        }
-      }
-    } catch (e) { runLogs.error = e.message; }
-    res.json({
-      ok: true,
-      when: new Date().toISOString(),
-      disk: dfErr ? ('df failed: ' + dfErr.message) : dfOut,
-      debugSnapshots: tail(DEBUG_SNAPSHOT_PATH),
-      bootTrace: tail(BOOT_TRACE_PATH),
-      runLogs,
-      queueFailed: listDir(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_failed')),
-      queueDone: (listDir(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_done')) || []).length,
-    });
+  const dfP = new Promise(resolve => {
+    const { execFile } = require('child_process');
+    execFile('df', ['-k', os.homedir(), SIMPLE_STEM_ROOT], { timeout: BUDGET_MS },
+      (err, out) => resolve(err ? ('df failed: ' + err.message) : out));
+  });
+  const runDir = path.join(SIMPLE_STEM_ROOT, '.run');
+  const runLogsP = (async () => {
+    const names = await fsp.readdir(runDir);
+    const out = {};
+    await Promise.all(names.filter(f => f.endsWith('.log')).map(async f => {
+      out[f] = await T(tailAsync(path.join(runDir, f)), '(timeout — Drive slow)');
+    }));
+    return out;
+  })();
+  const listP = (p) => fsp.readdir(p).then(a => a.slice(0, 50));
+  const [disk, debugSnapshots, bootTrace, runLogs, queueFailed, queueDoneArr] = await Promise.all([
+    T(dfP, '(df timeout)'),
+    T(tailAsync(DEBUG_SNAPSHOT_PATH), '(timeout)'),
+    T(tailAsync(BOOT_TRACE_PATH), '(timeout)'),
+    T(runLogsP, { note: '(timeout — Drive slow)' }),
+    T(listP(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_failed')), ['(timeout — Drive slow)']),
+    T(listP(path.join(SIMPLE_STEM_ROOT, 'STEM_QUEUE', '_done')), []),
+  ]);
+  res.json({
+    ok: true,
+    when: new Date().toISOString(),
+    disk, debugSnapshots, bootTrace, runLogs, queueFailed,
+    queueDone: Array.isArray(queueDoneArr) ? queueDoneArr.length : 0,
   });
 });
 
