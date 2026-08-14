@@ -247,6 +247,142 @@ PY
   fi
 }
 
+# Gig readiness test (Bill 2026-08-10): "I do not want these bugs to
+# occur at a practice anymore." Checks the prerequisites for a clean run
+# (services up, portal answering, sidecar alive, XR18 healthy, disk and
+# power sane) and then a regression pass over the invariants that have
+# each broken a practice or gig before: event-loop latency, the offline
+# cache contract, faststart m4a, stem serving speed, and pending cache
+# evictions. Prints PASS/WARN/FAIL lines and a verdict; exit 1 unless
+# gig ready.
+gig_test_checks() {
+  local s
+  for s in server midi caffeinate midiwatch; do
+    if is_running "$s"; then echo "PASS service $s running (pid $(cat "$(pidfile "$s")"))"
+    else echo "FAIL service $s not running: ./performer.sh start"; fi
+  done
+  if is_running runner; then echo "PASS service runner running"
+  else echo "WARN service runner stopped (fine at a gig, nothing new renders)"; fi
+  PORT="$PORT" python3 - <<'PY'
+import json, os, random, subprocess, sys, time, urllib.parse, urllib.request
+
+BASE = 'http://localhost:%s' % os.environ.get('PORT', '3000')
+def pj(u, t=5):
+    with urllib.request.urlopen(BASE + u, timeout=t) as r:
+        return json.load(r)
+def report(kind, msg):
+    print('%s %s' % (kind, msg))
+
+try:
+    times = []
+    for _ in range(20):
+        t0 = time.time(); pj('/api/health', 3); times.append((time.time() - t0) * 1000)
+    mx = max(times)
+    report('PASS' if mx < 100 else 'FAIL',
+           'event loop: /api/health max %.0f ms over 20 calls (budget 100 ms)' % mx)
+except Exception as e:
+    report('FAIL', 'portal unreachable: %s' % e)
+    sys.exit(0)
+
+try:
+    lib = pj('/api/library', 30)
+    songs = lib.get('songs') or []
+    stats = lib.get('stats') or {}
+    report('PASS' if songs else 'FAIL', 'library: %d songs' % len(songs))
+    unc = stats.get('uncachedSongs')
+    report('PASS' if unc == 0 else 'FAIL', 'server cache accounting: %s uncached songs' % unc)
+    cache = os.path.expanduser('~/.bt-cache/STEMS')
+    names = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+    bases = [s.get('folderName') or s.get('base') or s.get('slug') for s in songs]
+    bases = [b for b in bases if b]
+    sample = random.sample(bases, min(12, len(bases)))
+    miss = []
+    for b in sample:
+        for n in names:
+            p = os.path.join(cache, b, n + '.m4a')
+            if not (os.path.isfile(p) and os.path.getsize(p) > 0):
+                miss.append('%s/%s' % (b, n))
+    if miss:
+        report('FAIL', 'offline contract: stems missing from ~/.bt-cache: ' + ', '.join(miss[:6]))
+    else:
+        report('PASS', 'offline contract: all 6 stems on local disk for %d sampled songs' % len(sample))
+    bad = []
+    for b in random.sample(sample, min(3, len(sample))):
+        p = os.path.join(cache, b, 'vocals.m4a')
+        try:
+            with open(p, 'rb') as f:
+                head = f.read(65536)
+            mo, md = head.find(b'moov'), head.find(b'mdat')
+            if mo == -1 or (md != -1 and md < mo):
+                bad.append(b)
+        except Exception:
+            bad.append(b)
+    if bad:
+        report('FAIL', 'faststart: moov not at front: ' + ', '.join(bad))
+    else:
+        report('PASS', 'faststart: moov at front of sampled stems')
+    b = sample[0]
+    t0 = time.time()
+    with urllib.request.urlopen(BASE + '/api/audio/stems/%s/vocals.m4a' % urllib.parse.quote(b), timeout=10) as r:
+        data = r.read(262144)
+    ms = (time.time() - t0) * 1000
+    report('PASS' if ms < 3000 and data else 'FAIL', 'stem serving: first 256 KB in %.0f ms' % ms)
+except Exception as e:
+    report('FAIL', 'library/cache regression pass blew up: %s' % e)
+
+try:
+    x = pj('/api/audio/xr18-status', 10)
+    if x.get('present') and (x.get('channels') or 0) > 0:
+        report('PASS', 'XR18: present, %s audio channels' % x.get('channels'))
+        if not x.get('isDefaultOutput'):
+            report('WARN', 'XR18 is not the default output (click the XR18 button before the downbeat)')
+    elif x.get('present'):
+        report('FAIL', 'XR18: on USB but 0 audio channels. Its audio engine crashed: POWER-CYCLE the XR18 (Mac reboot does not help)')
+    else:
+        report('FAIL', 'XR18: not on the USB bus: check cable and mixer power')
+except Exception as e:
+    report('WARN', 'XR18 status unavailable: %s' % e)
+
+try:
+    with urllib.request.urlopen('http://localhost:5555/health', timeout=4) as r:
+        m = json.load(r)
+    ports = m.get('ports') or []
+    report('PASS' if m.get('ok') else 'FAIL', 'MIDI sidecar: ports: %s' % (', '.join(ports) or 'none'))
+    if not any('XR18' in p for p in ports):
+        report('WARN', 'XR18 MIDI port missing from the sidecar')
+    if not any('U2MIDI' in p for p in ports):
+        report('WARN', 'U2MIDI Pro missing: the Helix loop is dead until that cable is re-seated')
+except Exception as e:
+    report('FAIL', 'MIDI sidecar unreachable on :5555 (%s)' % e)
+
+try:
+    p = pj('/api/cache/prune-pending', 5)
+    if p.get('pending'):
+        report('WARN', 'cache: an eviction plan is ARMED, the 30s dialog will pop. Resolve it before the gig')
+    else:
+        report('PASS', 'cache: no eviction pending')
+except Exception:
+    pass
+
+try:
+    df = subprocess.run(['df', '-k', '/System/Volumes/Data'], capture_output=True, text=True).stdout.splitlines()
+    free_gb = int(df[1].split()[3]) / 1048576.0
+    kind = 'PASS' if free_gb >= 20 else ('WARN' if free_gb >= 10 else 'FAIL')
+    report(kind, 'disk: %.1f GB truly free (df, not Finder purgeable)' % free_gb)
+except Exception as e:
+    report('WARN', 'disk check failed: %s' % e)
+
+try:
+    batt = subprocess.run(['pmset', '-g', 'batt'], capture_output=True, text=True).stdout
+    if 'AC Power' in batt:
+        report('PASS', 'power: on AC')
+    else:
+        report('WARN', 'power: on battery. Plug in: low battery caused the 2026-08-08 gig stutter')
+except Exception:
+    pass
+PY
+}
+
 case "${1:-}" in
   start)
     echo "Starting Performer…"; preflight
@@ -309,7 +445,25 @@ case "${1:-}" in
     name="${2:-}"
     if [[ -n "$name" ]]; then tail -n 60 -f "$(logfile "$name")"
     else tail -n 30 -f "$RUN"/perf-*.log; fi ;;
+  test)
+    echo "Performer gig test (version $(version_str)), $(date)"
+    tmp="$(mktemp)"
+    gig_test_checks | tee "$tmp" | sed 's/^/  /'
+    np="$(grep -c '^PASS' "$tmp" 2>/dev/null || true)"
+    nw="$(grep -c '^WARN' "$tmp" 2>/dev/null || true)"
+    nf="$(grep -c '^FAIL' "$tmp" 2>/dev/null || true)"
+    rm -f "$tmp"
+    echo
+    echo "$(date)  performer.sh test  summary: ${np:-0} pass, ${nw:-0} warn, ${nf:-0} fail"
+    if [[ "${nf:-0}" -gt 0 ]]; then
+      echo "VERDICT: NOT GIG READY. Fix the FAIL lines above and re-run."
+      exit 1
+    elif [[ "${nw:-0}" -gt 0 ]]; then
+      echo "VERDICT: GIG READY, with warnings worth a look."
+    else
+      echo "VERDICT: GIG READY."
+    fi ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
+    echo "usage: $0 {start|stop|restart|status|test|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
     exit 1 ;;
 esac

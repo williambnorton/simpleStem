@@ -187,6 +187,7 @@ cd ~/ClaudeDrive/simpleStem
 (cd bt-construction-kit && npm install)   # once
 ./performer.sh start          # queue_runner (Demucs) + portal
 ./performer.sh status         # queue depth + current render & phase
+./performer.sh test           # gig readiness: prerequisites + regression pass, PASS/WARN/FAIL + verdict
 ./performer.sh logs runner
 ./performer.sh stop
 ```
