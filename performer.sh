@@ -176,7 +176,16 @@ start_one() {
   fi
   # nohup + setsid-style detach so the service SURVIVES closing the terminal
   # (without nohup, a plain & job gets SIGHUP and dies on terminal close).
-  nohup bash -c "$(start_cmd "$name")" >"$(logfile "$name")" 2>&1 &
+  # APPEND with a boot marker (2026-08-16): the old > truncation erased the
+  # previous run's log on every restart, which destroyed the gig-window
+  # evidence during the postmortem. Cap growth by trimming to the last
+  # 2000 lines before each start.
+  local lf; lf="$(logfile "$name")"
+  if [[ -f "$lf" ]]; then
+    tail -n 2000 "$lf" > "$lf.tmp" 2>/dev/null && mv "$lf.tmp" "$lf"
+  fi
+  echo "===== $(date) performer.sh start_one $name =====" >> "$lf"
+  nohup bash -c "$(start_cmd "$name")" >>"$lf" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   echo "$pid" > "$(pidfile "$name")"

@@ -181,9 +181,11 @@ cd ~/ClaudeDrive/simpleStem
 ./librarian.sh status
 ```
 
-On the **laptop (Performer)**:
+On the **laptop (Performer)** (ALWAYS from the git clone, never the Drive
+copy: running the Drive copy spawns a second stack that fights the real
+one for :3000/:5555; performer.sh now refuses, 2026-08-16):
 ```
-cd ~/ClaudeDrive/simpleStem
+cd ~/simpleStem-code
 (cd bt-construction-kit && npm install)   # once
 ./performer.sh start          # queue_runner (Demucs) + portal
 ./performer.sh status         # queue depth + current render & phase
