@@ -18,6 +18,17 @@
 set -uo pipefail
 
 BASE="$(cd "$(dirname "$0")" && pwd)"      # where the code lives (this clone)
+# Guard (2026-08-16): running this script from the Drive-synced copy
+# spawns a SECOND performer stack that fights the real one for :3000 and
+# :5555 (found as a sidecar bind-crash loop in the Drive-side .run logs,
+# with the traceback pointing into CloudStorage). The canonical clone is
+# ~/simpleStem-code; the Drive copy is data-only.
+case "$BASE" in
+  *CloudStorage*|*ClaudeDrive*)
+    echo "REFUSING to run from the Drive-synced copy ($BASE)." >&2
+    echo "Run the git clone instead:  cd ~/simpleStem-code && ./performer.sh ${1:-start}" >&2
+    exit 1 ;;
+esac
 . "$BASE/lib-common.sh"
 DATA="$(data_root)"                         # where the audio/data lives (Drive)
 export SIMPLE_STEM_ROOT="$DATA"             # so queue_runner + server inherit it

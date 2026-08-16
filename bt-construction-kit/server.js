@@ -5596,13 +5596,26 @@ app.get('/api/debug/logs', async (req, res) => {
     execFile('df', ['-k', os.homedir(), SIMPLE_STEM_ROOT], { timeout: BUDGET_MS },
       (err, out) => resolve(err ? ('df failed: ' + err.message) : out));
   });
-  const runDir = path.join(SIMPLE_STEM_ROOT, '.run');
+  // Read BOTH .run dirs (2026-08-16). SIMPLE_STEM_ROOT/.run belongs to a
+  // performer.sh whose BASE is the Drive folder (a competing stack, itself
+  // a finding); the LIVE stack writes its logs next to the code at
+  // <clone>/.run. Reading only the Drive side hid the real gig logs.
+  const runDirs = [
+    ['drive', path.join(SIMPLE_STEM_ROOT, '.run')],
+    ['code', path.join(__dirname, '..', '.run')],
+  ];
   const runLogsP = (async () => {
-    const names = await fsp.readdir(runDir);
     const out = {};
-    await Promise.all(names.filter(f => f.endsWith('.log')).map(async f => {
-      out[f] = await T(tailAsync(path.join(runDir, f)), '(timeout — Drive slow)');
-    }));
+    for (const [tag, runDir] of runDirs) {
+      try {
+        const names = await fsp.readdir(runDir);
+        await Promise.all(names.filter(f => f.endsWith('.log')).map(async f => {
+          const st = await fsp.stat(path.join(runDir, f)).catch(() => null);
+          const key = tag + ':' + f + (st ? ' (mtime ' + st.mtime.toISOString() + ')' : '');
+          out[key] = await T(tailAsync(path.join(runDir, f)), '(timeout — Drive slow)');
+        }));
+      } catch (e) { out[tag + ':error'] = e.message; }
+    }
     return out;
   })();
   const listP = (p) => fsp.readdir(p).then(a => a.slice(0, 50));
