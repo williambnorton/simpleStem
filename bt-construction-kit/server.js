@@ -5534,25 +5534,28 @@ app.post('/api/song/:base/lyrics-file/open', (req, res) => {
 // locally. When the client's currentSong.lyrics is missing but the
 // file actually has them, this endpoint serves as the self-heal path
 // so + Lyric stops launching the editor.
-app.get('/api/song/:base/lyrics', (req, res) => {
+// ASYNC + bounded (no-internet mandate): this endpoint fires on SONG LOAD
+// and was the last sync-Drive reader on that path (caught live by the
+// violation counter when Bill loaded a song on 2026-08-17). Offline it
+// degrades: lyrics come back null with driveTimeout:true and the song
+// plays without the overlay.
+app.get('/api/song/:base/lyrics', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     // Prefer lyrics.txt next to source.wav if it exists AND has content.
     // That's the operator-curated file Bill paste-edits in TextEdit. Falls
     // back to whatever's stored in metadata.json (legacy / Genius fetch).
     let lyrics = null;
     let source = meta.lyrics_source || null;
     const lp = lyricsTxtPath(s.dir);
-    if (fs.existsSync(lp)) {
-      try {
-        const txt = fs.readFileSync(lp, 'utf8').trim();
-        if (txt) { lyrics = txt; source = 'lyrics.txt'; }
-      } catch (e) {}
-    }
+    try {
+      const txt = (await driveRace(fsp.readFile(lp, 'utf8'))).trim();
+      if (txt) { lyrics = txt; source = 'lyrics.txt'; }
+    } catch (e) {}
     if (!lyrics) lyrics = meta.lyrics || null;
     // While we're here, patch libraryCache in place so subsequent
     // GET /api/library responses include lyrics for this song.
@@ -5570,7 +5573,10 @@ app.get('/api/song/:base/lyrics', (req, res) => {
       source,
       fetchedAt: meta.lyrics_fetched_at || null,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.json({ ok: true, lyrics: null, lyrics_chunks: null, source: null, driveTimeout: true });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Manual-paste lyrics. Saves whatever the operator pasted from Google /
@@ -5762,16 +5768,19 @@ app.get('/api/debug/logs', async (req, res) => {
 // and updates last_played_at. Client calls this on the FIRST 'playing'
 // event per song-load (debounced — six stems firing 'playing' must not
 // produce six increments). Returns the new count.
-app.post('/api/song/:base/play', (req, res) => {
+// ASYNC + bounded (no-internet mandate): fires on every song's first
+// 'playing' event, so it is squarely on the song-load path. Offline the
+// count silently does not increment (503) instead of wedging the loop.
+app.post('/api/song/:base/play', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     meta.play_count = (meta.play_count | 0) + 1;
     meta.last_played_at = new Date().toISOString();
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     // Patch libraryCache so /api/library reflects the new count without
     // waiting for the next CATALOG.json rebuild.
     try {
@@ -5785,7 +5794,10 @@ app.post('/api/song/:base/play', (req, res) => {
       }
     } catch (e) {}
     res.json({ ok: true, play_count: meta.play_count, last_played_at: meta.last_played_at });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — play count not recorded (offline)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Global tag registry. The library cell pulldown shows checkboxes for
