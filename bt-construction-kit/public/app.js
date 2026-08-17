@@ -8612,10 +8612,16 @@ async function refreshDrumMachinePick(drumPattern, bpm) {
             : resp.source === 'metronome-near'  ? ' m≈'
             : '';
   updateDrumChipLabel(fileLabel + tag);
-  // If the drum machine is currently playing, swap to the new file in place.
+  // If the drum machine is currently PLAYING, swap to the new file in
+  // place. Checking `paused` matters: the old code checked only
+  // drumMachineActive (engaged), so a pick refresh after the operator
+  // STOPPED the drum machine silently restarted it and the drum pill
+  // blinked green forever (Bill 2026-08-17). Engaged-but-stopped now
+  // stays stopped; the new file is armed for the next play.
   if (drumMachineActive && drumMachineEl && drumMachineUrl) {
+    const wasPlaying = !drumMachineEl.paused;
     drumMachineEl.src = drumMachineUrl;
-    drumMachineEl.play().catch(() => {});
+    if (wasPlaying) drumMachineEl.play().catch(() => {});
   }
 }
 
