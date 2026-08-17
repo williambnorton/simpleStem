@@ -133,6 +133,19 @@ function getAudioDuration(filePath) {
 app.use(cors());
 app.use(express.json());
 
+// In-flight request counter for the no-internet mandate's Drive-sync
+// guard (armed further down, after SIMPLE_STEM_ROOT is defined). Sync
+// Drive fs calls are only violations while a request is being handled;
+// boot-time and timer-driven code paths are exempt.
+app.use((req, res, next) => {
+  _inflightRequests++;
+  let done = false;
+  const dec = () => { if (!done) { done = true; _inflightRequests = Math.max(0, _inflightRequests - 1); } };
+  res.on('finish', dec);
+  res.on('close', dec);
+  next();
+});
+
 // Identity — am I running on the Performer or the Librarian? The two
 // machines run different daemons + have different operator workflows,
 // so visiting `/` should default to the right dashboard:
@@ -306,6 +319,49 @@ const CATALOG_DRIVE_PATH = `${SIMPLE_STEM_ROOT}/CATALOG.json`;
 // (fs.watch). Library serving reads ONLY this path so Drive never sits in
 // the request hot path.
 const CATALOG_LOCAL_MIRROR = path.join(os.homedir(), '.simpleStem-catalog', 'CATALOG.json');
+
+// ── NO-INTERNET MANDATE ENFORCEMENT (Bill 2026-08-16) ────────────────────
+// "Make sure that No Internet WILL NOT IMPACT THE APP." The precondition
+// for every offline gig wedge has been the same: a synchronous fs call on
+// a Drive/CloudStorage path while a request is in flight. Offline, each
+// such call blocks the event loop 30+ seconds and every request (page,
+// stems, health, even the reset button) hangs behind it. Code review
+// keeps missing these, so the runtime now CATCHES them: the sync fs
+// functions are wrapped; any call whose path resolves under the Drive
+// root while requests are in flight increments driveSyncViolations and
+// logs a stack trace (throttled). Behavior is unchanged (the call still
+// runs), but the counter rides /api/health and the gig test FAILS when
+// it is nonzero: a violation cannot reach a gig unseen.
+let driveSyncViolations = 0;
+let _inflightRequests = 0;
+let _lastViolationLog = 0;
+const _violationSeen = new Set();
+(function armDriveSyncGuard() {
+  const DRIVE_MARKERS = [SIMPLE_STEM_ROOT, 'CloudStorage', 'ClaudeDrive'];
+  const isDrivePath = (p) => {
+    if (typeof p !== 'string') return false;
+    return DRIVE_MARKERS.some(m => m && p.includes(m));
+  };
+  const wrap = (name) => {
+    const orig = fs[name];
+    if (typeof orig !== 'function') return;
+    fs[name] = function (...args) {
+      if (_inflightRequests > 0 && isDrivePath(args[0])) {
+        driveSyncViolations++;
+        const stack = (new Error().stack || '').split('\n').slice(2, 5).join(' | ');
+        const key = name + '@' + stack.slice(0, 120);
+        const now = Date.now();
+        if (!_violationSeen.has(key) || now - _lastViolationLog > 60000) {
+          _violationSeen.add(key);
+          _lastViolationLog = now;
+          console.warn(`[DRIVE-SYNC-VIOLATION] fs.${name}(${String(args[0]).slice(0, 90)}) during a request — offline this wedges the event loop. ${stack}`);
+        }
+      }
+      return orig.apply(fs, args);
+    };
+  };
+  for (const n of ['existsSync', 'statSync', 'readFileSync', 'writeFileSync', 'readdirSync', 'openSync', 'rmSync', 'mkdirSync', 'copyFileSync', 'unlinkSync']) wrap(n);
+})();
 
 // Comprehensive list of known artists in this library for intelligent parsing
 const KNOWN_ARTISTS = [
@@ -4992,6 +5048,9 @@ app.get('/api/health', (req, res) => {
     uptimeMs: Date.now() - BOOT_T0,
     libraryReady: !!(libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs) && libraryCache.data.songs.length > 0),
     librarySongs: (libraryCache && libraryCache.data && libraryCache.data.songs) ? libraryCache.data.songs.length : 0,
+    // No-internet mandate: count of sync Drive fs calls observed during
+    // request handling since boot. MUST be 0; the gig test fails otherwise.
+    driveSyncViolations,
   });
 });
 

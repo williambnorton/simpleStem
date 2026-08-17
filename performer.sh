@@ -376,6 +376,18 @@ except Exception as e:
     report('FAIL', 'MIDI sidecar unreachable on :5555 (%s)' % e)
 
 try:
+    h2 = pj('/api/health', 5)
+    v = h2.get('driveSyncViolations')
+    if v == 0:
+        report('PASS', 'no-internet mandate: 0 sync Drive fs calls during request handling since boot')
+    elif v is None:
+        report('WARN', 'no-internet mandate: server predates the violation counter, restart to arm it')
+    else:
+        report('FAIL', 'no-internet mandate: %s sync Drive fs call(s) during requests. Offline these WEDGE the portal. Stacks are in the server log under DRIVE-SYNC-VIOLATION' % v)
+except Exception:
+    pass
+
+try:
     p = pj('/api/cache/prune-pending', 5)
     if p.get('pending'):
         report('WARN', 'cache: an eviction plan is ARMED, the 30s dialog will pop. Resolve it before the gig')

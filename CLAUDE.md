@@ -625,6 +625,45 @@ docs, commit messages, UI copy, comments, reports.
    a person who is busy: plain verbs, concrete nouns, varied sentence
    length, no filler.
 
+## No-internet mandate (Bill 2026-08-16)
+
+**No internet (almost guaranteed at a gig) WILL NOT IMPACT THE APP.**
+The 2026-08-16 gig wedged the portal solid with no internet and the
+reset button could not save it. Root cause, same as every prior wedge:
+a synchronous fs call on a Drive/CloudStorage path while a request was
+in flight. Offline, each such call blocks Node's event loop 30+ seconds
+and EVERY request hangs behind it, including the reset that would have
+fixed it. The preconditions for this failure mode must NEVER exist in
+the App. Binding rules:
+
+1. **Request paths never touch Drive synchronously.** No `existsSync` /
+   `statSync` / `readFileSync` / `writeFileSync` / `readdirSync` on any
+   path under `SIMPLE_STEM_ROOT` or CloudStorage inside a route handler
+   or anything a route calls. ENFORCED AT RUNTIME: server.js wraps the
+   sync fs functions; a Drive-path call during request handling
+   increments `driveSyncViolations` (exposed on `/api/health`) and logs
+   a `DRIVE-SYNC-VIOLATION` stack. The gig test FAILS on a nonzero
+   count. New code that trips the counter is not done.
+2. **Drive I/O a request truly needs goes through the bounded helpers**
+   (`readMetaBounded` / `writeMetaBounded`: fs.promises raced against
+   1.5 s read / 5 s write budgets). Reads DEGRADE (empty payload +
+   `driveTimeout: true`, the song still plays); writes fail LOUD with a
+   503. Never an unbounded await on a Drive path in a request.
+3. **Operator-owned state lives on local disk**, not Drive
+   (`~/.simpleStem-catalog/`: RECENTS.json, mirrors). Drive is for data
+   shared with the Librarian, and the portal reads local mirrors of it.
+4. **The pages load zero remote resources.** Every script, font, and
+   icon is vendored under `public/vendor/`. No CDN tags, no favicon
+   services, no runtime fetches to the internet. (lucide and Tone.js
+   were already local; the AI-button favicons were the last stragglers,
+   vendored 2026-08-16.)
+5. **Every new feature states its offline behavior** in its PR/commit:
+   what happens with no internet, and which drill check covers it.
+6. **The acceptance gate is `./performer.sh drill`**: Wi-Fi off, full
+   gig test, 2 s answer budgets on the page-load and song-load
+   endpoints, an offline reset round-trip, Wi-Fi restored. VENUE READY
+   or it does not go to a gig.
+
 ## Test mandate (Bill 2026-08-10)
 
 Born from a practice-day cascade: frozen playback behind a happy pause
