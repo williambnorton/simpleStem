@@ -403,6 +403,35 @@ except Exception:
 PY
 }
 
+# Shared gig-test runner (Bill 2026-08-16: "make performer start and
+# restart do a performer test first"). The checks need the portal up, so
+# start/restart run it as their FINAL step and print the verdict; the
+# standalone `test` subcommand additionally exits 1 on any FAIL.
+run_gig_test() {
+  local strict="${1:-}"
+  echo
+  echo "Performer gig test (version $(version_str)), $(date)"
+  local tmp; tmp="$(mktemp)"
+  gig_test_checks | tee "$tmp" | sed 's/^/  /'
+  local np nw nf
+  np="$(grep -c '^PASS' "$tmp" 2>/dev/null || true)"
+  nw="$(grep -c '^WARN' "$tmp" 2>/dev/null || true)"
+  nf="$(grep -c '^FAIL' "$tmp" 2>/dev/null || true)"
+  rm -f "$tmp"
+  echo
+  echo "$(date)  performer.sh test  summary: ${np:-0} pass, ${nw:-0} warn, ${nf:-0} fail"
+  if [[ "${nf:-0}" -gt 0 ]]; then
+    echo "VERDICT: NOT GIG READY. Fix the FAIL lines above and re-run ./performer.sh test"
+    [[ "$strict" == "strict" ]] && exit 1
+    return 1
+  elif [[ "${nw:-0}" -gt 0 ]]; then
+    echo "VERDICT: GIG READY, with warnings worth a look."
+  else
+    echo "VERDICT: GIG READY."
+  fi
+  return 0
+}
+
 case "${1:-}" in
   start)
     echo "Starting Performer…"; preflight
@@ -429,7 +458,9 @@ case "${1:-}" in
       echo "  ! server didn't answer on :$PORT within 15s — see .run/perf-server.log" >&2
       tail -n 5 "$(logfile server)" 2>/dev/null | sed 's/^/    /'
     fi
-    echo; print_queue ;;
+    echo; print_queue
+    sleep 1
+    run_gig_test || true ;;
   stop)
     echo "Stopping Performer…"
     for s in $SERVICES; do stop_one "$s"; done ;;
@@ -443,7 +474,9 @@ case "${1:-}" in
     for s in $SERVICES; do start_one "$s"; done
     echo
     if wait_for_port; then echo "Portal up on http://localhost:$PORT"; open_portal; fi
-    echo; print_queue ;;
+    echo; print_queue
+    sleep 1
+    run_gig_test || true ;;
   open)
     open_portal ;;
   status)
@@ -466,23 +499,7 @@ case "${1:-}" in
     if [[ -n "$name" ]]; then tail -n 60 -f "$(logfile "$name")"
     else tail -n 30 -f "$RUN"/perf-*.log; fi ;;
   test)
-    echo "Performer gig test (version $(version_str)), $(date)"
-    tmp="$(mktemp)"
-    gig_test_checks | tee "$tmp" | sed 's/^/  /'
-    np="$(grep -c '^PASS' "$tmp" 2>/dev/null || true)"
-    nw="$(grep -c '^WARN' "$tmp" 2>/dev/null || true)"
-    nf="$(grep -c '^FAIL' "$tmp" 2>/dev/null || true)"
-    rm -f "$tmp"
-    echo
-    echo "$(date)  performer.sh test  summary: ${np:-0} pass, ${nw:-0} warn, ${nf:-0} fail"
-    if [[ "${nf:-0}" -gt 0 ]]; then
-      echo "VERDICT: NOT GIG READY. Fix the FAIL lines above and re-run."
-      exit 1
-    elif [[ "${nw:-0}" -gt 0 ]]; then
-      echo "VERDICT: GIG READY, with warnings worth a look."
-    else
-      echo "VERDICT: GIG READY."
-    fi ;;
+    run_gig_test strict ;;
   *)
     echo "usage: $0 {start|stop|restart|status|test|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
     exit 1 ;;

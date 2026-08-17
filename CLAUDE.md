@@ -187,9 +187,9 @@ one for :3000/:5555; performer.sh now refuses, 2026-08-16):
 ```
 cd ~/simpleStem-code
 (cd bt-construction-kit && npm install)   # once
-./performer.sh start          # queue_runner (Demucs) + portal
+./performer.sh start          # queue_runner (Demucs) + portal, then runs the gig test automatically
 ./performer.sh status         # queue depth + current render & phase
-./performer.sh test           # gig readiness: prerequisites + regression pass, PASS/WARN/FAIL + verdict
+./performer.sh test           # gig readiness: prerequisites + regression pass, PASS/WARN/FAIL + verdict (start/restart run this too)
 ./performer.sh logs runner
 ./performer.sh stop
 ```
