@@ -6046,6 +6046,40 @@ app.put('/api/song/:base/singer', async (req, res) => {
   }
 });
 
+// Per-song drum-machine pattern (Bill 2026-08-17: "alter the drum machine
+// pattern for any song, selecting from the existing drum patterns").
+// Writes metadata.drum_pattern, the same field the sheet's Drums column
+// populates and /api/drum-machine/pick prefers, so the next drum-machine
+// engage uses the selection with no other changes. Same caveat as the
+// singer pulldown: the next mpb_sync may overwrite it if the sheet still
+// carries an older value; in-portal edits are triage, the sheet is
+// canonical. Empty pattern clears the field (back to BPM auto-match).
+app.put('/api/song/:base/drum-pattern', async (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  const raw = (req.body && req.body.drum_pattern);
+  const pattern = (typeof raw === 'string' ? raw : '').trim().slice(0, 40);
+  try {
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
+    if (pattern) meta.drum_pattern = pattern;
+    else         delete meta.drum_pattern;
+    await writeMetaBounded(mp, meta);
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      if (Array.isArray(songs)) {
+        const row = songs.find(x => x.type === 'stems' && x.folderName === s.b);
+        if (row) row.drum_pattern = pattern || null;
+      }
+    } catch (e) { console.warn('[drum-pattern] cache patch failed:', e.message); }
+    res.json({ ok: true, drum_pattern: pattern || null });
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — drum pattern not saved (offline?)' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Recents: rolling log of the last 50 songs the operator loaded ──────────
 // { entries: [{ base, at }, ...] }. Performer-owned, NOT git-tracked.
 // MOVED TO LOCAL DISK 2026-08-16: it lived on Drive, and the GET fires at

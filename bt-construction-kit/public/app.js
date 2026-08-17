@@ -4075,15 +4075,70 @@ function renderLibrary() {
       else alert('This song has no playable files — cannot open options.');
     });
 
-    // Drum machine pattern cell — opaque string from the band sheet
-    // (e.g. "120@96", "95UduHop", "ACTUAL"). Just displayed as text; the
-    // band reads it as their cue to set the drum machine pattern.
+    // Drum machine pattern cell — a pulldown of every existing drum
+    // pattern, grouped by BPM family (Bill 2026-08-17: "alter the drum
+    // machine pattern for any song"). Selection persists to
+    // metadata.drum_pattern via PUT and takes effect on the next
+    // drum-machine engage (the pick endpoint prefers this field).
+    // Sheet-sourced values that are not real pattern files (e.g.
+    // "95UduHop", "ACTUAL") stay visible as an extra option.
     const drumCell = document.createElement('div');
     drumCell.className = 'song-drum-cell';
     const stemsForDrum = merged.variants.find(v => v.type === 'stems');
-    const drumPattern = stemsForDrum && stemsForDrum.drum_pattern;
-    drumCell.textContent = drumPattern || '—';
-    if (drumPattern) drumCell.title = `Drum pattern: ${drumPattern}`;
+    const drumPattern = (stemsForDrum && stemsForDrum.drum_pattern) || '';
+    if (stemsForDrum && stemsForDrum.folderName) {
+      const dsel = document.createElement('select');
+      dsel.className = 'singer-select drum-pattern-select';
+      dsel.title = 'Drum machine pattern for this song (saved to metadata.json; the next mpb_sync may overwrite this if the sheet says otherwise)';
+      const optAuto = document.createElement('option');
+      optAuto.value = '';
+      optAuto.textContent = '—';
+      dsel.appendChild(optAuto);
+      if (drumPattern) {
+        const cur = document.createElement('option');
+        cur.value = drumPattern;
+        cur.textContent = drumPattern;
+        cur.selected = true;
+        dsel.appendChild(cur);
+      }
+      getDrumPatternChoices().then(families => {
+        const have = new Set([...dsel.options].map(o => o.value));
+        for (const fam of families) {
+          const og = document.createElement('optgroup');
+          og.label = fam.label;
+          for (const p of fam.patterns) {
+            if (have.has(p.label)) continue;
+            const opt = document.createElement('option');
+            opt.value = p.label;
+            opt.textContent = p.label;
+            og.appendChild(opt);
+          }
+          if (og.children.length) dsel.appendChild(og);
+        }
+        dsel.value = drumPattern;
+      }).catch(() => {});
+      dsel.addEventListener('click', e => e.stopPropagation());
+      dsel.addEventListener('change', async () => {
+        const v = dsel.value;
+        try {
+          const r = await fetch(`/api/song/${encodeURIComponent(stemsForDrum.folderName)}/drum-pattern`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drum_pattern: v }),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          stemsForDrum.drum_pattern = v || null;
+          showToast(v ? `Drum pattern → ${v}` : 'Drum pattern cleared (auto-match by BPM)');
+        } catch (err) {
+          console.warn('[drum-pattern] save failed:', err);
+          showToast('Drum pattern not saved: ' + err.message);
+          dsel.value = drumPattern;
+        }
+      });
+      drumCell.appendChild(dsel);
+    } else {
+      drumCell.textContent = drumPattern || '—';
+    }
 
     // Tags cell — pulldown of checkboxes (Protest, Bill&Matt, user-added)
     // plus an "Add tag…" item and a radio group for readiness
@@ -5943,6 +5998,22 @@ function showPruneDialog(p) {
     showToast('Nothing deleted — cache checks paused for 24h so you can free space yourself');
     close();
   });
+}
+
+// ── Drum pattern choices (cached) ────────────────────────────────────────
+// One fetch of /api/drum-machine/all-grouped feeds every library row's
+// drum-pattern pulldown. Families arrive sorted by BPM, patterns sorted
+// within each family. A failed fetch clears the memo so the next render
+// retries.
+let _drumChoicesPromise = null;
+function getDrumPatternChoices() {
+  if (!_drumChoicesPromise) {
+    _drumChoicesPromise = fetch('/api/drum-machine/all-grouped')
+      .then(r => r.json())
+      .then(d => (d && Array.isArray(d.families)) ? d.families : [])
+      .catch(() => { _drumChoicesPromise = null; return []; });
+  }
+  return _drumChoicesPromise;
 }
 
 // ── The scheduler ────────────────────────────────────────────────────────
