@@ -1174,32 +1174,40 @@ async function tryLoadFromCatalog() {
 // size+mtime). Used for GIGS/ and SETLISTS/ -- live performance files
 // that the App must serve offline. Best-effort: any Drive hiccup is
 // logged and swallowed so it never blocks the boot path.
-function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
+// ASYNC (no-internet mandate, 2026-08-17): these mirrors ran sync on the
+// 60 s poll and blocked the event loop for the duration of every Drive
+// touch, freezing any concurrent request; offline, one hung poll could
+// freeze the portal for the CloudStorage timeout. All I/O is now
+// fs.promises raced against a 4 s per-op budget; the mirror is
+// best-effort and a timed-out pass just retries on the next poll.
+const MIRROR_BUDGET_MS = 4000;
+const mirrorB = (p) => Promise.race([
+  p,
+  new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), MIRROR_BUDGET_MS)),
+]);
+async function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
   let copied = 0, skipped = 0, removed = 0;
   try {
-    if (!fs.existsSync(srcDir)) return;
-    try { fs.mkdirSync(mirrorDir, { recursive: true }); } catch (e) {}
-    const driveFiles = new Set(fs.readdirSync(srcDir).filter(f => f.toLowerCase().endsWith('.json')));
-    // Copy/refresh anything on Drive that's missing or stale in the mirror
+    let driveList;
+    try { driveList = await mirrorB(fsp.readdir(srcDir)); } catch (e) { return; }
+    await fsp.mkdir(mirrorDir, { recursive: true }).catch(() => {});
+    const driveFiles = new Set(driveList.filter(f => f.toLowerCase().endsWith('.json')));
     for (const f of driveFiles) {
       const src = path.join(srcDir, f);
       const dst = path.join(mirrorDir, f);
       try {
-        const srcStat = fs.statSync(src);
-        if (fs.existsSync(dst)) {
-          const dstStat = fs.statSync(dst);
-          if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) {
-            skipped++; continue;
-          }
+        const srcStat = await mirrorB(fsp.stat(src));
+        const dstStat = await fsp.stat(dst).catch(() => null);
+        if (dstStat && dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) {
+          skipped++; continue;
         }
-        fs.copyFileSync(src, dst);
+        await mirrorB(fsp.copyFile(src, dst));
         copied++;
       } catch (e) { /* per-file, keep going */ }
     }
-    // Remove mirror entries that disappeared on Drive (deleted gigs/setlists).
-    for (const f of fs.readdirSync(mirrorDir).filter(f => f.toLowerCase().endsWith('.json'))) {
+    for (const f of (await fsp.readdir(mirrorDir).catch(() => [])).filter(f => f.toLowerCase().endsWith('.json'))) {
       if (!driveFiles.has(f)) {
-        try { fs.unlinkSync(path.join(mirrorDir, f)); removed++; } catch (e) {}
+        try { await fsp.unlink(path.join(mirrorDir, f)); removed++; } catch (e) {}
       }
     }
     if (copied || removed) {
@@ -1210,19 +1218,15 @@ function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
   }
 }
 
-function mirrorCatalogOnce(reason) {
+async function mirrorCatalogOnce(reason) {
   try {
-    if (!fs.existsSync(CATALOG_DRIVE_PATH)) return;
-    const srcStat = fs.statSync(CATALOG_DRIVE_PATH);
-    const mirrorDir = path.dirname(CATALOG_LOCAL_MIRROR);
-    if (!fs.existsSync(mirrorDir)) fs.mkdirSync(mirrorDir, { recursive: true });
-    let needsCopy = true;
-    if (fs.existsSync(CATALOG_LOCAL_MIRROR)) {
-      const dstStat = fs.statSync(CATALOG_LOCAL_MIRROR);
-      if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) needsCopy = false;
-    }
+    let srcStat;
+    try { srcStat = await mirrorB(fsp.stat(CATALOG_DRIVE_PATH)); } catch (e) { return; }
+    await fsp.mkdir(path.dirname(CATALOG_LOCAL_MIRROR), { recursive: true }).catch(() => {});
+    const dstStat = await fsp.stat(CATALOG_LOCAL_MIRROR).catch(() => null);
+    const needsCopy = !(dstStat && dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs);
     if (needsCopy) {
-      fs.copyFileSync(CATALOG_DRIVE_PATH, CATALOG_LOCAL_MIRROR);
+      await mirrorB(fsp.copyFile(CATALOG_DRIVE_PATH, CATALOG_LOCAL_MIRROR));
       console.log(`[catalog] mirror updated (${reason}) — ${Math.round(srcStat.size / 1024)} KB`);
       // Trigger a library refresh so the in-memory cache catches up.
       refreshLibraryCache('catalog-mirror-updated', true);
