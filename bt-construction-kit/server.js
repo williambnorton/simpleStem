@@ -2671,6 +2671,147 @@ app.get('/api/cache/status', (req, res) => {
 // per-section timeouts so any one stalled probe (Drive in particular)
 // can't wedge the whole response.
 // =====================================================================
+// ── Drive dashboard snapshot (no-internet mandate, 2026-08-17) ───────────
+// The dashboard/queue endpoints are POLLED every few seconds and used to
+// readdir Drive inside every request: the violation counter measured
+// 24,601 sync Drive calls in a day, each one an offline wedge waiting to
+// happen. ALL Drive-derived dashboard state is now computed here on a
+// 10-second timer with fs.promises and per-op budgets; request handlers
+// read this in-memory snapshot and never touch Drive.
+const SNAP_BUDGET_MS = 2500;
+const snapB = (p) => Promise.race([
+  p,
+  new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), SNAP_BUDGET_MS)),
+]);
+let driveSnap = {
+  at: 0,
+  queueApi: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0 },
+  ingest: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0, recentDone: [] },
+  catalog: {}, mpbSync: {}, recentRenders: [], daemons: {},
+};
+let _driveSnapRunning = false;
+async function refreshDriveSnap() {
+  if (_driveSnapRunning) return;
+  _driveSnapRunning = true;
+  const next = {
+    at: Date.now(),
+    queueApi: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0 },
+    ingest: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0, recentDone: [] },
+    catalog: {}, mpbSync: {}, recentRenders: [], daemons: {},
+  };
+  try {
+    const entries = await snapB(fsp.readdir(INCOMING_DIR)).catch(() => []);
+    next.queueApi.incoming = entries.filter(f => f.endsWith('.webloc')).sort();
+    next.queueApi.failed = entries.filter(f => f.endsWith('.failed')).sort();
+    next.ingest.incoming = next.queueApi.incoming;
+    next.ingest.failed = next.queueApi.failed;
+  } catch (e) {}
+  try {
+    const entries = await snapB(fsp.readdir(QUEUE_DIR)).catch(() => []);
+    for (const entry of entries) {
+      if (entry.startsWith('.') || entry === '_done' || entry === '_failed') continue;
+      const p2 = path.join(QUEUE_DIR, entry);
+      try {
+        const st = await snapB(fsp.stat(p2));
+        if (st.isDirectory()) {
+          const inner = await snapB(fsp.readdir(p2)).catch(() => []);
+          next.queueApi.queued.push({ name: entry, type: 'setlist', songs: inner.filter(f => f.endsWith('.json')).length });
+        } else if (entry.endsWith('.json')) {
+          next.queueApi.queued.push({ name: entry, type: 'single', songs: 1 });
+        }
+      } catch (e) {}
+    }
+    next.ingest.queued = next.queueApi.queued.map(q => q.name);
+    const failedList = await snapB(fsp.readdir(path.join(QUEUE_DIR, '_failed'))).catch(() => []);
+    next.queueApi.failedRenders = failedList.filter(f => f.endsWith('.json')).length;
+    next.ingest.failedRenders = next.queueApi.failedRenders;
+    try {
+      const raw = await snapB(fsp.readFile(path.join(QUEUE_DIR, '.current'), 'utf8'));
+      try { next.queueApi.processing = JSON.parse(raw); } catch (e) { next.queueApi.processing = { song: raw.trim() }; }
+      next.ingest.processing = next.queueApi.processing;
+    } catch (e) {}
+    const doneList = await snapB(fsp.readdir(path.join(QUEUE_DIR, '_done'))).catch(() => []);
+    const doneStats = [];
+    for (const f of doneList.filter(f => f.endsWith('.json')).slice(-40)) {
+      try {
+        const st = await snapB(fsp.stat(path.join(QUEUE_DIR, '_done', f)));
+        doneStats.push({ name: f, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs });
+      } catch (e) {}
+    }
+    next.ingest.recentDone = doneStats.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 10)
+      .map(({ name, mtime }) => ({ name, mtime }));
+  } catch (e) {}
+  try {
+    const catPath = path.join(SIMPLE_STEM_ROOT, 'CATALOG.json');
+    const st = await snapB(fsp.stat(catPath));
+    next.catalog.exists = true;
+    next.catalog.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
+    const j = JSON.parse(await snapB(fsp.readFile(catPath, 'utf8')));
+    if (j.data && Array.isArray(j.data.songs)) {
+      next.catalog.shape = 'canonical';
+      next.catalog.songCount = j.data.songs.length;
+      next.catalog.scannedAt = j.scannedAt || null;
+      const songsWithMeta = j.data.songs.filter(s => s.title && s.artist);
+      next.catalog.libraryStats = {
+        songs: j.data.songs.length,
+        artistCount: new Set(j.data.songs.map(s => s.artist).filter(Boolean)).size,
+        withLyrics: j.data.songs.filter(s => s.lyrics && String(s.lyrics).trim()).length,
+        missingMetadata: j.data.songs.length - songsWithMeta.length,
+      };
+    } else if (Array.isArray(j.songs)) {
+      next.catalog.shape = 'legacy';
+      next.catalog.songCount = j.songs.length;
+      next.catalog.scannedAt = j.generated_at || null;
+    } else next.catalog.shape = 'unknown';
+  } catch (e) { if (!isDriveTimeoutName(e)) next.catalog.exists = false; }
+  try {
+    const reportPath = path.join(SIMPLE_STEM_ROOT, 'LOGS', 'mpb_sync_report.json');
+    const st = await snapB(fsp.stat(reportPath));
+    next.mpbSync.reportExists = true;
+    next.mpbSync.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
+    try {
+      const j = JSON.parse(await snapB(fsp.readFile(reportPath, 'utf8')));
+      next.mpbSync.unmatched = Array.isArray(j.unmatched) ? j.unmatched.length : (typeof j.unmatched === 'number' ? j.unmatched : 0);
+      next.mpbSync.recentChanges = Array.isArray(j.changed) ? j.changed.length : (typeof j.changed === 'number' ? j.changed : 0);
+      next.mpbSync.runs = j.runs || null;
+    } catch (e) { next.mpbSync.parseError = e.message; }
+  } catch (e) {}
+  try {
+    const dirents = await snapB(fsp.readdir(STEMS_DIR, { withFileTypes: true })).catch(() => []);
+    const stats = [];
+    for (const d of dirents.filter(d => d.isDirectory())) {
+      try {
+        const st = await snapB(fsp.stat(path.join(STEMS_DIR, d.name)));
+        stats.push({ name: d.name, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs });
+      } catch (e) {}
+    }
+    next.recentRenders = stats.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 10)
+      .map(({ name, mtime }) => ({ name, mtime }));
+  } catch (e) {}
+  try {
+    const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
+    const codeDotRun = path.join(__dirname, '..', '.run');
+    const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'lib-watcher',
+                       'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
+    for (const name of PID_NAMES) {
+      let pidRaw = null, pidPath = null;
+      for (const dir of [dotRun, codeDotRun]) {
+        try { pidRaw = await snapB(fsp.readFile(path.join(dir, name + '.pid'), 'utf8')); pidPath = path.join(dir, name + '.pid'); break; } catch (e) {}
+      }
+      if (pidRaw === null) { next.daemons[name] = { running: false, pid: null, reason: 'no pid file' }; continue; }
+      const pid = parseInt(pidRaw.trim(), 10);
+      let alive = false;
+      try { process.kill(pid, 0); alive = true; } catch (e) {}
+      next.daemons[name] = { running: alive, pid, pidPath };
+    }
+  } catch (e) {}
+  driveSnap = next;
+  _driveSnapRunning = false;
+}
+function isDriveTimeoutName(e) { return e && e.message === 'drive-timeout'; }
+setImmediate(() => { refreshDriveSnap().catch(() => { _driveSnapRunning = false; }); });
+setInterval(() => { refreshDriveSnap().catch(() => { _driveSnapRunning = false; }); }, 10 * 1000);
+
 async function probeDashboardState() {
   const t0 = Date.now();
   const state = {
@@ -2750,55 +2891,18 @@ async function probeDashboardState() {
     }
   } catch (e) {}
 
-  // Queue state — same data as /api/queue but inlined here so the
-  // dashboard doesn't need a second round-trip.
-  try {
-    if (fs.existsSync(INCOMING_DIR)) {
-      const entries = fs.readdirSync(INCOMING_DIR);
-      state.queue.incoming = entries.filter(f => f.endsWith('.webloc')).length;
-      state.queue.failedWeblocs = entries.filter(f => f.endsWith('.failed')).length;
-    }
-    if (fs.existsSync(QUEUE_DIR)) {
-      const entries = fs.readdirSync(QUEUE_DIR).filter(f => !f.startsWith('.') && !['_done','_failed'].includes(f));
-      state.queue.queued = entries.length;
-      const failedDir = path.join(QUEUE_DIR, '_failed');
-      if (fs.existsSync(failedDir)) {
-        state.queue.failedRenders = fs.readdirSync(failedDir).filter(f => f.endsWith('.json')).length;
-      }
-      const cur = path.join(QUEUE_DIR, '.current');
-      if (fs.existsSync(cur)) {
-        try { state.queue.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
-        catch (e) { state.queue.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
-      }
-    }
-  } catch (e) {}
+  // Queue state — served from the driveSnap in-memory snapshot (10 s
+  // refresh cadence). No Drive I/O in this request path (no-internet
+  // mandate; this block used to readdir Drive on every dashboard poll).
+  state.queue.incoming = driveSnap.queueApi.incoming.length;
+  state.queue.failedWeblocs = driveSnap.queueApi.failed.length;
+  state.queue.queued = driveSnap.queueApi.queued.length;
+  state.queue.failedRenders = driveSnap.queueApi.failedRenders;
+  state.queue.processing = driveSnap.queueApi.processing;
+  state.queue.snapshotAgeMs = driveSnap.at ? Date.now() - driveSnap.at : null;
 
-  // Daemons — read PID files from BOTH machines' .run/ directories so the
-  // dashboard reflects whichever side we're polling from. PID alive check
-  // is `process.kill(pid, 0)` which throws if dead. Names match the
-  // service identifiers in performer.sh + librarian.sh.
-  const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
-  const codeDotRun = path.join(__dirname, '..', '.run');
-  const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'lib-watcher',
-                     'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
-  for (const name of PID_NAMES) {
-    const pidPath1 = path.join(dotRun, `${name}.pid`);
-    const pidPath2 = path.join(codeDotRun, `${name}.pid`);
-    const pidPath = fs.existsSync(pidPath1) ? pidPath1 :
-                    fs.existsSync(pidPath2) ? pidPath2 : null;
-    if (!pidPath) {
-      state.daemons[name] = { running: false, pid: null, reason: 'no pid file' };
-      continue;
-    }
-    try {
-      const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
-      let alive = false;
-      try { process.kill(pid, 0); alive = true; } catch (e) {}
-      state.daemons[name] = { running: alive, pid, pidPath };
-    } catch (e) {
-      state.daemons[name] = { running: false, pid: null, reason: e.message };
-    }
-  }
+  // Daemons — same snapshot (PID files live on Drive-side .run too).
+  state.daemons = { ...driveSnap.daemons };
 
   // XR18 — reuse the cached probe written by /api/audio/xr18-status. The
   // dashboard polling cadence (3-5s) is slower than the XR18 cache TTL
@@ -2876,98 +2980,17 @@ async function probeLibrarianState() {
     state.drive.error = (e && e.message) || String(e);
   }
 
-  // Ingest pipeline state.
-  try {
-    if (fs.existsSync(INCOMING_DIR)) {
-      const entries = fs.readdirSync(INCOMING_DIR);
-      state.ingest.incoming = entries.filter(f => f.endsWith('.webloc')).sort();
-      state.ingest.failed   = entries.filter(f => f.endsWith('.failed')).sort();
-    }
-    if (fs.existsSync(QUEUE_DIR)) {
-      const entries = fs.readdirSync(QUEUE_DIR).filter(f => !f.startsWith('.') && !['_done','_failed'].includes(f));
-      state.ingest.queued = entries.sort();
-      const cur = path.join(QUEUE_DIR, '.current');
-      if (fs.existsSync(cur)) {
-        try { state.ingest.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
-        catch (e) { state.ingest.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
-      }
-      const failedDir = path.join(QUEUE_DIR, '_failed');
-      if (fs.existsSync(failedDir)) {
-        state.ingest.failedRenders = fs.readdirSync(failedDir).filter(f => f.endsWith('.json')).length;
-      }
-      const doneDir = path.join(QUEUE_DIR, '_done');
-      if (fs.existsSync(doneDir)) {
-        const done = fs.readdirSync(doneDir).filter(f => f.endsWith('.json'))
-          .map(f => ({ name: f, mtime: (() => { try { return fs.statSync(path.join(doneDir, f)).mtime.toISOString(); } catch (e) { return null; } })() }))
-          .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))
-          .slice(0, 10);
-        state.ingest.recentDone = done;
-      }
-    }
-  } catch (e) { state.ingest.error = e.message; }
-
-  // Catalog: shape, count, age, drift report if present.
-  try {
-    const catPath = path.join(SIMPLE_STEM_ROOT, 'CATALOG.json');
-    if (fs.existsSync(catPath)) {
-      state.catalog.exists = true;
-      const st = fs.statSync(catPath);
-      state.catalog.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
-      const j = JSON.parse(fs.readFileSync(catPath, 'utf8'));
-      if (j.data && Array.isArray(j.data.songs)) {
-        state.catalog.shape = 'canonical';
-        state.catalog.songCount = j.data.songs.length;
-        state.catalog.scannedAt = j.scannedAt || null;
-        const songsWithMeta = j.data.songs.filter(s => s.title && s.artist);
-        state.libraryStats.songs = j.data.songs.length;
-        state.libraryStats.artistCount = new Set(j.data.songs.map(s => s.artist).filter(Boolean)).size;
-        state.libraryStats.withLyrics = j.data.songs.filter(s => s.lyrics && String(s.lyrics).trim()).length;
-        state.libraryStats.missingMetadata = j.data.songs.length - songsWithMeta.length;
-      } else if (Array.isArray(j.songs)) {
-        state.catalog.shape = 'legacy';
-        state.catalog.songCount = j.songs.length;
-        state.catalog.scannedAt = j.generated_at || null;
-      } else {
-        state.catalog.shape = 'unknown';
-      }
-    }
-  } catch (e) { state.catalog.error = e.message; }
-
-  // MPB Sync report — written by mpb_sync.py to LOGS/mpb_sync_report.json.
-  try {
-    const reportPath = path.join(SIMPLE_STEM_ROOT, 'LOGS', 'mpb_sync_report.json');
-    if (fs.existsSync(reportPath)) {
-      state.mpbSync.reportExists = true;
-      const st = fs.statSync(reportPath);
-      state.mpbSync.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
-      try {
-        const j = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-        state.mpbSync.unmatched = Array.isArray(j.unmatched) ? j.unmatched.length :
-                                  (typeof j.unmatched === 'number' ? j.unmatched : 0);
-        state.mpbSync.recentChanges = Array.isArray(j.changed) ? j.changed.length :
-                                      (typeof j.changed === 'number' ? j.changed : 0);
-        state.mpbSync.runs = j.runs || null;
-      } catch (e) { state.mpbSync.parseError = e.message; }
-    }
-  } catch (e) {}
-
-  // Recent renders — newest STEMS/ subfolders by mtime.
-  try {
-    if (fs.existsSync(STEMS_DIR)) {
-      const entries = fs.readdirSync(STEMS_DIR, { withFileTypes: true })
-        .filter(d => d.isDirectory())
-        .map(d => {
-          try {
-            const st = fs.statSync(path.join(STEMS_DIR, d.name));
-            return { name: d.name, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs };
-          } catch (e) { return null; }
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)
-        .slice(0, 10);
-      state.recentRenders = entries.map(({ name, mtime }) => ({ name, mtime }));
-    }
-  } catch (e) {}
+  // Ingest / catalog / MPB sync / recent renders — all served from the
+  // driveSnap in-memory snapshot (10 s refresh, async + bounded). These
+  // blocks used to do dozens of sync Drive fs calls per dashboard poll,
+  // the bulk of the 24,601 violations the no-internet guard counted.
+  state.ingest = { ...state.ingest, ...driveSnap.ingest, snapshotAgeMs: driveSnap.at ? Date.now() - driveSnap.at : null };
+  state.catalog = { ...state.catalog, ...driveSnap.catalog };
+  if (driveSnap.catalog && driveSnap.catalog.libraryStats) {
+    state.libraryStats = { ...state.libraryStats, ...driveSnap.catalog.libraryStats };
+  }
+  state.mpbSync = { ...state.mpbSync, ...driveSnap.mpbSync };
+  state.recentRenders = driveSnap.recentRenders;
 
   // Newest artifact per pipeline stage — powers the Living Pipeline's
   // per-folder "now processing" caption + flight labels on /librarian.
@@ -3969,50 +3992,17 @@ app.delete('/api/failed-renders', (req, res) => {
 // ── Queue status for the portal (derived from the filesystem) ──────────────
 // Shows the three stages: dropped .webloc (awaiting metadata) → STEM_QUEUE
 // jobs (awaiting render) → the one currently rendering (.current marker).
+// Served from the driveSnap in-memory snapshot: no Drive I/O in this
+// request path (no-internet mandate). The snapshot refreshes every 10 s;
+// snapshotAgeMs lets clients show staleness if they care. The `_failed`
+// housekeeping subfolder is excluded from `queued` at snapshot build time
+// (pre-2026-07 it rendered as a queued setlist named `_failed (N)` which
+// terrified the operator).
 app.get('/api/queue', (req, res) => {
-  const countJson = dir => { try { return fs.readdirSync(dir).filter(f => f.endsWith('.json')).length; } catch (e) { return 0; } };
-  const out = { incoming: [], failed: [], queued: [], processing: null };
-  try {
-    if (fs.existsSync(INCOMING_DIR)) {
-      for (const f of fs.readdirSync(INCOMING_DIR)) {
-        if (f.endsWith('.webloc')) out.incoming.push(f);
-        else if (f.endsWith('.failed')) out.failed.push(f);
-      }
-    }
-    if (fs.existsSync(QUEUE_DIR)) {
-      for (const entry of fs.readdirSync(QUEUE_DIR)) {
-        // Skip the housekeeping subfolders. `_done` is render-success
-        // archive; `_failed` is render-failure archive — neither belongs
-        // in the queued list. Pre-fix the `_failed/` subfolder was being
-        // rendered as if it were a queued setlist named `_failed (N)`
-        // which terrified the operator.
-        if (entry.startsWith('.') || entry === '_done' || entry === '_failed') continue;
-        const p = path.join(QUEUE_DIR, entry);
-        const st = fs.statSync(p);
-        if (st.isDirectory()) out.queued.push({ name: entry, type: 'setlist', songs: countJson(p) });
-        else if (entry.endsWith('.json')) out.queued.push({ name: entry, type: 'single', songs: 1 });
-      }
-      // Surface the failed-renders count as a separate field so the
-      // client can show it with proper "what is this" framing instead
-      // of pretending it's a queued setlist.
-      try {
-        const failedDir = path.join(QUEUE_DIR, '_failed');
-        if (fs.existsSync(failedDir)) {
-          out.failedRenders = countJson(failedDir);
-        } else {
-          out.failedRenders = 0;
-        }
-      } catch (e) { out.failedRenders = 0; }
-      const cur = path.join(QUEUE_DIR, '.current');
-      if (fs.existsSync(cur)) {
-        try { out.processing = JSON.parse(fs.readFileSync(cur, 'utf8')); }
-        catch (e) { out.processing = { song: fs.readFileSync(cur, 'utf8').trim() }; }
-      }
-    }
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  res.json({
+    ...driveSnap.queueApi,
+    snapshotAgeMs: driveSnap.at ? Date.now() - driveSnap.at : null,
+  });
 });
 
 // =====================================================================
@@ -5610,19 +5600,19 @@ app.put('/api/song/:base/lyrics', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/song/:base/favorite', (req, res) => {
+app.put('/api/song/:base/favorite', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   const flag = !!(req.body && req.body.favorite);
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     meta.favorite = flag;
     const at = flag ? new Date().toISOString() : null;
     if (flag) meta.favorited_at = at;
     else      delete meta.favorited_at;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     // Patch libraryCache in place so GET /api/favorites returns the new
     // state immediately. Without this, the song stays at favorite: false
     // in the cached songs[] until the next CATALOG.json rebuild (could be
@@ -5638,7 +5628,10 @@ app.put('/api/song/:base/favorite', (req, res) => {
       }
     } catch (e) { console.warn('[favorite] cache patch failed:', e.message); }
     res.json({ ok: true, favorite: flag, favorited_at: at });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — favorite not saved (offline?)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Playback-state recorder for offline-test verification. The client
@@ -5998,18 +5991,18 @@ app.put('/api/song/:base/playback-mode', express.json(), (req, res) => {
 // authoritative source for singer assignments, and the next mpb_sync run
 // will overwrite this field. This endpoint is for in-portal quick edits
 // when the sheet is behind or wrong.
-app.put('/api/song/:base/singer', (req, res) => {
+app.put('/api/song/:base/singer', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   const raw = (req.body && req.body.singer_lead);
   const singer = (typeof raw === 'string' ? raw : '').trim();
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     if (singer) meta.singer_lead = singer;
     else        delete meta.singer_lead;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     // Same in-place cache patch as the favorite handler — without it the
     // singer pseudo-gigs (Bill / Matt / Dan / JD Songs) keep showing the
     // stale assignment until the next CATALOG.json rebuild.
@@ -6021,7 +6014,10 @@ app.put('/api/song/:base/singer', (req, res) => {
       }
     } catch (e) { console.warn('[singer] cache patch failed:', e.message); }
     res.json({ ok: true, singer_lead: singer || null });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — singer not saved (offline?)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Recents: rolling log of the last 50 songs the operator loaded ──────────
