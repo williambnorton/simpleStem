@@ -397,7 +397,7 @@ try:
     if 'AC Power' in batt:
         report('PASS', 'power: on AC')
     else:
-        report('WARN', 'power: on battery. Plug in: low battery caused the 2026-08-08 gig stutter')
+        report('FAIL', 'power: ON BATTERY. Two gigs have now failed unplugged (2026-08-08 stutter, 2026-08-16 full gig on battery, 100%% to 32%%). Plug in before the downbeat')
 except Exception:
     pass
 PY
