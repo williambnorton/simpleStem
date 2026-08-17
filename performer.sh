@@ -464,6 +464,12 @@ case "${1:-}" in
     # Server: stateless, so always restart it fresh for a clean port.
     stop_one server
     start_one server
+    # Caffeinate + midiwatch: the start case used to skip these two (only
+    # restart looped all five services), so a clean stop+start left the
+    # Mac free to sleep and the sidecar unwatched. Caught by the gig test
+    # 2026-08-17. Idempotent: start_one skips anything already running.
+    start_one caffeinate
+    start_one midiwatch
     echo
     if wait_for_port; then
       echo "Portal up on http://localhost:$PORT"
