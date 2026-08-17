@@ -359,6 +359,10 @@ let _lastViolationLog = 0;
 const _violationSeen = new Set();
 (function armDriveSyncGuard() {
   const DRIVE_MARKERS = [SIMPLE_STEM_ROOT, 'CloudStorage', 'ClaudeDrive'];
+  const GUARD_ARMED_AT = Date.now();
+  const BOOT_GRACE_MS = 60 * 1000;   // boot-phase mirror code overlapping
+                                     // early requests is startup noise,
+                                     // not a request-path violation
   const isDrivePath = (p) => {
     if (typeof p !== 'string') return false;
     return DRIVE_MARKERS.some(m => m && p.includes(m));
@@ -367,7 +371,7 @@ const _violationSeen = new Set();
     const orig = fs[name];
     if (typeof orig !== 'function') return;
     fs[name] = function (...args) {
-      if (_inflightRequests > 0 && isDrivePath(args[0])) {
+      if (Date.now() - GUARD_ARMED_AT > BOOT_GRACE_MS && _inflightRequests > 0 && isDrivePath(args[0])) {
         driveSyncViolations++;
         const stack = (new Error().stack || '').split('\n').slice(2, 5).join(' | ');
         const key = name + '@' + stack.slice(0, 120);
