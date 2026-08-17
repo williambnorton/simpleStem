@@ -396,6 +396,8 @@ try:
     batt = subprocess.run(['pmset', '-g', 'batt'], capture_output=True, text=True).stdout
     if 'AC Power' in batt:
         report('PASS', 'power: on AC')
+    elif os.environ.get('SS_DRILL'):
+        report('PASS', 'power: on battery (drill mode: venue conditions accepted)')
     else:
         report('FAIL', 'power: ON BATTERY. Two gigs have now failed unplugged (2026-08-08 stutter, 2026-08-16 full gig on battery, 100%% to 32%%). Plug in before the downbeat')
 except Exception:
@@ -500,7 +502,65 @@ case "${1:-}" in
     else tail -n 30 -f "$RUN"/perf-*.log; fi ;;
   test)
     run_gig_test strict ;;
+  drill)
+    # Venue drill (Bill 2026-08-16, after a gig where the portal wedged
+    # solid offline and the reset button could not save it): simulate the
+    # venue by cutting Wi-Fi, then prove the whole platform works with no
+    # internet: the full gig test, hard latency budgets on every endpoint
+    # in the page-load and song-load paths, and a reset round-trip. Run it
+    # unplugged for true venue conditions (battery is accepted in drill
+    # mode). Wi-Fi is restored at the end no matter what.
+    echo "VENUE DRILL: offline gig simulation, $(date)"
+    echo "For true venue conditions, unplug the power cord before continuing."
+    WIFI_IF="$(networksetup -listallhardwareports | awk '/Wi-?Fi/{getline; print $2}' | head -1)"
+    [[ -z "$WIFI_IF" ]] && { echo "FATAL: no wifi interface found"; exit 1; }
+    echo "turning wifi OFF ($WIFI_IF)"
+    sudo networksetup -setairportpower "$WIFI_IF" off
+    sleep 3
+    export SS_DRILL=1
+    drill_fail=0
+    run_gig_test || drill_fail=1
+    echo
+    echo "== offline endpoint budgets: each must answer inside 2s with no internet =="
+    drill_base="$(ls "$HOME/.bt-cache/STEMS" 2>/dev/null | head -1)"
+    for probe in "/" "/api/recents" "/api/gigs" "/api/library" "/api/song/$drill_base/automation" "/api/song/$drill_base/action-sequences"; do
+      t="$(curl -s -o /dev/null -m 6 -w '%{time_total}' "http://localhost:$PORT$probe" 2>/dev/null || echo timeout)"
+      if [[ "$t" == "timeout" ]]; then
+        echo "  FAIL  $probe did not answer in 6s (event loop wedged on Drive?)"
+        drill_fail=1
+      elif awk -v t="$t" 'BEGIN { exit (t+0 < 2 ? 0 : 1) }'; then
+        printf "  PASS  %s in %.2fs\n" "$probe" "$t"
+      else
+        printf "  FAIL  %s took %.2fs (budget 2s)\n" "$probe" "$t"
+        drill_fail=1
+      fi
+    done
+    echo
+    echo "== offline reset round-trip: the exact failure from the 2026-08-16 gig =="
+    curl -s -m 5 -X POST "http://localhost:$PORT/api/performer/reset" >/dev/null 2>&1
+    recovered=0
+    for i in $(seq 1 30); do
+      sleep 1
+      if curl -fsS -m 2 "http://localhost:$PORT/api/health" >/dev/null 2>&1; then recovered=$i; break; fi
+    done
+    if [[ $recovered -gt 0 ]]; then
+      echo "  PASS  reset recovered offline in ${recovered}s"
+    else
+      echo "  FAIL  reset did NOT recover within 30s offline"
+      drill_fail=1
+    fi
+    echo
+    echo "turning wifi back ON"
+    sudo networksetup -setairportpower "$WIFI_IF" on
+    unset SS_DRILL
+    echo
+    if [[ $drill_fail -eq 0 ]]; then
+      echo "DRILL VERDICT: VENUE READY. Final check is yours: play one song end to end by ear."
+    else
+      echo "DRILL VERDICT: NOT VENUE READY. Fix the FAIL lines and re-run ./performer.sh drill"
+      exit 1
+    fi ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|test|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
+    echo "usage: $0 {start|stop|restart|status|test|drill|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
     exit 1 ;;
 esac

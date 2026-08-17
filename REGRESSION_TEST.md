@@ -228,6 +228,8 @@ Test with a sacrificial folder (ZZ_TEST_DELETE_ME pattern), never a real song.
 | OC1 | Cache complete | /api/cache/status done==total, failed==0 (incl. the new song after precache) |
 | OC2 | Hot-path audit | no sync Drive reads in /api/audio handlers; sendCachedAudio cache-first with bounded Drive race |
 | OC3 | Physical offline drill | OPERATOR: `./offline_test.sh 60` on the Performer + play/advance/drum during the window |
+| OC4 | Venue drill (added 2026-08-16) | OPERATOR: `./performer.sh drill` unplugged: wifi off, full gig test passes, every page-load/song-load endpoint answers < 2 s offline, reset round-trip recovers < 30 s offline, wifi restored. Born from the 2026-08-16 gig where sync Drive reads in recents + automation wedged the portal solid and reset could not save it |
+| OC5 | Bounded Drive metadata I/O (added 2026-08-16) | no sync fs calls on Drive metadata in any request path: automation GET/PUT, action-sequences GET, pitch PUT go through readMetaBounded/writeMetaBounded (1.5 s read / 5 s write race), reads degrade with driveTimeout:true, writes 503. RECENTS.json lives on LOCAL disk, never Drive |
 
 ## Output
 

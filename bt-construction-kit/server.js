@@ -5044,19 +5044,50 @@ app.get('/api/song/:base/metadata', (req, res) => {
 //   { t: <seconds>, device: "helix"|"logic"|"xr18", type: "pc"|"cc",
 //     channel: 1..16, program: 0..127, controller: 0..127, value: 0..127,
 //     label: "Big Lead" }
-app.get('/api/song/:base/automation', (req, res) => {
+// ── Bounded Drive metadata I/O (2026-08-16 gig wedge) ────────────────────
+// At the venue there is no internet, and a sync fs call on a CloudStorage
+// path can block Node's single thread for 30+ seconds. The song-load path
+// did exactly that (automation GET + recents), so the portal froze solid
+// and even the reset button's requests queued behind the block. Every
+// metadata touch in a request path now uses fs.promises (threadpool, the
+// event loop stays free) raced against a hard budget. Reads degrade to
+// empty payloads with driveTimeout:true; writes fail loud with a 503.
+const DRIVE_IO_BUDGET_MS = 1500;
+function driveRace(p, ms) {
+  return Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), ms || DRIVE_IO_BUDGET_MS)),
+  ]);
+}
+async function readMetaBounded(mp) {
+  try {
+    const raw = await driveRace(fsp.readFile(mp, 'utf8'));
+    return JSON.parse(raw) || {};
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+async function writeMetaBounded(mp, meta) {
+  await driveRace(fsp.writeFile(mp, JSON.stringify(meta, null, 2) + '\n'), 5000);
+}
+function isDriveTimeout(e) { return e && e.message === 'drive-timeout'; }
+
+app.get('/api/song/:base/automation', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) {
-    // A folder mid-render legitimately has no metadata yet: empty automation.
-    // A folder that does not exist at all is a caller bug (typo'd base) and
-    // must 404 instead of fabricating a valid-looking song (found 2026-08-14).
-    if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'no such song', base: s.b });
-    return res.json({ base: s.b, automation: [] });
-  }
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) {
+      // A folder mid-render legitimately has no metadata yet: empty automation.
+      // A folder that does not exist at all is a caller bug (typo'd base) and
+      // must 404 instead of fabricating a valid-looking song (found 2026-08-14).
+      const dirExists = await driveRace(
+        fsp.stat(s.dir).then(() => true).catch(err => { if (err.code === 'ENOENT') return false; throw err; }));
+      if (!dirExists) return res.status(404).json({ error: 'no such song', base: s.b });
+      return res.json({ base: s.b, automation: [] });
+    }
     res.json({
       base: s.b,
       automation: Array.isArray(meta.automation) ? meta.automation : [],
@@ -5072,29 +5103,39 @@ app.get('/api/song/:base/automation', (req, res) => {
       pitch_semis: typeof meta.pitch_semis === 'number' ? meta.pitch_semis : 0,
       pitch_cents: typeof meta.pitch_cents === 'number' ? meta.pitch_cents : 0,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) {
+      console.warn(`[automation] Drive read timed out for ${s.b} — serving empty automation (offline?)`);
+      return res.json({ base: s.b, automation: [], sections: [], sectionCandidates: [],
+        countIn: false, pitch_semis: 0, pitch_cents: 0, driveTimeout: true });
+    }
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Save the per-song pitch shift values into metadata.json. Small, focused
 // endpoint so the client can debounce-save on knob change without touching
 // the much-larger automation array.
-app.put('/api/song/:base/pitch', (req, res) => {
+app.put('/api/song/:base/pitch', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
   const semis = Math.max(-12, Math.min(12, parseInt((req.body || {}).semis, 10) || 0));
   const cents = Math.max(-50, Math.min(50, parseInt((req.body || {}).cents, 10) || 0));
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json for this song' });
     meta.pitch_semis = semis;
     meta.pitch_cents = cents;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     res.json({ ok: true, pitch_semis: semis, pitch_cents: cents });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — pitch not saved (offline?)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.put('/api/song/:base/automation', (req, res) => {
+app.put('/api/song/:base/automation', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const events   = req.body && req.body.automation;
@@ -5102,9 +5143,9 @@ app.put('/api/song/:base/automation', (req, res) => {
   const countIn  = !!(req.body && req.body.countIn);
   if (!Array.isArray(events)) return res.status(400).json({ error: 'need { automation: [...] }' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json for this song' });
     // Sort by timestamp so the dispatcher can walk forward without sorting
     // each tick. Clamp + validate basic fields; reject obviously bad rows.
     const VALID_STEMS = new Set(['vocals','drums','bass','guitar','piano','other']);
@@ -5221,7 +5262,7 @@ app.put('/api/song/:base/automation', (req, res) => {
     meta.automation = clean;
     meta.sections   = cleanSections;
     meta.countIn    = countIn;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     // Fresh-stems graduation: an init event = levels have been set — patch
     // the libraryCache row in place (same pattern as favorites/lyrics) so
     // the song leaves the 🆕 to-do list immediately, no catalog pass needed.
@@ -5248,18 +5289,22 @@ app.put('/api/song/:base/automation', (req, res) => {
 //   ]
 // Sequences are toggled on/off ('armed') before a gig. Only armed
 // sequences contribute buttons and auto-fires during playback.
-app.get('/api/song/:base/action-sequences', (req, res) => {
+app.get('/api/song/:base/action-sequences', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.json({ base: s.b, actionSequences: [] });
+  let metaBounded = null;
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
-    res.json({
-      base: s.b,
-      actionSequences: Array.isArray(meta.actionSequences) ? meta.actionSequences : [],
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    metaBounded = await readMetaBounded(mp);
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.json({ base: s.b, actionSequences: [], driveTimeout: true });
+    return res.status(500).json({ error: e.message });
+  }
+  if (metaBounded === null) return res.json({ base: s.b, actionSequences: [] });
+  res.json({
+    base: s.b,
+    actionSequences: Array.isArray(metaBounded.actionSequences) ? metaBounded.actionSequences : [],
+  });
 });
 
 app.put('/api/song/:base/action-sequences', (req, res) => {
@@ -5921,10 +5966,28 @@ app.put('/api/song/:base/singer', (req, res) => {
 });
 
 // ── Recents: rolling log of the last 50 songs the operator loaded ──────────
-// File lives at <root>/RECENTS.json — { entries: [{ base, at }, ...] }.
-// Performer-owned, NOT git-tracked. POST = log a load. GET = read list.
-const RECENTS_PATH = path.join(SIMPLE_STEM_ROOT, 'RECENTS.json');
+// { entries: [{ base, at }, ...] }. Performer-owned, NOT git-tracked.
+// MOVED TO LOCAL DISK 2026-08-16: it lived on Drive, and the GET fires at
+// every page load — offline at the gig, that sync Drive read blocked the
+// event loop and the portal never came up. Nothing but this laptop reads
+// recents, so it now lives in ~/.simpleStem-catalog (never in the request
+// path to Drive). One-time boot migration pulls the old Drive copy over,
+// async and bounded so a dead Drive cannot delay boot.
+const RECENTS_PATH = path.join(os.homedir(), '.simpleStem-catalog', 'RECENTS.json');
+const RECENTS_DRIVE_LEGACY = path.join(SIMPLE_STEM_ROOT, 'RECENTS.json');
 const RECENTS_CAP  = 50;
+(async () => {
+  try {
+    if (fs.existsSync(RECENTS_PATH)) return;   // local path: sync is fine
+    const raw = await Promise.race([
+      fsp.readFile(RECENTS_DRIVE_LEGACY, 'utf8'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), 5000)),
+    ]);
+    await fsp.mkdir(path.dirname(RECENTS_PATH), { recursive: true });
+    await fsp.writeFile(RECENTS_PATH, raw);
+    console.log('[recents] migrated RECENTS.json from Drive to local disk');
+  } catch (e) { /* no legacy file, or Drive slow: start fresh locally */ }
+})();
 
 function loadRecents() {
   try {
@@ -5934,7 +5997,10 @@ function loadRecents() {
   } catch (e) { return { entries: [] }; }
 }
 function saveRecents(r) {
-  try { fs.writeFileSync(RECENTS_PATH, JSON.stringify(r, null, 2) + '\n'); }
+  try {
+    fs.mkdirSync(path.dirname(RECENTS_PATH), { recursive: true });
+    fs.writeFileSync(RECENTS_PATH, JSON.stringify(r, null, 2) + '\n');
+  }
   catch (e) { console.warn('[recents] save failed:', e.message); }
 }
 
