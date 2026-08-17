@@ -96,6 +96,27 @@ function readDiskVersion() {
   }
   return newest ? fmtVersion(new Date(newest)) : 'unknown';
 }
+// Memoized flavor for request paths (no-internet mandate): three of the
+// CODE_FILES live on Drive, so the raw readDiskVersion stats Drive on
+// every /api/version and dashboard poll. A 60 s ASYNC refresher keeps
+// the update chip honest while keeping Drive out of every hot path.
+let _verMemo = { v: null, at: 0 };
+async function refreshDiskVersionMemo() {
+  let newest = 0;
+  for (const f of CODE_FILES()) {
+    try {
+      const st = await Promise.race([
+        fs.promises.stat(f),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), 2000)),
+      ]);
+      newest = Math.max(newest, st.mtimeMs);
+    } catch (e) {}
+  }
+  if (newest) _verMemo = { v: fmtVersion(new Date(newest)), at: Date.now() };
+}
+function readDiskVersionMemo() { return _verMemo.v || BOOT_VERSION; }
+setImmediate(() => { refreshDiskVersionMemo().catch(() => {}); });
+setInterval(() => { refreshDiskVersionMemo().catch(() => {}); }, 60 * 1000);
 bootTrace('readDiskVersion', 'ENTER');
 const BOOT_VERSION = readDiskVersion();
 bootTrace('readDiskVersion', 'EXIT', `version=${BOOT_VERSION}`);
@@ -1711,7 +1732,7 @@ app.get('/api/audio/stems/:song/:file', async (req, res) => {
 //      that pre-dates the per-instrument layout. Treated as inst='drums'
 //      and retained so old songs keep working in the UI.
 // Sort: alphabetical by filename (so inst, BPM, song all sort naturally).
-app.get('/api/drum-loops', (req, res) => {
+app.get('/api/drum-loops', async (req, res) => {
   const stems = (libraryCache && libraryCache.data && libraryCache.data.songs || [])
     .filter(s => s.type === 'stems');
   const stemsBySlug = new Map();
@@ -1722,10 +1743,17 @@ app.get('/api/drum-loops', (req, res) => {
   const stemsByBase = new Map(stems.map(s => [s.folderName, s]));
   const loops = [];
 
-  if (fs.existsSync(LOOPS_DIR)) {
+  // Bounded async listings (no-internet mandate): LOOPS/ and M4A/ live on
+  // Drive; offline this handler used to wedge the event loop.
+  let loopsList = [];
+  let m4aList = [];
+  try { loopsList = await driveRace(fsp.readdir(LOOPS_DIR)); } catch (e) {}
+  try { m4aList = await driveRace(fsp.readdir(M4A_DIR)); } catch (e) {}
+
+  {
     const newRe = /^([a-z]+)_(\d{1,4})_(.+)_(\d+)bars\.m4a$/;
     try {
-      for (const f of fs.readdirSync(LOOPS_DIR)) {
+      for (const f of loopsList) {
         if (/ \(\d+\)\.m4a$/i.test(f)) continue;
         const m = f.match(newRe);
         if (!m) continue;
@@ -1753,10 +1781,10 @@ app.get('/api/drum-loops', (req, res) => {
     }
   }
 
-  if (fs.existsSync(M4A_DIR)) {
+  {
     const legacyRe = /^(.+?)_DO_loop(\d+)_(\d+)bars\.m4a$/i;
     try {
-      for (const f of fs.readdirSync(M4A_DIR)) {
+      for (const f of m4aList) {
         if (/ \(\d+\)\.m4a$/i.test(f)) continue;
         const m = f.match(legacyRe);
         if (!m) continue;
@@ -2687,7 +2715,7 @@ let driveSnap = {
   at: 0,
   queueApi: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0 },
   ingest: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0, recentDone: [] },
-  catalog: {}, mpbSync: {}, recentRenders: [], daemons: {},
+  catalog: {}, mpbSync: {}, recentRenders: [], daemons: {}, folders: {},
 };
 let _driveSnapRunning = false;
 async function refreshDriveSnap() {
@@ -2697,8 +2725,23 @@ async function refreshDriveSnap() {
     at: Date.now(),
     queueApi: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0 },
     ingest: { incoming: [], failed: [], queued: [], processing: null, failedRenders: 0, recentDone: [] },
-    catalog: {}, mpbSync: {}, recentRenders: [], daemons: {},
+    catalog: {}, mpbSync: {}, recentRenders: [], daemons: {}, folders: {},
   };
+  const snapCount = async (dir, filterFn) => {
+    try {
+      const entries = await snapB(fsp.readdir(dir));
+      const filtered = filterFn ? entries.filter(filterFn) : entries;
+      let mtime = null;
+      try { mtime = (await snapB(fsp.stat(dir))).mtime.toISOString(); } catch (e) {}
+      return { count: filtered.length, mtime };
+    } catch (e) { return e.message === 'drive-timeout' ? { count: 0, error: 'drive-timeout' } : null; }
+  };
+  next.folders.INCOMING_WEBLOC = await snapCount(INCOMING_DIR, f => f.endsWith('.webloc'));
+  next.folders.STEM_QUEUE      = await snapCount(QUEUE_DIR, f => f.endsWith('.json') || (!f.startsWith('.') && !['_done','_failed'].includes(f)));
+  next.folders.STEMS           = await snapCount(STEMS_DIR);
+  next.folders.GIGS            = await snapCount(GIGS_DIR, f => f.endsWith('.json'));
+  next.folders.SETLISTS        = await snapCount(SETLISTS_DIR, f => f.endsWith('.json'));
+  next.folders.CUSTOM_LOOPS    = await snapCount(CUSTOM_LOOPS_DIR, f => f.endsWith('.m4a'));
   try {
     const entries = await snapB(fsp.readdir(INCOMING_DIR)).catch(() => []);
     next.queueApi.incoming = entries.filter(f => f.endsWith('.webloc')).sort();
@@ -2794,15 +2837,22 @@ async function refreshDriveSnap() {
     const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'lib-watcher',
                        'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
     for (const name of PID_NAMES) {
-      let pidRaw = null, pidPath = null;
-      for (const dir of [dotRun, codeDotRun]) {
-        try { pidRaw = await snapB(fsp.readFile(path.join(dir, name + '.pid'), 'utf8')); pidPath = path.join(dir, name + '.pid'); break; } catch (e) {}
+      // Read BOTH .run dirs and prefer whichever pid is ALIVE. The old
+      // Drive-first preference reported live services as down whenever a
+      // stale pidfile from the retired Drive stack shadowed the real one.
+      let best = null;
+      for (const dir of [codeDotRun, dotRun]) {
+        try {
+          const pidRaw = await snapB(fsp.readFile(path.join(dir, name + '.pid'), 'utf8'));
+          const pid = parseInt(pidRaw.trim(), 10);
+          let alive = false;
+          try { process.kill(pid, 0); alive = true; } catch (e) {}
+          const cand = { running: alive, pid, pidPath: path.join(dir, name + '.pid') };
+          if (alive) { best = cand; break; }
+          if (!best) best = cand;
+        } catch (e) {}
       }
-      if (pidRaw === null) { next.daemons[name] = { running: false, pid: null, reason: 'no pid file' }; continue; }
-      const pid = parseInt(pidRaw.trim(), 10);
-      let alive = false;
-      try { process.kill(pid, 0); alive = true; } catch (e) {}
-      next.daemons[name] = { running: alive, pid, pidPath };
+      next.daemons[name] = best || { running: false, pid: null, reason: 'no pid file' };
     }
   } catch (e) {}
   driveSnap = next;
@@ -2841,45 +2891,11 @@ async function probeDashboardState() {
     state.drive.error = (e && e.message) || String(e);
   }
 
-  // Folder counts. Each wrapped so one missing folder doesn't sink the others.
-  const safeCount = (dir, filterFn) => {
-    try {
-      if (!fs.existsSync(dir)) return null;
-      const entries = fs.readdirSync(dir);
-      const filtered = filterFn ? entries.filter(filterFn) : entries;
-      let mtime = null;
-      try { mtime = fs.statSync(dir).mtime.toISOString(); } catch (e) {}
-      return { count: filtered.length, mtime };
-    } catch (e) { return { count: 0, error: e.message }; }
-  };
-  state.folders.INCOMING_WEBLOC = safeCount(INCOMING_DIR, f => f.endsWith('.webloc'));
-  state.folders.STEM_QUEUE      = safeCount(QUEUE_DIR, f => f.endsWith('.json') || (!f.startsWith('.') && !['_done','_failed'].includes(f)));
-  state.folders.STEMS           = safeCount(STEMS_DIR);
-  state.folders.GIGS            = safeCount(GIGS_DIR, f => f.endsWith('.json'));
-  state.folders.SETLISTS        = safeCount(SETLISTS_DIR, f => f.endsWith('.json'));
-  state.folders.CUSTOM_LOOPS    = safeCount(CUSTOM_LOOPS_DIR, f => f.endsWith('.m4a'));
-
-  // Catalog: shape + age + count.
-  try {
-    const catPath = path.join(SIMPLE_STEM_ROOT, 'CATALOG.json');
-    if (fs.existsSync(catPath)) {
-      state.catalog.exists = true;
-      const st = fs.statSync(catPath);
-      state.catalog.ageSec = Math.round((Date.now() - st.mtimeMs) / 1000);
-      const j = JSON.parse(fs.readFileSync(catPath, 'utf8'));
-      if (j.data && Array.isArray(j.data.songs)) {
-        state.catalog.shape = 'canonical';
-        state.catalog.songCount = j.data.songs.length;
-        state.catalog.scannedAt = j.scannedAt || null;
-      } else if (Array.isArray(j.songs)) {
-        state.catalog.shape = 'legacy';
-        state.catalog.songCount = j.songs.length;
-        state.catalog.scannedAt = j.generated_at || null;
-      } else {
-        state.catalog.shape = 'unknown';
-      }
-    }
-  } catch (e) { state.catalog.error = e.message; }
+  // Folder counts + catalog — from the driveSnap in-memory snapshot
+  // (no-internet mandate; these blocks used to readdir/stat Drive on
+  // every dashboard poll, 21 sync calls per request).
+  state.folders = { ...driveSnap.folders };
+  state.catalog = { ...state.catalog, ...driveSnap.catalog };
 
   // Cache contract.
   try {
@@ -4456,7 +4472,9 @@ app.get('/api/setlist/ai-bots', (req, res) => {
 // Version status: what the running process booted with, what's on disk now, and
 // whether they differ (→ an update is staged and a restart will pick it up).
 app.get('/api/version', (req, res) => {
-  const disk = readDiskVersion();
+  // Memoized disk version (no-internet mandate): the raw read stats
+  // Drive files. The 60 s async refresher keeps this current enough.
+  const disk = readDiskVersionMemo();
   res.json({
     running: BOOT_VERSION,
     available: disk,
