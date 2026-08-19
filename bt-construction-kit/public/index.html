@@ -415,6 +415,13 @@
               <span class="midi-btn-group" title="Timeline actions — drop events at the playhead + clock sync">
               <button id="midi-btn-add-clip" class="midi-toolbar-btn midi-action-add midi-action-clip" title="Drop a Play Clip action at the playhead. Pick a clip and choose whether the clip STARTS at the playhead or ENDS at the playhead.">+ Clip</button>
               <button id="midi-btn-add-event" class="midi-toolbar-btn midi-action-add" title="Open the Action editor pre-filled at the current playhead position. Pick channel, type, and value, then OK to drop the marker.">+ Action</button>
+              <!-- Skip Section moved OUT of the transport row (Bill
+                   2026-08-18: "not a normal control flow button"). It is
+                   an ACTION AUTHOR: it drops a persistent skip-section
+                   event at the playhead AND performs the jump now, so it
+                   belongs with the other action-droppers. Same id, so the
+                   app.js binding is unchanged. -->
+              <button id="btn-next-section" class="midi-toolbar-btn midi-action-add" title="Skip to next section NOW and drop a persistent SKIP action at the playhead (bypass solos / interludes on every future playback — rides SAVE)">&#187; Skip</button>
               <!-- + Lyric: tap-along workflow. First press fetches lyrics
                    (Genius via fetch-lyrics endpoint, or paste dialog if not
                    found). Each subsequent press drops a `lyric-line` action
@@ -471,7 +478,6 @@
               <button id="btn-go-beginning" class="control-btn hover-glow" title="Go to beginning of song"><i data-lucide="skip-back"></i></button>
               <button id="btn-stop" class="control-btn hover-glow" title="Stop"><i data-lucide="square"></i></button>
               <button id="btn-play-pause" class="control-btn play-btn hover-glow" title="Play"><i data-lucide="play" id="play-icon"></i></button>
-              <button id="btn-next-section" class="control-btn hover-glow" title="Skip to next section (bypass solos / interludes)"><i data-lucide="chevrons-right"></i></button>
               <button id="btn-go-next" class="control-btn hover-glow" title="Next song in the active setlist"><i data-lucide="skip-forward"></i></button>
               <button id="btn-loop-toggle" class="control-btn toggle-btn hover-glow" title="Toggle Looping"><i data-lucide="repeat"></i></button>
               <button id="btn-speed-dialog" class="control-btn hover-glow" title="Playback Speed">

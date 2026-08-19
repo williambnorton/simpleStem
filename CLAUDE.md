@@ -602,6 +602,59 @@ respect them or update this list.
   `mode-fetch` style AND clicks straight into the editor (no confirm),
   matching the visual/behavior of a song that never had lyrics at all.
 
+## Creative-user UI mandate (Bill 2026-08-18)
+
+**The vantage point for ALL UI work is the creative user, not the
+engineer.** A tool earns its place on screen by drawing the creative
+person in with the effect it can produce. Tools sell themselves, their
+use, and their application, the way a nurse offers instruments to a
+surgeon: the right thing surfaced at the right moment, not buried in a
+menu. Concretely:
+
+1. **Never hide richness.** If a feature has depth (the + Action
+   editor's event types, the skip authoring, the looper), the UI must
+   ADVERTISE that depth at the point of use, not require the user to
+   already know it exists. The 2026-08-18 example: skip-to-section was
+   an unlabeled chevron in the transport row; its real nature (drops a
+   persistent action) was invisible. Buttons that AUTHOR actions live
+   with the action tools (+ Clip / + Action row), not with transport.
+2. **Show, then let them choose.** Guidance appears as tips beside the
+   work area, with images of what the result WOULD look like, rendered
+   in an alternate plane over the navigation screen. The user can try
+   the suggestion and continue, or go back. Try/continue and go-back
+   are always present as GREEN and RED overlay objects.
+3. **Recognize use patterns and offer the shortcut.** The app already
+   instruments everything (activity log, play counts, RECENTS, action
+   sequences, SS_DEBUG). A pattern the operator repeats is an offer
+   waiting to be made, in this shape: name the observed flow, propose
+   the macro or flow change, and quantify it ("Est savings: 5 steps,
+   5 minutes"). After a few accepted runs, offer to automate it fully
+   (e.g. nightly) with a report on instrumentation, resources, and
+   priorities. The offer is a conversation, never a silent change.
+
+## Business direction notes (Bill 2026-08-18)
+
+Where this project may be headed, recorded so design choices can lean
+toward it: use this exercise (a UI wrapper that makes Logic Pro easier
+to exploit as a stage musician) to demonstrate AI tools applied to a
+simple enterprise (perform, get paid), themed around a classic rock
+band called "Tribal Spat" and their song "Glove the Smell."
+
+The larger arc is the AI-first business: a kiosk fed only power and
+resources that observes its environment (temperature, foot traffic,
+buying capability), deduces the product (ice and ice water), sizes
+itself to projected adoption, and continuously re-evaluates as
+conditions change. A second sketch: a service bot charging $1 in
+bitcoin for metered credits (priced at egress cost, $1 per GB of stem
+downloads), with a non-transferable 10 cent OAuth-bound credit reloaded
+nightly so the free tier hooks the habit and paying removes the
+out-of-tokens message forever. Both de-risk with customers' money:
+power users pre-buying larger credit blocks is market ground truth that
+trumps theoretical projections and funds forward growth. When UI or
+instrumentation decisions arise, prefer the option that teaches the
+system to observe, quantify, offer, and adapt, because that is the
+product being demonstrated.
+
 ## Writing style (Bill 2026-08-10)
 
 Applies to everything Claude writes for this project: chat replies,
