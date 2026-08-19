@@ -877,6 +877,27 @@ const GIG_ACTIVE_SLUG_KEY     = 'simpleStem.activeGigSlug';
 const ACTIVE_SETLIST_IDX_KEY  = 'simpleStem.activeSetlistIdx';
 const LAST_SONG_BASE_KEY      = 'simpleStem.lastSongBase';
 
+// Per-gig setlist memory (Bill 2026-08-18: "the last gig and setlist that
+// was being shown should show up on browser launch"). The gig slug already
+// restores via GIG_ACTIVE_SLUG_KEY; the setlist index is remembered PER
+// GIG so every gig reopens on the setlist you last had active, on boot
+// and on gig switches alike. Legacy global key kept as a fallback.
+function savedSetlistIdxFor(slug) {
+  try {
+    const per = parseInt(localStorage.getItem(ACTIVE_SETLIST_IDX_KEY + '.' + slug), 10);
+    if (Number.isInteger(per) && per >= 0) return per;
+    const legacy = parseInt(localStorage.getItem(ACTIVE_SETLIST_IDX_KEY), 10);
+    if (Number.isInteger(legacy) && legacy >= 0) return legacy;
+  } catch (e) {}
+  return null;
+}
+function rememberSetlistIdx(slug, idx) {
+  try {
+    localStorage.setItem(ACTIVE_SETLIST_IDX_KEY, String(idx));
+    if (slug) localStorage.setItem(ACTIVE_SETLIST_IDX_KEY + '.' + slug, String(idx));
+  } catch (e) {}
+}
+
 function setupGigSidebar() {
   document.getElementById('gig-new-btn').addEventListener('click', openGigTemplatePicker);
   const mkGigBtn = document.getElementById('lfb-make-gig');
@@ -1488,13 +1509,11 @@ async function loadActiveGig(slug) {
                                               '(empty)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
-      // Restore the previously-active setlist if we remember one.
-      try {
-        const savedIdx = parseInt(localStorage.getItem(ACTIVE_SETLIST_IDX_KEY), 10);
-        if (Number.isInteger(savedIdx) && savedIdx >= 0 && savedIdx < activeGig.setlists.length) {
-          activeSetlistIdx = savedIdx;
-        }
-      } catch (e) {}
+      // Restore the previously-active setlist for THIS gig if we remember one.
+      const savedIdxSyn = savedSetlistIdxFor(slug);
+      if (savedIdxSyn !== null && savedIdxSyn < activeGig.setlists.length) {
+        activeSetlistIdx = savedIdxSyn;
+      }
       activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
       openSetlistIdxs = new Set([activeSetlistIdx]);
       try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
@@ -1519,8 +1538,13 @@ async function loadActiveGig(slug) {
     if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
       activeGig.setlists = [{ title: 'Set 1', songs: [] }];
     }
+    // Restore this gig's remembered setlist (2026-08-18) — the old code
+    // reset to setlist 0 on every load, so browser launch always showed
+    // Set 1 no matter what was on screen last time.
+    const savedIdxWarm = savedSetlistIdxFor(slug);
+    if (savedIdxWarm !== null && savedIdxWarm < activeGig.setlists.length) activeSetlistIdx = savedIdxWarm;
     activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
-    openSetlistIdxs = new Set([0]);
+    openSetlistIdxs = new Set([activeSetlistIdx]);
     renderGigSidebar();
   }
   try {
@@ -1530,9 +1554,11 @@ async function loadActiveGig(slug) {
     if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
       activeGig.setlists = [{ title: 'Set 1', songs: [] }];
     }
+    const savedIdxLive = savedSetlistIdxFor(slug);
+    if (savedIdxLive !== null && savedIdxLive < activeGig.setlists.length) activeSetlistIdx = savedIdxLive;
     activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
-    // Fresh gig load → expand the first setlist by default; collapse the rest.
-    openSetlistIdxs = new Set([0]);
+    // Expand the remembered setlist; collapse the rest.
+    openSetlistIdxs = new Set([activeSetlistIdx]);
     try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
     writeCache(GIG_DETAIL_CACHE_PREFIX + slug, activeGig);
     renderGigSidebar();
@@ -1697,7 +1723,7 @@ function loadGigSetlistSong(setlistIdx, songIdx) {
   // Remember which setlist + song was last loaded so the next app start
   // can resume here. Stored alongside the active-gig slug.
   try {
-    localStorage.setItem(ACTIVE_SETLIST_IDX_KEY, String(setlistIdx));
+    rememberSetlistIdx(activeGig && activeGig.slug, setlistIdx);
     localStorage.setItem(LAST_SONG_BASE_KEY, entry.song_base);
   } catch (e) {}
   ensurePlayerVisible();
@@ -2054,7 +2080,7 @@ function renderOneGigSetlist(sl, idx) {
     if (activeSetlistIdx !== idx) {
       activeSetlistIdx = idx;
       openSetlistIdxs.add(idx);
-      try { localStorage.setItem(ACTIVE_SETLIST_IDX_KEY, String(idx)); } catch (e) {}
+      rememberSetlistIdx(activeGig && activeGig.slug, idx);
     } else {
       if (openSetlistIdxs.has(idx)) openSetlistIdxs.delete(idx);
       else openSetlistIdxs.add(idx);
