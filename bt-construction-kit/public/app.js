@@ -4154,6 +4154,19 @@ function renderLibrary() {
           });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           stemsForDrum.drum_pattern = v || null;
+          // If this row is the LOADED song, re-run the drum pick right
+          // now (Bill 2026-08-20: "I want it to start with that").
+          // Without this the chip and armed pattern lag until the song
+          // is reloaded. The refresh preserves play state: a stopped
+          // drum machine stays stopped with the new pattern armed; a
+          // playing one swaps in place.
+          try {
+            const loadedBase = currentSong && (currentSong.folderName || currentSong.base);
+            if (loadedBase === stemsForDrum.folderName && typeof refreshDrumMachinePick === 'function') {
+              if (currentSong) currentSong.drum_pattern = v || null;
+              refreshDrumMachinePick(v || null, stemsForDrum.practiceBpm || null);
+            }
+          } catch (e) {}
           showToast(v ? `Drum pattern → ${v}` : 'Drum pattern cleared (auto-match by BPM)');
         } catch (err) {
           console.warn('[drum-pattern] save failed:', err);
