@@ -6036,7 +6036,17 @@ function getDrumPatternChoices() {
   if (!_drumChoicesPromise) {
     _drumChoicesPromise = fetch('/api/drum-machine/all-grouped')
       .then(r => r.json())
-      .then(d => (d && Array.isArray(d.families)) ? d.families : [])
+      .then(d => {
+        const fams = (d && Array.isArray(d.families)) ? d.families.slice() : [];
+        // Non-conforming filenames (e.g. "63.m4a", Bill 2026-08-20) land
+        // in the server's "other" bucket. Surface them as their own
+        // optgroup so they are selectable like any pattern; the pick
+        // endpoint matches them exactly by name.
+        if (d && Array.isArray(d.other) && d.other.length) {
+          fams.push({ label: 'Other', patterns: d.other.map(o => ({ label: o.label })) });
+        }
+        return fams;
+      })
       .catch(() => { _drumChoicesPromise = null; return []; });
   }
   return _drumChoicesPromise;
