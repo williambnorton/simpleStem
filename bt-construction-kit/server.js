@@ -1611,6 +1611,35 @@ function ensureCached(sourcePath, cachePath) {
 // in from Google Drive in parallel. Uses fs.promises (async I/O) and
 // awaits each file so we yield to incoming requests between copies.
 const fsp = fs.promises;
+
+// ── Drive budgets for BACKGROUND work (2026-08-28) ──────────────────────────
+// The no-internet mandate hardened REQUEST handlers (readMetaBounded and
+// friends) but left the background cache warmers unbounded. That gap cost
+// Bill 15 hours on 2026-08-27: he rebooted, Google Drive's CloudStorage mount
+// had not finished coming up, and all four boot precaches sat in an unbounded
+// await instead of failing. The log tells the story plainly:
+//   [clip precache] done — copied 0, skipped 16, failed 0 (54770s)
+//   [stem precache] done — 369 folders, copied 0, skipped 2305, failed 0 (54867s)
+// Nothing was copied and nothing failed. They were purely blocked, for 15.2
+// hours, and they kept the process busy enough that /api/health could not
+// answer inside the gig test's 3s budget the next morning.
+//
+// Rule from here: no background task awaits a Drive path without a budget.
+// Like readMetaBounded, this does not cancel the underlying fs call, it just
+// stops waiting on it — which is the whole point.
+const DRIVE_OP_BUDGET_MS = Number(process.env.SS_DRIVE_OP_BUDGET_MS || 10000);
+const DRIVE_COPY_BUDGET_MS = Number(process.env.SS_DRIVE_COPY_BUDGET_MS || 30000);
+
+function withDriveBudget(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => {
+      timer = setTimeout(() => rej(new Error('drive-timeout:' + (label || 'op'))), ms || DRIVE_OP_BUDGET_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 async function ensureCachedAsync(sourcePath, cachePath, opts) {
   const force = !!(opts && opts.force);
   try {
@@ -1618,18 +1647,62 @@ async function ensureCachedAsync(sourcePath, cachePath, opts) {
       try {
         const [csz, ssz] = await Promise.all([
           fsp.stat(cachePath).then(s => s.size).catch(() => -1),
-          fsp.stat(sourcePath).then(s => s.size).catch(() => -2)
+          withDriveBudget(fsp.stat(sourcePath), DRIVE_OP_BUDGET_MS, 'stat')
+            .then(s => s.size).catch(() => -2)
         ]);
         if (csz > 0 && csz === ssz) return cachePath; // good cache hit
       } catch (e) {}
     }
     await fsp.mkdir(path.dirname(cachePath), { recursive: true });
-    await fsp.copyFile(sourcePath, cachePath);
+    await withDriveBudget(fsp.copyFile(sourcePath, cachePath), DRIVE_COPY_BUDGET_MS, 'copy');
     return cachePath;
   } catch (e) {
     console.warn('cache copy failed (async):', sourcePath, '->', cachePath, e.message);
     return sourcePath;
   }
+}
+
+// ── Boot gate: never start Drive-backed work before Drive answers ───────────
+// Probes with a budget and backs off, then gives up after ~8 minutes with a
+// loud line. Giving up is safe BY DESIGN: the portal serves audio from
+// ~/.bt-cache and the offline contract says a gig runs with no Drive at all.
+// What must never happen again is starting the work and blocking forever.
+let driveReadyAnnounced = false;
+
+async function driveIsReachable() {
+  try {
+    await withDriveBudget(fsp.readdir(SIMPLE_STEM_ROOT), 4000, 'probe');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function whenDriveReady(label) {
+  const delays = [0, 2000, 5000, 10000, 15000, 30000, 30000, 60000, 60000, 60000, 120000, 120000];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i]) await new Promise(r => setTimeout(r, delays[i]));
+    if (await driveIsReachable()) {
+      if (!driveReadyAnnounced) {
+        driveReadyAnnounced = true;
+        console.log('[boot] Drive is responding — background cache work starting');
+      }
+      return true;
+    }
+    if (i === 1) console.log('[boot] waiting for Google Drive to mount before background cache work…');
+  }
+  console.warn('[boot] Drive never answered — SKIPPING ' + label +
+    '. Cached playback is unaffected. Run ./performer.sh reset once Drive is up.');
+  return false;
+}
+
+// Replaces a bare setImmediate(fn) for anything that touches Drive at boot.
+function bootWhenDriveReady(label, fn) {
+  setImmediate(async () => {
+    if (!(await whenDriveReady(label))) return;
+    try { await fn(); }
+    catch (e) { console.warn('[boot] ' + label + ' failed:', e.message); }
+  });
 }
 
 // Audio streaming endpoints — supports HTTP Range via res.sendFile.
@@ -3541,7 +3614,9 @@ async function recomputeStemsHealth() {
 // Compute at boot (delayed so audio precaches go first), then every
 // 5 minutes. The Library view refreshes from the cache every 30s
 // client-side; the cache itself refreshes every 5 min server-side.
-setTimeout(() => { recomputeStemsHealth().catch(() => {}); }, 8000);
+// Gated too: on a cold Drive this walked 369 songs x 7 files, each hitting
+// its own 1.5s timeout, and logged "recomputed 369 rows in 97662ms".
+bootWhenDriveReady('stems-health', () => recomputeStemsHealth().catch(() => {}));
 setInterval(() => { recomputeStemsHealth().catch(() => {}); }, 5 * 60 * 1000);
 
 app.get('/api/librarian/stems-health', (req, res) => {
@@ -3594,7 +3669,7 @@ app.post('/api/librarian/enqueue-url', express.json(), (req, res) => {
 // already-cached files cheaply (mtime+size check).
 // Boot run fires immediately; the tracker handles the hourly cadence
 // AND records lastRunAt/durationMs for the Librarian countdown badge.
-setImmediate(() => precacheAllStemsM4a({ trigger: 'boot' }));
+bootWhenDriveReady('stem precache', () => precacheAllStemsM4a({ trigger: 'boot' }));
 registerTrackedInterval('stem-precache', 60 * 60 * 1000,
   () => precacheAllStemsM4a({ trigger: 'hourly' }),
   { label: 'Stem precache', folder: 'stems', initialDelayMs: 60 * 60 * 1000 });
@@ -3627,7 +3702,7 @@ async function precacheAllCustomLoops() {
     console.warn('[clip precache] failed:', e.message);
   }
 }
-setImmediate(precacheAllCustomLoops);
+bootWhenDriveReady('clip precache', precacheAllCustomLoops);
 registerTrackedInterval('clip-precache', 60 * 60 * 1000,
   precacheAllCustomLoops,
   { label: 'Clip precache', folder: 'clips', initialDelayMs: 60 * 60 * 1000 });
@@ -3663,7 +3738,7 @@ async function precacheAllDrumPatterns() {
     console.warn('[drum precache] failed:', e.message);
   }
 }
-setImmediate(precacheAllDrumPatterns);
+bootWhenDriveReady('drum precache', precacheAllDrumPatterns);
 registerTrackedInterval('drum-precache', 60 * 60 * 1000,
   precacheAllDrumPatterns,
   { label: 'Drum precache', folder: 'drums', initialDelayMs: 60 * 60 * 1000 });
@@ -3700,7 +3775,7 @@ async function precacheAllBackingTracks() {
     console.warn('[backing precache] failed:', e.message);
   }
 }
-setImmediate(precacheAllBackingTracks);
+bootWhenDriveReady('backing precache', precacheAllBackingTracks);
 registerTrackedInterval('backing-precache', 60 * 60 * 1000,
   precacheAllBackingTracks,
   { label: 'Backing precache', folder: 'clips', initialDelayMs: 60 * 60 * 1000 });

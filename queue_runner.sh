@@ -228,16 +228,60 @@ process_job() {
 
 # First pending job: a *.json directly in STEM_QUEUE (single) or one level deep
 # (a setlist entry). Sorted so setlist NN_ prefixes render in order.
+# -prune, not -not -path (2026-08-28): the old form DESCENDED into _done/
+# (327 song folders) and _failed/ and only then discarded the results. This
+# runs every POLL seconds against Drive, so it was 300+ blocking CloudStorage
+# directory reads every 5 seconds, forever. -prune never opens them.
 next_job() {
-  find "$QUEUE" -mindepth 1 -maxdepth 2 -name '*.json' \
-       -not -path "$QUEUE/_done/*" -not -path "$QUEUE/_failed/*" 2>/dev/null | sort | head -n1
+  find "$QUEUE" -mindepth 1 -maxdepth 2 \
+       \( -name _done -o -name _failed \) -prune -o -name '*.json' -print 2>/dev/null \
+       | sort | head -n1
 }
 
 # ── Run ────────────────────────────────────────────────────────────────────
-if ! mkdir "$LOCK" 2>/dev/null; then
-  echo "queue_runner already running (remove $LOCK if stale)" >&2; exit 0
-fi
-trap 'rmdir "$LOCK" 2>/dev/null; rm -f "$CURRENT"' EXIT
+# Self-healing lock (2026-08-28). mkdir stays the atomic part; an `owner`
+# stamp inside says WHO holds it, which is what makes staleness decidable.
+#
+# The bug this fixes: the lock is released from an EXIT trap, and a reboot or
+# a kill -9 never runs that trap. So a power cycle left the directory behind
+# forever and every subsequent start died on "already running" until someone
+# knew to run `performer.sh stop` (which quietly rmdir'd it). Bill hit exactly
+# that after rebooting on 2026-08-27 and had no way to tell the message was a
+# lie. Now a lock whose owning process is gone gets reclaimed automatically.
+#
+# The cross-machine guard still holds: a lock owned by a DIFFERENT host is
+# always respected, because we cannot probe a remote pid and the Drive-synced
+# lock is the only thing keeping a second runner off the same queue.
+LOCK_OWNER="$LOCK/owner"
+stamp_owner() { printf '%s %s %s\n' "$_hn" "$$" "$(date +%s)" > "$LOCK_OWNER" 2>/dev/null || true; }
+
+claim_lock() {
+  if mkdir "$LOCK" 2>/dev/null; then stamp_owner; return 0; fi
+  local ohost="" opid="" rest=""
+  # -r test first: redirecting from a missing file makes the shell print its
+  # own "No such file or directory", which a trailing 2>/dev/null cannot
+  # suppress (redirections are applied left to right).
+  if [[ -r "$LOCK_OWNER" ]]; then
+    read -r ohost opid rest < "$LOCK_OWNER" || true
+  fi
+  if [[ -z "$ohost" ]]; then
+    echo ">> lock has no owner stamp (pre-2026-08-28 runner, or a torn Drive write) — reclaiming." >&2
+  elif [[ "$ohost" != "$_hn" ]]; then
+    echo "queue_runner: lock held by '$ohost', another machine. Standing down." >&2
+    echo "   If that machine is off, clear it with: ./performer.sh reset" >&2
+    return 1
+  elif [[ -n "$opid" ]] && kill -0 "$opid" 2>/dev/null; then
+    echo "queue_runner already running (pid $opid on $ohost)." >&2
+    return 1
+  else
+    echo ">> stale lock from pid ${opid:-?} on this host (that process is gone) — reclaiming." >&2
+  fi
+  stamp_owner
+  return 0
+}
+
+claim_lock || exit 0
+trap 'rm -rf "$LOCK" 2>/dev/null; rm -f "$CURRENT"' EXIT
 
 ONCE=0; [[ "${1:-}" == "--once" ]] && ONCE=1
 # Pause flag: if STEM_QUEUE/.paused exists, the runner idles between songs

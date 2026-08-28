@@ -11,7 +11,13 @@
 #   server   bt-construction-kit portal (http://localhost:3000)
 #
 # Usage:
-#   ./performer.sh start|stop|restart|status|logs [runner|server]
+#   ./performer.sh start|stop|restart|reset|status|logs [runner|server]
+#
+# `reset` is the recovery path: it clears the stale runner lock, port
+# squatters and dead pidfiles a reboot leaves behind, waits for Google Drive
+# to actually answer, restarts everything and runs the gig test. Reach for it
+# whenever a start looks wrong — it is the retry that used to require knowing
+# which lock file to delete by hand.
 #
 # Mirrors studio.sh's process model (pidfiles + logs in .run/, tree-kill, and
 # clears the runner lock on stop).
@@ -138,6 +144,82 @@ kill_tree() {
   kill -"$sig" "$pid" 2>/dev/null || true
 }
 
+# ── Drive budgets ───────────────────────────────────────────────────────────
+# EVERY touch of $DATA in this script goes through bounded(). Rationale
+# (2026-08-27): after a reboot the Google Drive CloudStorage mount can take
+# many minutes to come up, and until it does a read against $DATA does not
+# fail, it BLOCKS. print_queue's find blocked for 15.2 hours between "opened
+# in Chrome" and the gig test, with nothing on screen. Bill had no way to
+# tell a slow start from a dead one. An unbounded Drive call in this script
+# is now a bug, exactly as it already is in server.js request handlers.
+#
+# macOS ships no coreutils `timeout`, so bounded() runs the command in the
+# background with a killer alongside it and waits on the command. Prints the
+# command's stdout and returns its status on success; prints nothing and
+# returns 124 if the budget expires.
+# Returns 124 ONLY on timeout. A command's own non-zero exit passes through
+# untouched, so callers can tell "Drive never answered" (124, and we must not
+# claim to know anything) apart from "the command ran and said no" (e.g.
+# `test -d` on a lock that is legitimately absent).
+bounded() {
+  local secs="$1"; shift
+  local out flag rc p k
+  out="$(mktemp)"; flag="$(mktemp)"
+  "$@" >"$out" 2>/dev/null &
+  p=$!
+  ( sleep "$secs"; kill -0 "$p" 2>/dev/null && { echo timeout > "$flag"; kill -9 "$p" 2>/dev/null; } ) >/dev/null 2>&1 &
+  k=$!
+  wait "$p" 2>/dev/null; rc=$?
+  kill -9 "$k" 2>/dev/null || true
+  wait "$k" 2>/dev/null || true
+  if [[ -s "$flag" ]]; then rc=124; else cat "$out"; fi
+  rm -f "$out" "$flag"
+  return $rc
+}
+
+DRIVE_PROBE_BUDGET="${DRIVE_PROBE_BUDGET:-4}"
+
+# Is Drive actually answering right now? One bounded listing of $DATA.
+drive_ready() {
+  bounded "$DRIVE_PROBE_BUDGET" ls "$DATA" >/dev/null 2>&1
+}
+
+# Wait for Drive to mount, with visible progress and a hard ceiling.
+# NOT a blocker: per the no-internet mandate in CLAUDE.md the portal must
+# come up and play from ~/.bt-cache with no Drive at all, so a Drive that
+# never answers is a loud warning, not a refusal to start. What it does buy
+# is that Bill LEARNS Drive is cold in 60 seconds instead of discovering it
+# the next morning. Returns 0 if Drive answered, 1 if it never did.
+wait_for_drive() {
+  local budget="${1:-60}" waited=0
+  if drive_ready; then echo "  drive: responding ($DATA)"; return 0; fi
+  echo "  drive: not responding yet — waiting up to ${budget}s for Google Drive to mount…"
+  while (( waited < budget )); do
+    sleep 5; waited=$(( waited + 5 ))
+    if drive_ready; then echo "  drive: responding after ${waited}s"; return 0; fi
+    echo "    still waiting… ${waited}s/${budget}s"
+  done
+  echo "  ! drive: STILL not responding after ${budget}s." >&2
+  echo "    Starting anyway. The portal plays from ~/.bt-cache, so a gig is safe." >&2
+  echo "    New renders and library updates stay stalled until Drive returns." >&2
+  echo "    Re-run  ./performer.sh reset  once Drive is up." >&2
+  return 1
+}
+
+# Ctrl-C handler for the long subcommands. Before 2026-08-28 the services
+# started by this script shared its process group, so a ^C while waiting on
+# the portal killed the server that had just been started — which is exactly
+# what happened to Bill on 2026-08-27 (the next `test` reported the server
+# missing and he had no idea why). start_one now puts each service in its own
+# process group, and this trap makes the intent explicit on screen.
+on_int() {
+  echo
+  echo "  (Ctrl-C) The services that already started are still running."
+  echo "  Check them with:  ./performer.sh status"
+  echo "  Recover with:     ./performer.sh reset"
+  exit 130
+}
+
 preflight() {
   [[ -n "$NODE_BIN" ]] && echo "  node: $NODE_BIN" \
     || echo "  ! node not found in PATH or common locations — install Node for the portal" >&2
@@ -185,15 +267,30 @@ start_one() {
     tail -n 2000 "$lf" > "$lf.tmp" 2>/dev/null && mv "$lf.tmp" "$lf"
   fi
   echo "===== $(date) performer.sh start_one $name =====" >> "$lf"
+  # `set -m` gives the background job its OWN process group, so a Ctrl-C in
+  # Bill's terminal cannot reach it. nohup only shields SIGHUP (terminal
+  # close); SIGINT goes to every process in the foreground process group,
+  # which is how a ^C during the port wait killed the freshly started server
+  # on 2026-08-27. Own pgid is the only thing that shields it.
+  set -m
   nohup bash -c "$(start_cmd "$name")" >>"$lf" 2>&1 &
   local pid=$!
+  set +m
   disown "$pid" 2>/dev/null || true
   echo "$pid" > "$(pidfile "$name")"
-  sleep 0.4
-  if kill -0 "$pid" 2>/dev/null; then
+  # Liveness: poll for up to 2s rather than sampling once at 400ms. A service
+  # that exits immediately (the runner hitting a stale lock) can still be
+  # winding down at 400ms and get reported as started.
+  local i alive=1
+  for i in $(seq 1 20); do
+    sleep 0.1
+    kill -0 "$pid" 2>/dev/null || { alive=0; break; }
+  done
+  if [[ $alive -eq 1 ]]; then
     echo "  started $name (pid $pid) → log: .run/perf-$name.log"
   else
     echo "  ! $name exited immediately — see .run/perf-$name.log" >&2
+    tail -n 3 "$lf" 2>/dev/null | sed 's/^/      /' >&2
     rm -f "$(pidfile "$name")"
   fi
 }
@@ -211,8 +308,11 @@ stop_one() {
     echo "  stopped $name (pid $p)"
   fi
   if [[ "$name" == "runner" ]]; then
-    rmdir "$QUEUE/.runner.lock" 2>/dev/null || true
-    rm -f "$QUEUE/.current"
+    # rm -rf, not rmdir: the lock directory now carries an `owner` stamp so
+    # it can heal itself after a reboot (see queue_runner.sh). Bounded
+    # because it lives on Drive and a cold mount would hang the stop.
+    bounded 5 rm -rf "$QUEUE/.runner.lock" >/dev/null 2>&1 || true
+    bounded 5 rm -f "$QUEUE/.current" >/dev/null 2>&1 || true
   fi
 }
 
@@ -224,15 +324,22 @@ status_one() {
   fi
 }
 
-# Wait until the portal is actually accepting connections on $PORT (up to ~15s).
-# Returns 0 once it responds, 1 on timeout. Uses curl, falls back to nc.
+# Wait until the portal is actually accepting connections on $PORT.
+# Returns 0 once it responds, 1 once the wall-clock budget expires.
+#
+# The -m 2 is load-bearing. Without it (pre-2026-08-28) curl waited forever
+# on a server whose event loop was saturated, so the "up to 15s" in the old
+# comment was fiction: the loop never reached iteration 2 and the script just
+# hung with a blank terminal. Bill pressed ^C, which then killed the server.
+# Now every probe is capped and the loop is bounded by real elapsed time.
 wait_for_port() {
-  local i
-  for i in $(seq 1 30); do
+  local budget="${1:-20}" deadline
+  deadline=$(( $(date +%s) + budget ))
+  while (( $(date +%s) < deadline )); do
     if command -v curl >/dev/null 2>&1; then
-      curl -fsS -o /dev/null "http://localhost:$PORT/" 2>/dev/null && return 0
+      curl -fsS -m 2 -o /dev/null "http://localhost:$PORT/" 2>/dev/null && return 0
     elif command -v nc >/dev/null 2>&1; then
-      nc -z localhost "$PORT" 2>/dev/null && return 0
+      nc -G 2 -z localhost "$PORT" 2>/dev/null && return 0
     fi
     sleep 0.5
   done
@@ -251,10 +358,28 @@ open_portal() {
 }
 
 print_queue() {
-  local nq=0
-  [[ -d "$QUEUE" ]] && nq="$(find "$QUEUE" -mindepth 1 -maxdepth 2 -name '*.json' \
-        -not -path "$QUEUE/_done/*" -not -path "$QUEUE/_failed/*" 2>/dev/null | wc -l | tr -d ' ')"
-  local pausemsg=""; [[ -f "$QUEUE/.paused" ]] && pausemsg="  ⏸ PAUSED (./performer.sh resume)"
+  # THE 15-HOUR BUG (2026-08-27). Two defects, both fixed here:
+  #
+  #  1. No prune. -mindepth 1 -maxdepth 2 descends into _done/ (327 song
+  #     folders) and _failed/ and only THEN rejects them with -not -path.
+  #     On a cold Drive that is 330+ blocking CloudStorage directory reads.
+  #     -prune skips them without ever reading them.
+  #  2. No budget. The find had no ceiling, so when Drive was cold it simply
+  #     never returned. Bill's restart printed "opened in Chrome" and then
+  #     sat on a blank terminal for 15.2 hours before printing this line.
+  #
+  # If Drive does not answer inside the budget we say so plainly instead of
+  # reporting a queue depth of 0, which would be a lie.
+  local out nq rc pausemsg=""
+  out="$(bounded 6 find "$QUEUE" -mindepth 1 -maxdepth 2 \
+           \( -name _done -o -name _failed \) -prune -o -name '*.json' -print)"; rc=$?
+  if [[ $rc -eq 124 ]]; then
+    echo "  queue: UNKNOWN — Drive did not answer in 6s."
+    echo "         Cached playback is unaffected. Run ./performer.sh reset once Drive is back."
+    return 0
+  fi
+  nq="$(printf '%s' "$out" | grep -c '\.json$' || true)"
+  [[ -f "$QUEUE/.paused" ]] && pausemsg="  ⏸ PAUSED (./performer.sh resume)"
   echo "  queue: $nq awaiting render$pausemsg"
   if [[ -f "$QUEUE/.current" ]]; then
     python3 - "$QUEUE/.current" 2>/dev/null <<'PY' || true
@@ -265,6 +390,57 @@ tail = (' — %s%s' % (phase, ' since %s' % since if since else '')) if phase el
 print('  now rendering: %s%s' % (d.get('song', '?'), tail))
 PY
   fi
+}
+
+# Everything a hard reboot, a kill -9, or a wedged Drive can leave behind.
+# Only safe to run with the services stopped, which is why `reset` is the
+# only caller. Each item here is a real thing that has blocked a start.
+reset_stale_state() {
+  local sq prt f p dupes
+  # 1. The runner lock. mkdir-based, released from an EXIT trap that a reboot
+  #    never runs, so a power cycle left it behind forever. This is what
+  #    stopped the runner on 2026-08-27. queue_runner.sh now reclaims its own
+  #    stale lock, but reset clears it unconditionally as the manual override.
+  if bounded 6 test -d "$QUEUE/.runner.lock"; then
+    if bounded 6 rm -rf "$QUEUE/.runner.lock" >/dev/null 2>&1; then
+      echo "  cleared stale runner lock"
+    else
+      echo "  ! could not clear $QUEUE/.runner.lock (Drive not answering)" >&2
+    fi
+  else
+    echo "  runner lock: clean"
+  fi
+  bounded 6 rm -f "$QUEUE/.current" >/dev/null 2>&1 || true
+  # 2. Drive conflict copies. When two machines write the same file, Drive
+  #    keeps both as "name 2". Harmless to the pipeline but they confuse the
+  #    queue listing, so surface them rather than silently deleting data.
+  dupes="$(bounded 6 find "$QUEUE" -maxdepth 1 -name '* [0-9]' 2>/dev/null || true)"
+  if [[ -n "$dupes" ]]; then
+    echo "  note: Google Drive conflict copies in STEM_QUEUE (safe to delete by hand):"
+    # Read line by line, not word by word: these names CONTAIN a space
+    # (".current 2" is sitting in Bill's queue right now) and an unquoted
+    # expansion prints them as two bogus entries.
+    printf '%s\n' "$dupes" | while IFS= read -r d; do
+      [[ -n "$d" ]] && echo "    $d"
+    done
+  fi
+  # 3. Port squatters on the portal and the MIDI sidecar. A process that
+  #    outlived its pidfile owns the port silently and the new server's bind
+  #    fails, turning a restart into a no-op against stale code.
+  for prt in "$PORT" 5555; do
+    sq=$(lsof -nP -iTCP:"$prt" -sTCP:LISTEN -t 2>/dev/null || true)
+    if [[ -n "$sq" ]]; then
+      echo "  killing :$prt squatter(s): $sq"
+      kill -9 $sq 2>/dev/null || true
+    fi
+  done
+  # 4. Pidfiles naming processes that died with the machine.
+  for f in "$RUN"/perf-*.pid; do
+    [[ -f "$f" ]] || continue
+    p="$(cat "$f" 2>/dev/null || true)"
+    if [[ -z "$p" ]] || ! kill -0 "$p" 2>/dev/null; then rm -f "$f" 2>/dev/null || true; fi
+  done
+  echo "  cleared stale pidfiles and port squatters"
 }
 
 # Gig readiness test (Bill 2026-08-10): "I do not want these bugs to
@@ -283,6 +459,19 @@ gig_test_checks() {
   done
   if is_running runner; then echo "PASS service runner running"
   else echo "WARN service runner stopped (fine at a gig, nothing new renders)"; fi
+  # Drive responsiveness (2026-08-27). A cold or wedged CloudStorage mount is
+  # invisible until something blocks on it for hours. Probe it explicitly.
+  # WARN not FAIL: per the no-internet mandate a gig runs fine with no Drive.
+  # The stale-lock check is nested because it stats a Drive path, and doing
+  # that while Drive is wedged is the very thing this test exists to catch.
+  if drive_ready; then
+    echo "PASS drive: $DATA answered inside ${DRIVE_PROBE_BUDGET}s"
+    if [[ -d "$QUEUE/.runner.lock" ]] && ! is_running runner; then
+      echo "FAIL runner lock held but no runner is running (stale lock, typically from a reboot): ./performer.sh reset"
+    fi
+  else
+    echo "WARN drive: $DATA did not answer in ${DRIVE_PROBE_BUDGET}s. Cached playback is fine; renders and library updates are stalled. Run ./performer.sh reset once it is back"
+  fi
   PORT="$PORT" python3 - <<'PY'
 import json, os, random, subprocess, sys, time, urllib.parse, urllib.request
 
@@ -448,7 +637,12 @@ run_gig_test() {
 
 case "${1:-}" in
   start)
+    trap on_int INT
     echo "Starting Performer…"; preflight
+    # Drive gate (2026-08-27). Find out in seconds whether Drive is cold,
+    # instead of letting the first Drive-backed operation block silently.
+    # Never a refusal to start: the portal must run from ~/.bt-cache alone.
+    wait_for_drive "${DRIVE_WAIT:-60}" || true
     # Runner: a live Demucs render is 10-25 min of work — never kill it. Start it
     # only if it isn't already running.
     if is_running runner; then
@@ -488,15 +682,67 @@ case "${1:-}" in
     stop_one midi
     start_one midi ;;
   restart)
+    trap on_int INT
     echo "Restarting Performer… (full restart — stops the runner too)"
     for s in $SERVICES; do stop_one "$s"; done
     sleep 1; preflight
+    wait_for_drive "${DRIVE_WAIT:-60}" || true
     for s in $SERVICES; do start_one "$s"; done
     echo
-    if wait_for_port; then echo "Portal up on http://localhost:$PORT"; open_portal; fi
+    if wait_for_port; then
+      echo "Portal up on http://localhost:$PORT"; open_portal
+    else
+      echo "  ! server didn't answer on :$PORT in time — see .run/perf-server.log" >&2
+      tail -n 5 "$(logfile server)" 2>/dev/null | sed 's/^/    /'
+    fi
     echo; print_queue
     sleep 1
     run_gig_test || true ;;
+  reset)
+    # The retry button (Bill 2026-08-28: "a reset that enables a retry before
+    # I give up next time"). One command that clears every piece of state a
+    # reboot or a wedged Drive leaves behind, brings the stack back, and says
+    # in plain language whether it worked and what to do next. Numbered steps
+    # so a stall is attributable to a phase instead of a blank terminal.
+    trap on_int INT
+    echo "Performer RESET — $(date)"
+    echo
+    echo "1/6  stopping services"
+    for s in $SERVICES; do stop_one "$s"; done
+    echo
+    echo "2/6  clearing stale state"
+    reset_stale_state
+    echo
+    echo "3/6  waiting for Google Drive"
+    reset_drive_ok=0
+    wait_for_drive "${DRIVE_WAIT:-90}" && reset_drive_ok=1
+    echo
+    echo "4/6  preflight"
+    preflight
+    echo
+    echo "5/6  starting services"
+    for s in $SERVICES; do start_one "$s"; done
+    echo
+    echo "6/6  waiting for the portal"
+    if wait_for_port 30; then
+      echo "  portal answering on http://localhost:$PORT"
+      open_portal
+    else
+      echo "  ! portal did not answer within 30s — last lines of the server log:" >&2
+      tail -n 8 "$(logfile server)" 2>/dev/null | sed 's/^/    /'
+    fi
+    echo; print_queue
+    sleep 1
+    run_gig_test || true
+    echo
+    if [[ "$reset_drive_ok" -eq 1 ]]; then
+      echo "RESET COMPLETE. Drive is up, so renders and library updates work normally."
+    else
+      echo "RESET COMPLETE, but Google Drive never answered."
+      echo "  Playback is fine: the portal serves stems from ~/.bt-cache."
+      echo "  Renders and library updates stay stalled until Drive returns."
+      echo "  Run ./performer.sh reset again once the Drive icon in the menu bar is idle."
+    fi ;;
   open)
     open_portal ;;
   status)
@@ -579,6 +825,7 @@ case "${1:-}" in
       exit 1
     fi ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|test|drill|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
+    echo "usage: $0 {start|stop|restart|reset|status|test|drill|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
+    echo "  reset = recovery: clear stale locks/ports, wait for Drive, restart everything, verify" >&2
     exit 1 ;;
 esac

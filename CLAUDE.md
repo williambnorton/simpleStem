@@ -190,9 +190,20 @@ cd ~/simpleStem-code
 ./performer.sh start          # queue_runner (Demucs) + portal, then runs the gig test automatically
 ./performer.sh status         # queue depth + current render & phase
 ./performer.sh test           # gig readiness: prerequisites + regression pass, PASS/WARN/FAIL + verdict (start/restart run this too)
+./performer.sh reset          # RECOVERY: clear stale lock/ports/pidfiles, wait for Drive, restart all, verify
 ./performer.sh logs runner
 ./performer.sh stop
 ```
+
+**When a start looks wrong, run `./performer.sh reset`.** It is the retry
+path, added 2026-08-28 after a reboot left a stale runner lock on Drive and
+a cold CloudStorage mount silently blocked the portal for 15 hours. Reset
+stops everything, clears the runner lock, port squatters on :3000 and :5555,
+dead pidfiles and the `.current` marker, waits for Drive to actually answer,
+restarts all five services, then runs the gig test. It prints numbered steps
+so a stall is attributable to a phase instead of a blank terminal. Drive
+being down never blocks it: the portal comes up on `~/.bt-cache` and reset
+says so plainly.
 
 > `studio.sh` is the legacy single-machine switch (ingest+render+serve on one
 > Mac). It still works but predates the cache model and the machine flip; prefer
@@ -417,6 +428,26 @@ field. This is NOT YET WIRED — see the roadmap.
   collection. Hot endpoints that touch a Drive path must go through
   `sendCachedAudio` (cache-first, 3s bounded Drive fallback) — never a
   bare `fs.existsSync`.
+
+- **No UNBOUNDED Drive call anywhere, including background work and shell
+  scripts.** The no-internet mandate hardened request handlers, but the
+  background cache warmers and `performer.sh` itself were left unbounded, and
+  offline they do not fail, they BLOCK. **Postmortem (2026-08-27):** Bill
+  rebooted, Drive's CloudStorage mount had not come up, and both halves stalled
+  at once. In the server, all four boot precaches sat in an unbounded `await`
+  for 15.2 hours (`[stem precache] done ... copied 0, failed 0 (54867s)`, so
+  nothing was copied and nothing failed, it was purely blocked). In the shell,
+  `print_queue`'s `find` descended into `_done/` (327 folders) and never
+  returned, so a `restart` printed "opened in Chrome" and then showed a blank
+  terminal for 15 hours. Bill pressed Ctrl-C, which killed the server he had
+  just started, because `nohup` shields SIGHUP but not SIGINT. Binding rules:
+  background Drive I/O goes through `withDriveBudget()`; boot work that touches
+  Drive is scheduled with `bootWhenDriveReady()`, never a bare `setImmediate`;
+  every Drive touch in `performer.sh` goes through `bounded()`; any `find` over
+  `STEM_QUEUE` uses `-prune` on `_done`/`_failed` rather than `-not -path`,
+  which descends first and filters after; services start under `set -m` so a
+  terminal Ctrl-C cannot reach them. The runner lock carries an owner stamp and
+  reclaims itself when the owning pid is gone, so a reboot no longer wedges it.
 
 - **File format policy: m4a only — AND moov-first (fast-start).** The only
   audio file format simpleStem uses going forward is **`.m4a`** (AAC in
