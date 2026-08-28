@@ -3868,15 +3868,28 @@ app.post('/api/precache/custom-loops', (req, res) => {
 // Background pre-fetch — kicks off cache fill for every file in a stems
 // folder without blocking the request. Writes a `.cached` sentinel on
 // success so the library can advertise the folder as ready-to-play.
-app.post('/api/precache/stems/:song', (req, res) => {
+app.post('/api/precache/stems/:song', async (req, res) => {
   const { song } = req.params;
   if (song.includes('..')) return res.status(403).send('Forbidden');
   const folder = path.join(STEMS_DIR, song);
-  if (!fs.existsSync(folder)) return res.status(404).send('Not found');
+  // Was fs.existsSync(folder) — a sync Drive stat in a request handler,
+  // one of the 4 standing DRIVE-SYNC-VIOLATION sites (61 hits by
+  // 2026-08-28). Bounded async instead; per the no-internet mandate reads
+  // DEGRADE: on a Drive timeout we don't know whether the folder exists,
+  // so we proceed (the background copy is itself budget-bounded now and
+  // fails harmlessly) rather than 404ing a real song while offline.
+  let folderKnownMissing = false, driveTimeout = false;
+  try {
+    await driveRace(fsp.stat(folder));
+  } catch (e) {
+    if (e && e.code === 'ENOENT') folderKnownMissing = true;
+    else if (isDriveTimeout(e)) driveTimeout = true;
+  }
+  if (folderKnownMissing) return res.status(404).send('Not found');
 
   // Respond immediately; the actual copying runs async so other HTTP
   // requests (in particular the user's M4A audio fetch) interleave with it.
-  res.json({ status: 'precaching', song, alreadyCached: isStemsFolderCached(song) });
+  res.json({ status: 'precaching', song, alreadyCached: isStemsFolderCached(song), driveTimeout });
   if (isStemsFolderCached(song)) return;
 
   (async () => {
@@ -3907,15 +3920,29 @@ app.post('/api/precache/stems/:song', (req, res) => {
 // Precache a whole SetList: pull every song's m4a + stems into the local cache
 // in the background, so loading a setlist before a gig makes its songs instant.
 // Honors the LRU cap afterward. Body/param: setlist slug.
-app.post('/api/precache/setlist/:slug', (req, res) => {
+app.post('/api/precache/setlist/:slug', async (req, res) => {
   const slug = path.basename(req.params.slug).replace(/\.json$/i, '');
   const file = path.join(SETLISTS_DIR, `${slug}.json`);
-  if (!file.startsWith(SETLISTS_DIR) || !fs.existsSync(file)) {
+  if (!file.startsWith(SETLISTS_DIR)) {
     return res.status(404).json({ error: 'setlist not found' });
   }
-  let sl;
-  try { sl = JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (e) { return res.status(500).json({ error: e.message }); }
+  // Was existsSync + readFileSync against the Drive path — 2 of the 4
+  // standing DRIVE-SYNC-VIOLATION sites. Mirror-first (local disk, always
+  // safe), bounded Drive fallback for a setlist the mirror hasn't picked
+  // up yet. On a Drive timeout: degrade with 503 + driveTimeout so the UI
+  // can say "Drive is slow" instead of the request wedging the loop.
+  let sl = null;
+  const mirrorFile = path.join(SETLISTS_LOCAL_MIRROR, `${slug}.json`);
+  try { sl = JSON.parse(fs.readFileSync(mirrorFile, 'utf8')); } catch (e) {}
+  if (!sl) {
+    try {
+      sl = JSON.parse(await driveRace(fsp.readFile(file, 'utf8')));
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return res.status(404).json({ error: 'setlist not found' });
+      if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive not answering', driveTimeout: true });
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   const bases = (sl.songs || []).map(s => s.song_base).filter(Boolean);
   res.json({ status: 'precaching', setlist: slug, songs: bases.length });
@@ -3927,10 +3954,12 @@ app.post('/api/precache/setlist/:slug', (req, res) => {
       // Drive (EZPerformer reads them there); the portal uses stems.
       const folder = path.join(STEMS_DIR, base);
       try {
-        if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f))) {
-            await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
-          }
+        // Was fs.existsSync(folder) — the 4th DRIVE-SYNC-VIOLATION site.
+        // The bounded readdir doubles as the existence check: ENOENT and
+        // drive-timeout both land in the catch and we move on.
+        const names = await withDriveBudget(fsp.readdir(folder), DRIVE_OP_BUDGET_MS, 'setlist-precache');
+        for (const f of names.filter(f => /\.m4a$/i.test(f))) {
+          await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
         }
       } catch (e) {}
     }

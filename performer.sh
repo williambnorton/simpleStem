@@ -800,6 +800,51 @@ case "${1:-}" in
       fi
     done
     echo
+    echo "== offline COLD BOOT: the 2026-08-27 failure — full stop, stale lock planted, full start, no internet =="
+    # This phase encodes the reboot-at-the-venue scenario end to end:
+    # every service down, a stale runner lock left on Drive exactly as a
+    # power cycle leaves it (mkdir'd dir, owner stamp naming a dead pid),
+    # then a plain start. The portal must answer on :$PORT and the runner
+    # must reclaim the lock, all with Wi-Fi off. Skipped if a render is in
+    # flight — a live Demucs job is 25 minutes of work we never kill.
+    if [[ -f "$QUEUE/.current" ]]; then
+      echo "  SKIP  a render is in flight (.current present) — not stopping the runner mid-song."
+      echo "        Re-run the drill when the queue is idle to exercise the cold boot."
+    else
+      for s in $SERVICES; do stop_one "$s"; done
+      sleep 1
+      if bounded 6 mkdir -p "$QUEUE/.runner.lock" >/dev/null 2>&1; then
+        printf '%s %s %s\n' "$(hostname | tr '[:upper:]' '[:lower:]')" 999999 0 \
+          > "$QUEUE/.runner.lock/owner" 2>/dev/null || true
+        echo "  planted a stale runner lock (dead pid 999999) to prove the reclaim"
+      else
+        echo "  note: could not plant the stale lock (Drive not answering) — cold boot still runs"
+      fi
+      cold_t0=$(date +%s)
+      for s in $SERVICES; do start_one "$s"; done
+      if wait_for_port 30; then
+        echo "  PASS  portal answered on :$PORT in $(( $(date +%s) - cold_t0 ))s from a dead stop, offline"
+      else
+        echo "  FAIL  portal did not answer on :$PORT within 30s of an offline cold start"
+        drill_fail=1
+      fi
+      sleep 2
+      if is_running runner; then
+        echo "  PASS  runner reclaimed the stale lock and is running"
+      else
+        echo "  FAIL  runner did not survive the stale lock — see .run/perf-runner.log"
+        tail -n 3 "$(logfile runner)" 2>/dev/null | sed 's/^/        /'
+        drill_fail=1
+      fi
+      t="$(curl -s -o /dev/null -m 6 -w '%{time_total}' "http://localhost:$PORT/api/library" 2>/dev/null || echo timeout)"
+      if [[ "$t" != "timeout" ]] && awk -v t="$t" 'BEGIN { exit (t+0 < 2 ? 0 : 1) }'; then
+        printf "  PASS  /api/library in %.2fs right after the cold boot\n" "$t"
+      else
+        echo "  FAIL  /api/library not inside 2s after the cold boot (got: $t)"
+        drill_fail=1
+      fi
+    fi
+    echo
     echo "== offline reset round-trip: the exact failure from the 2026-08-16 gig =="
     curl -s -m 5 -X POST "http://localhost:$PORT/api/performer/reset" >/dev/null 2>&1
     recovered=0
