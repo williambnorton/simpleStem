@@ -723,7 +723,10 @@ def _rx_loop():
     while True:
         try:
             tick += 1
-            current = set(mido.get_input_names())
+            # Skip logic_bridge's virtual ports: its MCU meter stream
+            # (many messages/sec) would drown the 150-slot wire log.
+            current = set(n for n in mido.get_input_names()
+                          if "logicbridge" not in n.lower())
             for n in list(opened.keys()):
                 if n not in current:
                     try:

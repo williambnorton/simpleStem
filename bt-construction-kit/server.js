@@ -2915,8 +2915,8 @@ async function refreshDriveSnap() {
   try {
     const dotRun = path.join(SIMPLE_STEM_ROOT, '.run');
     const codeDotRun = path.join(__dirname, '..', '.run');
-    const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'lib-watcher',
-                       'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
+    const PID_NAMES = ['perf-runner', 'perf-server', 'perf-midi', 'perf-logic',
+                       'lib-watcher', 'lib-cataloger', 'lib-catalogwatch', 'lib-mpbsync'];
     for (const name of PID_NAMES) {
       // Read BOTH .run dirs and prefer whichever pid is ALIVE. The old
       // Drive-first preference reported live services as down whenever a
@@ -3779,6 +3779,147 @@ bootWhenDriveReady('backing precache', precacheAllBackingTracks);
 registerTrackedInterval('backing-precache', 60 * 60 * 1000,
   precacheAllBackingTracks,
   { label: 'Backing precache', folder: 'clips', initialDelayMs: 60 * 60 * 1000 });
+
+// ── AUDIO_SOURCES: stereo source files (Bill 2026-08-28) ────────────────
+// audio_watch.sh on the Librarian ingests dropped audio files: each becomes
+// a fast-start stereo m4a in AUDIO_SOURCES/<base>.m4a on Drive (so Easy
+// Performer on the iPad can import it) plus a queued stem render. The
+// portal precaches them like clips and drums, serves them cache-first for
+// the Librarian view's listen-check, and offers hard deletes with an
+// explicit confirm handshake. Reads DEGRADE, deletes fail LOUD, per the
+// no-internet mandate.
+const AUDIO_SOURCES_DIR = `${SIMPLE_STEM_ROOT}/AUDIO_SOURCES`;
+const AUDIO_CACHE_SOURCES = path.join(AUDIO_CACHE_DIR, 'AUDIO_SOURCES');
+
+async function precacheAllAudioSources() {
+  const t0 = Date.now();
+  let copied = 0, skipped = 0, failed = 0;
+  try {
+    let files;
+    try {
+      files = (await withDriveBudget(fsp.readdir(AUDIO_SOURCES_DIR), DRIVE_OP_BUDGET_MS, 'audio-sources'))
+        .filter(f => /\.m4a$/i.test(f));
+    } catch (e) { return; }
+    if (!files.length) return;
+    await fsp.mkdir(AUDIO_CACHE_SOURCES, { recursive: true });
+    console.log(`[audio-source precache] starting — ${files.length} file(s)`);
+    await runWithConcurrency(files, 4, async (f) => {
+      const dst = path.join(AUDIO_CACHE_SOURCES, f);
+      try {
+        const st = await fsp.stat(dst).catch(() => null);
+        if (st && st.size > 0) { skipped++; return; }
+        await ensureCachedAsync(path.join(AUDIO_SOURCES_DIR, f), dst);
+        copied++;
+      } catch (e) { failed++; }
+    });
+    console.log(`[audio-source precache] done — copied ${copied}, skipped ${skipped}, failed ${failed} (${Math.round((Date.now()-t0)/1000)}s)`);
+  } catch (e) {
+    console.warn('[audio-source precache] failed:', e.message);
+  }
+}
+bootWhenDriveReady('audio-source precache', precacheAllAudioSources);
+registerTrackedInterval('audio-source-precache', 60 * 60 * 1000,
+  precacheAllAudioSources,
+  { label: 'Audio sources', folder: 'stems', initialDelayMs: 60 * 60 * 1000 });
+
+function safeSourceFile(name) {
+  const f = path.basename(String(name || ''));
+  if (!/\.m4a$/i.test(f) || f.startsWith('.')) return null;
+  return f;
+}
+
+// List the stereo sources from the LOCAL cache (never Drive on a request),
+// with a bounded Drive listing merged in so a file the cache has not pulled
+// yet still appears (flagged uncached). Each row says whether the library
+// already has a rendered stems folder for that base.
+app.get('/api/audio-sources', async (req, res) => {
+  try {
+    const rows = new Map();
+    try {
+      for (const f of await fsp.readdir(AUDIO_CACHE_SOURCES)) {
+        if (!/\.m4a$/i.test(f)) continue;
+        const st = await fsp.stat(path.join(AUDIO_CACHE_SOURCES, f)).catch(() => null);
+        rows.set(f, { file: f, base: f.replace(/\.m4a$/i, ''), sizeBytes: st ? st.size : 0, cached: true });
+      }
+    } catch (e) {}
+    let driveTimeout = false;
+    try {
+      for (const f of await driveRace(fsp.readdir(AUDIO_SOURCES_DIR))) {
+        if (!/\.m4a$/i.test(f) || rows.has(f)) continue;
+        rows.set(f, { file: f, base: f.replace(/\.m4a$/i, ''), sizeBytes: 0, cached: false });
+      }
+    } catch (e) { if (isDriveTimeout(e)) driveTimeout = true; }
+    const inLib = new Set(
+      (libraryCache && libraryCache.data && libraryCache.data.songs || [])
+        .map(s => s.folderName).filter(Boolean));
+    const out = [...rows.values()].map(r => ({ ...r, inLibrary: inLib.has(r.base) }))
+      .sort((a, b) => a.file.localeCompare(b.file));
+    res.json({ ok: true, sources: out, driveTimeout });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Stream one stereo source, cache-first (same contract as stems).
+app.get('/api/audio/source/:file', (req, res) => {
+  const f = safeSourceFile(req.params.file);
+  if (!f) return res.status(400).send('bad file');
+  return sendCachedAudio(req, res, path.join(AUDIO_SOURCES_DIR, f), path.join(AUDIO_CACHE_SOURCES, f));
+});
+
+// HARD delete one stereo source file (Bill chose hard delete + confirm).
+// The confirm handshake: the body must repeat the exact filename. Drive
+// unlink is budgeted and fails LOUD; on failure nothing local is touched,
+// so a retry sees a consistent world.
+app.delete('/api/audio-sources/:file', async (req, res) => {
+  const f = safeSourceFile(req.params.file);
+  if (!f) return res.status(400).json({ error: 'bad file' });
+  if (!req.body || req.body.confirm !== f) {
+    return res.status(428).json({ error: 'confirm required: resend with body {"confirm":"' + f + '"}' });
+  }
+  try {
+    await withDriveBudget(fsp.rm(path.join(AUDIO_SOURCES_DIR, f), { force: true }), 8000, 'rm-source');
+  } catch (e) {
+    return res.status(503).json({ error: 'Drive did not answer — nothing was deleted. Try again when Drive is up.' });
+  }
+  try { fs.rmSync(path.join(AUDIO_CACHE_SOURCES, f), { force: true }); } catch (e) {}
+  logActivity('warn', 'library', `audio source deleted: ${f}`);
+  res.json({ ok: true, deleted: f });
+});
+
+// HARD delete a whole song: the STEMS folder on Drive, its stereo source
+// file if one exists, and every local cache copy. Requires the confirm
+// handshake (body.confirm === base). Order matters for consistency:
+// Drive first and LOUD on failure, local cleanup only after Drive
+// succeeded, library caches scrubbed last so no surface dangles.
+//
+// Downstream tolerance (verified): setlist playback skips a missing
+// song_base with a console warning; the catalogwatch fswatch on STEMS/
+// sees the removal and rebuilds CATALOG.json on the Librarian within
+// seconds, so both machines converge without manual steps.
+app.delete('/api/song/:base', async (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  if (!req.body || req.body.confirm !== s.b) {
+    return res.status(428).json({ error: 'confirm required: resend with body {"confirm":"' + s.b + '"}' });
+  }
+  try {
+    await withDriveBudget(fsp.rm(s.dir, { recursive: true, force: true }), 20000, 'rm-song');
+    await withDriveBudget(fsp.rm(path.join(AUDIO_SOURCES_DIR, s.b + '.m4a'), { force: true }), 8000, 'rm-song-source');
+  } catch (e) {
+    return res.status(503).json({ error: 'Drive did not answer — the song was NOT fully deleted. Try again when Drive is up.' });
+  }
+  try { fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true }); } catch (e) {}
+  try { fs.rmSync(path.join(AUDIO_CACHE_SOURCES, s.b + '.m4a'), { force: true }); } catch (e) {}
+  if (libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs)) {
+    libraryCache.data.songs = libraryCache.data.songs.filter(x => x.folderName !== s.b);
+    try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
+  }
+  _stemsHealthCache.rows = (_stemsHealthCache.rows || []).filter(r => r.base !== s.b);
+  setImmediate(() => { recomputeStemsHealth().catch(() => {}); });
+  logActivity('warn', 'library', `song deleted: ${s.b} (stems + source + caches)`);
+  res.json({ ok: true, deleted: s.b });
+});
 
 // Manual trigger — POST /api/precache/library forces all four passes immediately
 // (useful after a big import or when prepping for a gig). Returns 202 fast;
@@ -6468,6 +6609,109 @@ async function sidecarFetch(path, init, timeoutMs = 2000) {
     return { ok: r.ok, status: r.status, body };
   } finally { clearTimeout(t); }
 }
+
+// ── Logic Pro mixer bridge proxy (Bill 2026-08-30) ──────────────────────
+// logic_bridge.py on :5556 emulates a Mackie Control surface: it reads
+// Logic's track names, per-strip meters and fader echoes, and writes
+// fader moves. These proxies keep the client same-origin, exactly like
+// the midi sidecar proxies above. Offline behavior: localhost only, no
+// Drive, no internet; with the bridge down every route answers 503 fast.
+const LOGIC_BRIDGE_URL = process.env.LOGIC_BRIDGE_URL || 'http://127.0.0.1:5556';
+
+async function logicFetch(path, init, timeoutMs = 3000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${LOGIC_BRIDGE_URL}${path}`, { ...init, signal: ctrl.signal });
+    const body = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, body };
+  } finally { clearTimeout(t); }
+}
+
+function logicPost(route, bridgePath, timeoutMs) {
+  app.post(route, async (req, res) => {
+    try {
+      const r = await logicFetch(bridgePath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body || {}),
+      }, timeoutMs);
+      res.status(r.status).json(r.body);
+    } catch (e) {
+      res.status(503).json({ ok: false, error: 'logic bridge unreachable', detail: e.message });
+    }
+  });
+}
+
+app.get('/api/logic/health', async (req, res) => {
+  try {
+    const r = await logicFetch('/health');
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'logic bridge unreachable', detail: e.message });
+  }
+});
+
+app.get('/api/logic/tracks', async (req, res) => {
+  try {
+    const r = await logicFetch('/tracks');
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'logic bridge unreachable', detail: e.message });
+  }
+});
+
+logicPost('/api/logic/fader', '/fader', 4000);
+logicPost('/api/logic/bank', '/bank', 4000);
+// balance samples meters for up to 30s before answering
+logicPost('/api/logic/balance', '/balance', 36000);
+
+// Balance the singers of a song: resolve who sings it from the song's
+// MPB metadata (singer_lead/singer_backup, or all four on a group
+// vocal), then hand those names to the bridge, which matches them
+// against Logic's track names (convention: vocal tracks named by
+// singer first name). Metadata read is bounded per the no-internet
+// mandate; a Drive timeout degrades to 503, never a hang.
+app.post('/api/logic/balance-singers', async (req, res) => {
+  const base = String((req.body && req.body.base) || '');
+  const s = safeSongDir(base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  let meta;
+  try {
+    meta = await readMetaBounded(path.join(s.dir, 'metadata.json'));
+  } catch (e) {
+    return res.status(503).json({ ok: false, error: 'metadata read timed out', detail: e.message });
+  }
+  if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
+  let names;
+  if (meta.singer_group_vocal) {
+    names = ['Bill', 'Matt', 'Dan', 'JD'];
+  } else {
+    names = [...new Set([meta.singer_lead, meta.singer_backup].filter(Boolean))];
+  }
+  if (names.length < 2) {
+    return res.status(400).json({
+      ok: false,
+      error: `song has ${names.length} singer(s) in metadata — nothing to balance. POST /api/logic/balance with explicit names instead.`,
+      singers: names,
+    });
+  }
+  try {
+    const r = await logicFetch('/balance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        names,
+        window_sec: (req.body && req.body.window_sec) || 10,
+        max_db: (req.body && req.body.max_db) || 6,
+        apply: (req.body && req.body.apply) !== false,
+      }),
+    }, 36000);
+    res.status(r.status).json({ ...r.body, singers: names, base });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: 'logic bridge unreachable', detail: e.message });
+  }
+});
 
 // ── XR18 OSC bridge (Bill 2026-07-15) ──────────────────────────────────
 // The sidecar owns a UDP OSC client to the XR18 on :10024. info = deep

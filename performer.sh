@@ -42,7 +42,7 @@ RUN="$BASE/.run"                            # runtime state stays with the code
 QUEUE="$DATA/STEM_QUEUE"
 STEMS="$DATA/STEMS"
 PORT="${PORT:-3000}"            # portal port (server.js reads $PORT too)
-SERVICES="runner midi server caffeinate midiwatch"
+SERVICES="runner midi logic server caffeinate midiwatch"
 mkdir -p "$RUN"
 
 # Version = newest mtime across the code files, formatted YYMMDD.HHMM (local).
@@ -113,6 +113,11 @@ start_cmd() {
   case "$1" in
     runner) echo "exec '$BASE/queue_runner.sh'" ;;
     midi)   echo "exec env MIDI_HELIX_PORT='U2MIDI Pro' '${PYTHON_MIDI:-python3}' '$BASE/midi_sidecar.py'" ;;
+    logic)
+            # Logic Pro mixer bridge (Bill 2026-08-30): MCU emulation on
+            # :5556 — reads track names/meters, writes fader moves. Runs
+            # fine with Logic closed (answers logic_seen:false).
+            echo "exec '${PYTHON_MIDI:-python3}' '$BASE/logic_bridge.py'" ;;
     midiwatch)
             # Sidecar watchdog (Bill 2026-07-29, third sidecar death):
             # probes :5555/health every 20s; two consecutive failures
@@ -427,7 +432,7 @@ reset_stale_state() {
   # 3. Port squatters on the portal and the MIDI sidecar. A process that
   #    outlived its pidfile owns the port silently and the new server's bind
   #    fails, turning a restart into a no-op against stale code.
-  for prt in "$PORT" 5555; do
+  for prt in "$PORT" 5555 5556; do
     sq=$(lsof -nP -iTCP:"$prt" -sTCP:LISTEN -t 2>/dev/null || true)
     if [[ -n "$sq" ]]; then
       echo "  killing :$prt squatter(s): $sq"
@@ -459,6 +464,8 @@ gig_test_checks() {
   done
   if is_running runner; then echo "PASS service runner running"
   else echo "WARN service runner stopped (fine at a gig, nothing new renders)"; fi
+  if is_running logic; then echo "PASS service logic running"
+  else echo "WARN service logic stopped (Logic Pro mixing verbs unavailable)"; fi
   # Drive responsiveness (2026-08-27). A cold or wedged CloudStorage mount is
   # invisible until something blocks on it for hours. Probe it explicitly.
   # WARN not FAIL: per the no-internet mandate a gig runs fine with no Drive.
@@ -563,6 +570,17 @@ try:
         report('WARN', 'U2MIDI Pro missing: the Helix loop is dead until that cable is re-seated')
 except Exception as e:
     report('FAIL', 'MIDI sidecar unreachable on :5555 (%s)' % e)
+
+try:
+    with urllib.request.urlopen('http://localhost:5556/health', timeout=4) as r:
+        lb = json.load(r)
+    if lb.get('ok'):
+        seen = 'Logic seen' if lb.get('logic_seen') else 'Logic not connected (fine unless mixing through it)'
+        report('PASS', 'logic bridge: up on :5556, %s' % seen)
+    else:
+        report('WARN', 'logic bridge answered but not ok')
+except Exception as e:
+    report('WARN', 'logic bridge unreachable on :5556 (%s) — Logic mixing verbs unavailable' % e)
 
 try:
     h2 = pj('/api/health', 5)

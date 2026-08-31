@@ -107,6 +107,9 @@ Pick from this table:
 | Operation | Machine | Why |
 |---|---|---|
 | Ingest a `.webloc` (drop into `INCOMING_WEBLOC/`) | **Librarian** | `webloc_watch.sh` runs here, downloads source.wav into the STEMS cache, writes the metadata job into `STEM_QUEUE/`. |
+| Ingest an audio file (drop into `INCOMING_AUDIO/`) | **Librarian** | `audio_watch.sh` (the `audiowatch` service): normalizes to a fast-start stereo m4a in `AUDIO_SOURCES/` (the Easy Performer iPad imports), stages `STEMS/<base>/source.wav`, writes the queue job. The Performer then renders stems normally. Originals land in `INCOMING_AUDIO/_ingested/`. |
+| `filter_audio.sh <dir>` (10s-preview triage: D delete, A archive) | **Either Mac** | afplay-based; deletes stage into `<dir>/.deleted/` with one purge confirm at the end. |
+| Song / audio-source HARD delete (Librarian view buttons) | **Performer server** | `DELETE /api/song/:base` and `DELETE /api/audio-sources/:file`, both requiring a `{confirm}` body. Drive removal is budgeted and fails LOUD; local caches and the library cache are scrubbed only after Drive succeeds. Setlists tolerate the missing base (playback skips it) and catalogwatch rebuilds CATALOG.json on the removal event. |
 | `webloc_watch.sh` | **Librarian** | Daemonized by `librarian.sh start`. |
 | `metadata.py` (analyzing source.wav for BPM/key) | **Librarian** | Called by `webloc_watch.sh` after the slice is ready. |
 | `mpb_sync.py` / `./librarian.sh sheet` | **Librarian** | Pulls the Google Sheet songlist and writes singer/band/drum-pattern fields. |
@@ -119,6 +122,7 @@ Pick from this table:
 | `section_detect.py` (single-song) | **Performer** | Same reason as the backfill — librosa lives in the demucs venv. |
 | `post_process.py` | **Performer** | Optional gain-matching pass; not run automatically. |
 | MIDI sidecar (`midi_sidecar.py`) | **Performer** | Drives the user's Helix / XR18 / Logic via macOS MIDI ports — must be on the gig laptop. |
+| Logic bridge (`logic_bridge.py`, :5556) | **Performer** | Reads and writes Logic Pro's mixer by emulating a Mackie Control surface over virtual MIDI ports ("LogicBridge Virtual"). Track names, per-strip meters, fader moves. Verbs: `GET /tracks`, `POST /fader`, `POST /bank`, `POST /balance`; the portal proxies them at `/api/logic/*` and adds `POST /api/logic/balance-singers {base}` (resolves who sings the song from MPB metadata, matches Logic tracks named by singer first name). One-time Logic setup: Control Surfaces > Setup > New > Install > Mackie Control, both ports set to "LogicBridge Virtual". Keep vocal tracks in Logic's first 8 tracks so the surface can see them without banking. Fully offline (localhost MIDI + HTTP). At a gig the portal can fire these verbs with no Claude; Claude uses the same verbs conversationally at rehearsal. |
 | Editing `bt-construction-kit/` source | **Performer** | The Performer is the primary editor and pushes; the Librarian pulls. |
 | Editing `catalog.py` / `mpb_sync.py` / shared `.sh` | **Either, but commit + push from the Performer** | Drive sync of `.git` is unreliable; canonical writes go through GitHub. |
 | `git pull` / `git push` | **Both, never simultaneously** | Drive sync corrupts `.git` if both machines `git` at the same time. |
@@ -530,7 +534,10 @@ field. This is NOT YET WIRED — see the roadmap.
   `chords_search_url`, `processing{download,separation,mixdowns}`, optional
   `drum_pattern` (opaque string the portal displays as a pill next to
   BPM/key — e.g. `"120@96"` for "BPM 120, drum machine pattern 96"), and
-  for setlist members `playlist_title` + `sequence_number`. Songs that have
+  for setlist members `playlist_title` + `sequence_number`. Songs ingested
+  from a local audio file (audio_watch.sh, 2026-08-28) additionally carry
+  `ingest: "audio_file"` and `source_file` (the original dropped filename),
+  and have an empty `source_url`; consumers must not assume a YouTube URL. Songs that have
   been touched by `mpb_sync.py` also carry the MPB Songlist fields
   `singer_raw`, `singer_lead`, `singer_backup`, `singer_group_vocal`,
   `band_required` (list, e.g. `["Bill","Matt","Dan"]`), and `readiness`
