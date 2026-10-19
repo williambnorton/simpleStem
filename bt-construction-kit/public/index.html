@@ -34,7 +34,18 @@
              version on the top line, the four system views as tabs below. -->
         <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
   <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
-  <div class="tb-grid"><a class="pb pb-performer here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
+  <div class="tb-dropdown" id="portals-dd">
+    <button type="button" class="tb-dd-btn pb pb-performer here" id="portals-dd-btn" aria-haspopup="true" aria-expanded="false" title="Switch system view">
+      <span class="tb-dd-current">🎛 Performer</span>
+      <span class="tb-dd-caret">▾</span>
+    </button>
+    <ul class="tb-dd-menu" id="portals-dd-menu" role="menu" hidden>
+      <li role="none"><a class="pb pb-performer" href="/" role="menuitem">🎛 Performer</a></li>
+      <li role="none"><a class="pb pb-librarian" href="/librarian" role="menuitem">🤖 Librarian</a></li>
+      <li role="none"><a class="pb pb-midi" href="/midi-console.html" role="menuitem">🎹 MIDI</a></li>
+      <li role="none"><a class="pb pb-desk" href="/desktop-proto.html" role="menuitem">🖥 Desktop</a></li>
+    </ul>
+  </div>
 </nav>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
              main content area (next to the clock) — see #player-top-bar. -->
@@ -142,57 +153,16 @@
         </div>
       </section>
 
-      <!-- Instrumentation Stats Panel (Library Analytics) — collapsible.
-           Sits at the bottom of the sidebar so the gig + setlists rollup is
-           the first thing the user sees during a performance. -->
-      <section class="stats-panel rollup" id="analytics-rollup">
-        <button class="rollup-header" id="analytics-rollup-header" aria-expanded="false" type="button">
-          <i data-lucide="bar-chart-3"></i>
-          <span class="rollup-title">Library Analytics</span>
-          <i data-lucide="chevron-down" class="rollup-caret"></i>
-        </button>
-        <div class="rollup-body">
-        <div class="stats-grid">
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
-            <span class="stat-label">Total Songs</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-purple" id="stat-total-stems">-</span>
-            <span class="stat-label">Multitrack Stems</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-green" id="stat-total-m4as">-</span>
-            <span class="stat-label">M4A Tracks</span>
-          </div>
-          <div class="stat-card glass-card hover-glow">
-            <span class="stat-num glow-orange" id="stat-total-artists">-</span>
-            <span class="stat-label">Artists</span>
-          </div>
-        </div>
-
-        <div class="tempo-dist-card glass-card">
-          <h4 class="sub-title">Tempo Profile</h4>
-          <div class="tempo-bars">
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Slow</span>
-              <div class="bar-container"><div id="tempo-slow-bar" class="bar-fill bg-cyan" style="width: 0%;"></div></div>
-              <span id="tempo-slow-count" class="bar-value">0</span>
-            </div>
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Medium</span>
-              <div class="bar-container"><div id="tempo-medium-bar" class="bar-fill bg-purple" style="width: 0%;"></div></div>
-              <span id="tempo-medium-count" class="bar-value">0</span>
-            </div>
-            <div class="tempo-bar-wrapper">
-              <span class="bar-label">Fast</span>
-              <div class="bar-container"><div id="tempo-fast-bar" class="bar-fill bg-green" style="width: 0%;"></div></div>
-              <span id="tempo-fast-count" class="bar-value">0</span>
-            </div>
-          </div>
-        </div>
-        </div><!-- /rollup-body -->
-      </section>
+      <!-- Settings launcher (Bill 2026-10-19). The old Library Analytics
+           rollup lived here crowding the sidebar during a gig. Moved
+           inside a Settings modal; the analytics content stays in the
+           DOM so Library-stats updaters still find #stat-total-songs
+           etc. The gear button opens the modal; close via X or clicking
+           the backdrop. -->
+      <button id="btn-open-settings" class="settings-gear-btn" type="button" title="Settings: Library Analytics, defaults, debug">
+        <i data-lucide="settings"></i>
+        <span>Settings</span>
+      </button>
 
       <div class="sidebar-footer">
         <i data-lucide="folder" class="info-icon"></i>
@@ -1111,18 +1081,77 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
         <button id="master-boost-5"  class="master-boost-btn master-boost-5"  type="button" title="GOES TO 11 (nice): +5dB boost on top of the master slider (x1.78). Click again to clear. For when the mix sits low because gain staging was off.">+5</button>
         <button id="master-boost-10" class="master-boost-btn master-boost-10" type="button" title="GOES TO 11 (danger): +10dB boost on top of the master slider (x3.16). Click again to clear. Headroom disappears fast up here, use briefly.">+10</button>
         <ul class="master-vol-ticks" aria-hidden="true">
-          <li data-mark="100"><span>100</span></li>
-          <li data-mark="75"><span>75</span></li>
-          <li data-mark="50"><span>50</span></li>
-          <li data-mark="25"><span>25</span></li>
-          <li data-mark="0"><span>0</span></li>
+          <li data-mark="95" style="position:absolute; top: 5%;"><span class="tick-pct">95%</span><span class="tick-db">-0.4</span></li>
+          <li data-mark="85" style="position:absolute; top: 15%;"><span class="tick-pct">85%</span><span class="tick-db">-1.4</span></li>
+          <li data-mark="75" style="position:absolute; top: 25%;"><span class="tick-pct">75%</span><span class="tick-db">-2.5</span></li>
+          <li data-mark="50" style="position:absolute; top: 50%;"><span class="tick-pct">50%</span><span class="tick-db">-6</span></li>
+          <li data-mark="0"  style="position:absolute; bottom: 0;"><span class="tick-pct">0%</span><span class="tick-db">-∞</span></li>
         </ul>
         <input type="range" id="master-vol" class="master-vol-slider"
                min="0" max="1" step="0.01" value="0.75" orient="vertical"
                aria-label="Master volume">
       </div>
+      <button id="master-mute-btn" class="master-mute-btn" type="button" title="Mute the master. Click again to unmute. Shortcut: M when the player is focused.">MUTE</button>
       <div class="master-vol-bot">MASTER</div>
     </aside>
+  </div>
+
+  <!-- Settings modal (Bill 2026-10-19). Holds Library Analytics (moved
+       out of the sidebar) plus future app-level settings. Analytics
+       elements keep their original IDs so Library-stats updaters still
+       hit them. Close via the X button or by clicking the backdrop. -->
+  <div id="settings-modal" class="settings-modal" style="display:none;" role="dialog" aria-label="Settings">
+    <div class="settings-modal-backdrop" id="settings-modal-backdrop"></div>
+    <div class="settings-modal-card">
+      <div class="settings-modal-header">
+        <h2>Settings</h2>
+        <button id="settings-modal-close" class="settings-modal-close" type="button" title="Close">×</button>
+      </div>
+      <div class="settings-modal-body">
+        <section class="settings-section">
+          <h3 class="settings-section-title">Library Analytics</h3>
+          <div class="stats-grid">
+            <div class="stat-card glass-card hover-glow">
+              <span class="stat-num glow-cyan" id="stat-total-songs">-</span>
+              <span class="stat-label">Total Songs</span>
+            </div>
+            <div class="stat-card glass-card hover-glow">
+              <span class="stat-num glow-purple" id="stat-total-stems">-</span>
+              <span class="stat-label">Multitrack Stems</span>
+            </div>
+            <div class="stat-card glass-card hover-glow">
+              <span class="stat-num glow-green" id="stat-total-m4as">-</span>
+              <span class="stat-label">M4A Tracks</span>
+            </div>
+            <div class="stat-card glass-card hover-glow">
+              <span class="stat-num glow-orange" id="stat-total-artists">-</span>
+              <span class="stat-label">Artists</span>
+            </div>
+          </div>
+
+          <div class="tempo-dist-card glass-card">
+            <h4 class="sub-title">Tempo Profile</h4>
+            <div class="tempo-bars">
+              <div class="tempo-bar-wrapper">
+                <span class="bar-label">Slow</span>
+                <div class="bar-container"><div id="tempo-slow-bar" class="bar-fill bg-cyan" style="width: 0%;"></div></div>
+                <span id="tempo-slow-count" class="bar-value">0</span>
+              </div>
+              <div class="tempo-bar-wrapper">
+                <span class="bar-label">Medium</span>
+                <div class="bar-container"><div id="tempo-medium-bar" class="bar-fill bg-purple" style="width: 0%;"></div></div>
+                <span id="tempo-medium-count" class="bar-value">0</span>
+              </div>
+              <div class="tempo-bar-wrapper">
+                <span class="bar-label">Fast</span>
+                <div class="bar-container"><div id="tempo-fast-bar" class="bar-fill bg-green" style="width: 0%;"></div></div>
+                <span id="tempo-fast-count" class="bar-value">0</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
   </div>
 
   <!-- Full-page lyrics mode (Bill 2026-10-19). Fills the window with the

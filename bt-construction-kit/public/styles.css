@@ -1403,9 +1403,13 @@ select {
 /* ===== Right rail: full-height master volume ===== */
 .master-vol-rail {
   display: flex; flex-direction: column; align-items: center;
-  height: 100%; padding: 16px 4px;
+  height: auto;
+  max-height: 62vh;
+  padding: 16px 8px;
+  min-width: 110px;
   border-left: 1px solid var(--border-color);
   gap: 10px;
+  align-self: flex-start;
 }
 /* "Goes to 11" boost pair (Bill 2026-10-19). Flanks the top of the
    master fader, deliberately NOT integrated into the fader itself.
@@ -1455,22 +1459,37 @@ select {
 .master-boost-10.active {
   box-shadow: 0 0 0 2px rgba(201, 59, 34, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 2px 6px rgba(201, 59, 34, 0.5);
 }
+/* % / dB marker column (Bill 2026-10-19). Sits in the right half of the
+   track area, between the thumb and the rail edge. Position gets a dB
+   equivalent next to it because the gain curve is cubic (position^3), so
+   50% on the slider is around -18 dB, not -6. The dB values let you
+   gain-stage by ear without converting in your head. */
+/* Shorter-taper tick column (Bill 2026-10-19). Only 5 marks: 0, 50, 75,
+   85, 95%. Each one is absolutely positioned at the vertical percent
+   that matches its slider position. Precision crowds into the top of
+   the fader where gig-night rides live. Inline `style="top: Y%;"` on
+   each <li> drives the geometry; this rule just styles the labels. */
 .master-vol-ticks {
-  position: absolute; inset: 34px auto 8px 0; width: 20px;
+  position: absolute; inset: 34px 2px 8px auto; width: 52px;
   list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; justify-content: space-between;
   pointer-events: none;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 9px; color: var(--text-dim);
+  color: var(--text-main);
+  z-index: 1;
 }
 .master-vol-ticks li {
-  display: flex; align-items: center; gap: 3px;
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 0; line-height: 1;
+  right: 0;
+  transform: translateY(-50%);
 }
+.master-vol-ticks li[data-mark="0"] { transform: none; }
 .master-vol-ticks li::before {
-  content: ''; display: inline-block; width: 8px; height: 1px;
-  background: var(--border-color);
+  content: ''; position: absolute; left: -14px; top: 50%; width: 14px; height: 1px;
+  background: rgba(0, 0, 0, 0.35);
 }
-.master-vol-ticks li span { opacity: 0.6; }
+.master-vol-ticks .tick-pct { font-size: 11px; font-weight: 800; opacity: 0.9; }
+.master-vol-ticks .tick-db  { font-size: 9px;  opacity: 0.55; letter-spacing: 0.02em; }
 
 /* Lyrics-installed marker (Bill 2026-10-18). Any song-naming surface that
    carries non-empty lyrics text or lyrics_chunks gets a bright orange
@@ -1522,19 +1541,35 @@ select {
 .switcher-radio-grid {
   display: flex; flex-wrap: wrap; gap: 4px;
 }
+/* Larger, consistent-size setlist switcher buttons (Bill 2026-10-19).
+   Grid parent gives every cell the same width; this rule fills each
+   cell with a bigger, taller pill. Long names ellipsize with the full
+   name in a tooltip rather than growing the button. */
+.switcher-radio-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px !important;
+  flex-wrap: initial;
+}
 .switcher-radio-btn {
-  padding: 4px 8px;
-  font-size: 11px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 13px;
   font-weight: 700;
   background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 10px;
   color: var(--text-main);
   cursor: pointer;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.3;
-  transition: background 90ms ease-out, border-color 90ms ease-out;
+  transition: background 90ms ease-out, border-color 90ms ease-out, transform 60ms ease-out;
 }
+.switcher-radio-btn:active { transform: scale(0.98); }
 .switcher-radio-btn:hover { background: rgba(0, 0, 0, 0.08); }
 .switcher-radio-btn.active {
   background: #7c4dff;
@@ -1565,6 +1600,21 @@ select {
   cursor: pointer;
 }
 .switcher-new-btn:hover { background: #1d8f4f; }
+
+/* Bright orange drop-insertion line in the sidebar setlist (Bill
+   2026-10-19). Rendered as a flex row BETWEEN the setlist's song pills
+   while a drag is in progress, so the operator can SEE exactly where
+   the dropped song will land. 4px thick, glowing. */
+.sls-drop-indicator {
+  display: none;
+  height: 4px;
+  margin: 2px 2px;
+  background: #ff8c00;
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(255, 140, 0, 0.9), 0 0 2px rgba(255, 140, 0, 1);
+  pointer-events: none;
+  flex: 0 0 auto;
+}
 
 /* Recently-played dimming (Bill 2026-10-19). Setlist songs whose
    last_played_at is within the last 3h fade and italicize so you can
@@ -1604,6 +1654,71 @@ select {
 .ingest-ev-msg { color: var(--text-main); word-break: break-word; }
 .ingest-ev-row.ingest-ev-warn  .ingest-ev-msg { color: #c58718; }
 .ingest-ev-row.ingest-ev-error .ingest-ev-msg { color: #c92c2c; }
+
+/* Settings launcher gear + modal (Bill 2026-10-19). Gear sits in the
+   sidebar in place of the old Library Analytics rollup; modal holds the
+   analytics content so the sidebar stays clean during a gig. */
+.settings-gear-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  margin: 8px 0 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-gear-btn:hover { background: rgba(0, 0, 0, 0.07); }
+.settings-gear-btn i { width: 16px; height: 16px; }
+
+.settings-modal {
+  position: fixed; inset: 0;
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+}
+.settings-modal-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+.settings-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(640px, 90vw);
+  max-height: 85vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  display: flex; flex-direction: column;
+}
+.settings-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.settings-modal-header h2 { margin: 0; font-size: 18px; font-weight: 800; }
+.settings-modal-close {
+  width: 32px; height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  font-size: 18px; cursor: pointer;
+}
+.settings-modal-close:hover { background: rgba(0, 0, 0, 0.06); }
+.settings-modal-body { padding: 16px 20px 24px; }
+.settings-section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
 
 /* Full-page lyrics mode (Bill 2026-10-19). Fills the window. Space
    scrolls a chunk, arrows scroll a line, any other key closes. */
@@ -1669,11 +1784,47 @@ select {
 .lyrics-page-line:empty { height: 1.2em; }
 .master-vol-top {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
-  color: var(--text-main); font-size: 0.78rem; font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  min-height: 32px;
+  white-space: nowrap;
 }
+#master-vol-pct { font-weight: 800; letter-spacing: 0.01em; }
 .master-vol-bot {
   writing-mode: vertical-rl; transform: rotate(180deg);
   letter-spacing: 2px; font-size: 0.7rem; font-weight: 700; color: var(--text-dim);
+}
+
+/* MUTE button at the bottom of the fader (Bill 2026-10-19). Chunky,
+   red when active so the operator never misreads a silent transport
+   as a broken rig. */
+.master-mute-btn {
+  width: 86px;
+  padding: 8px 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-main);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.master-mute-btn:hover { background: rgba(0, 0, 0, 0.08); }
+.master-mute-btn.active {
+  background: linear-gradient(180deg, #e23a2a 0%, #a0211a 100%);
+  color: #fff;
+  border-color: #6a140e;
+  box-shadow: 0 0 0 2px rgba(226, 58, 42, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 2px 4px rgba(226, 58, 42, 0.35);
+  animation: master-mute-pulse 1.6s ease-in-out infinite;
+}
+@keyframes master-mute-pulse {
+  0%, 100% { filter: brightness(1.0); }
+  50%      { filter: brightness(1.25); }
 }
 /* Master volume fader — vertical pill thumb on a green gradient track. The
    range input itself is rotated via writing-mode so up = louder; we then
@@ -1685,55 +1836,68 @@ select {
   display: flex; align-items: center; justify-content: center;
   padding: 34px 0 8px;
 }
+/* Wider / fatter master fader (Bill 2026-10-19) so it is easier to grab
+   and slide live. Slider column widened from 36px to 72px, track from
+   8px to 20px, thumb from 32x18 to 56x30. The track gradient still hints
+   louder-at-top. */
 .master-vol-slider {
   -webkit-appearance: none;
   appearance: none;
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 36px;
+  width: 72px;
   height: 100%;
   background: transparent;
   cursor: pointer;
   outline: none;
 }
-/* Track (the rail the thumb slides on). Gradient hints louder-at-top. */
 .master-vol-slider::-webkit-slider-runnable-track {
-  width: 8px;
+  width: 20px;
   height: 100%;
   background: linear-gradient(to top, rgba(46, 139, 87, 0.15), var(--color-green));
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
 }
 .master-vol-slider::-moz-range-track {
-  width: 8px;
+  width: 20px;
   height: 100%;
   background: linear-gradient(to top, rgba(46, 139, 87, 0.15), var(--color-green));
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
 }
-/* Thumb — a substantial horizontal pill (looks like a mixer fader cap),
-   white-to-grey gradient, soft shadow, glow on hover. The negative
-   margin-left centers it on the 8px track. */
+/* Thumb — a chunky horizontal pill with grip ridges so the eye catches
+   it from across the room. White-to-grey gradient, soft shadow, green
+   glow on hover/active. Negative margin-left centers it on the 20px
+   track (half of thumb height, 15px, minus half the track width, 10px). */
 .master-vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 32px;
-  height: 18px;
-  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  width: 56px;
+  height: 30px;
+  background:
+    linear-gradient(to bottom,
+      rgba(0, 0, 0, 0) 10%,
+      rgba(0, 0, 0, 0.18) 10%, rgba(0, 0, 0, 0.18) 12%,
+      rgba(0, 0, 0, 0) 12%, rgba(0, 0, 0, 0) 48%,
+      rgba(0, 0, 0, 0.22) 48%, rgba(0, 0, 0, 0.22) 52%,
+      rgba(0, 0, 0, 0) 52%, rgba(0, 0, 0, 0) 88%,
+      rgba(0, 0, 0, 0.18) 88%, rgba(0, 0, 0, 0.18) 90%,
+      rgba(0, 0, 0, 0) 90%),
+    linear-gradient(to bottom, #ffffff, #c7cbd8);
   border: 1px solid var(--border-active);
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
   cursor: grab;
-  margin-left: -12px;
+  margin-left: -18px;
   transition: box-shadow 0.15s ease;
 }
 .master-vol-slider::-moz-range-thumb {
-  width: 32px;
-  height: 18px;
-  background: linear-gradient(to bottom, #ffffff, #d4d8e4);
+  width: 56px;
+  height: 30px;
+  background: linear-gradient(to bottom, #ffffff, #c7cbd8);
   border: 1px solid var(--border-active);
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
   cursor: grab;
   transition: box-shadow 0.15s ease;
 }
@@ -8840,7 +9004,34 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 #portals .tb-brand { display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px; }
 #portals .tb-name { font: 800 16px 'Outfit', -apple-system, sans-serif; color: inherit; letter-spacing: .3px; }
 #portals .tb-ver { font: 10px Menlo, monospace; color: #111; }
-#portals .tb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+/* System-view pulldown (Bill 2026-10-19). Replaces the 2x2 tab grid
+   with a single trigger button that shows the current view in its
+   view's color; clicking it drops a short menu of the other three. */
+#portals .tb-dropdown { position: relative; width: 100%; }
+#portals .tb-dd-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  cursor: pointer;
+  text-align: left;
+}
+#portals .tb-dd-caret { font-size: 11px; opacity: 0.9; }
+#portals .tb-dd-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  margin: 0; padding: 4px;
+  list-style: none;
+  background: rgba(20, 24, 34, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; gap: 4px;
+  z-index: 100;
+}
+#portals .tb-dd-menu[hidden] { display: none; }
+#portals .tb-dd-menu .pb { width: 100%; height: 28px; }
+
 #portals .pb { display: flex; align-items: center; justify-content: center; gap: 5px; height: 27px;
   font: 700 11px -apple-system, sans-serif; text-decoration: none; border-radius: 8px;
   border: 1px solid transparent; box-shadow: 0 2px 0 rgba(0,0,0,.25); white-space: nowrap; }

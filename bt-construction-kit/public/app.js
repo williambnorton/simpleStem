@@ -770,6 +770,8 @@ window.addEventListener('DOMContentLoaded', () => {
   try { setupMediaSessionKeys(); }  catch (e) { console.warn('[mediasession] setup failed:', e); }
   try { setupLyricsPageMode(); }    catch (e) { console.warn('[lyrics-page] setup failed:', e); }
   try { setupIngestEventsLog(); }   catch (e) { console.warn('[ingest-events] setup failed:', e); }
+  try { setupSettingsModal(); }     catch (e) { console.warn('[settings] setup failed:', e); }
+  try { setupPortalsPulldown(); }   catch (e) { console.warn('[portals-dd] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
@@ -2545,14 +2547,19 @@ function attachGigDragHandlers(wrap, songsEl) {
     e.preventDefault();
     e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
     wrap.dataset.dropTarget = 'true';
+    try { _positionDropIndicator(wrap, e.clientY); } catch (er) {}
   });
   wrap.addEventListener('dragleave', e => {
-    if (e.target === wrap) wrap.dataset.dropTarget = 'false';
+    if (e.target === wrap) {
+      wrap.dataset.dropTarget = 'false';
+      try { _hideDropIndicator(wrap); } catch (er) {}
+    }
   });
   wrap.addEventListener('drop', e => {
     if (!hasOurPayload(e)) return;
     e.preventDefault();
     wrap.dataset.dropTarget = 'false';
+    try { _hideDropIndicator(wrap); } catch (er) {}
     let payload;
     try { payload = JSON.parse(e.dataTransfer.getData('application/x-simplestem-song')); }
     catch (err) { return; }
@@ -2594,6 +2601,78 @@ function attachGigDragHandlers(wrap, songsEl) {
 
 function hasOurPayload(e) {
   return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('application/x-simplestem-song');
+}
+
+// Single-click-to-add (Bill 2026-10-19). Returns true when a library row
+// click should be treated as "append to active setlist" instead of
+// "load into player". Only kicks in when the active setlist is editable:
+// a MANUAL standalone setlist (Manual Setlists pseudo-gig) or a real
+// (non-synthetic, non-readOnly) gig. For Favorites / Recents / singer
+// pseudo-gigs / Top 20 / YouTube Sync etc., returns false so the
+// historical load-into-player behavior stays.
+function addSongToActiveSetlistIfEditable(merged) {
+  if (!activeGig || !Array.isArray(activeGig.setlists) || !activeGig.setlists.length) return false;
+  if (activeGig.readOnly) return false;
+  const isManualPseudo = activeGig.slug === MANUAL_SETLISTS_GIG_SLUG;
+  const isRealGig = !activeGig.synthetic;
+  if (!isManualPseudo && !isRealGig) return false;
+  const sv = merged.variants && merged.variants.find(v => v.type === 'stems');
+  const base = sv && sv.folderName;
+  if (!base) return false;
+  const sl = activeGig.setlists[activeSetlistIdx || 0];
+  if (!sl) return false;
+  if (!Array.isArray(sl.songs)) sl.songs = [];
+  // Prevent duplicates in the same setlist — a double tap shouldn't
+  // smuggle the same song in twice.
+  if (sl.songs.some(s => (s.song_base || s.slug) === base)) {
+    if (typeof showToast === 'function') showToast(`"${merged.title || base}" is already in this setlist.`);
+    return true;
+  }
+  sl.songs.push({ song_base: base });
+  if (isManualPseudo) {
+    try { persistManualSetlists(); } catch (e) {}
+  } else {
+    try { scheduleGigSave(); } catch (e) {}
+  }
+  renderGigSidebar();
+  if (typeof showToast === 'function') showToast(`Added "${merged.title || base}" to ${sl.title || 'setlist'}.`);
+  return true;
+}
+
+// Bright orange insertion-point indicator (Bill 2026-10-19). Attach to
+// every gig-setlist wrap: on dragover, compute which row the pointer is
+// above, then move a single `.sls-drop-indicator` div to the correct
+// spot (before or after that row, based on vertical midpoint). Removed
+// on dragleave / drop / dragend.
+function _ensureDropIndicator(wrap) {
+  let ind = wrap.querySelector(':scope > .sls-drop-indicator');
+  if (!ind) {
+    ind = document.createElement('div');
+    ind.className = 'sls-drop-indicator';
+    wrap.appendChild(ind);
+  }
+  return ind;
+}
+function _positionDropIndicator(wrap, clientY) {
+  const songsWrap = wrap.querySelector('.gig-setlist-songs');
+  if (!songsWrap) return;
+  const ind = _ensureDropIndicator(wrap);
+  const rows = Array.from(songsWrap.querySelectorAll('.sls-row'));
+  let placedBefore = null;
+  for (const row of rows) {
+    const r = row.getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) { placedBefore = row; break; }
+  }
+  if (placedBefore) {
+    songsWrap.insertBefore(ind, placedBefore);
+  } else {
+    songsWrap.appendChild(ind);
+  }
+  ind.style.display = 'block';
+}
+function _hideDropIndicator(wrap) {
+  const ind = wrap.querySelector(':scope > * .sls-drop-indicator, :scope > .sls-drop-indicator');
+  if (ind) ind.style.display = 'none';
 }
 
 // Bridges: callers from before the gig rewrite (loadSong, addToSetlist,
@@ -4469,10 +4548,22 @@ function renderLibrary() {
     row.appendChild(lastCell);
     row.appendChild(actionCell);
 
-    // Row click default: load the preferred variant (-V-G m4a usually) into
-    // the player WITHOUT autoplay — the user can hit play, drop it in a
-    // setlist, or click a different format chip from there.
-    row.addEventListener('click', () => loadSong(preferredPlayVariant(merged)));
+    // Row click: single-click-to-add when a MANUAL (editable) setlist
+    // is the active one (Bill 2026-10-19). Covers the common gig-prep
+    // workflow of building a setlist by scanning the library and
+    // tapping song after song. Otherwise fall back to the historical
+    // "load into player without autoplay" behavior for pseudo-gigs
+    // (Favorites, Bill/Dan/Matt/JD, Recents, Top 20 etc.) and real
+    // read-only gigs.
+    row.addEventListener('click', (e) => {
+      try {
+        if (typeof addSongToActiveSetlistIfEditable === 'function' &&
+            addSongToActiveSetlistIfEditable(merged)) {
+          return;
+        }
+      } catch (er) { console.warn('[row-click] add-to-setlist failed:', er); }
+      loadSong(preferredPlayVariant(merged));
+    });
 
     els.songListBody.appendChild(row);
   });
@@ -4487,6 +4578,22 @@ function renderLibrary() {
 // Persisted so a reload resumes the same boost level.
 let currentMasterBoost = 1.0;
 const MASTER_BOOST_FACTOR = { 0: 1.0, 5: 1.7783, 10: 3.1623 };
+
+// Non-linear master gain (Bill 2026-10-19 revised). Shorter taper: the
+// marked positions 0, 50, 75, 85, 95% land at usable dB values with
+// most of the fader's precision concentrated in the top half, which is
+// where gig-night rides live. Exponent 2 (square taper): 95% → -0.4 dB,
+// 85% → -1.4 dB, 75% → -2.5 dB, 50% → -6 dB, 0% → silence.
+// Mute (added same day): the MUTE button at the bottom of the rail
+// forces the effective gain to 0 regardless of slider or boost state.
+const MASTER_GAIN_CURVE_EXP = 2;
+let masterMuted = false;
+function effectiveMasterGain() {
+  if (masterMuted) return 0;
+  const pos = Math.max(0, Math.min(1, Number(currentMasterVolume) || 0));
+  const raw = Math.pow(pos, MASTER_GAIN_CURVE_EXP);
+  return raw * (currentMasterBoost || 1.0);
+}
 
 function setupMasterVolume() {
   if (!els.masterVol) return;
@@ -4512,15 +4619,21 @@ function setupMasterVolume() {
   const apply = (persist) => {
     const v = parseFloat(els.masterVol.value);
     currentMasterVolume = v;
-    const effective = v * currentMasterBoost;
+    const effective = effectiveMasterGain();
     if (masterGainNode && audioCtx) {
       masterGainNode.gain.setValueAtTime(effective, audioCtx.currentTime);
     }
     applyMixerVolumes();
     if (els.masterVolPct) {
-      const pctLabel = `${Math.round(v * 100)}%`;
+      // Readout shows the slider's position percent AND the effective
+      // dB (square taper). Boost suffix appears when engaged. MUTE
+      // override blocks everything so the operator never misreads it.
+      const pct = Math.round(v * 100);
       const boostDb = currentMasterBoost >= 3 ? 10 : currentMasterBoost >= 1.5 ? 5 : 0;
-      els.masterVolPct.textContent = boostDb ? `${pctLabel} +${boostDb}` : pctLabel;
+      const dbStr = v <= 0 ? '-∞ dB' : `${(20 * Math.log10(Math.max(1e-6, Math.pow(v, MASTER_GAIN_CURVE_EXP)))).toFixed(1)} dB`;
+      els.masterVolPct.textContent = masterMuted
+        ? 'MUTED'
+        : `${pct}% · ${dbStr}${boostDb ? ` +${boostDb}` : ''}`;
     }
     if (persist) {
       try { localStorage.setItem('bt_master_volume', String(v)); } catch (e) {}
@@ -4541,6 +4654,31 @@ function setupMasterVolume() {
   if (b10) b10.addEventListener('click', () => setBoost(10));
 
   els.masterVol.addEventListener('input', () => apply(true));
+
+  // MUTE button at the bottom of the rail (Bill 2026-10-19). Latching,
+  // red when active. Persists across reloads so a muted state survives
+  // a Chrome refresh (easy to forget it's on; the red button makes it
+  // obvious). Keyboard "M" toggles when the player has focus.
+  try {
+    const savedMute = localStorage.getItem('bt_master_muted');
+    masterMuted = savedMute === '1';
+  } catch (e) {}
+  const muteBtn = document.getElementById('master-mute-btn');
+  const paintMuteUI = () => {
+    if (!muteBtn) return;
+    muteBtn.classList.toggle('active', masterMuted);
+    muteBtn.textContent = masterMuted ? 'MUTED' : 'MUTE';
+  };
+  const toggleMute = () => {
+    masterMuted = !masterMuted;
+    try { localStorage.setItem('bt_master_muted', masterMuted ? '1' : '0'); } catch (e) {}
+    apply(false);
+    paintMuteUI();
+  };
+  if (muteBtn) muteBtn.addEventListener('click', toggleMute);
+  window.toggleMasterMute = toggleMute;
+  paintMuteUI();
+
   apply(false);
 }
 
@@ -4647,6 +4785,67 @@ function setupLyricsPageMode() {
   if (closeBtn) closeBtn.addEventListener('click', close);
   window.openLyricsPage = openPage;
   window.closeLyricsPage = close;
+}
+
+// ── System-view pulldown (Bill 2026-10-19) ─────────────────────────────
+// Replaces the four always-visible tabs (Performer / Librarian / MIDI /
+// Desktop) with a single trigger button that opens a menu. Trigger
+// mirrors the current view's color class so you still see where you
+// are at a glance.
+function setupPortalsPulldown() {
+  const btn   = document.getElementById('portals-dd-btn');
+  const menu  = document.getElementById('portals-dd-menu');
+  const label = btn && btn.querySelector('.tb-dd-current');
+  if (!btn || !menu) return;
+
+  // Pick the current view from URL path. Default: Performer.
+  const path = (location.pathname || '/').toLowerCase();
+  let current;
+  if (path.includes('/librarian')) current = 'librarian';
+  else if (path.includes('/midi-console')) current = 'midi';
+  else if (path.includes('/desktop-proto')) current = 'desk';
+  else current = 'performer';
+
+  const colorClasses = ['pb-performer', 'pb-librarian', 'pb-midi', 'pb-desk'];
+  const labels = { performer: '🎛 Performer', librarian: '🤖 Librarian', midi: '🎹 MIDI', desk: '🖥 Desktop' };
+  // Paint the trigger button in the current view's color + label.
+  colorClasses.forEach(c => btn.classList.remove(c));
+  btn.classList.add('pb-' + current);
+  btn.classList.add('here');
+  if (label) label.textContent = labels[current] || labels.performer;
+
+  const close = () => { menu.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); };
+  const open  = () => { menu.removeAttribute('hidden'); btn.setAttribute('aria-expanded', 'true'); };
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.hasAttribute('hidden')) open(); else close();
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hasAttribute('hidden') && !menu.contains(e.target) && e.target !== btn) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!menu.hasAttribute('hidden') && e.key === 'Escape') close();
+  });
+}
+
+// ── Settings modal (Bill 2026-10-19) ───────────────────────────────────
+// Gear button in the sidebar opens an overlay containing the Library
+// Analytics (relocated from the sidebar bottom). Close via X, click
+// backdrop, or Escape.
+function setupSettingsModal() {
+  const openBtn   = document.getElementById('btn-open-settings');
+  const modal     = document.getElementById('settings-modal');
+  const closeBtn  = document.getElementById('settings-modal-close');
+  const backdrop  = document.getElementById('settings-modal-backdrop');
+  if (!openBtn || !modal) return;
+  const open  = () => { modal.style.display = 'flex'; };
+  const close = () => { modal.style.display = 'none'; };
+  openBtn.addEventListener('click', open);
+  if (closeBtn)  closeBtn.addEventListener('click', close);
+  if (backdrop)  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (modal.style.display !== 'none' && e.key === 'Escape') close();
+  });
 }
 
 // ── Ingest events log under the Paste URL field (Bill 2026-10-19) ──────
@@ -5226,7 +5425,7 @@ function initAudioCtx() {
 
   masterGainNode = audioCtx.createGain();
   if (els.masterVol) currentMasterVolume = parseFloat(els.masterVol.value);
-  masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
+  masterGainNode.gain.setValueAtTime(effectiveMasterGain(), audioCtx.currentTime);
 
   // BUG that audited the user's "channels 3-18 are silent" complaint:
   // every intermediate node defaults to channelCount = 2 + interpretation
@@ -8001,7 +8200,7 @@ function loadSong(song, opts) {
   // is intentionally still null (see deferred-init note above). togglePlayPause
   // will set the master gain properly on first play.
   if (audioCtx && masterGainNode) {
-    masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
+    masterGainNode.gain.setValueAtTime(effectiveMasterGain(), audioCtx.currentTime);
   }
 
   // Active row highlight: a merged row is active when ANY of its variants matches the loaded song.
@@ -8737,7 +8936,7 @@ function fadeAndStop(fadeTimeMs) {
       
       playNextInSetlist();
     }
-    masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
+    masterGainNode.gain.setValueAtTime(effectiveMasterGain(), audioCtx.currentTime);
   }, stepMs);
 }
 
