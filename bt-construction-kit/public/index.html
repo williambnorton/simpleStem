@@ -84,6 +84,24 @@
           <i data-lucide="chevron-down" class="rollup-caret"></i>
         </button>
         <div class="rollup-body">
+          <!-- Setlist Switcher (Bill 2026-10-18): flat radio-button grid.
+               Search box on top, then every selectable setlist as one
+               button: pseudo-gigs (BillSongs / DanSongs / etc.), standalone
+               manual setlists, and each sub-setlist of every real gig as
+               its own button. Textfield + Create at the bottom spawns a new
+               manual setlist in SETLISTS/<name>.json. The legacy picker +
+               controls below still work; this is the primary navigator. -->
+          <div class="setlist-switcher-panel">
+            <input type="search" id="switcher-song-search" class="switcher-search"
+                   placeholder="Search a song in the library…"
+                   title="Jumps to the Library tab and filters the song list to matching rows.">
+            <div id="switcher-radio-grid" class="switcher-radio-grid" role="radiogroup" aria-label="Pick a setlist"></div>
+            <div class="switcher-new-row">
+              <input type="text" id="switcher-new-name" class="switcher-new-input"
+                     placeholder="New setlist name…" maxlength="60">
+              <button id="switcher-new-create" class="switcher-new-btn" type="button" title="Create a new empty setlist with this name">Create</button>
+            </div>
+          </div>
           <!-- Gig controls: switch / new / duplicate / delete -->
           <div class="gig-side-controls">
             <select id="gig-picker" class="glass-select" title="Switch to a different gig"></select>
@@ -1078,13 +1096,26 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
 
     </main>
 
-    <!-- Right rail: full-height master volume -->
+    <!-- Right rail: full-height master volume + boost buttons.
+         Boost multiplies the slider value: +5dB x1.78, +10dB x3.16.
+         Mutually exclusive latching; click again to clear. Bill 2026-10-18. -->
     <aside class="master-vol-rail glass">
+      <div class="master-vol-boost-group" role="group" aria-label="Master boost">
+        <button id="master-boost-10" class="master-boost-btn" type="button" title="Add +10dB boost on top of the master slider (x3.16). Click again to clear.">+10</button>
+        <button id="master-boost-5"  class="master-boost-btn" type="button" title="Add +5dB boost on top of the master slider (x1.78). Click again to clear.">+5</button>
+      </div>
       <div class="master-vol-top">
         <i data-lucide="volume-2" style="width:18px;height:18px;"></i>
         <span id="master-vol-pct">75%</span>
       </div>
       <div class="master-vol-track">
+        <ul class="master-vol-ticks" aria-hidden="true">
+          <li data-mark="100"><span>100</span></li>
+          <li data-mark="75"><span>75</span></li>
+          <li data-mark="50"><span>50</span></li>
+          <li data-mark="25"><span>25</span></li>
+          <li data-mark="0"><span>0</span></li>
+        </ul>
         <input type="range" id="master-vol" class="master-vol-slider"
                min="0" max="1" step="0.01" value="0.75" orient="vertical"
                aria-label="Master volume">

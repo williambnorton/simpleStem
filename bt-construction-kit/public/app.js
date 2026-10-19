@@ -1262,6 +1262,11 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
     ? options.join('')
     : '<option value="">— no gigs yet —</option>';
 
+  // Mirror the picker contents into the Setlist Switcher radio grid
+  // (Bill 2026-10-18). The grid is the primary navigator; the picker
+  // stays below as a backup.
+  try { renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists); } catch (e) { console.warn('[switcher] render failed:', e); }
+
   let initial = null;
   try { initial = localStorage.getItem(GIG_ACTIVE_SLUG_KEY); } catch (e) {}
   const slugExists = (s) => {
@@ -1467,6 +1472,159 @@ function loadTagGig(slug, tagName, title) {
     slug, title, readOnly: true, synthetic: true, syntheticKind: 'tag',
     setlists: [{ title, songs, origin: 'tag:' + tagLower }],
   };
+}
+
+// ── Setlist Switcher (Bill 2026-10-18) ─────────────────────────────────
+// Flat radio-button grid at the top of the sidebar. Each button loads a
+// setlist directly; no gig-first navigation. v1 ships one button per
+// pseudo-gig, one per standalone setlist (SETLISTS/*.json), and one per
+// real gig. Real multi-setlist gigs still expose their sub-setlists in
+// the stack below the switcher — a later pass will split them into
+// per-setlist buttons here once the lazy fetch is in place.
+let _switcherWired = false;
+function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
+  const grid = document.getElementById('switcher-radio-grid');
+  if (!grid) return;
+  wireSwitcherOnce();
+
+  const PSEUDO = [
+    { slug: FAVORITES_GIG_SLUG,       label: '★ Favorites',  kind: 'pseudo' },
+    { slug: RECENTS_GIG_SLUG,         label: '⟲ Recents',    kind: 'pseudo' },
+    { slug: FRESH_GIG_SLUG,           label: '🆕 Fresh',      kind: 'pseudo' },
+    { slug: BILL_GIG_SLUG,            label: 'Bill',         kind: 'pseudo' },
+    { slug: MATT_GIG_SLUG,            label: 'Matt',         kind: 'pseudo' },
+    { slug: DAN_GIG_SLUG,             label: 'Dan',          kind: 'pseudo' },
+    { slug: JD_GIG_SLUG,              label: 'JD',           kind: 'pseudo' },
+    { slug: ROUND_ROBIN_GIG_SLUG,     label: '⇄ RoundRobin', kind: 'pseudo' },
+    { slug: PROTEST_GIG_SLUG,         label: '✊ Protest',    kind: 'pseudo' },
+  ];
+  if (Array.isArray(manualSetlists) && manualSetlists.length) {
+    PSEUDO.push({ slug: MANUAL_SETLISTS_GIG_SLUG, label: `✎ Manual (${manualSetlists.length})`, kind: 'pseudo' });
+  }
+  if (Array.isArray(playlistSetlists) && playlistSetlists.length) {
+    PSEUDO.push({ slug: YOUTUBE_SYNC_GIG_SLUG, label: `▶ YT Sync (${playlistSetlists.length})`, kind: 'pseudo' });
+  }
+
+  // Each standalone manual setlist as its own button so NoKings, Friday_Set
+  // etc. are reachable with one click. These load MANUAL_SETLISTS_GIG_SLUG
+  // then jump activeSetlistIdx to the matching sub-setlist index.
+  const manualButtons = (manualSetlists || []).map((sl, i) => ({
+    slug: MANUAL_SETLISTS_GIG_SLUG,
+    setlistIdx: i,
+    label: sl.title || sl.slug || `set ${i+1}`,
+    matchTitle: sl.title || sl.slug,
+    kind: 'manual',
+  }));
+
+  // Each real gig gets ONE button for v1. Multi-setlist gigs still show
+  // their sub-setlists in the stack beneath; per-setlist buttons here
+  // require fetching every gig's titles (deferred to v2).
+  const realButtons = (gigs || []).map(g => ({
+    slug: g.slug,
+    label: `🎤 ${g.title}${g.setlist_count > 1 ? ` (${g.setlist_count})` : ''}`,
+    kind: 'real',
+  }));
+
+  const all = [...PSEUDO, ...manualButtons, ...realButtons];
+  const activeSlug = (activeGig && activeGig.slug) || null;
+  const activeIdx = activeSetlistIdx || 0;
+
+  grid.innerHTML = '';
+  for (const b of all) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'switcher-radio-btn';
+    btn.dataset.slug = b.slug;
+    if (typeof b.setlistIdx === 'number') btn.dataset.setlistIdx = String(b.setlistIdx);
+    btn.textContent = b.label;
+    btn.setAttribute('role', 'radio');
+    const isActive = (b.slug === activeSlug) &&
+      (typeof b.setlistIdx !== 'number' || b.setlistIdx === activeIdx);
+    btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    if (isActive) btn.classList.add('active');
+    btn.addEventListener('click', async () => {
+      try {
+        await loadActiveGig(b.slug);
+        if (typeof b.setlistIdx === 'number' && activeGig && Array.isArray(activeGig.setlists)) {
+          activeSetlistIdx = Math.min(b.setlistIdx, activeGig.setlists.length - 1);
+          openSetlistIdxs = new Set([activeSetlistIdx]);
+          renderGigSidebar();
+          try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, b.slug); } catch (e) {}
+        }
+        try {
+          const picker = document.getElementById('gig-picker');
+          if (picker) picker.value = b.slug;
+        } catch (e) {}
+        try { renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists); } catch (e) {}
+      } catch (e) { console.warn('[switcher] click failed:', e); }
+    });
+    grid.appendChild(btn);
+  }
+}
+
+function wireSwitcherOnce() {
+  if (_switcherWired) return;
+  _switcherWired = true;
+
+  // Search box: jump the user to the Library tab and inject their query
+  // into the real song-search input, reusing all existing library filtering.
+  const search = document.getElementById('switcher-song-search');
+  if (search) {
+    const applySearch = () => {
+      const q = search.value || '';
+      const libSearch = document.getElementById('song-search');
+      if (libSearch) {
+        libSearch.value = q;
+        libSearch.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (q.trim()) {
+        const libTabBtn = document.querySelector('[data-tab="library"]');
+        if (libTabBtn) libTabBtn.click();
+      }
+    };
+    search.addEventListener('input', applySearch);
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applySearch(); }
+    });
+  }
+
+  // New-setlist create: POST /api/setlists with the typed name as a new
+  // standalone manual setlist, then refresh the switcher so the new button
+  // appears, and load it active.
+  const createBtn = document.getElementById('switcher-new-create');
+  const nameInput = document.getElementById('switcher-new-name');
+  const doCreate = async () => {
+    const raw = (nameInput && nameInput.value || '').trim();
+    if (!raw) { nameInput && nameInput.focus(); return; }
+    const slug = raw.replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!slug) { alert('Pick a name with at least one letter or number.'); return; }
+    try {
+      const res = await fetch('/api/setlists', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, title: raw, origin: 'manual', songs: [] }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Create failed: ${err.error || res.statusText}`);
+        return;
+      }
+      if (nameInput) nameInput.value = '';
+      await refreshGigList();
+      await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG);
+      if (activeGig && Array.isArray(activeGig.setlists)) {
+        const idx = activeGig.setlists.findIndex(sl => (sl.title || '').trim() === raw);
+        if (idx >= 0) {
+          activeSetlistIdx = idx;
+          openSetlistIdxs = new Set([idx]);
+          renderGigSidebar();
+        }
+      }
+    } catch (e) { alert('Create failed: ' + e.message); }
+  };
+  if (createBtn) createBtn.addEventListener('click', doCreate);
+  if (nameInput) nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); doCreate(); }
+  });
 }
 
 async function loadActiveGig(slug) {
@@ -2183,6 +2341,12 @@ function renderOneGigSetlist(sl, idx) {
     // Grey out failed songs so the operator can SEE which setlist entries
     // would hang the player if clicked. Matches the library row treatment.
     if (s.song_base && isSongFailed(s.song_base)) row.classList.add('song-failed');
+    // Lyrics-installed marker (Bill 2026-10-18). A song is "lyriced" when
+    // its stems variant carries non-empty lyrics text OR chunked lyrics.
+    const _svL = merged && merged.variants && merged.variants.find(v => v.type === 'stems');
+    if (_svL && (_svL.lyrics || (Array.isArray(_svL.lyrics_chunks) && _svL.lyrics_chunks.length))) {
+      row.classList.add('has-lyrics');
+    }
     // Color the row background by lead singer. Bill's request 2026-06-30:
     //   Bill → light yellow · Matt → light green · Dan → light purple
     //   everyone else → white (no class). singer_lead comes from the
@@ -3884,7 +4048,10 @@ function renderLibrary() {
     // variant folderNames — usually the stems variant — so the row greys
     // out whether the user opened it as STEMS or as an M4A variant.
     const isFailed = merged.variants.some(v => isSongFailed(v.folderName));
-    row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'} ${isFailed ? 'song-failed' : ''}`;
+    // Lyrics-installed marker (Bill 2026-10-18). Any variant that carries
+    // non-empty lyrics text or lyrics_chunks turns on the orange border.
+    const _hasLyrics = merged.variants.some(v => v && (v.lyrics || (Array.isArray(v.lyrics_chunks) && v.lyrics_chunks.length)));
+    row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'} ${isFailed ? 'song-failed' : ''} ${_hasLyrics ? 'has-lyrics' : ''}`;
     row.dataset.id = merged.id;
 
     // Library row checkbox doubles as both:
@@ -3933,8 +4100,10 @@ function renderLibrary() {
     const freshPillHTML = isFresh
       ? ' <span class="song-fresh-pill" title="Freshly stemmed — set levels and SAVE to clear">NEW</span>'
       : '';
+    // Orange ring on the play circle: song has pasted lyrics.
+    const hasLyrics = !!(stemsVarForStar && stemsVarForStar.lyrics && String(stemsVarForStar.lyrics).trim());
     titleCell.innerHTML = `
-      <button class="play-row-btn" title="Play stems"><i data-lucide="play"></i></button>
+      <button class="play-row-btn${hasLyrics ? ' has-lyrics' : ''}" title="${hasLyrics ? 'Play stems — lyrics pasted' : 'Play stems'}"><i data-lucide="play"></i></button>
       ${favStarHTML}
       <span>${escapeHtml(merged.title)}${isFav ? ' <span class="song-fav-inline" title="Favorite">★</span>' : ''}${freshPillHTML}</span>
     `;
@@ -4260,9 +4429,15 @@ function renderLibrary() {
 }
 
 // ── Master volume (full-height right-rail slider) ──────────────────────────
+// Master boost (Bill 2026-10-18) — latching +5 / +10 dB buttons that
+// multiply the master slider's output. Mutually exclusive: clicking +10
+// cancels +5 and vice versa; clicking the engaged button returns to 1x.
+// Persisted so a reload resumes the same boost level.
+let currentMasterBoost = 1.0;
+const MASTER_BOOST_FACTOR = { 0: 1.0, 5: 1.7783, 10: 3.1623 };
+
 function setupMasterVolume() {
   if (!els.masterVol) return;
-  // Restore from localStorage on load so the master ride survives reload.
   try {
     const saved = localStorage.getItem('bt_master_volume');
     if (saved !== null) {
@@ -4271,21 +4446,50 @@ function setupMasterVolume() {
         els.masterVol.value = sv;
       }
     }
+    const savedBoost = parseInt(localStorage.getItem('bt_master_boost_db') || '0', 10);
+    if (savedBoost === 5 || savedBoost === 10) currentMasterBoost = MASTER_BOOST_FACTOR[savedBoost];
   } catch (e) {}
+
+  const b5  = document.getElementById('master-boost-5');
+  const b10 = document.getElementById('master-boost-10');
+  const paintBoostUI = () => {
+    if (b5)  b5.classList.toggle('active',  Math.abs(currentMasterBoost - MASTER_BOOST_FACTOR[5])  < 0.001);
+    if (b10) b10.classList.toggle('active', Math.abs(currentMasterBoost - MASTER_BOOST_FACTOR[10]) < 0.001);
+  };
+
   const apply = (persist) => {
     const v = parseFloat(els.masterVol.value);
     currentMasterVolume = v;
+    const effective = v * currentMasterBoost;
     if (masterGainNode && audioCtx) {
-      masterGainNode.gain.setValueAtTime(v, audioCtx.currentTime);
+      masterGainNode.gain.setValueAtTime(effective, audioCtx.currentTime);
     }
     applyMixerVolumes();
-    if (els.masterVolPct) els.masterVolPct.textContent = `${Math.round(v * 100)}%`;
+    if (els.masterVolPct) {
+      const pctLabel = `${Math.round(v * 100)}%`;
+      const boostDb = currentMasterBoost >= 3 ? 10 : currentMasterBoost >= 1.5 ? 5 : 0;
+      els.masterVolPct.textContent = boostDb ? `${pctLabel} +${boostDb}` : pctLabel;
+    }
     if (persist) {
       try { localStorage.setItem('bt_master_volume', String(v)); } catch (e) {}
     }
+    paintBoostUI();
   };
+
+  const setBoost = (db) => {
+    const want = MASTER_BOOST_FACTOR[db] || 1.0;
+    currentMasterBoost = Math.abs(currentMasterBoost - want) < 0.001 ? 1.0 : want;
+    try {
+      const label = currentMasterBoost === 1 ? '0' : (currentMasterBoost >= 3 ? '10' : '5');
+      localStorage.setItem('bt_master_boost_db', label);
+    } catch (e) {}
+    apply(false);
+  };
+  if (b5)  b5.addEventListener('click',  () => setBoost(5));
+  if (b10) b10.addEventListener('click', () => setBoost(10));
+
   els.masterVol.addEventListener('input', () => apply(true));
-  apply(false);   // initialize label + apply without persisting (no change yet)
+  apply(false);
 }
 
 // ── Playhead persistence ────────────────────────────────────────────────
@@ -4823,7 +5027,7 @@ function initAudioCtx() {
 
   masterGainNode = audioCtx.createGain();
   if (els.masterVol) currentMasterVolume = parseFloat(els.masterVol.value);
-  masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+  masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
 
   // BUG that audited the user's "channels 3-18 are silent" complaint:
   // every intermediate node defaults to channelCount = 2 + interpretation
@@ -7598,7 +7802,7 @@ function loadSong(song, opts) {
   // is intentionally still null (see deferred-init note above). togglePlayPause
   // will set the master gain properly on first play.
   if (audioCtx && masterGainNode) {
-    masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+    masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
   }
 
   // Active row highlight: a merged row is active when ANY of its variants matches the loaded song.
@@ -7659,6 +7863,14 @@ function loadSong(song, opts) {
 
   els.trackTitle.textContent = song.title;
   els.trackArtist.textContent = song.artist;
+  // Lyrics-installed badge on the player header title (Bill 2026-10-18).
+  // Mirrors the orange border on library + sidebar rows so the operator can
+  // see lyrics coverage from every song-naming surface.
+  try {
+    const _songHasLyrics = !!(song && (song.lyrics || (Array.isArray(song.lyrics_chunks) && song.lyrics_chunks.length)));
+    els.trackTitle.classList.toggle('has-lyrics', _songHasLyrics);
+    if (els.trackArtist) els.trackArtist.classList.toggle('has-lyrics', _songHasLyrics);
+  } catch (e) {}
   // Player-pane favorite star — find the stems variant for this song so we
   // can read/write the favorite flag without needing to look up by folder
   // again on every click.
@@ -8323,7 +8535,7 @@ function fadeAndStop(fadeTimeMs) {
       
       playNextInSetlist();
     }
-    masterGainNode.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+    masterGainNode.gain.setValueAtTime(currentMasterVolume * (currentMasterBoost || 1.0), audioCtx.currentTime);
   }, stepMs);
 }
 

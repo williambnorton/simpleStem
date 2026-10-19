@@ -1405,8 +1405,131 @@ select {
   display: flex; flex-direction: column; align-items: center;
   height: 100%; padding: 16px 4px;
   border-left: 1px solid var(--border-color);
-  gap: 12px;
+  gap: 10px;
 }
+.master-vol-boost-group {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; align-items: center;
+}
+.master-boost-btn {
+  width: 42px; padding: 4px 2px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-main);
+  cursor: pointer;
+  line-height: 1;
+}
+.master-boost-btn:hover { background: rgba(0, 0, 0, 0.09); }
+.master-boost-btn.active {
+  background: #ff9800;
+  color: #fff;
+  border-color: #d87a00;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.25);
+}
+.master-vol-ticks {
+  position: absolute; inset: 8px auto 8px 0; width: 20px;
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; justify-content: space-between;
+  pointer-events: none;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 9px; color: var(--text-dim);
+}
+.master-vol-ticks li {
+  display: flex; align-items: center; gap: 3px;
+}
+.master-vol-ticks li::before {
+  content: ''; display: inline-block; width: 8px; height: 1px;
+  background: var(--border-color);
+}
+.master-vol-ticks li span { opacity: 0.6; }
+
+/* Lyrics-installed marker (Bill 2026-10-18). Any song-naming surface that
+   carries non-empty lyrics text or lyrics_chunks gets a bright orange
+   border so the operator can see at a glance which songs are gig-ready
+   on vocals: library row, sidebar setlist pill, player header title. */
+.song-row.has-lyrics {
+  border-left: 4px solid #ff8c00 !important;
+  padding-left: calc(var(--row-pad-left, 12px) - 4px);
+}
+.sls-row.has-lyrics {
+  border: 2px solid #ff8c00 !important;
+  box-shadow: 0 0 0 1px rgba(255, 140, 0, 0.15);
+}
+#active-track-title.has-lyrics,
+.track-title.has-lyrics {
+  border-bottom: 3px solid #ff8c00;
+  padding-bottom: 2px;
+}
+
+/* Setlist Switcher (Bill 2026-10-18) — primary setlist navigator at the
+   top of the gig sidebar. Search box above a radio grid of hot-switch
+   buttons, with a textfield + Create at the bottom to spawn new ones. */
+.setlist-switcher-panel {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: rgba(124, 77, 255, 0.06);
+  border: 1px solid rgba(124, 77, 255, 0.22);
+  border-radius: 8px;
+}
+.switcher-search {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  outline: none;
+}
+.switcher-search:focus { border-color: #7c4dff; box-shadow: 0 0 0 2px rgba(124, 77, 255, 0.18); }
+.switcher-radio-grid {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.switcher-radio-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  color: var(--text-main);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.3;
+  transition: background 90ms ease-out, border-color 90ms ease-out;
+}
+.switcher-radio-btn:hover { background: rgba(0, 0, 0, 0.08); }
+.switcher-radio-btn.active {
+  background: #7c4dff;
+  color: #fff;
+  border-color: #5b21b6;
+}
+.switcher-new-row {
+  display: flex; gap: 4px;
+}
+.switcher-new-input {
+  flex: 1 1 auto; min-width: 0;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  outline: none;
+}
+.switcher-new-input:focus { border-color: #27ae60; box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.18); }
+.switcher-new-btn {
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #27ae60;
+  color: #fff;
+  border: 1px solid #1d8f4f;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.switcher-new-btn:hover { background: #1d8f4f; }
 .master-vol-top {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   color: var(--text-main); font-size: 0.78rem; font-variant-numeric: tabular-nums;
@@ -3883,6 +4006,15 @@ select {
   border-color: transparent;
   box-shadow: var(--glow-purple);
   transform: scale(1.1);
+}
+
+/* Orange ring: this song has pasted lyrics (metadata.json lyrics_source === 'manual').
+   Declared with the active/hover selectors so the ring survives both. */
+.play-row-btn.has-lyrics,
+.play-row-btn.has-lyrics:hover,
+.song-row.active .play-row-btn.has-lyrics {
+  border: 2px solid #ff8c00;
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.3);
 }
 
 .song-row.active .play-row-btn {
@@ -8586,3 +8718,30 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 #portals .pb-midi.here { color: #fff; background: #9c4fd0; border-color: #00e676; box-shadow: 0 0 10px rgba(177,111,209,.6), inset 0 1px 3px rgba(0,0,0,.25); }
 #portals .pb-desk { color: #0f4f70; background: #d9eefb; border-color: #8fcdf0; }
 #portals .pb-desk.here { color: #fff; background: #1f97d9; border-color: #00e676; box-shadow: 0 0 10px rgba(79,195,247,.6), inset 0 1px 3px rgba(0,0,0,.25); }
+
+/* ===== Pinned player (Bill 2026-10-17, gig feedback) =====
+   An accidental trackpad scroll on the gig laptop slid the player off the
+   top of the screen. The player no longer scrolls: .main-content is a
+   column whose only scroller is the tab area below the player, and
+   overscroll-behavior stops a scroll that hits the end of a list from
+   carrying on to the column. The tab area shrinks to zero before the
+   column itself would scroll, so .main-content only scrolls if the player
+   alone is taller than the window. Collapse the mixer (its ⌃ button) to
+   give the Library more room. Desktop only; the ≤768px stacked layout
+   keeps its whole-page scroll. */
+@media (min-width: 769px) {
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0;  /* was inert under display:block; keep spacing as it was */
+    overscroll-behavior: contain;
+  }
+  .main-content > .player-hero-section,
+  .main-content > .tab-bar { flex: 0 0 auto; }
+  .main-content > .tab-container {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
