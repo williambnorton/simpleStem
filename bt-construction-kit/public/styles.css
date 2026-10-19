@@ -1404,8 +1404,8 @@ select {
 .master-vol-rail {
   display: flex; flex-direction: column; align-items: center;
   height: auto;
-  max-height: 62vh;
-  padding: 16px 8px;
+  max-height: 42vh;
+  padding: 14px 8px;
   min-width: 110px;
   border-left: 1px solid var(--border-color);
   gap: 10px;
@@ -1553,16 +1553,17 @@ select {
 }
 .switcher-radio-btn {
   width: 100%;
-  min-height: 38px;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-weight: 700;
+  min-height: 44px;
+  padding: 10px 10px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 10px;
   color: var(--text-main);
   cursor: pointer;
-  line-height: 1.2;
+  line-height: 1.15;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1570,6 +1571,27 @@ select {
   transition: background 90ms ease-out, border-color 90ms ease-out, transform 60ms ease-out;
 }
 .switcher-radio-btn:active { transform: scale(0.98); }
+
+/* Separator between user setlists and system-curated pills (Bill 2026-10-19).
+   Spans the full grid width thanks to grid-column: 1 / -1. */
+.switcher-separator {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 0 2px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.switcher-separator::before,
+.switcher-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.12);
+}
 
 /* Delete × on each manual-setlist pill (Bill 2026-10-19). Rides in the
    top-right corner of the cell as a small circle. Visible only when the

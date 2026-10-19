@@ -1527,21 +1527,21 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
   if (!grid) return;
   wireSwitcherOnce();
 
+  // System-curated pseudo-gig pills. Singer buckets are "<Name> Songs"
+  // per Bill 2026-10-19. These sit BELOW the user-created manual
+  // setlists, in a separator-marked band.
   const PSEUDO = [
-    { slug: TOP20_GIG_SLUG,           label: '🏆 Top 20',    kind: 'pseudo' },
-    { slug: FAVORITES_GIG_SLUG,       label: '★ Favorites',  kind: 'pseudo' },
-    { slug: RECENTS_GIG_SLUG,         label: '⟲ Recents',    kind: 'pseudo' },
-    { slug: FRESH_GIG_SLUG,           label: '🆕 Fresh',      kind: 'pseudo' },
-    { slug: BILL_GIG_SLUG,            label: 'Bill',         kind: 'pseudo' },
-    { slug: MATT_GIG_SLUG,            label: 'Matt',         kind: 'pseudo' },
-    { slug: DAN_GIG_SLUG,             label: 'Dan',          kind: 'pseudo' },
-    { slug: JD_GIG_SLUG,              label: 'JD',           kind: 'pseudo' },
-    { slug: ROUND_ROBIN_GIG_SLUG,     label: '⇄ RoundRobin', kind: 'pseudo' },
-    { slug: PROTEST_GIG_SLUG,         label: '✊ Protest',    kind: 'pseudo' },
+    { slug: TOP20_GIG_SLUG,           label: '🏆 Top 20',     kind: 'pseudo' },
+    { slug: FAVORITES_GIG_SLUG,       label: '★ Favorites',   kind: 'pseudo' },
+    { slug: RECENTS_GIG_SLUG,         label: '⟲ Recents',     kind: 'pseudo' },
+    { slug: FRESH_GIG_SLUG,           label: '🆕 Fresh',       kind: 'pseudo' },
+    { slug: BILL_GIG_SLUG,            label: 'Bill Songs',    kind: 'pseudo' },
+    { slug: MATT_GIG_SLUG,            label: 'Matt Songs',    kind: 'pseudo' },
+    { slug: DAN_GIG_SLUG,             label: 'Dan Songs',     kind: 'pseudo' },
+    { slug: JD_GIG_SLUG,              label: 'JD Songs',      kind: 'pseudo' },
+    { slug: ROUND_ROBIN_GIG_SLUG,     label: '⇄ RoundRobin',  kind: 'pseudo' },
+    { slug: PROTEST_GIG_SLUG,         label: '✊ Protest',     kind: 'pseudo' },
   ];
-  if (Array.isArray(manualSetlists) && manualSetlists.length) {
-    PSEUDO.push({ slug: MANUAL_SETLISTS_GIG_SLUG, label: `✎ Manual (${manualSetlists.length})`, kind: 'pseudo' });
-  }
   if (Array.isArray(playlistSetlists) && playlistSetlists.length) {
     PSEUDO.push({ slug: YOUTUBE_SYNC_GIG_SLUG, label: `▶ YT Sync (${playlistSetlists.length})`, kind: 'pseudo' });
   }
@@ -1563,14 +1563,26 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
   // Real gigs REMOVED from the switcher (Bill 2026-10-19: "remove the gig
   // creation multi set thing for now"). GIGS/*.json files on disk are
   // untouched; just not surfaced in the primary navigator.
-  const all = [...PSEUDO, ...manualButtons];
+  //
+  // Order (Bill 2026-10-19): user setlists FIRST, then a separator, then
+  // the system-curated pseudo-gigs below.
+  const all = [...manualButtons, { kind: 'separator' }, ...PSEUDO];
   const activeSlug = (activeGig && activeGig.slug) || null;
   const activeIdx = activeSetlistIdx || 0;
 
   grid.innerHTML = '';
   for (const b of all) {
-    // Wrapper lets us hang a × delete control on each manual pill
-    // without ruining the grid cell geometry (Bill 2026-10-19).
+    if (b.kind === 'separator') {
+      // Visual break between user setlists and system-curated pseudo-gigs.
+      const sep = document.createElement('div');
+      sep.className = 'switcher-separator';
+      sep.innerHTML = '<span>System setlists</span>';
+      grid.appendChild(sep);
+      continue;
+    }
+    // Wrapper for geometric consistency; no delete overlay here any more
+    // (Bill 2026-10-19 moved delete into the setlist detail panel below
+    // so clicking a pill cannot accidentally trigger a destructive op).
     const cell = document.createElement('div');
     cell.className = 'switcher-cell';
     const btn = document.createElement('button');
@@ -1587,35 +1599,6 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
     if (isActive) btn.classList.add('active');
     cell.appendChild(btn);
 
-    // Delete × on manual-standalone setlists only (pseudo-gigs and any
-    // future entries that aren't operator-owned stay un-killable).
-    if (b.kind === 'manual' && b.manualSlug) {
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'switcher-del-btn';
-      del.textContent = '×';
-      del.title = `Delete "${b.matchTitle || b.manualSlug}" setlist (file removed from SETLISTS/).`;
-      del.setAttribute('aria-label', `Delete ${b.matchTitle || b.manualSlug}`);
-      del.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm(`Delete setlist "${b.matchTitle || b.manualSlug}"?\n\nSETLISTS/${b.manualSlug}.json will be removed.`)) return;
-        try {
-          const r = await fetch(`/api/setlists/${encodeURIComponent(b.manualSlug)}`, { method: 'DELETE' });
-          if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            alert(`Delete failed: ${err.error || r.statusText}`);
-            return;
-          }
-          await refreshGigList();
-          if (activeSlug === MANUAL_SETLISTS_GIG_SLUG) {
-            try { await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG); } catch (er) {}
-          }
-        } catch (er) {
-          alert('Delete failed: ' + er.message);
-        }
-      });
-      cell.appendChild(del);
-    }
     btn.addEventListener('click', async () => {
       try {
         await loadActiveGig(b.slug);
@@ -2239,47 +2222,23 @@ function renderGigSidebar() {
   }
 
   setlistsEl.innerHTML = '';
+  // Single-set view (Bill 2026-10-19 "I do not want this multi set thing").
+  // Only the active setlist renders. Rename and Delete controls live
+  // inside its rollup, so deletion is only reachable by first SELECTING
+  // the setlist in question. Switching between setlists happens from the
+  // pills above, not from a stack of accordions here.
   const slCount = activeGig.setlists.length;
-  // Chunk threshold: 3+ setlists yield to the browser between each so the
-  // tab doesn't hang during the gig-switch animation. For 1-2 setlists it's
-  // faster to render synchronously.
-  if (slCount <= 2) {
-    activeGig.setlists.forEach((sl, idx) => {
-      setlistsEl.appendChild(renderOneGigSetlist(sl, idx));
-    });
-    if (window.lucide) lucide.createIcons();
-    const dt = performance.now() - __perfT0;
-    if (dt > 50) console.warn(`[perf] renderGigSidebar (sync ${slCount} setlists) ${dt.toFixed(1)}ms`);
-    else console.log(`[perf] renderGigSidebar ${dt.toFixed(1)}ms`);
-  } else {
-    // Chunked: append the first setlist synchronously (so the user sees
-    // SOMETHING immediately), then defer the rest via requestIdleCallback
-    // (falling back to setTimeout(0) on Safari).
-    const yieldFn = window.requestIdleCallback ||
-                    ((cb) => setTimeout(() => cb({ timeRemaining: () => 50 }), 0));
-    let i = 0;
-    setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[0], 0));
-    i = 1;
-    const renderRest = () => {
-      yieldFn(() => {
-        // Stale-callback guard: another renderGigSidebar() ran before
-        // this idle slot fired. The container has already been cleared +
-        // re-populated by the newer render; appending now would duplicate
-        // setlists. Bail silently.
-        if (__myGen !== _renderGigSidebarGen) return;
-        for (; i < slCount; i++) {
-          setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[i], i));
-        }
-        if (window.lucide) lucide.createIcons();
-        const dt = performance.now() - __perfT0;
-        console.log(`[perf] renderGigSidebar (chunked ${slCount} setlists) ${dt.toFixed(1)}ms`);
-      });
-    };
-    renderRest();
-    // Run lucide once for the synchronously-appended first setlist so its
-    // icons don't visibly pop in late.
+  const idx = Math.max(0, Math.min(activeSetlistIdx || 0, slCount - 1));
+  const sl = activeGig.setlists[idx];
+  if (sl) {
+    // Make sure the single rendered setlist is in the "open" set so the
+    // songs show, not collapsed.
+    openSetlistIdxs = new Set([idx]);
+    setlistsEl.appendChild(renderOneGigSetlist(sl, idx));
     if (window.lucide) lucide.createIcons();
   }
+  const dt = performance.now() - __perfT0;
+  if (dt > 50) console.warn(`[perf] renderGigSidebar (single setlist of ${slCount}) ${dt.toFixed(1)}ms`);
 }
 
 function renderOneGigSetlist(sl, idx) {
@@ -2330,7 +2289,14 @@ function renderOneGigSetlist(sl, idx) {
   titleInput.addEventListener('click', e => e.stopPropagation());
   head.querySelector('.gig-setlist-del').addEventListener('click', async e => {
     e.stopPropagation();
-    if (activeGig.setlists.length <= 1) {
+    // The "can't delete the only setlist in the gig" guard applies to
+    // REAL gigs where setlists are embedded (deleting the last would
+    // break the GIGS/<slug>.json shape). Standalone-manual setlists
+    // live each in their own SETLISTS/<slug>.json, so the single-file
+    // deletion is fine even if it's the only manual setlist left
+    // (Bill 2026-10-19).
+    const isManualPseudo = activeGig.synthetic && activeGig.syntheticKind === 'manual';
+    if (!isManualPseudo && activeGig.setlists.length <= 1) {
       alert("Can't delete the only setlist in the gig.");
       return;
     }
