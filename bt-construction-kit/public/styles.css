@@ -1570,6 +1570,35 @@ select {
   transition: background 90ms ease-out, border-color 90ms ease-out, transform 60ms ease-out;
 }
 .switcher-radio-btn:active { transform: scale(0.98); }
+
+/* Delete × on each manual-setlist pill (Bill 2026-10-19). Rides in the
+   top-right corner of the cell as a small circle. Visible only when the
+   cell is hovered or when the pill is active, so a resting grid stays
+   clean. Clicking × calls DELETE /api/setlists/<slug> after a confirm. */
+.switcher-cell {
+  position: relative;
+  width: 100%;
+}
+.switcher-del-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px; height: 20px;
+  padding: 0;
+  border: 1px solid #a0211a;
+  border-radius: 50%;
+  background: #e23a2a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+  opacity: 0.8;
+}
+.switcher-del-btn:hover { background: #c43328; opacity: 1; }
 .switcher-radio-btn:hover { background: rgba(0, 0, 0, 0.08); }
 .switcher-radio-btn.active {
   background: #7c4dff;

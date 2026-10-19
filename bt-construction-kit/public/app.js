@@ -1548,41 +1548,74 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
 
   // Each standalone manual setlist as its own button so NoKings, Friday_Set
   // etc. are reachable with one click. These load MANUAL_SETLISTS_GIG_SLUG
-  // then jump activeSetlistIdx to the matching sub-setlist index.
+  // then jump activeSetlistIdx to the matching sub-setlist index. Each
+  // manual button carries its sub-setlist's slug so the delete × knows
+  // which SETLISTS/<slug>.json to remove.
   const manualButtons = (manualSetlists || []).map((sl, i) => ({
     slug: MANUAL_SETLISTS_GIG_SLUG,
     setlistIdx: i,
     label: sl.title || sl.slug || `set ${i+1}`,
     matchTitle: sl.title || sl.slug,
+    manualSlug: sl.slug,
     kind: 'manual',
   }));
 
-  // Each real gig gets ONE button for v1. Multi-setlist gigs still show
-  // their sub-setlists in the stack beneath; per-setlist buttons here
-  // require fetching every gig's titles (deferred to v2).
-  const realButtons = (gigs || []).map(g => ({
-    slug: g.slug,
-    label: `🎤 ${g.title}${g.setlist_count > 1 ? ` (${g.setlist_count})` : ''}`,
-    kind: 'real',
-  }));
-
-  const all = [...PSEUDO, ...manualButtons, ...realButtons];
+  // Real gigs REMOVED from the switcher (Bill 2026-10-19: "remove the gig
+  // creation multi set thing for now"). GIGS/*.json files on disk are
+  // untouched; just not surfaced in the primary navigator.
+  const all = [...PSEUDO, ...manualButtons];
   const activeSlug = (activeGig && activeGig.slug) || null;
   const activeIdx = activeSetlistIdx || 0;
 
   grid.innerHTML = '';
   for (const b of all) {
+    // Wrapper lets us hang a × delete control on each manual pill
+    // without ruining the grid cell geometry (Bill 2026-10-19).
+    const cell = document.createElement('div');
+    cell.className = 'switcher-cell';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'switcher-radio-btn';
     btn.dataset.slug = b.slug;
     if (typeof b.setlistIdx === 'number') btn.dataset.setlistIdx = String(b.setlistIdx);
     btn.textContent = b.label;
+    btn.title = b.label;
     btn.setAttribute('role', 'radio');
     const isActive = (b.slug === activeSlug) &&
       (typeof b.setlistIdx !== 'number' || b.setlistIdx === activeIdx);
     btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
     if (isActive) btn.classList.add('active');
+    cell.appendChild(btn);
+
+    // Delete × on manual-standalone setlists only (pseudo-gigs and any
+    // future entries that aren't operator-owned stay un-killable).
+    if (b.kind === 'manual' && b.manualSlug) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'switcher-del-btn';
+      del.textContent = '×';
+      del.title = `Delete "${b.matchTitle || b.manualSlug}" setlist (file removed from SETLISTS/).`;
+      del.setAttribute('aria-label', `Delete ${b.matchTitle || b.manualSlug}`);
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete setlist "${b.matchTitle || b.manualSlug}"?\n\nSETLISTS/${b.manualSlug}.json will be removed.`)) return;
+        try {
+          const r = await fetch(`/api/setlists/${encodeURIComponent(b.manualSlug)}`, { method: 'DELETE' });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            alert(`Delete failed: ${err.error || r.statusText}`);
+            return;
+          }
+          await refreshGigList();
+          if (activeSlug === MANUAL_SETLISTS_GIG_SLUG) {
+            try { await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG); } catch (er) {}
+          }
+        } catch (er) {
+          alert('Delete failed: ' + er.message);
+        }
+      });
+      cell.appendChild(del);
+    }
     btn.addEventListener('click', async () => {
       try {
         await loadActiveGig(b.slug);
@@ -1599,7 +1632,7 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
         try { renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists); } catch (e) {}
       } catch (e) { console.warn('[switcher] click failed:', e); }
     });
-    grid.appendChild(btn);
+    grid.appendChild(cell);
   }
 }
 
