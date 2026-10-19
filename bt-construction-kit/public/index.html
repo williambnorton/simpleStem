@@ -79,8 +79,16 @@
            shows ONLY the active gig — not every gig you've ever made.
            Switch between gigs via the picker, duplicate the whole gig
            to start a new one with the same songs. -->
+      <!-- Setlist sidebar (Bill 2026-10-19 simplification): "remove the
+           gig apparatus, it is too complicated." Only the Setlist
+           Switcher plus the active setlist's songs render here. The old
+           gig controls (picker + rename/new/dup/del + Build-a-gig +
+           Add-a-setlist + Split + byState/byTempo/byLex/bySinger) still
+           exist in the DOM below but are hidden via a single CSS rule
+           so JS event listeners that look them up don't crash. One rule
+           to flip them back if we ever want them again. -->
       <section class="gig-side-panel rollup" id="gig-rollup">
-        <button class="rollup-header" id="gig-rollup-header" aria-expanded="true" type="button">
+        <button class="rollup-header hidden-gig-apparatus" id="gig-rollup-header" aria-expanded="true" type="button">
           <i data-lucide="calendar-clock"></i>
           <span class="rollup-title">Gig:</span>
           <span class="rollup-title-active" id="gig-side-name">Untitled</span>
@@ -88,13 +96,8 @@
           <i data-lucide="chevron-down" class="rollup-caret"></i>
         </button>
         <div class="rollup-body">
-          <!-- Setlist Switcher (Bill 2026-10-18): flat radio-button grid.
-               Search box on top, then every selectable setlist as one
-               button: pseudo-gigs (BillSongs / DanSongs / etc.), standalone
-               manual setlists, and each sub-setlist of every real gig as
-               its own button. Textfield + Create at the bottom spawns a new
-               manual setlist in SETLISTS/<name>.json. The legacy picker +
-               controls below still work; this is the primary navigator. -->
+          <!-- Setlist Switcher: search + radio-button grid + "name and
+               Create" row. The ONLY thing the operator sees up here. -->
           <div class="setlist-switcher-panel">
             <input type="search" id="switcher-song-search" class="switcher-search"
                    placeholder="Search a song in the library…"
@@ -106,42 +109,33 @@
               <button id="switcher-new-create" class="switcher-new-btn" type="button" title="Create a new empty setlist with this name">Create</button>
             </div>
           </div>
-          <!-- Gig controls: switch / new / duplicate / delete -->
-          <div class="gig-side-controls">
-            <select id="gig-picker" class="glass-select" title="Switch to a different gig"></select>
-            <button id="gig-rename-btn" class="btn-icon" title="Rename this gig"><i data-lucide="pencil"></i></button>
-            <button id="gig-new-btn" class="btn-icon" title="Create a new gig"><i data-lucide="plus"></i></button>
-            <button id="gig-dup-btn" class="btn-icon" title="Duplicate this gig (copies all setlists)"><i data-lucide="copy"></i></button>
-            <button id="gig-del-btn" class="btn-icon" title="Delete this gig" disabled><i data-lucide="trash-2"></i></button>
+          <!-- Hidden gig controls kept for JS lookups; see note above. -->
+          <div class="gig-side-controls hidden-gig-apparatus">
+            <select id="gig-picker" class="glass-select"></select>
+            <button id="gig-rename-btn" class="btn-icon"><i data-lucide="pencil"></i></button>
+            <button id="gig-new-btn" class="btn-icon"><i data-lucide="plus"></i></button>
+            <button id="gig-dup-btn" class="btn-icon"><i data-lucide="copy"></i></button>
+            <button id="gig-del-btn" class="btn-icon" disabled><i data-lucide="trash-2"></i></button>
           </div>
-          <!-- Gig Builder trigger (task #132/#133). Opens the modal
-               where the operator filters the library by roster/tags/mode
-               and either hand-picks songs into setlists via the 1·2·3·4
-               radios or has the deterministic engine populate them. -->
-          <button id="gig-builder-btn" class="setlist-side-toggle" style="margin: 6px 0 8px; background: var(--bg-accent); color: var(--text-accent); border-color: var(--border-accent);">
+          <button id="gig-builder-btn" class="setlist-side-toggle hidden-gig-apparatus" type="button">
             <i data-lucide="sparkles"></i> <span>Build a gig…</span>
           </button>
 
-          <!-- Setlists (1-4) live here; each is a nested .gig-setlist rollup -->
+          <!-- The active setlist's songs render here. This stays visible
+               so the operator can see what's queued in whatever button
+               they picked above. -->
           <div id="gig-setlists" class="gig-setlists"></div>
 
-          <!-- Add a new setlist to this gig (disabled when already at 4) -->
-          <button id="gig-add-setlist-btn" class="setlist-side-toggle" disabled>
+          <button id="gig-add-setlist-btn" class="setlist-side-toggle hidden-gig-apparatus" disabled type="button">
             <i data-lucide="plus"></i> <span>Add a setlist</span>
           </button>
-          <!-- Split method row (Bill 2026-07-10). Rearrange songs across
-               setlists by a chosen dimension, then chunk each group to ≤15
-               so nothing overflows. -->
-          <div class="gig-split-methods" id="gig-split-methods">
-            <button class="gig-split-method-btn" data-method="byState"  title="Group by readiness — one setlist per InTheCan / Rehearse / TBD / none, then chunk to ≤15.">byState</button>
-            <button class="gig-split-method-btn" data-method="byTempo"  title="Group by tempo — Upbeat (>110 BPM) and Savory (≤110 BPM), then chunk to ≤15.">byTempo</button>
-            <button class="gig-split-method-btn" data-method="byLex"    title="Alphabetize all songs by title, then chunk to ≤15 per setlist.">byLex</button>
-            <button class="gig-split-method-btn" data-method="bySinger" title="Group by lead singer — one setlist per Bill / Dan / Matt / JD / Joanna / unassigned, then chunk to ≤15.">bySinger</button>
+          <div class="gig-split-methods hidden-gig-apparatus" id="gig-split-methods">
+            <button class="gig-split-method-btn" data-method="byState"  type="button">byState</button>
+            <button class="gig-split-method-btn" data-method="byTempo"  type="button">byTempo</button>
+            <button class="gig-split-method-btn" data-method="byLex"    type="button">byLex</button>
+            <button class="gig-split-method-btn" data-method="bySinger" type="button">bySinger</button>
           </div>
-          <!-- Split (Bill 2026-07-10): keeps the original song order across
-               setlists and just chunks anything over 15 songs into "(part 2)"
-               copies inserted right after the original. -->
-          <button id="gig-split-btn" class="setlist-side-toggle" disabled title="Split any setlist longer than 15 songs into 15-song chunks. First chunk keeps its title; extras get '(part 2)', '(part 3)' etc.">
+          <button id="gig-split-btn" class="setlist-side-toggle hidden-gig-apparatus" disabled type="button">
             <i data-lucide="scissors"></i> <span>Split</span>
           </button>
           <div class="setlist-side-hint" id="gig-side-hint"></div>

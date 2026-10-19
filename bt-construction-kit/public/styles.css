@@ -1490,6 +1490,14 @@ select {
   padding-bottom: 2px;
 }
 
+/* Gig apparatus hide-all (Bill 2026-10-19 "remove the gig apparatus, it
+   is too complicated"). Flips the gig picker, rename/new/dup/del icons,
+   Build-a-gig, Add-a-setlist, Split and the byState/byTempo/byLex/bySinger
+   method row out of the sidebar in one place. Elements stay in the DOM
+   so getElementById-based event wiring doesn't crash on boot. Delete
+   this rule to bring them all back. */
+.hidden-gig-apparatus { display: none !important; }
+
 /* Setlist Switcher (Bill 2026-10-18) — primary setlist navigator at the
    top of the gig sidebar. Search box above a radio grid of hot-switch
    buttons, with a textfield + Create at the bottom to spawn new ones. */
