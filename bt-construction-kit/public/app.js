@@ -764,6 +764,12 @@ window.addEventListener('DOMContentLoaded', () => {
   try { setupMidiUI(); } catch (e) { console.warn('[midi] setup failed:', e); }
   try { setupStemHotkeys(); } catch (e) { console.warn('[hotkeys] setup failed:', e); }
   try { setupGlobalKeyboardShortcuts(); } catch (e) { console.warn('[shortcuts] setup failed:', e); }
+  // Bill 2026-10-19 batch: hardware media keys, full-page lyrics mode,
+  // ingest-events log under the URL field. Each fails silent — none are
+  // load-bearing for playback.
+  try { setupMediaSessionKeys(); }  catch (e) { console.warn('[mediasession] setup failed:', e); }
+  try { setupLyricsPageMode(); }    catch (e) { console.warn('[lyrics-page] setup failed:', e); }
+  try { setupIngestEventsLog(); }   catch (e) { console.warn('[ingest-events] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
@@ -1134,6 +1140,10 @@ const DAN_GIG_SLUG   = '__dan_songs__';
 const JD_GIG_SLUG    = '__jd_songs__';
 const ROUND_ROBIN_GIG_SLUG = '__round_robin__';
 const PROTEST_GIG_SLUG     = '__protest_songs__';   // tag = 'protest'
+// Top 20 by play_count (Bill 2026-10-19). Favorites = what you actually
+// play, not just what you starred. Capped at 20 songs, resolved from
+// mergedLibrary at load time so a fresh play count surfaces instantly.
+const TOP20_GIG_SLUG       = '__top20__';
 const SINGER_GIG_MAP = {
   [BILL_GIG_SLUG]: 'Bill',
   [MATT_GIG_SLUG]: 'Matt',
@@ -1152,6 +1162,7 @@ const SYNTHETIC_GIG_SLUGS = new Set([
   JD_GIG_SLUG,
   ROUND_ROBIN_GIG_SLUG,
   PROTEST_GIG_SLUG,
+  TOP20_GIG_SLUG,
 ]);
 
 // localStorage warm-cache keys. We paint the sidebar from these before the
@@ -1231,6 +1242,7 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   // Recents + Favorites pseudo-gigs — always offered. Songs you've loaded
   // recently land in Recents (cap 50); songs starred via the title-row
   // star button land in Favorites (cap 50).
+  options.push(`<option value="${TOP20_GIG_SLUG}">🏆 Top 20 by Plays</option>`);
   options.push(`<option value="${RECENTS_GIG_SLUG}">⟲ Recents (last 50)</option>`);
   options.push(`<option value="${FAVORITES_GIG_SLUG}">★ Favorites</option>`);
   options.push(`<option value="${FRESH_GIG_SLUG}">🆕 Fresh Stems (levels to-do)</option>`);
@@ -1272,7 +1284,7 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   const slugExists = (s) => {
     if (s === YOUTUBE_SYNC_GIG_SLUG)    return playlistSetlists.length > 0;
     if (s === MANUAL_SETLISTS_GIG_SLUG) return manualSetlists.length > 0;
-    if (s === RECENTS_GIG_SLUG || s === FAVORITES_GIG_SLUG) return true;
+    if (s === RECENTS_GIG_SLUG || s === FAVORITES_GIG_SLUG || s === TOP20_GIG_SLUG) return true;
     if (s in SINGER_GIG_MAP || s === ROUND_ROBIN_GIG_SLUG) return true;
     return gigs.some(g => g.slug === s);
   };
@@ -1474,6 +1486,32 @@ function loadTagGig(slug, tagName, title) {
   };
 }
 
+// Top 20 pseudo-gig (Bill 2026-10-19). Sorts the library by play_count
+// desc and keeps the first 20 songs. Read-only. A fresh play count
+// surfaces on the next switcher click (loader runs each time).
+function loadTop20Gig() {
+  const withCounts = (mergedLibrary || []).map(m => {
+    const sv = m.variants && m.variants.find(v => v.type === 'stems');
+    const pc = (sv && sv.play_count) || m.play_count || 0;
+    return { m, sv, pc: Number(pc) || 0 };
+  }).filter(x => x.pc > 0 && x.sv && x.sv.folderName);
+  withCounts.sort((a, b) => b.pc - a.pc || (a.m.title || '').localeCompare(b.m.title || ''));
+  const top = withCounts.slice(0, 20);
+  const songs = top.map(x => ({
+    song_base: x.sv.folderName,
+    title: `${x.m.title || ''}  ·  ${x.pc}×`,
+    artist: x.m.artist || '',
+  }));
+  return {
+    slug: TOP20_GIG_SLUG,
+    title: 'Top 20 by Plays',
+    readOnly: true,
+    synthetic: true,
+    syntheticKind: 'top20',
+    setlists: [{ title: 'Top 20 by Plays', songs, origin: 'top20' }],
+  };
+}
+
 // ── Setlist Switcher (Bill 2026-10-18) ─────────────────────────────────
 // Flat radio-button grid at the top of the sidebar. Each button loads a
 // setlist directly; no gig-first navigation. v1 ships one button per
@@ -1488,6 +1526,7 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
   wireSwitcherOnce();
 
   const PSEUDO = [
+    { slug: TOP20_GIG_SLUG,           label: '🏆 Top 20',    kind: 'pseudo' },
     { slug: FAVORITES_GIG_SLUG,       label: '★ Favorites',  kind: 'pseudo' },
     { slug: RECENTS_GIG_SLUG,         label: '⟲ Recents',    kind: 'pseudo' },
     { slug: FRESH_GIG_SLUG,           label: '🆕 Fresh',      kind: 'pseudo' },
@@ -1649,6 +1688,8 @@ async function loadActiveGig(slug) {
         activeGig = loadRoundRobinGig();
       } else if (slug === PROTEST_GIG_SLUG) {
         activeGig = loadTagGig(PROTEST_GIG_SLUG, 'protest', 'Protest Songs');
+      } else if (slug === TOP20_GIG_SLUG) {
+        activeGig = loadTop20Gig();
       }
       // Task #126: normalize slug → song_base for every synthetic gig
       // too. Playlist-origin setlists come from mpb_sync.py so they
@@ -1664,6 +1705,7 @@ async function loadActiveGig(slug) {
           (slug in SINGER_GIG_MAP)          ? `(no ${SINGER_GIG_MAP[slug]} songs yet — set Singer in the library row)` :
           slug === ROUND_ROBIN_GIG_SLUG     ? '(no singer-tagged songs yet — set Singer in the library rows)' :
           slug === PROTEST_GIG_SLUG         ? '(no songs tagged "protest" yet — set tags via ⋯ menu on a library row)' :
+          slug === TOP20_GIG_SLUG           ? '(no songs with a play count yet — press Play on a song to start the count)' :
                                               '(empty)';
         activeGig.setlists = [{ title: placeholderTitle, songs: [] }];
       }
@@ -2347,6 +2389,16 @@ function renderOneGigSetlist(sl, idx) {
     if (_svL && (_svL.lyrics || (Array.isArray(_svL.lyrics_chunks) && _svL.lyrics_chunks.length))) {
       row.classList.add('has-lyrics');
     }
+    // Recently-played dimming (Bill 2026-10-19). If this song was played
+    // within the last 3 hours, dim + italicize so you can see at a glance
+    // what's been played this gig. 3h window is wall-clock, not setlist.
+    try {
+      const _lastAt = _svL && _svL.last_played_at;
+      if (_lastAt) {
+        const ms = Date.now() - new Date(_lastAt).getTime();
+        if (ms >= 0 && ms < 3 * 60 * 60 * 1000) row.classList.add('recently-played');
+      }
+    } catch (e) {}
     // Color the row background by lead singer. Bill's request 2026-06-30:
     //   Bill → light yellow · Matt → light green · Dan → light purple
     //   everyone else → white (no class). singer_lead comes from the
@@ -4490,6 +4542,153 @@ function setupMasterVolume() {
 
   els.masterVol.addEventListener('input', () => apply(true));
   apply(false);
+}
+
+// ── Hardware media keys (Bill 2026-10-19) ──────────────────────────────
+// Chrome's MediaSession API lets us catch the OS's play/pause/prev/next
+// media keys from ANY focused app, as long as this tab has recently
+// played audio. We route each one to the existing transport.
+function setupMediaSessionKeys() {
+  if (!('mediaSession' in navigator)) return;
+  const safe = (fn) => { try { if (typeof fn === 'function') fn(); } catch (e) { console.warn('[mediasession] handler failed:', e); } };
+  try { navigator.mediaSession.setActionHandler('play',  () => safe(togglePlayPause)); } catch (e) {}
+  try { navigator.mediaSession.setActionHandler('pause', () => safe(togglePlayPause)); } catch (e) {}
+  try { navigator.mediaSession.setActionHandler('previoustrack', () => safe(() => (typeof playPrevInSetlist === 'function') && playPrevInSetlist())); } catch (e) {}
+  try { navigator.mediaSession.setActionHandler('nexttrack',     () => safe(() => (typeof playNextInSetlist === 'function') && playNextInSetlist())); } catch (e) {}
+  // Refresh the OS "Now Playing" metadata whenever currentSong changes
+  // so the keyboard knows a track is live.
+  window.updateMediaSessionMetadata = function (song) {
+    if (!('mediaSession' in navigator) || !song) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song.title || song.folderName || 'simpleStem',
+        artist: song.artist || '',
+        album: 'simpleStem',
+      });
+    } catch (e) {}
+  };
+}
+
+// ── Full-page lyrics mode (Bill 2026-10-19) ────────────────────────────
+// Overlay that fills the window with the current song's lyrics. Space
+// scrolls a chunk, arrow keys scroll a line, any other key closes.
+// Opens via the 📖 Lyrics Page button in the transport action row.
+let _lyricsPageOpen = false;
+function setupLyricsPageMode() {
+  const openBtn = document.getElementById('midi-btn-lyrics-page');
+  const page    = document.getElementById('lyrics-page');
+  const body    = document.getElementById('lyrics-page-body');
+  const closeBtn= document.getElementById('lyrics-page-close');
+  const songEl  = document.getElementById('lyrics-page-song');
+  const artistEl= document.getElementById('lyrics-page-artist');
+  if (!page || !body) return;
+
+  const close = () => {
+    page.style.display = 'none';
+    _lyricsPageOpen = false;
+    document.removeEventListener('keydown', keydownHandler, true);
+  };
+  const openPage = () => {
+    if (!currentSong) { try { alert('Load a song first.'); } catch (e) {} return; }
+    const lyr = (currentSong.lyrics || '').trim();
+    if (!lyr) {
+      try { alert('This song has no lyrics installed. Use + Lyric / Fetch Lyrics to paste some first.'); } catch (e) {}
+      return;
+    }
+    songEl.textContent   = currentSong.title || currentSong.folderName || 'Song';
+    artistEl.textContent = currentSong.artist || '';
+    const lines = lyr.split(/\r?\n/).filter(l => l.trim() && !/^\[[^\]]+\]\s*$/.test(l));
+    body.innerHTML = '';
+    for (const line of lines) {
+      const p = document.createElement('div');
+      p.className = 'lyrics-page-line';
+      p.textContent = line;
+      body.appendChild(p);
+    }
+    page.style.display = 'flex';
+    _lyricsPageOpen = true;
+    body.scrollTop = 0;
+    setTimeout(() => body.focus(), 10);
+    document.addEventListener('keydown', keydownHandler, true);
+  };
+  const keydownHandler = (e) => {
+    if (!_lyricsPageOpen) return;
+    const chunk = Math.round(body.clientHeight * 0.8);
+    if (e.code === 'Space') {
+      e.preventDefault(); e.stopPropagation();
+      body.scrollBy({ top: chunk, behavior: 'smooth' });
+      return;
+    }
+    if (e.code === 'ArrowDown') {
+      e.preventDefault(); e.stopPropagation();
+      body.scrollBy({ top: 40, behavior: 'smooth' });
+      return;
+    }
+    if (e.code === 'ArrowUp') {
+      e.preventDefault(); e.stopPropagation();
+      body.scrollBy({ top: -40, behavior: 'smooth' });
+      return;
+    }
+    if (e.code === 'PageDown') {
+      e.preventDefault(); e.stopPropagation();
+      body.scrollBy({ top: chunk, behavior: 'smooth' });
+      return;
+    }
+    if (e.code === 'PageUp') {
+      e.preventDefault(); e.stopPropagation();
+      body.scrollBy({ top: -chunk, behavior: 'smooth' });
+      return;
+    }
+    // ANY other key closes the overlay (Bill's spec).
+    e.preventDefault(); e.stopPropagation();
+    close();
+  };
+  if (openBtn)  openBtn.addEventListener('click', openPage);
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  window.openLyricsPage = openPage;
+  window.closeLyricsPage = close;
+}
+
+// ── Ingest events log under the Paste URL field (Bill 2026-10-19) ──────
+// Polls /api/activity and filters to category='ingest'. Format per row:
+// HH:MM:SS · message. Hidden when empty; shows the last 6 events.
+function setupIngestEventsLog() {
+  const log = document.getElementById('ingest-events-log');
+  if (!log) return;
+  let latestSeq = 0;
+  const rows = [];
+  const render = () => {
+    if (!rows.length) { log.style.display = 'none'; log.innerHTML = ''; return; }
+    log.style.display = 'block';
+    const tail = rows.slice(-6).reverse();
+    log.innerHTML = tail.map(e => {
+      const ts = (() => {
+        try {
+          const d = new Date(e.ts);
+          const p = n => String(n).padStart(2, '0');
+          return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        } catch (er) { return '??:??:??'; }
+      })();
+      const cls = e.level === 'error' ? 'ingest-ev-error' : e.level === 'warn' ? 'ingest-ev-warn' : 'ingest-ev-info';
+      const msg = (e.message || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]);
+      return `<div class="ingest-ev-row ${cls}"><span class="ingest-ev-ts">${ts}</span><span class="ingest-ev-msg">${msg}</span></div>`;
+    }).join('');
+  };
+  const poll = async () => {
+    try {
+      const r = await fetch(`/api/activity?since=${latestSeq}`, { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      for (const e of (j.entries || [])) {
+        if (e.category === 'ingest') rows.push(e);
+        if (e.seq > latestSeq) latestSeq = e.seq;
+      }
+      while (rows.length > 50) rows.shift();
+      render();
+    } catch (e) {}
+  };
+  poll();
+  setInterval(() => { if (!document.hidden) poll(); }, 3000);
 }
 
 // ── Playhead persistence ────────────────────────────────────────────────
@@ -7871,6 +8070,9 @@ function loadSong(song, opts) {
     els.trackTitle.classList.toggle('has-lyrics', _songHasLyrics);
     if (els.trackArtist) els.trackArtist.classList.toggle('has-lyrics', _songHasLyrics);
   } catch (e) {}
+  // OS Now Playing metadata so hardware media keys know a track is live
+  // (Bill 2026-10-19).
+  try { if (typeof window.updateMediaSessionMetadata === 'function') window.updateMediaSessionMetadata(song); } catch (e) {}
   // Player-pane favorite star — find the stems variant for this song so we
   // can read/write the favorite flag without needing to look up by folder
   // again on every click.
