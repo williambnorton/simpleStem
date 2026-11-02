@@ -566,6 +566,56 @@ async function scanLoops() {
   return bySlug;
 }
 
+// ── Stem sets (Bill 2026-10-20) ─────────────────────────────────────────────
+// A song folder can hold TWO six-stem sets side by side:
+//   STEMS/<song>/vocals.m4a …        Demucs (htdemucs_6s) — always present
+//   STEMS/<song>/logic/vocals.m4a …  Logic Pro Stem Splitter — optional
+// Each song remembers which set plays in metadata.json `stem_set`
+// ('demucs' | 'logic'). With nothing saved, Logic plays when it exists.
+// Library rows carry `stemsBySet`, `stemSets`, `stemSet`, and `stems` (the
+// chosen set's file paths, relative to the song folder). catalog.py
+// mirrors this.
+const LOGIC_STEM_SUBDIR = 'logic';
+const STEM_SET_NAMES = ['demucs', 'logic'];
+const SIX_STEM_NAMES = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
+// The Logic set counts only when all six m4a stems are there, so a bounce
+// still in progress is never offered.
+function logicStemSetFrom(files) {
+  const have = new Set(files);
+  if (!SIX_STEM_NAMES.every(n => have.has(`${n}.m4a`))) return null;
+  const out = {};
+  for (const n of SIX_STEM_NAMES) out[n] = `${LOGIC_STEM_SUBDIR}/${n}.m4a`;
+  return out;
+}
+function resolveStemSet(demucs, logic, saved) {
+  const stemsBySet = { demucs };
+  if (logic) stemsBySet.logic = logic;
+  const stemSet = (saved && stemsBySet[saved]) ? saved : (logic ? 'logic' : 'demucs');
+  return { stems: stemsBySet[stemSet], stemsBySet, stemSets: Object.keys(stemsBySet), stemSet };
+}
+// Every cacheable m4a in a song folder, relative to it: the Demucs stems
+// at the top plus logic/*.m4a when that subfolder exists. `names` is the
+// folder's readdir() the caller already has.
+async function songStemM4as(folder, names) {
+  // <folder>_SOURCE.m4a (the stereo original, CONTRACTS F-9) stays on Drive:
+  // ~3 GB across the library must never push stems out of the gig cache.
+  const out = names.filter(f => /\.m4a$/i.test(f) && !/_SOURCE\.m4a$/i.test(f));
+  if (names.includes(LOGIC_STEM_SUBDIR)) {
+    try {
+      const lf = await driveRace(fsp.readdir(path.join(folder, LOGIC_STEM_SUBDIR)));
+      for (const f of lf) if (/\.m4a$/i.test(f)) out.push(`${LOGIC_STEM_SUBDIR}/${f}`);
+    } catch (e) {}
+  }
+  return out;
+}
+// Stem-set picks made through PUT /api/song/:base/stem-set. The Performer
+// usually loads the library from the Librarian's CATALOG.json, which can
+// lag a pick by up to an hour; overlayCachedState re-applies these so a
+// catalog reload never flips a song back.
+const recentStemSetPicks = new Map();   // folderName → 'demucs' | 'logic'
+// Same idea for "Skip for all" in the fill-missing-lyrics workflow.
+const recentLyricsSkips = new Map();    // folderName → true | false
+
 async function scanStems() {
   if (!fs.existsSync(STEMS_DIR)) {
     console.warn(`Stems directory not found: ${STEMS_DIR}`);
@@ -619,6 +669,14 @@ async function scanStems() {
     // library row surfaces a yellow 'Logic' chip that opens it in a fresh
     // Logic instance so you can re-mix / re-route stems to different XR18
     // outputs without disturbing whatever Logic is already doing.
+    // Optional Logic Pro stem set in logic/ (see LOGIC_STEM_SUBDIR above).
+    let logicStems = null;
+    if (filesInFolder.includes(LOGIC_STEM_SUBDIR)) {
+      try {
+        logicStems = logicStemSetFrom(await driveRace(fsp.readdir(path.join(folderPath, LOGIC_STEM_SUBDIR))));
+      } catch (e) {}
+    }
+
     const logicProjectName = filesInFolder.find(f => f.toLowerCase().endsWith('.logicx')) || null;
 
     // Find loop files (e.g. drums_loop1_83bars.m4a; legacy .wav also accepted)
@@ -685,8 +743,12 @@ async function scanStems() {
         drumPattern = mj.drum_pattern || null;
         readiness = mj.readiness || null;
         sourceUrl = mj.source_url || null;
-        lyricsText = mj.lyrics || null;
-        lyricsChunks = Array.isArray(mj.lyrics_chunks) ? mj.lyrics_chunks : null;
+        // Only operator-pasted lyrics count (lyrics_source === 'manual').
+        // Legacy Genius-fetched text is ignored; purge_legacy_lyrics.py removes it.
+        if (mj.lyrics_source === 'manual') {
+          lyricsText = mj.lyrics || null;
+          lyricsChunks = Array.isArray(mj.lyrics_chunks) ? mj.lyrics_chunks : null;
+        }
         if (sourceUrl) {
           // Extract the YouTube video ID — the substring that uniquely
           // identifies a video across watch?v=, youtu.be/, and /shorts/.
@@ -704,6 +766,8 @@ async function scanStems() {
         var play_count_meta = mj.play_count | 0;
         var last_played_at_meta = mj.last_played_at || null;
         var drum_machine_default_meta = !!mj.drum_machine_default;
+        var stem_set_meta = STEM_SET_NAMES.includes(mj.stem_set) ? mj.stem_set : null;
+        var lyrics_skip_meta = !!mj.lyrics_skip;
         // Task #129 — last playback mode used ('stems'|'drum'|'backing').
         // Falls back to 'drum' when the legacy flag is set (for songs
         // saved before this field existed).
@@ -765,6 +829,9 @@ async function scanStems() {
       }
     }
 
+    const stemSel = resolveStemSet(stems, logicStems,
+      (typeof stem_set_meta !== 'undefined') ? stem_set_meta : null);
+
     results.push({
       id: `stem-${folder}`,
       type: 'stems',
@@ -819,7 +886,13 @@ async function scanStems() {
       // null when Genius had no match.
       lyrics: lyricsText,
       lyrics_chunks: lyricsChunks,
-      stems: stems,
+      // Fill-missing-lyrics workflow: true = "Skip for all" (instrumental
+      // etc.), set via PUT /api/song/:base/lyrics-skip.
+      lyrics_skip: (typeof lyrics_skip_meta !== 'undefined') ? lyrics_skip_meta : false,
+      stems: stemSel.stems,
+      stemsBySet: stemSel.stemsBySet,
+      stemSets: stemSel.stemSets,
+      stemSet: stemSel.stemSet,
       cached: isStemsFolderCached(folder),
       logicProjectName: logicProjectName,
       loops: Object.values(groupedLoops).sort((a, b) => a.loopNum - b.loopNum),
@@ -1343,6 +1416,12 @@ function overlayCachedState(data) {
   if (!data || !data.songs) return data;
   for (const s of data.songs) {
     if (s.type === 'stems' && s.folderName) {
+      if (recentLyricsSkips.has(s.folderName)) s.lyrics_skip = recentLyricsSkips.get(s.folderName);
+      const pick = recentStemSetPicks.get(s.folderName);
+      if (pick && s.stemsBySet && s.stemsBySet[pick]) {
+        s.stemSet = pick;
+        s.stems = s.stemsBySet[pick];
+      }
       s.cached = isStemsFolderCached(s.folderName);
     } else if (s.type === 'm4a' && s.fileName) {
       s.cached = isM4aCached(s.fileName);
@@ -1778,6 +1857,16 @@ async function sendCachedAudio(req, res, sourcePath, cachePath) {
     });
   }
 }
+
+// Logic Pro stem set — STEMS/<song>/logic/<stem>.m4a, cached under the
+// same relative path in ~/.bt-cache/STEMS/.
+app.get(`/api/audio/stems/:song/${LOGIC_STEM_SUBDIR}/:file`, (req, res) => {
+  const { song, file } = req.params;
+  if (song.includes('..') || file.includes('..') || !/\.m4a$/i.test(file)) return res.status(403).send('Forbidden');
+  return sendCachedAudio(req, res,
+    path.join(STEMS_DIR, song, LOGIC_STEM_SUBDIR, file),
+    path.join(AUDIO_CACHE_STEMS, song, LOGIC_STEM_SUBDIR, file));
+});
 
 app.get('/api/audio/stems/:song/:file', async (req, res) => {
   const { song, file } = req.params;
@@ -2538,12 +2627,12 @@ app.post('/api/loop-cache-status', express.json({ limit: '5mb' }), (req, res) =>
 //      SSD; no Google Drive calls.
 function isStemsFolderCached(folderName) {
   const sentinel = path.join(AUDIO_CACHE_STEMS, folderName, '.cached');
-  if (fs.existsSync(sentinel)) return true;
-
   // Look up the expected file list from the library cache (already in memory)
   const data = libraryCache && libraryCache.data;
-  if (!data) return false;
-  const entry = data.songs.find(s => s.type === 'stems' && s.folderName === folderName);
+  const entry = data && data.songs.find(s => s.type === 'stems' && s.folderName === folderName);
+  // The sentinel can predate a Logic set added later, so when the Logic
+  // set is the one that plays, check its files instead.
+  if (fs.existsSync(sentinel) && !(entry && entry.stemSet === 'logic')) return true;
   if (!entry) return false;
 
   // Only the main mixable stems count toward "ready". Loops + source.wav
@@ -2707,7 +2796,7 @@ async function precacheAllStemsM4a(opts) {
         const src = path.join(STEMS_DIR, song);
         const dst = path.join(AUDIO_CACHE_STEMS, song);
         await fsp.mkdir(dst, { recursive: true });
-        const files = (await fsp.readdir(src)).filter(f => /\.m4a$/i.test(f));
+        const files = await songStemM4as(src, await fsp.readdir(src));
         let localCopied = 0;
         for (const f of files) {
           const cachePath = path.join(dst, f);
@@ -3867,6 +3956,28 @@ app.get('/api/audio/source/:file', (req, res) => {
   return sendCachedAudio(req, res, path.join(AUDIO_SOURCES_DIR, f), path.join(AUDIO_CACHE_SOURCES, f));
 });
 
+// A song's original stereo for the player's SOURCE pill (Bill 2026-11-01):
+// STEMS/<base>/<base>_SOURCE.m4a (CONTRACTS F-9), else the older
+// AUDIO_SOURCES/<base>.m4a. Cache-first like stems; the first play copies
+// it to ~/.bt-cache/SONG_SOURCES/ so the next one works offline. The bulk
+// precache still skips these (F-9) — only songs actually played get cached.
+const AUDIO_CACHE_SONG_SOURCES = path.join(AUDIO_CACHE_DIR, 'SONG_SOURCES');
+app.get('/api/audio/song-source/:base', async (req, res) => {
+  const base = path.basename(String(req.params.base || ''));
+  if (!base || base.startsWith('.') || base.includes('..')) return res.status(400).send('bad song');
+  const file = `${base}_SOURCE.m4a`;
+  const main = path.join(STEMS_DIR, base, file);
+  const mainCache = path.join(AUDIO_CACHE_SONG_SOURCES, file);
+  const alt = path.join(AUDIO_SOURCES_DIR, `${base}.m4a`);
+  const altCache = path.join(AUDIO_CACHE_SOURCES, `${base}.m4a`);
+  const cached = (p) => { try { const st = fs.statSync(p); return st.isFile() && st.size > 0; } catch (e) { return false; } };
+  if (cached(mainCache)) return sendCachedAudio(req, res, main, mainCache);
+  if (cached(altCache)) return sendCachedAudio(req, res, alt, altCache);
+  let onDrive = false;
+  try { onDrive = (await driveRace(fsp.stat(main), 3000)).isFile(); } catch (e) {}
+  return onDrive ? sendCachedAudio(req, res, main, mainCache) : sendCachedAudio(req, res, alt, altCache);
+});
+
 // HARD delete one stereo source file (Bill chose hard delete + confirm).
 // The confirm handshake: the body must repeat the exact filename. Drive
 // unlink is budgeted and fails LOUD; on failure nothing local is touched,
@@ -3897,6 +4008,22 @@ app.delete('/api/audio-sources/:file', async (req, res) => {
 // song_base with a console warning; the catalogwatch fswatch on STEMS/
 // sees the removal and rebuilds CATALOG.json on the Librarian within
 // seconds, so both machines converge without manual steps.
+// Hard delete of one song folder + its caches (shared by DELETE
+// /api/song/:base and the Prune page, 2026-11-01). Throws on a Drive stall
+// so the caller can say the song was NOT fully deleted.
+async function hardDeleteSong(s) {
+  await withDriveBudget(fsp.rm(s.dir, { recursive: true, force: true }), 20000, 'rm-song');
+  await withDriveBudget(fsp.rm(path.join(AUDIO_SOURCES_DIR, s.b + '.m4a'), { force: true }), 8000, 'rm-song-source');
+  try { fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true }); } catch (e) {}
+  try { fs.rmSync(path.join(AUDIO_CACHE_SOURCES, s.b + '.m4a'), { force: true }); } catch (e) {}
+  try { fs.rmSync(path.join(AUDIO_CACHE_SONG_SOURCES, s.b + '_SOURCE.m4a'), { force: true }); } catch (e) {}
+  if (libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs)) {
+    libraryCache.data.songs = libraryCache.data.songs.filter(x => x.folderName !== s.b);
+    try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
+  }
+  _stemsHealthCache.rows = (_stemsHealthCache.rows || []).filter(r => r.base !== s.b);
+}
+
 app.delete('/api/song/:base', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
@@ -3904,21 +4031,265 @@ app.delete('/api/song/:base', async (req, res) => {
     return res.status(428).json({ error: 'confirm required: resend with body {"confirm":"' + s.b + '"}' });
   }
   try {
-    await withDriveBudget(fsp.rm(s.dir, { recursive: true, force: true }), 20000, 'rm-song');
-    await withDriveBudget(fsp.rm(path.join(AUDIO_SOURCES_DIR, s.b + '.m4a'), { force: true }), 8000, 'rm-song-source');
+    await hardDeleteSong(s);
   } catch (e) {
     return res.status(503).json({ error: 'Drive did not answer — the song was NOT fully deleted. Try again when Drive is up.' });
   }
-  try { fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true }); } catch (e) {}
-  try { fs.rmSync(path.join(AUDIO_CACHE_SOURCES, s.b + '.m4a'), { force: true }); } catch (e) {}
-  if (libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs)) {
-    libraryCache.data.songs = libraryCache.data.songs.filter(x => x.folderName !== s.b);
-    try { fs.writeFileSync(LIBRARY_CACHE_FILE, JSON.stringify(libraryCache)); } catch (e) {}
-  }
-  _stemsHealthCache.rows = (_stemsHealthCache.rows || []).filter(r => r.base !== s.b);
   setImmediate(() => { recomputeStemsHealth().catch(() => {}); });
   logActivity('warn', 'library', `song deleted: ${s.b} (stems + source + caches)`);
   res.json({ ok: true, deleted: s.b });
+});
+
+// ── Prune the library (Bill 2026-11-01) ──────────────────────────────────
+// public/prune.html: one page to thin the library fast.
+//   GET  /api/prune/candidates → duplicate-version groups (with a suggested
+//        keeper), live tracks, and rarely played songs (≤ 1 play), each with
+//        the setlists/gigs that use it.
+//   POST /api/prune/apply      → merges each duplicate group into its keeper
+//        and hard-deletes the rest (Bill chose delete-for-good; Drive keeps
+//        its trash for 30 days). Body: { merges: [{keep, remove: [...]}],
+//        remove: [...], confirm: <total songs deleted> }.
+// Merging a removed version into the keeper: play counts add up, last
+// played = the latest, favorite/tags carry over, lyrics text is copied when
+// the keeper has none, and setlist/gig entries are re-pointed at the keeper.
+// Timed data (markers, automation, timed lyrics) is copied only when both
+// folders hold the same YouTube video — another recording's timings would
+// land in the wrong places.
+const PRUNE_STOP = new Set(('the a an of and official music video audio lyrics lyric hd hq remastered ' +
+  'remaster version feat ft with by 4k mv full album edit radio single mono stereo band group visualizer').split(' '));
+function pruneTokens(str) {
+  return String(str || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(w => w && !PRUNE_STOP.has(w) && !/^(19|20)\d\d$/.test(w));
+}
+function pruneVideoId(u) {
+  const m = String(u || '').match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+function pruneHasLyrics(m) {
+  return !!((m.lyrics && String(m.lyrics).trim()) || (Array.isArray(m.lyrics_chunks) && m.lyrics_chunks.length));
+}
+function pruneHasMarkers(m) {
+  return (Array.isArray(m.automation) && m.automation.length > 0) || (Array.isArray(m.sections) && m.sections.length > 0);
+}
+
+// song_base → ["Gig › Setlist", "Setlist title", …] from GIGS/ and SETLISTS/.
+async function pruneReferences() {
+  const refs = new Map();
+  const add = (base, where) => {
+    if (!base) return;
+    if (!refs.has(base)) refs.set(base, new Set());
+    refs.get(base).add(where);
+  };
+  for (const [dir, kind] of [[GIGS_DIR, 'gig'], [SETLISTS_DIR, 'setlist']]) {
+    let files = [];
+    try { files = (await driveRace(fsp.readdir(dir))).filter(f => f.endsWith('.json') && f !== 'registry.json'); } catch (e) { continue; }
+    for (const f of files) {
+      let j;
+      try { j = JSON.parse(await driveRace(fsp.readFile(path.join(dir, f), 'utf8'))); } catch (e) { continue; }
+      const fileName = f.replace(/\.json$/, '');
+      // Gig files hold setlists[].songs[]; setlist files hold songs[]. Any
+      // object with a title and a songs list names the place a song is used.
+      const walk = (o, label) => {
+        if (Array.isArray(o)) return o.forEach(x => walk(x, label));
+        if (!o || typeof o !== 'object') return;
+        if (typeof o.song_base === 'string') add(o.song_base, label || fileName);
+        const here = (typeof o.title === 'string' && Array.isArray(o.songs))
+          ? (label ? `${label} › ${o.title}` : o.title) : label;
+        for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v, here);
+      };
+      walk(j, kind === 'gig' ? ((j && j.title) || fileName) : '');
+    }
+  }
+  return refs;
+}
+
+// Re-point every song_base === from → to in GIGS/*.json and SETLISTS/*.json
+// (dropping a duplicate entry if the setlist already had the keeper).
+async function pruneRepoint(from, to) {
+  let changed = 0;
+  for (const dir of [GIGS_DIR, SETLISTS_DIR]) {
+    let files = [];
+    try { files = (await driveRace(fsp.readdir(dir))).filter(f => f.endsWith('.json')); } catch (e) { continue; }
+    for (const f of files) {
+      const p = path.join(dir, f);
+      let raw;
+      try { raw = await driveRace(fsp.readFile(p, 'utf8')); } catch (e) { continue; }
+      if (!raw.includes(`"${from}"`)) continue;
+      let j;
+      try { j = JSON.parse(raw); } catch (e) { continue; }
+      const fix = (o) => {
+        if (Array.isArray(o)) {
+          o.forEach(fix);
+          // A list of song entries that now names the keeper twice: keep the first.
+          if (o.some(x => x && x.song_base === to)) {
+            let seen = false;
+            for (let i = 0; i < o.length; i++) {
+              if (o[i] && o[i].song_base === to) { if (seen) { o.splice(i, 1); i--; } else seen = true; }
+            }
+          }
+          return;
+        }
+        if (!o || typeof o !== 'object') return;
+        if (o.song_base === from) { o.song_base = to; changed++; }
+        Object.values(o).forEach(v => { if (v && typeof v === 'object') fix(v); });
+      };
+      fix(j);
+      await driveRace(fsp.writeFile(p, JSON.stringify(j, null, 2) + '\n'), 5000);
+    }
+  }
+  return changed;
+}
+
+app.get('/api/prune/candidates', async (req, res) => {
+  try {
+    const rare = Math.max(0, parseInt(req.query.maxPlays, 10) || 1);
+    let folders;
+    try {
+      folders = (await driveRace(fsp.readdir(STEMS_DIR, { withFileTypes: true }), 15000))
+        .filter(d => d.isDirectory() && !d.name.startsWith('.') && !d.name.startsWith('_')).map(d => d.name);
+    } catch (e) {
+      return res.status(503).json({ ok: false, error: 'Drive did not answer — try again in a moment.' });
+    }
+    const songs = (await runWithConcurrency(folders, 8, async (b) => {
+      const m = await readMetaBounded(path.join(STEMS_DIR, b, 'metadata.json')).catch(() => null);
+      if (!m) return null;
+      return {
+        base: b, title: m.title || b, artist: m.artist || '', version: m.version || '',
+        youtube_title: m.youtube_title || '', source_url: m.source_url || '', videoId: pruneVideoId(m.source_url),
+        clip: (typeof m.clip_start_sec === 'number') ? [m.clip_start_sec, m.clip_end_sec] : null,
+        duration: m.duration_sec || null, play_count: m.play_count | 0, last_played_at: m.last_played_at || null,
+        favorite: !!m.favorite, lyrics: pruneHasLyrics(m), markers: pruneHasMarkers(m),
+      };
+    })).filter(x => x && !x.error);
+    const refs = await pruneReferences();
+    songs.forEach(x => { x.usedIn = [...(refs.get(x.base) || [])]; });
+
+    // Group duplicates: same video (but not different chapters of one
+    // video), same title + a shared artist word, or the same words overall.
+    const parent = songs.map((_, i) => i);
+    const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const why = new Map();
+    const join = (a, b, reason) => {
+      const ra = find(a), rb = find(b);
+      if (ra === rb) return;
+      parent[ra] = rb;
+      why.set(rb, new Set([...(why.get(rb) || []), ...(why.get(ra) || []), reason]));
+    };
+    const bucket = (keyFn) => {
+      const m = new Map();
+      songs.forEach((x, i) => { const k = keyFn(x); if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(i); });
+      return [...m.values()].filter(v => v.length > 1);
+    };
+    const sameClip = (a, b) => JSON.stringify(a.clip) === JSON.stringify(b.clip);
+    for (const v of bucket(x => x.videoId)) for (const a of v) for (const b of v) if (a < b && sameClip(songs[a], songs[b])) join(a, b, 'same YouTube video');
+    for (const v of bucket(x => pruneTokens(x.title).join(' '))) {
+      for (const a of v) for (const b of v) {
+        if (a >= b) continue;
+        const aa = new Set(pruneTokens(songs[a].artist));
+        if (pruneTokens(songs[b].artist).some(w => aa.has(w))) join(a, b, 'same title and artist');
+      }
+    }
+    for (const v of bucket(x => { const t = [...new Set([...pruneTokens(x.title), ...pruneTokens(x.artist)])].sort(); return t.length > 1 ? t.join(' ') : null; })) {
+      for (const b of v.slice(1)) join(v[0], b, 'same words');
+    }
+    const groupsMap = new Map();
+    songs.forEach((x, i) => { const r = find(i); if (!groupsMap.has(r)) groupsMap.set(r, []); groupsMap.get(r).push(x); });
+    const rank = (x) => [x.play_count, x.usedIn.length > 0 ? 1 : 0, x.lyrics ? 1 : 0, x.markers ? 1 : 0,
+                         x.version === 'live' ? 0 : 1, x.favorite ? 1 : 0, -x.base.length];
+    const better = (a, b) => { const ra = rank(a), rb = rank(b); for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i]; return false; };
+    const duplicates = [...groupsMap.entries()].filter(([, v]) => v.length > 1).map(([r, v]) => {
+      const keep = v.reduce((best, x) => (better(x, best) ? x : best), v[0]);
+      return { reason: [...(why.get(r) || [])].join(', '), keep: keep.base, songs: v.sort((a, b) => b.play_count - a.play_count) };
+    }).sort((a, b) => a.songs[0].title.localeCompare(b.songs[0].title));
+
+    const isLive = x => x.version === 'live' || /\blive\b/i.test(`${x.title} ${x.youtube_title}`);
+    res.json({
+      ok: true, total: songs.length, maxPlays: rare, duplicates,
+      live: songs.filter(isLive).sort((a, b) => a.title.localeCompare(b.title)),
+      rare: songs.filter(x => x.play_count <= rare).sort((a, b) => a.play_count - b.play_count || a.title.localeCompare(b.title)),
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+async function pruneMergeInto(keep, gone) {
+  const mk = path.join(keep.dir, 'metadata.json');
+  const km = await readMetaBounded(mk);
+  const gm = await readMetaBounded(path.join(gone.dir, 'metadata.json')).catch(() => null);
+  if (!km || !gm) return { repointed: await pruneRepoint(gone.b, keep.b) };
+  km.play_count = (km.play_count | 0) + (gm.play_count | 0);
+  if (gm.last_played_at && (!km.last_played_at || gm.last_played_at > km.last_played_at)) km.last_played_at = gm.last_played_at;
+  if (gm.favorite && !km.favorite) { km.favorite = true; km.favorited_at = gm.favorited_at || new Date().toISOString(); }
+  if (Array.isArray(gm.tags) && gm.tags.length) km.tags = [...new Set([...(km.tags || []), ...gm.tags])];
+  const sameAudio = pruneVideoId(km.source_url) && pruneVideoId(km.source_url) === pruneVideoId(gm.source_url)
+                    && JSON.stringify([km.clip_start_sec, km.clip_end_sec]) === JSON.stringify([gm.clip_start_sec, gm.clip_end_sec]);
+  if (!pruneHasLyrics(km) && pruneHasLyrics(gm)) {
+    for (const k of ['lyrics', 'lyrics_source', 'lyrics_fetched_at', 'lyrics_search_url']) if (gm[k] !== undefined) km[k] = gm[k];
+    if (sameAudio && gm.lyrics_chunks) km.lyrics_chunks = gm.lyrics_chunks;
+    const lt = path.join(gone.dir, 'lyrics.txt'), kt = path.join(keep.dir, 'lyrics.txt');
+    try { if (fs.existsSync(lt) && !fs.existsSync(kt)) fs.copyFileSync(lt, kt); } catch (e) {}
+  }
+  if (sameAudio && !pruneHasMarkers(km) && pruneHasMarkers(gm)) {
+    for (const k of ['automation', 'sections', 'countIn', 'beat_grid']) if (gm[k] !== undefined) km[k] = gm[k];
+  }
+  km.merged_from = [...new Set([...(km.merged_from || []), gone.b])];
+  await writeMetaBounded(mk, km);
+  // Keep the in-memory library row in step so the Performer shows it now.
+  const row = libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs)
+    && libraryCache.data.songs.find(x => x.type === 'stems' && x.folderName === keep.b);
+  if (row) { row.play_count = km.play_count; row.last_played_at = km.last_played_at; row.favorite = !!km.favorite; if (km.tags) row.tags = km.tags; }
+  return { repointed: await pruneRepoint(gone.b, keep.b) };
+}
+
+app.post('/api/prune/apply', async (req, res) => {
+  const body = req.body || {};
+  const merges = Array.isArray(body.merges) ? body.merges : [];
+  const plain = Array.isArray(body.remove) ? body.remove : [];
+  const jobs = [];
+  const seen = new Set();
+  for (const m of merges) {
+    const keep = safeSongDir(m && m.keep);
+    if (!keep) return res.status(400).json({ ok: false, error: 'bad keeper' });
+    for (const r of (m.remove || [])) {
+      const gone = safeSongDir(r);
+      if (!gone || gone.b === keep.b || seen.has(gone.b)) continue;
+      seen.add(gone.b); jobs.push({ gone, keep });
+    }
+  }
+  for (const r of plain) {
+    const gone = safeSongDir(r);
+    if (!gone || seen.has(gone.b)) continue;
+    seen.add(gone.b); jobs.push({ gone, keep: null });
+  }
+  const keepers = new Set(jobs.filter(j => j.keep).map(j => j.keep.b));
+  if (jobs.some(j => keepers.has(j.gone.b))) {
+    return res.status(400).json({ ok: false, error: 'a keeper is also marked for deletion — untick it first' });
+  }
+  if (Number(body.confirm) !== jobs.length) {
+    return res.status(428).json({ ok: false, error: `confirm required: resend with confirm: ${jobs.length}` });
+  }
+  // Merges run one at a time (they rewrite shared setlist files); the
+  // deletes themselves run 4 at a time.
+  const results = [];
+  for (const j of jobs) {
+    if (!j.keep) continue;
+    try { const r = await pruneMergeInto(j.keep, j.gone); j.repointed = r.repointed; }
+    catch (e) { j.mergeError = e.message; }
+  }
+  await runWithConcurrency(jobs, 4, async (j) => {
+    if (j.mergeError) { results.push({ base: j.gone.b, ok: false, error: `merge failed: ${j.mergeError} — not deleted` }); return; }
+    try {
+      await hardDeleteSong(j.gone);
+      results.push({ base: j.gone.b, ok: true, keptAs: j.keep ? j.keep.b : null, repointed: j.repointed || 0 });
+    } catch (e) {
+      results.push({ base: j.gone.b, ok: false, error: 'Drive did not answer — not fully deleted' });
+    }
+  });
+  setImmediate(() => { recomputeStemsHealth().catch(() => {}); });
+  const ok = results.filter(r => r.ok).length;
+  logActivity('warn', 'library', `prune: deleted ${ok} song(s)${results.length - ok ? `, ${results.length - ok} failed` : ''}`);
+  res.json({ ok: true, deleted: ok, failed: results.length - ok, results });
 });
 
 // Manual trigger — POST /api/precache/library forces all four passes immediately
@@ -4039,7 +4410,7 @@ app.post('/api/precache/stems/:song', async (req, res) => {
       let copied = 0;
       // Cache only m4a stems. WAVs stream directly per the audio endpoint
       // policy — caching them would balloon ~/.bt-cache by 6x.
-      const files = (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f));
+      const files = await songStemM4as(folder, await fsp.readdir(folder));
       for (const f of files) {
         // Awaiting each copy yields to other handlers between files. For
         // even more concurrency we could Promise.all, but serial keeps
@@ -4099,7 +4470,7 @@ app.post('/api/precache/setlist/:slug', async (req, res) => {
         // The bounded readdir doubles as the existence check: ENOENT and
         // drive-timeout both land in the catch and we move on.
         const names = await withDriveBudget(fsp.readdir(folder), DRIVE_OP_BUDGET_MS, 'setlist-precache');
-        for (const f of names.filter(f => /\.m4a$/i.test(f))) {
+        for (const f of await songStemM4as(folder, names)) {
           await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
         }
       } catch (e) {}
@@ -4159,6 +4530,195 @@ app.post('/api/enqueue', (req, res) => {
     logActivity('error', 'ingest', `enqueue failed: ${e.message}`, { url });
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── Jam: YouTube backing-track finder (Bill 2026-10-31) ────────────────────
+// public/jam.html searches YouTube (yt-dlp, no API key), previews in a normal
+// YouTube player, and on "Play in simpleStem" asks this server to fetch the
+// audio only (a few seconds) into ~/.bt-cache/JAM/. The Performer plays that
+// file through strips 1–2 (SRC L / SRC R) while the same URL is queued for
+// stemming the usual way (a webloc in INCOMING_WEBLOC).
+const JAM_DIR = path.join(AUDIO_CACHE_DIR, 'JAM');
+try { fs.mkdirSync(JAM_DIR, { recursive: true }); } catch (e) {}
+const jamJobs = new Map();   // videoId → { id, url, state, file, title, channel, duration, error, inLibrary }
+
+function ytDlpBin() {
+  for (const p of ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp', path.join(os.homedir(), '.local/bin/yt-dlp')]) {
+    try { if (fs.existsSync(p)) return p; } catch (e) {}
+  }
+  return 'yt-dlp';
+}
+function ytVideoId(url) {
+  const m = String(url || '').match(/(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+function runYtDlp(args, timeoutMs) {
+  return new Promise((resolve) => {
+    let out = '', err = '', done = false;
+    let child;
+    try {
+      child = spawn(ytDlpBin(), args, { env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ''}` } });
+    } catch (e) { resolve({ code: -1, stdout: '', stderr: e.message }); return; }
+    const timer = setTimeout(() => { if (!done) { try { child.kill('SIGKILL'); } catch (e) {} } }, timeoutMs);
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', e => { err += e.message; });
+    child.on('close', code => { done = true; clearTimeout(timer); resolve({ code, stdout: out, stderr: err }); });
+  });
+}
+// Library rows (Performer's in-memory catalog) that came from this video.
+function libraryBaseForVideo(id) {
+  const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+  const row = songs.find(s => s.type === 'stems' && (s.videoId === id || String(s.source_url || '').includes(id)));
+  return row ? row.folderName : null;
+}
+
+app.get('/api/jam/search', async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 200);
+  if (!q) return res.status(400).json({ error: 'type something to search for' });
+  const n = Math.max(5, Math.min(30, parseInt(req.query.n, 10) || 20));
+  const r = await runYtDlp(['--flat-playlist', '-J', '--no-warnings', `ytsearch${n}:${q}`], 30000);
+  if (r.code !== 0) {
+    return res.status(502).json({ error: 'YouTube search failed (is yt-dlp installed and the Mac online?)', detail: r.stderr.slice(-400) });
+  }
+  try {
+    const j = JSON.parse(r.stdout);
+    const results = (j.entries || []).filter(e => e && e.id && String(e.id).length === 11).map(e => ({
+      id: e.id,
+      url: `https://www.youtube.com/watch?v=${e.id}`,
+      title: e.title || e.id,
+      channel: e.channel || e.uploader || '',
+      duration: typeof e.duration === 'number' ? e.duration : null,
+      views: typeof e.view_count === 'number' ? e.view_count : null,
+      inLibrary: libraryBaseForVideo(e.id),
+    }));
+    res.json({ ok: true, q, results });
+  } catch (e) { res.status(500).json({ error: 'could not read the search results', detail: e.message }); }
+});
+
+function jamQueueStemming(url) {
+  fs.mkdirSync(INCOMING_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const id = ytVideoId(url) || 'link';
+  const file = path.join(INCOMING_DIR, `jam_${stamp}_${id}.webloc`);
+  fs.writeFileSync(file, '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+    '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n');
+  logActivity('info', 'ingest', `jam: webloc queued for stemming: ${path.basename(file)}`, { url });
+}
+function jamJobFromDisk(id) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(JAM_DIR, `${id}.json`), 'utf8'));
+    if (meta.file && fs.existsSync(path.join(JAM_DIR, meta.file))) return { ...meta, id, state: 'ready' };
+  } catch (e) {}
+  return null;
+}
+function jamPublic(job) {
+  return { ...job, inLibrary: libraryBaseForVideo(job.id) || job.inLibrary || null };
+}
+
+// Body: { url, stem: true|false }. Responds at once; poll /api/jam/status/:id.
+app.post('/api/jam/fetch', (req, res) => {
+  const url = String((req.body && req.body.url) || '').trim();
+  const id = ytVideoId(url);
+  if (!id) return res.status(400).json({ error: 'need a YouTube video URL' });
+  const inLib = libraryBaseForVideo(id);
+  if (inLib) return res.json({ id, url, state: 'library', inLibrary: inLib });
+  let job = jamJobs.get(id) || jamJobFromDisk(id);
+  if (job && (job.state === 'ready' || job.state === 'downloading')) {
+    jamJobs.set(id, job);
+    return res.json(jamPublic(job));
+  }
+  const canonical = `https://www.youtube.com/watch?v=${id}`;
+  job = { id, url: canonical, state: 'downloading', startedAt: Date.now(), file: null, title: null, channel: null, duration: null, error: null };
+  jamJobs.set(id, job);
+  if (!(req.body && req.body.stem === false)) {
+    try { jamQueueStemming(canonical); job.stemQueued = true; } catch (e) { job.stemQueued = false; }
+  }
+  res.json(jamPublic(job));
+  // Audio only: YouTube's own m4a when offered (no transcode = fastest).
+  runYtDlp(['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '--no-progress', '--no-warnings',
+            '--no-simulate', '-o', path.join(JAM_DIR, `${id}.%(ext)s`),
+            '--print', 'after_move:%(filepath)s\t%(title)s\t%(channel)s\t%(duration)s', canonical], 180000)
+    .then(r => {
+      const line = r.stdout.trim().split('\n').filter(Boolean).pop() || '';
+      const [fp, title, channel, dur] = line.split('\t');
+      if (r.code !== 0 || !fp || !fs.existsSync(fp)) {
+        job.state = 'failed';
+        job.error = (r.stderr || 'download failed').trim().split('\n').pop().slice(0, 300);
+        logActivity('error', 'ingest', `jam: audio fetch failed for ${id}: ${job.error}`, { url: canonical });
+        return;
+      }
+      job.file = path.basename(fp);
+      job.title = title || id;
+      job.channel = channel || '';
+      job.duration = Number(dur) || null;
+      job.state = 'ready';
+      job.readyMs = Date.now() - job.startedAt;
+      try {
+        fs.writeFileSync(path.join(JAM_DIR, `${id}.json`), JSON.stringify({
+          file: job.file, title: job.title, channel: job.channel, duration: job.duration, url: canonical,
+          fetched_at: new Date().toISOString() }, null, 2));
+      } catch (e) {}
+      logActivity('info', 'ingest', `jam: audio ready for "${job.title}" in ${Math.round(job.readyMs / 1000)}s`, { url: canonical });
+    });
+});
+
+// "YT Jamn Tracks" in the Jam tab: every backing track already pulled in
+// through Jam (~/.bt-cache/JAM/<id>.json + audio), newest first, filtered
+// by ?q= (all words must appear in title or channel). Works offline.
+app.get('/api/jam/jammed', (req, res) => {
+  const words = String(req.query.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const out = [];
+  let names = [];
+  try { names = fs.readdirSync(JAM_DIR).filter(f => /^[\w-]{11}\.json$/.test(f)); } catch (e) {}
+  for (const f of names) {
+    const id = f.slice(0, 11);
+    const job = jamJobFromDisk(id);
+    if (!job) continue;
+    const hay = `${job.title || ''} ${job.channel || ''}`.toLowerCase();
+    if (words.length && !words.every(w => hay.includes(w))) continue;
+    out.push({ id, url: job.url || `https://www.youtube.com/watch?v=${id}`, title: job.title || id,
+               channel: job.channel || '', duration: job.duration || null, fetched_at: job.fetched_at || null,
+               inLibrary: libraryBaseForVideo(id) });
+  }
+  out.sort((a, b) => String(b.fetched_at || '').localeCompare(String(a.fetched_at || '')));
+  res.json({ ok: true, results: out });
+});
+
+app.get('/api/jam/status/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[\w-]{11}$/.test(id)) return res.status(400).json({ error: 'bad id' });
+  const job = jamJobs.get(id) || jamJobFromDisk(id);
+  if (!job) return res.status(404).json({ error: 'unknown jam', id });
+  res.json(jamPublic(job));
+});
+
+app.get('/api/audio/jam/:file', (req, res) => {
+  const f = path.basename(String(req.params.file || ''));
+  if (!/^[\w-]{11}\.\w{2,5}$/.test(f)) return res.status(400).send('bad file');
+  const p = path.join(JAM_DIR, f);
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.sendFile(p, { dotfiles: 'allow' });   // ~/.bt-cache is a dot-folder
+});
+
+// Title + channel for a YouTube URL (ingest tracker). oEmbed, 4 s budget;
+// offline → nulls, and the tracker just shows the video id.
+app.get('/api/yt/title', async (req, res) => {
+  const url = String(req.query.url || '');
+  const id = ytVideoId(url);
+  if (!id) return res.json({ ok: false, title: null, channel: null });
+  const job = jamJobs.get(id) || jamJobFromDisk(id);
+  if (job && job.title) return res.json({ ok: true, title: job.title, channel: job.channel || null });
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`, { signal: ctl.signal });
+    clearTimeout(t);
+    if (!r.ok) return res.json({ ok: false, title: null, channel: null });
+    const j = await r.json();
+    res.json({ ok: true, title: j.title || null, channel: j.author_name || null });
+  } catch (e) { res.json({ ok: false, title: null, channel: null }); }
 });
 
 // Activity feed (Bill 2026-07-09) — see logActivity() near BOOT_VERSION.
@@ -5417,6 +5977,8 @@ app.get('/api/song/:base/automation', async (req, res) => {
       // The portal uses them to snap user-placed section markers to real
       // musical boundaries (see snapTimeToBeat in app.js).
       sectionCandidates: Array.isArray(meta.sectionCandidates) ? meta.sectionCandidates : [],
+      // Cached drum-stem beat grid (PUT /api/song/:base/beat-grid).
+      beat_grid: (meta.beat_grid && Array.isArray(meta.beat_grid.beats)) ? meta.beat_grid : null,
       countIn:    !!meta.countIn,
       // Per-song pitch shift settings — half-steps and cents. Default to 0
       // when absent so the client can always render the knobs at neutral.
@@ -5877,6 +6439,84 @@ app.put('/api/song/:base/lyrics', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Beat grid cache (Bill 2026-10-28). The Performer's visualizer beat-tracks
+// the drums stem (beats + which beat is the 1, from the kick); the first
+// load saves it here so the looper, markers and click always use the same
+// grid. Body: { beats: [sec…], downbeat: 0..3, bpm, source, fit }.
+app.put('/api/song/:base/beat-grid', express.json({ limit: '1mb' }), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const b = req.body || {};
+  const beats = Array.isArray(b.beats) ? b.beats.map(Number) : [];
+  if (beats.length < 8 || beats.length > 20000 || beats.some((t, i) => !isFinite(t) || t < 0 || (i && t <= beats[i - 1]))) {
+    return res.status(400).json({ error: 'beats must be 8+ increasing seconds' });
+  }
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.beat_grid = {
+      v: 1,
+      beats: beats.map(t => Math.round(t * 1000) / 1000),
+      downbeat: ((parseInt(b.downbeat, 10) || 0) % 4 + 4) % 4,
+      bpm: Number(b.bpm) || null,
+      source: String(b.source || ''),
+      fit: String(b.fit || ''),
+      saved_at: new Date().toISOString(),
+    };
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    res.json({ ok: true, beats: meta.beat_grid.beats.length, downbeat: meta.beat_grid.downbeat });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Fill-missing-lyrics workflow (Bill 2026-10-23): "Skip for all" marks a
+// song (an instrumental, say) so later runs leave it out. Saved as
+// metadata.json `lyrics_skip`. Body: { skip: true | false }.
+app.put('/api/song/:base/lyrics-skip', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const skip = !!(req.body && req.body.skip);
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    if (skip) meta.lyrics_skip = true; else delete meta.lyrics_skip;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    recentLyricsSkips.set(s.b, skip);
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      const row = Array.isArray(songs) ? songs.find(x => x.type === 'stems' && x.folderName === s.b) : null;
+      if (row) row.lyrics_skip = skip;
+    } catch (e) {}
+    res.json({ ok: true, lyrics_skip: skip });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Fill-missing-lyrics queue, read from disk (Bill 2026-11-02). The library
+// list comes from the Librarian's CATALOG.json, which lags behind saves and
+// skips made here — so skipped instrumentals kept coming back. A song needs
+// lyrics when it has no lyrics.txt, no pasted (lyrics_source 'manual')
+// lyrics in metadata.json, and isn't marked lyrics_skip. Old auto-fetched
+// lyrics don't count.
+app.get('/api/lyrics/missing', async (req, res) => {
+  let folders;
+  try {
+    folders = (await driveRace(fsp.readdir(STEMS_DIR, { withFileTypes: true }), 15000))
+      .filter(d => d.isDirectory() && !d.name.startsWith('.') && !d.name.startsWith('_')).map(d => d.name);
+  } catch (e) {
+    return res.status(503).json({ ok: false, error: 'Drive did not answer — try again in a moment.' });
+  }
+  const out = await runWithConcurrency(folders, 8, async (b) => {
+    const dir = path.join(STEMS_DIR, b);
+    const m = await readMetaBounded(path.join(dir, 'metadata.json')).catch(() => null);
+    if (!m || m.lyrics_skip || recentLyricsSkips.get(b)) return null;
+    if (m.lyrics && String(m.lyrics).trim() && m.lyrics_source === 'manual') return null;
+    try { if ((await driveRace(fsp.readFile(lyricsTxtPath(dir), 'utf8'))).trim()) return null; } catch (e) {}
+    return b;
+  });
+  res.json({ ok: true, bases: out.filter(x => typeof x === 'string') });
+});
+
 app.put('/api/song/:base/favorite', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
@@ -6239,6 +6879,35 @@ app.put('/api/song/:base/drum-default', express.json(), (req, res) => {
 // next open and auto-engages. Backward compat: drum_machine_default is
 // kept in sync (drum=true, stems/backing=false) so any legacy consumer
 // still sees the correct flag.
+// Per-song stem set: which six-stem set plays ('demucs' | 'logic').
+// Saved as metadata.json `stem_set`; see LOGIC_STEM_SUBDIR above.
+app.put('/api/song/:base/stem-set', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const set = req.body && req.body.set;
+  if (!STEM_SET_NAMES.includes(set)) {
+    return res.status(400).json({ error: `set must be one of ${STEM_SET_NAMES.join(', ')}` });
+  }
+  const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+  const row = Array.isArray(songs) ? songs.find(x => x.type === 'stems' && x.folderName === s.b) : null;
+  if (row && row.stemsBySet && !row.stemsBySet[set]) {
+    return res.status(409).json({ error: `no ${set} stems for this song` });
+  }
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    meta.stem_set = set;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    recentStemSetPicks.set(s.b, set);
+    if (row && row.stemsBySet) {
+      row.stemSet = set;
+      row.stems = row.stemsBySet[set];
+    }
+    res.json({ ok: true, stemSet: set, stems: row ? row.stems : null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const PLAYBACK_MODES = new Set(['stems', 'drum', 'backing']);
 app.put('/api/song/:base/playback-mode', express.json(), (req, res) => {
   const s = safeSongDir(req.params.base);
@@ -7353,6 +8022,10 @@ app.post('/api/song/:base/refetch', (req, res) => {
     for (const f of ['source.wav', 'source.info.json', 'vocals.wav','drums.wav','bass.wav','other.wav','piano.wav','guitar.wav','bass+drums.wav']) {
       fs.rmSync(path.join(s.dir, f), { force: true });
     }
+    // The stereo original is from the old URL too (F-9) — without this,
+    // stem.sh would rebuild source.wav from it instead of downloading.
+    fs.rmSync(path.join(s.dir, `${s.b}_SOURCE.m4a`), { force: true });
+    fs.rmSync(path.join(AUDIO_CACHE_SONG_SOURCES, `${s.b}_SOURCE.m4a`), { force: true });
     // also any loop files + the whole cached copy
     try { for (const f of fs.readdirSync(s.dir)) if (/loop\d+_\d+bars\.(wav|m4a)$/i.test(f)) fs.rmSync(path.join(s.dir, f), { force: true }); } catch (e) {}
     fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true });
@@ -7446,8 +8119,11 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song folder not found' });
-  const sourceWav = path.join(s.dir, 'source.wav');
-  if (!fs.existsSync(sourceWav)) return res.status(404).json({ error: 'source.wav not found in song folder' });
+  // Since 2026-11-01 songs keep only <base>_SOURCE.m4a (no WAVs, F-1);
+  // Logic opens the m4a just as well. A leftover source.wav still wins.
+  let sourceWav = path.join(s.dir, 'source.wav');
+  if (!fs.existsSync(sourceWav)) sourceWav = path.join(s.dir, `${s.b}_SOURCE.m4a`);
+  if (!fs.existsSync(sourceWav)) return res.status(404).json({ error: 'no source.wav or _SOURCE.m4a in song folder' });
 
   // Pull metadata.json — every field is best-effort. Missing values are
   // passed to KBM as empty strings so the macro can branch on them.
@@ -7472,16 +8148,17 @@ app.post('/api/song/:base/logic-restem', (req, res) => {
     bars = String(Math.ceil((meta.bpm * activeDur) / 240));
   }
 
-  // Six-stem targets — as of 2026-06-27 the portal mixes stems
-  // client-side and Logic Pro 12's Stem Splitter produces the same
-  // 6 stems Demucs produces. Bounce each stem into the SAME song folder
-  // as source.wav, using the canonical filenames the portal reads:
-  //   vocals.m4a  drums.m4a  bass.m4a  guitar.m4a  piano.m4a  other.m4a
-  // The four legacy variables (M4ADir, VMix, VGMix, VGBMix, DOMix) are
-  // kept for backward compat with any old macro version still in the
-  // wild, but they now point at the same STEMS folder so a macro that
-  // ignores the new variables at least writes to the right place.
-  const stemDir = s.dir;
+  // Six-stem targets — Logic Pro 12's Stem Splitter produces the same
+  // 6 stems Demucs produces. Since 2026-10-20 the Logic set lives in its
+  // own subfolder so it sits beside the Demucs set instead of
+  // overwriting it:
+  //   STEMS/<song>/logic/{vocals,drums,bass,guitar,piano,other}.m4a
+  // The legacy variables (M4ADir, M4ABase) are kept for backward compat
+  // with any old macro version still in the wild; they point at the same
+  // logic/ folder so an old macro can't overwrite the Demucs stems.
+  const stemDir = path.join(s.dir, LOGIC_STEM_SUBDIR);
+  try { fs.mkdirSync(stemDir, { recursive: true }); }
+  catch (e) { return res.status(500).json({ error: `could not create ${stemDir}: ${e.message}` }); }
   const vars = {
     // paths
     SourceDir:      s.dir,
@@ -7658,7 +8335,7 @@ app.post('/api/precache/gig/:slug', (req, res) => {
       const folder = path.join(STEMS_DIR, base);
       try {
         if (fs.existsSync(folder)) {
-          for (const f of (await fsp.readdir(folder)).filter(f => /\.m4a$/i.test(f))) {
+          for (const f of await songStemM4as(folder, await fsp.readdir(folder))) {
             try {
               await ensureCachedAsync(path.join(folder, f), path.join(AUDIO_CACHE_STEMS, base, f));
               stems++;

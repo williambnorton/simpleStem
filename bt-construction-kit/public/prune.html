@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>simpleStem · Prune</title>
+<!--
+  Prune (Bill 2026-11-01) — thin the song library quickly.
+    • Duplicates: versions of the same song (same YouTube video, same
+      title + artist, or the same words). The suggested keeper is ticked
+      (most played, then used in a setlist, has lyrics/markers, studio over
+      live); the others are marked to go and get MERGED into the keeper:
+      plays add up, favorite/tags/lyrics carry over, setlists re-point.
+    • Live tracks and rarely played songs (≤ 1 play): tick what should go.
+    • Nothing happens until "Delete …" and its confirm. Deletes are for good
+      (Drive keeps its trash 30 days). API: GET /api/prune/candidates,
+      POST /api/prune/apply.
+-->
+<style>
+  :root { --ink:#16181d; --muted:#6b7280; --line:#e3e5ea; --card:#fff; --bg:#f5f6f8; --red:#d11a2a; --green:#1e9e57; --amber:#b7791f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); padding-bottom: 90px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.05rem; }
+  #tabs { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  #tabs button { font: inherit; font-weight: 700; padding: 7px 12px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
+  #tabs button + button { border-left: 1.5px solid var(--ink); }
+  #tabs button.on { background: var(--ink); color: #fff; }
+  #filter { flex: 1; min-width: 180px; max-width: 320px; font: inherit; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 10px; }
+  .hint { color: var(--muted); font-size: 0.85rem; }
+  main { padding: 14px 18px; max-width: 1100px; }
+  .tools { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
+  .tools button { font: inherit; font-size: 0.85rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; border: 1.5px solid var(--line); background: #fff; cursor: pointer; }
+  .group { background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .group.off { opacity: 0.55; }
+  .ghead { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+  .ghead .why { color: var(--muted); }
+  .row { display: grid; grid-template-columns: 74px 30px 1fr auto; gap: 10px; align-items: center; padding: 6px 10px; border-top: 1px solid #f0f1f4; }
+  .row:first-child { border-top: 0; }
+  .row .t { font-weight: 700; }
+  .row .m { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+  .row.goes .t { text-decoration: line-through; color: var(--red); }
+  .pill { display: inline-block; font-size: 0.7rem; font-weight: 800; padding: 1px 6px; border-radius: 6px; margin-right: 4px; vertical-align: 1px; }
+  .p-keep { background: var(--green); color: #fff; }
+  .p-go { background: var(--red); color: #fff; }
+  .p-set { background: #e8eefc; color: #2a4cb3; }
+  .p-live { background: #fdf0d9; color: var(--amber); }
+  .p-lyr { background: #eef7f1; color: var(--green); }
+  .keepsel { font: inherit; font-size: 0.8rem; font-weight: 800; padding: 4px 6px; border-radius: 7px; border: 1.5px solid var(--line); background: #fff; cursor: pointer; }
+  .keepsel.k { background: var(--green); border-color: var(--green); color: #fff; }
+  .keepsel.g { background: #fff; border-color: var(--red); color: var(--red); }
+  .play { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: #fff; cursor: pointer; font-size: 0.8rem; }
+  .play.on { background: var(--ink); color: #fff; }
+  .plays { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+  .list .row { grid-template-columns: 30px 30px 1fr auto; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1.5px solid var(--line); padding: 12px 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; z-index: 6; }
+  #bar .sum { flex: 1; min-width: 200px; }
+  #go { font: inherit; font-weight: 800; padding: 10px 18px; border-radius: 10px; border: 0; background: var(--red); color: #fff; cursor: pointer; }
+  #go:disabled { background: #d5d7dc; color: #888; cursor: default; }
+  .msg { color: var(--muted); padding: 16px 2px; }
+  dialog { border: 0; border-radius: 12px; padding: 18px 20px; max-width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  dialog h2 { margin: 0 0 8px; font-size: 1.05rem; }
+  dialog ul { margin: 8px 0; padding-left: 18px; max-height: 220px; overflow: auto; font-size: 0.85rem; }
+  dialog .btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+  dialog button { font: inherit; font-weight: 800; padding: 9px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: #fff; cursor: pointer; }
+  dialog button.danger { background: var(--red); border-color: var(--red); color: #fff; }
+  @media (max-width: 700px) { .row { grid-template-columns: 64px 28px 1fr; } .row .plays { grid-column: 3; text-align: left; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧹 Prune library</h1>
+  <div id="tabs">
+    <button data-tab="dup" class="on">Duplicates</button>
+    <button data-tab="live">Live</button>
+    <button data-tab="rare">Rarely played</button>
+  </div>
+  <input id="filter" type="search" placeholder="Filter by title or artist">
+  <span class="hint" id="count"></span>
+</header>
+<main id="main"><div class="msg">Reading the library…</div></main>
+<div id="bar">
+  <div class="sum" id="sum">Nothing marked yet.</div>
+  <button id="go" disabled>Delete</button>
+</div>
+<dialog id="confirm">
+  <h2 id="ctitle"></h2>
+  <div id="cbody"></div>
+  <div class="btns">
+    <button id="cno">Cancel</button>
+    <button id="cyes" class="danger">Delete for good</button>
+  </div>
+</dialog>
+<audio id="audio" preload="none"></audio>
+<script>
+const $ = s => document.querySelector(s);
+let data = null;
+let tab = 'dup';
+// Duplicate groups: per group, which base is kept and whether the group is
+// pruned at all. Live / rare: a set of bases ticked for deletion.
+const dupState = new Map();   // groupIndex → { on, keep }
+const ticked = new Set();
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function ago(iso, plays) {
+  if (!iso) return plays ? 'last play date unknown' : 'never played';
+  const d = Math.round((Date.now() - new Date(iso).getTime()) / 86400000);
+  return d <= 0 ? 'played today' : d === 1 ? 'played yesterday' : `last played ${d} days ago`;
+}
+function mins(sec) { if (!sec) return ''; const m = Math.floor(sec / 60), s = Math.round(sec % 60); return `${m}:${String(s).padStart(2, '0')}`; }
+function matches(x) {
+  const q = $('#filter').value.trim().toLowerCase();
+  return !q || `${x.title} ${x.artist} ${x.base}`.toLowerCase().includes(q);
+}
+function info(x) {
+  const bits = [];
+  if (x.version) bits.push(x.version);
+  if (x.duration) bits.push(mins(x.duration));
+  bits.push(ago(x.last_played_at, x.play_count));
+  if (x.youtube_title && x.youtube_title !== x.title) bits.push(`YouTube: “${x.youtube_title}”`);
+  bits.push(x.base);
+  return bits.map(esc).join(' · ');
+}
+function pills(x) {
+  let h = '';
+  if (x.version === 'live') h += '<span class="pill p-live">LIVE</span>';
+  if (x.lyrics) h += '<span class="pill p-lyr">lyrics</span>';
+  if (x.markers) h += '<span class="pill p-lyr">markers</span>';
+  if (x.favorite) h += '<span class="pill p-lyr">★</span>';
+  for (const u of x.usedIn || []) h += `<span class="pill p-set" title="Used in this gig/setlist">${esc(u)}</span>`;
+  return h;
+}
+
+// A song marked to go in a duplicate group can't also be ticked elsewhere.
+function dupFate() {
+  const keep = new Set(), go = new Set();
+  data.duplicates.forEach((g, i) => {
+    const st = dupState.get(i);
+    if (!st.on) return;
+    keep.add(st.keep);
+    g.songs.forEach(x => { if (x.base !== st.keep) go.add(x.base); });
+  });
+  return { keep, go };
+}
+
+function render() {
+  const main = $('#main');
+  if (!data) return;
+  const fate = dupFate();
+  if (tab === 'dup') {
+    const gs = data.duplicates.map((g, i) => ({ g, i })).filter(({ g }) => g.songs.some(matches));
+    $('#count').textContent = `${data.duplicates.length} groups · ${data.duplicates.reduce((n, g) => n + g.songs.length - 1, 0)} extra versions`;
+    main.innerHTML = `<div class="tools"><button data-act="dup-all-on">Prune every group</button><button data-act="dup-all-off">Keep everything</button>
+      <span class="hint">Green = keep. The others are merged into it (plays, favorite, tags, lyrics, setlist entries), then deleted. Click a version to keep it instead.</span></div>` +
+      (gs.length ? gs.map(({ g, i }) => {
+        const st = dupState.get(i);
+        return `<div class="group ${st.on ? '' : 'off'}" data-g="${i}">
+          <div class="ghead"><label><input type="checkbox" data-gon="${i}" ${st.on ? 'checked' : ''}> prune this group</label><span class="why">${esc(g.reason)}</span></div>
+          ${g.songs.map(x => {
+            const k = x.base === st.keep;
+            return `<div class="row ${st.on && !k ? 'goes' : ''}">
+              <button class="keepsel ${st.on ? (k ? 'k' : 'g') : ''}" data-keep="${i}|${esc(x.base)}">${k ? 'KEEP' : (st.on ? 'delete' : 'keep?')}</button>
+              <button class="play" data-play="${esc(x.base)}" title="Listen">▶</button>
+              <div><div class="t">${esc(x.title)} ${x.artist ? `<span style="font-weight:400">— ${esc(x.artist)}</span>` : ''} ${pills(x)}</div><div class="m">${info(x)}</div></div>
+              <div class="plays">${x.play_count} play${x.play_count === 1 ? '' : 's'}</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('') : '<div class="msg">No duplicate groups match.</div>');
+  } else {
+    const list = (tab === 'live' ? data.live : data.rare).filter(matches);
+    $('#count').textContent = tab === 'live' ? `${data.live.length} live tracks` : `${data.rare.length} songs played ${data.maxPlays} time${data.maxPlays === 1 ? '' : 's'} or fewer`;
+    main.innerHTML = `<div class="tools"><button data-act="tick-all">Tick all shown</button><button data-act="tick-free">Tick all shown not in a setlist</button><button data-act="untick-all">Untick all shown</button>
+      <span class="hint">Ticked songs are deleted. Songs already going as duplicates are shown struck through.</span></div>
+      <div class="group list">` + (list.length ? list.map(x => {
+        const dupGo = fate.go.has(x.base), dupKeep = fate.keep.has(x.base);
+        const on = ticked.has(x.base);
+        return `<div class="row ${dupGo || on ? 'goes' : ''}">
+          <input type="checkbox" data-tick="${esc(x.base)}" ${on || dupGo ? 'checked' : ''} ${dupGo ? 'disabled title="Already going as a duplicate"' : ''}>
+          <button class="play" data-play="${esc(x.base)}" title="Listen">▶</button>
+          <div><div class="t">${esc(x.title)} ${x.artist ? `<span style="font-weight:400">— ${esc(x.artist)}</span>` : ''} ${dupKeep ? '<span class="pill p-keep">duplicate keeper</span>' : ''}${pills(x)}</div><div class="m">${info(x)}</div></div>
+          <div class="plays">${x.play_count} play${x.play_count === 1 ? '' : 's'}</div>
+        </div>`;
+      }).join('') : '<div class="msg">Nothing matches.</div>') + '</div>';
+  }
+  summarize();
+}
+
+function plan() {
+  const fate = dupFate();
+  const merges = [];
+  data.duplicates.forEach((g, i) => {
+    const st = dupState.get(i);
+    if (!st.on) return;
+    merges.push({ keep: st.keep, remove: g.songs.map(x => x.base).filter(b => b !== st.keep) });
+  });
+  const remove = [...ticked].filter(b => !fate.go.has(b));
+  const clash = remove.filter(b => fate.keep.has(b));
+  return { merges, remove, clash, n: merges.reduce((n, m) => n + m.remove.length, 0) + remove.length };
+}
+function summarize() {
+  const p = plan();
+  const nm = p.merges.reduce((n, m) => n + m.remove.length, 0);
+  $('#sum').innerHTML = p.n
+    ? `<b>${p.n}</b> song${p.n === 1 ? '' : 's'} to delete — ${nm} duplicate${nm === 1 ? '' : 's'} merged into ${p.merges.length} keeper${p.merges.length === 1 ? '' : 's'}, ${p.remove.length} other${p.remove.length === 1 ? '' : 's'}.` +
+      (p.clash.length ? ` <span style="color:var(--red)">${p.clash.length} ticked song(s) are duplicate keepers — untick them or choose another keeper.</span>` : '')
+    : 'Nothing marked yet.';
+  $('#go').disabled = !p.n || p.clash.length > 0;
+  $('#go').textContent = p.n ? `Delete ${p.n} song${p.n === 1 ? '' : 's'}…` : 'Delete';
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('#tabs button')) {
+    tab = t.closest('#tabs button').dataset.tab;
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    render(); window.scrollTo(0, 0); return;
+  }
+  if (t.dataset.keep) {
+    const [i, base] = t.dataset.keep.split('|');
+    const st = dupState.get(+i);
+    st.keep = base; st.on = true; render(); return;
+  }
+  if (t.dataset.gon !== undefined) { const st = dupState.get(+t.dataset.gon); st.on = t.checked; render(); return; }
+  if (t.dataset.tick !== undefined) { t.checked ? ticked.add(t.dataset.tick) : ticked.delete(t.dataset.tick); render(); return; }
+  if (t.dataset.play) { playToggle(t); return; }
+  const act = t.dataset.act;
+  if (act) {
+    if (act === 'dup-all-on' || act === 'dup-all-off') dupState.forEach(st => { st.on = act === 'dup-all-on'; });
+    else {
+      const list = (tab === 'live' ? data.live : data.rare).filter(matches);
+      for (const x of list) {
+        if (act === 'untick-all') ticked.delete(x.base);
+        else if (act === 'tick-all' || !(x.usedIn && x.usedIn.length)) ticked.add(x.base);
+      }
+    }
+    render();
+  }
+});
+$('#filter').addEventListener('input', render);
+
+// Listen: the song's original stereo if it has one, else its vocals stem.
+let playingBtn = null;
+function playToggle(btn) {
+  const a = $('#audio');
+  if (playingBtn === btn) { a.pause(); btn.classList.remove('on'); btn.textContent = '▶'; playingBtn = null; return; }
+  if (playingBtn) { playingBtn.classList.remove('on'); playingBtn.textContent = '▶'; }
+  const base = btn.dataset.play;
+  playingBtn = btn; btn.classList.add('on'); btn.textContent = '❚❚';
+  a.onerror = () => {
+    if (a.dataset.fallback !== base) { a.dataset.fallback = base; a.src = `/api/audio/stems/${encodeURIComponent(base)}/vocals.m4a`; a.play().catch(() => {}); }
+  };
+  a.dataset.fallback = '';
+  a.src = `/api/audio/song-source/${encodeURIComponent(base)}`;
+  a.currentTime = 0;
+  a.play().catch(() => {});
+}
+
+$('#go').addEventListener('click', () => {
+  const p = plan();
+  const names = new Map();
+  const all = [...data.duplicates.flatMap(g => g.songs), ...data.live, ...data.rare];
+  all.forEach(x => names.set(x.base, x.artist ? `${x.title} — ${x.artist}` : x.title));
+  const used = [...p.remove, ...p.merges.flatMap(m => m.remove)].filter(b => (all.find(x => x.base === b) || {}).usedIn?.length);
+  $('#ctitle').textContent = `Delete ${p.n} song${p.n === 1 ? '' : 's'} for good?`;
+  $('#cbody').innerHTML =
+    (p.merges.length ? `<p>${p.merges.reduce((n, m) => n + m.remove.length, 0)} duplicate versions are merged into their keepers first (plays, favorite, tags, lyrics; setlist entries re-pointed).</p>` : '') +
+    (used.filter(b => p.remove.includes(b)).length ? `<p style="color:var(--red)">${used.filter(b => p.remove.includes(b)).length} of the other songs are in a gig or setlist; those entries will be skipped when the setlist plays.</p>` : '') +
+    `<ul>${[...p.merges.flatMap(m => m.remove), ...p.remove].map(b => `<li>${esc(names.get(b) || b)}</li>`).join('')}</ul>
+     <p class="hint">Stems, SOURCE and caches are removed. Google Drive keeps deleted files in its trash for 30 days.</p>`;
+  $('#confirm').showModal();
+});
+$('#cno').addEventListener('click', () => $('#confirm').close());
+$('#cyes').addEventListener('click', async () => {
+  const p = plan();
+  $('#cyes').disabled = true; $('#cyes').textContent = 'Deleting…';
+  try {
+    const r = await fetch('/api/prune/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merges: p.merges, remove: p.remove, confirm: p.n }) });
+    const j = await r.json().catch(() => ({}));
+    $('#confirm').close();
+    if (!r.ok || !j.ok) { alert(`Prune failed: ${(j && j.error) || r.status}`); }
+    else {
+      const bad = (j.results || []).filter(x => !x.ok);
+      alert(`Deleted ${j.deleted} song${j.deleted === 1 ? '' : 's'}.` + (bad.length ? `\n\n${bad.length} not deleted:\n` + bad.map(x => `• ${x.base}: ${x.error}`).join('\n') : '') +
+            '\n\nReload the Performer tab to see the trimmed library.');
+      ticked.clear();
+      await load();
+    }
+  } catch (e) { alert('Server not answering — nothing was confirmed deleted.'); $('#confirm').close(); }
+  $('#cyes').disabled = false; $('#cyes').textContent = 'Delete for good';
+});
+
+async function load() {
+  $('#main').innerHTML = '<div class="msg">Reading the library…</div>';
+  try {
+    const r = await fetch('/api/prune/candidates');
+    const ct = r.headers.get('content-type') || '';
+    if (/text\/html/.test(ct)) { $('#main').innerHTML = '<div class="msg">The server is an older version — press ⟳ reset in simpleStem, then reload this page.</div>'; return; }
+    data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'server error');
+  } catch (e) { $('#main').innerHTML = `<div class="msg">Couldn't read the library: ${esc(e.message)}</div>`; return; }
+  dupState.clear();
+  data.duplicates.forEach((g, i) => dupState.set(i, { on: true, keep: g.keep }));
+  render();
+}
+load();
+</script>
+</body>
+</html>

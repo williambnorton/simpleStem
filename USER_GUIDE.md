@@ -1,313 +1,353 @@
-# simpleStem — user guide
+# simpleStem User's Guide
 
-This guide is for bandmates using the simpleStem portal to rehearse and play
-live. You don't need to know how the audio gets prepared; you just need to
-know how to drive the portal once a song is in it.
+*Updated 2026-08-28. Covers portal build V1.0828 and later.*
 
-If you're a developer, [ARCHITECTURE.md](ARCHITECTURE.md) is the document for
-you instead.
+This guide is for the band. Part 1 is for anyone driving the portal at
+rehearsal or on stage. Part 2 is for the operator who runs the machines
+(Bill). Developers should read [ARCHITECTURE.md](ARCHITECTURE.md) instead,
+and Claude-the-coding-agent reads [CLAUDE.md](CLAUDE.md).
+
+Every view of the portal has a **? button** in the bottom-right corner
+that explains that view's features in place. This guide goes deeper and
+adds the workflows.
 
 ---
 
 ## What this is
 
-A web page (we call it "the portal") that runs on the band's MacBook. It
-shows every song the band has ever asked for, lets you play each one with
-the original mix or as 6 separated stems (vocals · drums · bass · guitar
-· piano · other), and lets you group songs into setlists tied to real
-gigs.
+A web app ("the portal") on the band's MacBook at `http://localhost:3000`.
+Every song the band has asked for lives in it as six separated stems
+(vocals, drums, bass, guitar, piano, other). The portal mixes those six
+stems live in the browser, so any part can be muted, soloed, boosted, or
+routed to its own channel on the XR18 mixer. Songs group into setlists,
+setlists group into gigs.
 
-You can drive it from a touch screen, a phone, or a regular keyboard —
-the controls are sized for the stage.
+Everything plays from the laptop's own disk. The venue needs no internet:
+that is a design guarantee, not a hope, and there is a test for it.
+
+### The four views
+
+| View | What it is for |
+|---|---|
+| 🎛 **Performer** | The main mixer. Rehearsal and the gig itself. |
+| 🤖 **Librarian** | The song pipeline dashboard: what is downloading, rendering, failing. |
+| 🎹 **MIDI** | The control room for the Helix, XR18, and Logic. Test patches here first. |
+| 🖥 **Desktop** | A file-level inspection view: song folders, the cache, device cards. |
+
+The buttons under the simpleStem logo switch views. The lit button is
+where you are.
 
 ---
+
+# Part 1: Playing
 
 ## Getting started
 
-Open `http://localhost:3000` on the MacBook running the portal. You'll
-see three regions:
+Open `http://localhost:3000`. Three regions:
 
 ```
-┌───────────────────┬──────────────────────────────────────────┐
-│  Gig sidebar      │   Player + Stem Mixer (top)              │
-│  - active gig     │   Library table (bottom)                 │
-│  - setlists       │                                          │
-│  - songs in order │   [tabs] Library · Loop Library          │
-└───────────────────┴──────────────────────────────────────────┘
++-------------------+------------------------------------------+
+|  Gig sidebar      |   Player + Stem Mixer (top)              |
+|  - active gig     |   Library table (bottom)                 |
+|  - setlists       |                                          |
+|  - songs in order |                                          |
++-------------------+------------------------------------------+
 ```
 
-The sidebar drives WHAT to play (gig → setlist → song); the player area
-drives HOW it sounds.
-
----
+The sidebar decides WHAT to play (gig, setlist, song). The player area
+decides HOW it sounds.
 
 ## Adding a song from YouTube
 
-Type or paste a YouTube link into the **"Paste YouTube URL + Enter"** box
-in the library header and hit Enter. The song goes into a queue; the next
-10–25 minutes the laptop downloads it, analyzes BPM + key, and separates
-the audio into 6 stems. While that happens you can keep using everything
-else.
+Paste a YouTube link into the **"Paste YouTube URL + Enter"** box and hit
+Enter. The laptop downloads it, analyzes BPM and key, and separates it
+into six stems. That takes 10 to 25 minutes per song; everything else
+keeps working while it cooks, and the queue chips in the toolbar show
+the phase (downloading, analyzing, separating, mixing).
 
-You can paste:
+You can paste a single video, a playlist (every video becomes a song,
+grouped into a setlist named after the playlist), or a chaptered full
+album video (each chapter becomes its own song).
 
-- A single video — `https://www.youtube.com/watch?v=...`
-- A playlist — every video becomes its own song, automatically grouped
-  into a setlist with the playlist's name.
-- A chaptered "full album" video — each chapter becomes its own song.
+If a red **✕ webloc failed** chip appears, the download failed: usually
+a deleted, age-restricted, or heavily protected video. Hover the chip
+for the fix.
 
-When the song is ready it appears in the library with a green STEMS chip
-and a duration. The queue counter in the toolbar tells you how many songs
-are still cooking behind it.
+## The library
 
----
-
-## The library row
-
-Each row is one song. Reading left to right:
+Each row is one song:
 
 | Column | What's in it |
 |---|---|
-| **SET** | Checkbox — adds the song to the active setlist's batch queue |
-| **★ / Title** | Yellow star toggles Favorites; clicking the row loads the song |
+| **SET** | Checkbox. Batch-adds the song to the active setlist. |
+| **★ / Title** | Star toggles Favorite; clicking the row loads the song. |
 | **Artist** | |
-| **Dur** | mm:ss — total song length |
-| **Tempo** | BPM (and original BPM if it differs after pitch-shift) |
-| **Key** | Musical key |
-| **Singer** | Pulldown: Bill / Matt / Dan / JD / All / — |
-| **Action** | `⋯` — per-song menu (metadata, refetch, options) |
+| **Dur** | Song length, mm:ss. |
+| **Tempo** | BPM. |
+| **Key** | Musical key. |
+| **Singer** | Pulldown: Bill / Matt / Dan / JD / All. Changing it re-buckets the singer views immediately. |
+| **Drum** | The drum pattern tag from the band sheet, like `120@130`. |
+| **Action** | `⋯` per-song menu. |
 
-Click anywhere on the row to load the song with stems. The little play
-icon next to the title starts it immediately. The star icon next to the
-title (and on every other surface showing this song) marks it a Favorite.
-
----
+Filters above the table cover tempo, key, singer, and readiness. A song
+with no BPM or tags stays visible when all filters are checked.
 
 ## Picking a gig
 
-The picker at the top of the sidebar lists every real gig (Joyce,
-Sunday_Practice, May Day 26, …) plus several synthetic gigs that the
-portal builds on the fly:
+The sidebar picker lists every real gig plus built-in views the portal
+assembles on the fly:
 
 | Gig | What it contains |
 |---|---|
-| ▶ **YouTube Sync** | Every setlist that came from a YouTube playlist |
-| ✎ **Manual Setlists** | Every setlist you saved by hand in the planner |
-| ⟲ **Recents** | The last 50 songs you loaded |
-| ★ **Favorites** | Every song with the star turned on |
-| 🎤 **Bill Songs** | Every song where Singer = Bill (and Matt / Dan / JD) |
-| 🎙 **RoundRobin** | Every singer-tagged song, alternating Bill → Matt → Dan → JD |
+| ▶ **YouTube Sync** | Setlists mirrored from YouTube playlists. Read-only: the next sync would overwrite edits. |
+| ✎ **Manual Setlists** | Setlists you saved by hand. Fully editable. |
+| ⟲ **Recents** | The last 50 songs you loaded. |
+| ★ **Favorites** | Every starred song. |
+| 🎤 **Bill / Matt / Dan / JD Songs** | Singer-filtered buckets. |
+| 🎙 **RoundRobin** | All four buckets shuffled and interleaved so no singer goes twice in a row. |
 
-The four singer gigs + RoundRobin are great when a member is going to
-sit a set out — pick the RoundRobin gig and the next song never lands
-on the missing singer. Set who sings each song with the **Singer**
-column dropdown in the library row, or let the Mitchell Park Band
-sheet drive it automatically.
-
----
+RoundRobin is the tool for a singer stepping out mid-set: the rotation
+keeps moving with no dead air.
 
 ## Building a setlist
 
-Two ways:
-
-1. **Batch-add from the library.** Check the SET box on every song you
-   want, then click the green + on any ghost row that appears in the
-   sidebar. All checked songs land in the setlist in one shot.
-2. **Drag and drop.** Drag a song row between setlists inside the same
-   gig.
-
-To save a brand-new setlist that's not part of any real gig, type a
-title in the "+ New Manual Setlist" entry — it'll appear under the
-Manual Setlists synthetic gig and survive restarts.
-
----
+Check the SET box on the songs you want and batch-add them, or drag a
+song row between setlists inside the same gig. A brand-new standalone
+setlist gets created from the "+ New Manual Setlist" entry and lives
+under Manual Setlists, surviving restarts.
 
 ## Playing a song
 
-The player lives above the library and gives you:
+Transport: play/pause, stop, next-in-setlist, plain loop, and **Speed**
+(0.5x to 1.5x for practice; pitch follows speed). Click or drag anywhere
+in the waveform to scrub; lyrics, sections, and automation all follow
+the playhead in both directions.
 
-- Big ★ next to the title (Favorite toggle)
-- **▶ / ‖** play / pause
-- **■** stop
-- **⏭** next song in the active setlist
-- **⟲** plain looping toggle
-- **Speed** — slow it down 0.5×–1.5× for practice (pitch follows speed)
+**Pitch Fix** has two knobs. **SEMI** transposes up to 3 half-steps
+either way in half-step stops; tempo moves with pitch by design, which
+keeps the audio path glitch-free. **FINE** trims 50 cents either way in
+1-cent steps for tuning to a recording. RESET zeroes both, and a song
+change also resets pitch.
 
-Below those, the **LOOPER** button + **Pitch Fix** panel:
-
-- **LOOPER** — loops the SECTION the playhead is currently in (sections
-  are the colored boundaries on the timeline; place them with the
-  number keys 1–9 during playback, drag the orange divider to move
-  one). The big LOOPER button shows the section name and time range
-  while engaged.
-- **Click track** (alarm-clock icon) — plays a four-on-the-floor click
-  at the song BPM during the current section.
-- **Count-in 4** (hash icon) — plays four beats of clicks BEFORE the
-  section starts.
-- **Pitch Fix** — two knobs:
-  - **CENT** — fine tune ±50 cents in 1-cent steps.
-  - **SEMI** — half-steps in 0.5 increments, capped at ±3. The marked
-    stops are −3, −2½, −2, −1½, −1, −½, 0, +½, +1, +1½, +2, +2½, +3.
-    Drag, scroll, use −/+, or arrow keys. The numbered stops around
-    the dial show where you'll land.
-  - **RESET** zeroes both. (Pitch resets at song change too.)
-
----
+**LOOPER** repeats the section the playhead is in, seamlessly, for
+practice. Next to it, the **click** button plays a click at song BPM
+during the current section and **count-in** plays four beats before the
+section starts. Both act on the current section only.
 
 ## The Stem Mixer
 
-One strip per instrument: Vocals · Drums · Bass · Guitar · Piano · Other.
+One strip per stem. Each has a fader, **M** mute, **S** solo, and two
+latching boost buttons: **+5** and **+10** dB. Boost rides on top of the
+fader and is never recorded into automation, so a quiet stem gets help
+without rewriting the mix. The routing buttons send the stem to XR18
+output channels; each stem's home channel is highlighted, and the
+numbered buttons add extra outputs. With no XR18 connected the audio
+goes to the laptop output and everything else still works.
 
-For each strip:
+## Sections
 
-- **Fader** — volume.
-- **M** — mute the channel.
-- **S** — solo the channel (everything else mutes).
-- **+5 / +10** — boost the strip by +5 dB or +10 dB. They're latching
-  3-state buttons: click +5 to engage, click again to disengage. +5 and
-  +10 are mutually exclusive on the same strip. Boost rides on top of
-  the fader; it does NOT change the fader position or any recorded
-  automation.
-- **Routing buttons** (V/O/L/R/G/B/P/D + numbered) — send this stem to
-  one or more XR18 output channels. The "home" channel for each stem
-  (V for vocals, D for drums, etc.) is highlighted by default. Click
-  numbers (3–10, 17–18) to add extra outputs.
+Press number keys 1 to 9 during playback to drop a section divider at
+the playhead. Placement snaps to a detected boundary within 2 seconds
+(the faint grey ticks show where the detector thinks sections start)
+and falls back to the BPM grid. Drag a divider to move it, hover and
+press Delete to remove it. Each section can carry a click-in flag so
+the click and count-in fire automatically at its top.
 
-When no XR18 is connected the strips still light up — the audio just
-goes to the laptop's built-in output.
+## The timeline: actions and lyrics
 
----
+The yellow lane under the visualizer holds the song's automation: MIDI
+events to the Helix, XR18, or Logic, sample clips, and skip jumps. The
+**+ Action**, **+ Clip**, and **Skip Section** buttons author them; each
+event fires as the playhead crosses its timestamp.
 
-## Sections + the section toolbar
+**Nothing auto-saves. SAVE is the only commit.** SAVE persists all
+actions including placed lyric lines. CLEAR wipes actions but keeps
+sections. INIT replaces only the initial-state event.
 
-While a song plays, press number keys 1–9 to drop a section divider
-at the playhead. The section gets a color (1=red, 2=orange, …) and a
-short label like "intro" or "chorus". Drag a divider with the mouse
-to move it; if the LOOPER is engaged it follows automatically.
+**+ Lyric** places the next cached lyric line at the playhead; placed
+lines paint the overlay during playback. When no lines remain, the same
+button reads Fetch Lyrics and opens the editor, where lyrics get pasted
+in from a search.
 
-The section editor below the timeline lets you:
+## Drum machine, clips, and backing tracks
 
-- Click a divider to rename / recolor it.
-- Hover and hit Delete/Backspace to remove a divider — the previous
-  section absorbs the gap.
-- Toggle a section's **Click 4 beats in** flag so the click-track + 4
-  pre-roll fire automatically when you start playback at the top of
-  that section.
+The drum pattern pill next to BPM (like `120@130`) names the pattern
+the drum machine plays for that song; the per-song pulldown changes it
+and takes effect immediately. Clips curated into the library appear in
+the Sampler panel and the + Clip picker. Backing tracks are matched to
+songs automatically and available where the song loads.
 
-Section boundaries snap to a detected onset within ±2 seconds; the
-faint grey ticks on the timeline show where the auto-detector thought
-sections start.
+## Library Analytics
 
----
-
-## MIDI automation
-
-A song can carry a small timeline of events that fire as the playhead
-moves through it — typically Helix patch changes, XR18 fader rides,
-or Logic Pro automation. The lane just below the visualizer is the
-editor. M / V / D / B / G / P / O / F block-letter markers represent
-the different event types; drag to move, click to edit, Delete to
-remove.
-
-For now events fire as one-shots (no continuous ramps); set up the
-ramp targets on the receiving gear if you need a fade.
+Bottom of the sidebar: songs by tempo band, by key, and by singer.
+Derived live from song metadata; the singer counts reflect the in-row
+pulldowns and the band sheet sync.
 
 ---
 
-## Library Analytics (sidebar)
+# Part 2: Operating the system
 
-Bottom of the sidebar:
+## The machines
 
-- **Songs by Tempo** — how many slow / medium / fast songs you've got.
-- **Songs by Key** — count per key, sorted by count (read-only — use
-  the Key dropdown to filter).
-- **Songs by Singer** — Bill / Matt / Dan / JD / All / (unassigned).
+Three roles share one Google Drive folder:
 
-These are derived from `metadata.json`; the Singer counts reflect the
-in-row dropdown + the Mitchell Park Band sheet sync.
+| Role | Machine | Job |
+|---|---|---|
+| **Performer** | MacBook Pro (36 GB) | Runs the portal and the Demucs renders. The gig machine. |
+| **Song Librarian** | Mac mini (8 GB, always on) | Ingests YouTube URLs, analyzes audio, keeps the catalog, pulls the band sheet daily. |
+| **Clip Librarian** | Any Mac with Logic | Curates sample clips into the library. |
 
----
+The mini never runs Demucs (it crashed on 8 GB). The laptop never runs
+the ingest watcher. Commands for each machine are labeled; do not cross
+them.
 
-## Common workflows
+## Everyday commands
 
-### Practicing a song at home
+On the laptop, always from `~/simpleStem-code` (never the Drive copy):
 
-1. Find the song. Click the title to load it.
-2. In the Stem Mixer, solo or mute the parts to focus on. Boost a
-   quiet stem with +5 or +10 dB if you need to hear it without
-   touching the fader curve.
-3. Drop **Speed** to 0.75× or 0.80× to learn fast passages.
-4. Place section markers, then engage **LOOPER** to repeat the tricky
-   section.
+```
+./performer.sh start
+./performer.sh status
+./performer.sh test
+./performer.sh reset
+./performer.sh drill
+./performer.sh pause
+./performer.sh resume
+./performer.sh logs runner
+./performer.sh stop
+```
 
-### Preparing for a gig
+`start` brings up all five services (render queue, MIDI sidecar, portal,
+caffeinate, sidecar watchdog) and finishes with the gig test. `status`
+shows queue depth and the current render phase. `pause` idles the queue
+after the current song, without killing a render mid-song.
 
-1. Build the setlist in the gig sidebar (drag from library, batch-
-   add via checkboxes, or pull singer pseudo-gigs together).
-2. Star the setlist's songs as Favorites so they're easy to relocate.
-3. Click each row a day in advance so the audio caches locally.
-4. The night of the gig, flip **Gig Mode** on to hide anything that
-   isn't cached and could spin on cell-tether bandwidth.
+On the mini:
 
-### Sitting a singer out for a set
+```
+./librarian.sh start
+./librarian.sh status
+./librarian.sh catalog
+./librarian.sh sheet
+```
 
-1. Open the **🎙 RoundRobin** pseudo-gig.
-2. Confirm the missing singer's name in the Library Analytics → Songs
-   by Singer is reasonable; tag mis-assigned songs by changing the
-   row's Singer dropdown.
-3. Skip the missing singer's slots in the RoundRobin's sequence (or
-   manually drop those songs from your real gig's setlist).
+## The three safety commands
 
-### Adding a song you just heard at a venue
+**`test`** is the gig readiness check: services up, portal answering
+inside its latency budget, Drive answering, no stale lock, stems cached,
+files fast-start, XR18 healthy, MIDI ports present, disk and power sane.
+It prints PASS/WARN/FAIL lines and a verdict. `start` and `restart` run
+it automatically.
 
-1. Paste the YouTube URL in the library header and hit Enter.
-2. Walk away for 10–25 minutes (it's CPU-bound).
-3. When the green STEMS chip shows up, set the Singer column to
-   whoever in the band is going to sing it.
+**`reset`** is the retry when a start looks wrong. It stops everything,
+clears whatever a reboot or a wedged Drive left behind (stale render
+lock, port squatters, dead pidfiles), waits for Drive to actually
+answer with visible progress, restarts all five services, and runs the
+gig test. Drive being down never blocks it: the portal comes up on the
+local cache and reset says so plainly.
+
+**`drill`** is the venue simulation. It turns Wi-Fi off, runs the full
+gig test, holds every page-load and song-load endpoint to a 2-second
+budget, does an offline COLD BOOT (all services stopped, a stale lock
+planted deliberately, full start, portal must answer within 30 seconds),
+an offline reset round-trip, and turns Wi-Fi back on. VENUE READY or it
+names the failing line. Run it before any gig at a new venue.
+
+## The offline contract
+
+If a song is in the library, its six stems are on the laptop's own disk
+in `~/.bt-cache`, ready to play with no internet. The cache fills at
+boot and hourly on its own. The **Flash Cache** button (hard-drive icon
+in the mixer header) forces a full fill before leaving for a gig;
+shift-click overwrites files already cached. The honest test: turn off
+Wi-Fi at home and play a song end to end.
+
+## Gig-day checklist
+
+1. The night before: `./performer.sh drill`. Fix anything that FAILs.
+2. Flash Cache, then spot-play two songs with Wi-Fi off.
+3. At the venue: power first. Two gigs have failed on battery; the gig
+   test FAILs on battery for that reason.
+4. `./performer.sh start`, wait for GIG READY.
+5. XR18 button in the portal so the mixer is the output device.
+6. If anything looks wrong at any point: `./performer.sh reset`. It is
+   the retry button and it is safe.
+
+## Adding songs from audio files (not YouTube)
+
+Drop any audio file (m4a, mp3, wav, aiff, flac) into `INCOMING_AUDIO/` in
+the Drive folder. The Librarian ingests it: a stereo fast-start m4a lands
+in `AUDIO_SOURCES/` (that folder is what you import into Easy Performer on
+the iPad via the Drive app), and the song is queued for a normal six-stem
+render on the laptop. Title and artist come from the file's tags, or from
+an "Artist - Title" filename. Originals are kept in
+`INCOMING_AUDIO/_ingested/` until you clear them.
+
+The Librarian view's **Audio sources** panel lists these files with a play
+button (listen-check through the speakers) and a delete. The library rows
+there also carry a delete: it removes the stems folder, the stereo source,
+and all caches after you type the folder name to confirm, and setlists
+that referenced the song simply skip it.
+
+For bulk triage of a folder of candidate files before dropping them in,
+run `./filter_audio.sh <directory>` on either Mac: it plays 10 seconds of
+each file; press D to delete, A to move to `Archive/`, space to keep, R to
+replay, Q to quit. Deletes stage into a `.deleted/` folder and you get one
+purge confirmation at the end.
+
+## When the pipeline shows red
+
+A **✕ webloc failed** chip means yt-dlp could not fetch a URL. The
+`.failed` file sits in `INCOMING_WEBLOC/` on Drive. Update yt-dlp on
+the mini, then rename the file back to `.webloc` to retry, or delete it
+to dismiss. A **failed render** means Demucs crashed on a job; the job
+waits in `STEM_QUEUE/_failed` and never retries on its own.
+
+## The band sheet
+
+The Google Sheet ("New Mitchell Park Song List") is the canonical source
+for who sings what, who must be present, drum patterns, and readiness.
+The mini pulls it daily and writes those fields into each song. An
+in-portal singer change is for one-off triage; the next sheet sync may
+overwrite it, so permanent changes belong in the sheet.
 
 ---
 
 ## Troubleshooting
 
-**The song I added doesn't show up.**
-Check the queue chip in the toolbar. If it says "N awaiting render",
-your song is in line. If it's idle and the song still isn't there,
-the download may have failed silently — try pasting the URL again.
+**The song I added doesn't show up.** Check the queue chips. "N awaiting
+render" means it is in line behind a 10-25 minute render. A red webloc
+chip means the download failed; hover it.
 
-**Audio is slow to start, then stutters.**
-First play of an uncached song streams from Drive while the cache
-warms in the background. Subsequent plays are instant. Flip Gig Mode
-on for shows to hide anything that hasn't been pre-cached.
+**The portal didn't come up after a reboot.** `./performer.sh reset`.
+This is exactly what it is for. If Drive is still mounting, reset says
+so and the portal runs from the local cache meanwhile.
 
-**LOOPER engages but the level jumps.**
-Should be fixed — boost (+5/+10) is independent of LOOPER. If you
-still hear a jump, check that the boost on the strip you're listening
-to isn't latched.
+**A song won't play at the venue.** It should be impossible; the drill
+and Flash Cache exist to make it so. If it happens anyway, the wedge
+watchdog banner names the stall, and reset recovers the stack offline.
 
-**Sections aren't where I want them.**
-Drop them with number keys 1–9 while playing; drag the orange divider
-afterward to nudge. Delete a divider by hovering it and pressing
-Delete/Backspace.
+**The Singer change disappeared after a day.** The band sheet overwrote
+it. Make the change in the sheet.
 
-**The Singer dropdown change disappeared after a day.**
-The band's Google Sheet ("New Mitchell Park Song List") is the
-authoritative source. The portal pulls it daily, which can overwrite
-an in-portal edit. Update the sheet for permanent changes; use the
-in-row dropdown for one-off triage.
+**Pitch only goes 3 half-steps.** By design. A bigger shift should be a
+re-render, not a live stretch.
 
-**Pitch Fix only goes to ±3 half-steps.**
-By design — the band's vocal comfort range rarely needs more, and
-capping it keeps the dial precise. Anything bigger should be a
-re-render rather than a real-time shift.
+**LOOPER level jumps.** Check whether a +5/+10 boost is latched on the
+strip you are hearing.
 
-**The Re-stem in Logic button** (under each song's `⋯` options menu)
-is for advanced use only; ignore it unless you've been shown how to
-set it up.
+**The version number in the header tells you the build.** When
+reporting a problem, include it: it is the timestamp of the newest code
+file, like V1.08280845.
 
 ---
 
 ## More
 
-- For the band's developer / forker — [ARCHITECTURE.md](ARCHITECTURE.md).
-- For Claude-the-coding-agent — [CLAUDE.md](CLAUDE.md).
-- The full project repo — [github.com/williambnorton/simpleStem](https://github.com/williambnorton/simpleStem).
+- Developer's map: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Agent instructions: [CLAUDE.md](CLAUDE.md)
+- How the system works, live: open `http://localhost:3000/README.html` on
+  either machine. It explains each part of the pipeline with live readings
+  on top: links waiting, the render queue in order, what is rendering, and
+  which services are up. A red strip on Step 4 means the renderer has
+  stalled; run `./performer.sh reset` on the laptop.

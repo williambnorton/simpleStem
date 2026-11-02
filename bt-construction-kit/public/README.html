@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>simpleStem README</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  /* Layout: one column of explanatory panels; live readings sit ON each panel in a "meter" strip.
+     Colors follow the lanes: green = you, blue = Librarian, red = Drive, amber = Performer. */
+  :root {
+    --bg: #f7f6f2;
+    --panel: #ffffff;
+    --ink: #1d222b;
+    --muted: #5b6472;
+    --line: #d9d5cc;
+    --red: #c62828;
+    --red-soft: #fdecea;
+    --amber: #b26a00;
+    --amber-soft: #fdf3e3;
+    --green: #1b7a3d;
+    --green-soft: #e8f4ec;
+    --blue: #23557d;
+    --blue-soft: #e9f1f7;
+    --code-bg: #eef0f3;
+    --meter-bg: #f1efe9;
+    --font-body: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c; --panel: #1c2129; --ink: #e6e4de; --muted: #9aa3b0; --line: #333a45;
+      --red: #ff6b5e; --red-soft: #3a2020; --amber: #e8a94a; --amber-soft: #33290f;
+      --green: #5fbf7f; --green-soft: #15291c; --blue: #7db3dd; --blue-soft: #16232e;
+      --code-bg: #262c36; --meter-bg: #171b22;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171c; --panel: #1c2129; --ink: #e6e4de; --muted: #9aa3b0; --line: #333a45;
+    --red: #ff6b5e; --red-soft: #3a2020; --amber: #e8a94a; --amber-soft: #33290f;
+    --green: #5fbf7f; --green-soft: #15291c; --blue: #7db3dd; --blue-soft: #16232e;
+    --code-bg: #262c36; --meter-bg: #171b22;
+    color-scheme: dark;
+  }
+  html, body { background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.55 var(--font-body); margin: 0; padding-block: 1.5rem 4rem; padding-inline: 16px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0; letter-spacing: .01em; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .7rem; border-bottom: 1px solid var(--line); padding-bottom: .35rem; text-wrap: balance; }
+  h3 { margin: 0; font-size: .98rem; text-wrap: balance; }
+  p { margin: 0; }
+  .sub { color: var(--muted); max-width: 70ch; }
+  code, .mono { font-family: var(--font-mono); font-size: .86em; background: var(--code-bg); border-radius: 4px; padding: .05em .35em; }
+  a { color: var(--blue); }
+
+  /* Header + live bar */
+  .top { display: flex; flex-wrap: wrap; gap: .8rem 1.4rem; align-items: flex-end; justify-content: space-between; margin-bottom: .6rem; }
+  .live { display: inline-flex; align-items: center; gap: .55rem; font-size: .8rem; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem; font-variant-numeric: tabular-nums; }
+  .live b { color: var(--ink); letter-spacing: .06em; font-size: .72rem; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--green); }
+  .dot.warn { background: var(--amber); }
+  .dot.bad { background: var(--red); }
+  .live.on .dot { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .live.on .dot { animation: none; } }
+
+  .legend { display: flex; flex-wrap: wrap; gap: .5rem 1.3rem; margin: .4rem 0 .9rem; }
+  .chip { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; color: var(--muted); }
+  .sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+  .sw.green { background: var(--green-soft); border-color: var(--green); }
+  .sw.blue { background: var(--blue-soft); border-color: var(--blue); }
+  .sw.red { background: var(--red-soft); border-color: var(--red); }
+  .sw.amber { background: var(--amber-soft); border-color: var(--amber); }
+
+  .alert { display: none; border-left: 4px solid var(--red); background: var(--red-soft); border-radius: 6px; padding: .7rem 1rem; margin: .8rem 0; font-size: .9rem; }
+  .alert.show { display: block; }
+
+  /* Journey */
+  .journey { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .7rem; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane); border-radius: 8px; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .stage.you { --lane: var(--green); }
+  .stage.lib { --lane: var(--blue); }
+  .stage.drive { --lane: var(--red); }
+  .stage.perf { --lane: var(--amber); }
+  .stage .body { padding: .7rem .8rem .8rem; display: flex; flex-direction: column; gap: .35rem; flex: 1; }
+  .num { font: 700 .72rem/1 var(--font-mono); color: var(--lane); letter-spacing: .06em; }
+  .lane { font-size: .62rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .stage p { font-size: .82rem; color: var(--muted); line-height: 1.45; }
+  .where { font-family: var(--font-mono); font-size: .72rem; background: var(--code-bg); border-radius: 4px; padding: .25rem .4rem; overflow-wrap: anywhere; }
+  .time { margin-top: auto; font-size: .74rem; font-weight: 600; }
+
+  /* The instrumentation layer: a strip laid on top of each panel */
+  .meter { background: var(--meter-bg); border-bottom: 1px dashed var(--line); padding: .55rem .8rem; display: flex; flex-direction: column; gap: .2rem; min-height: 4.2rem; font-variant-numeric: tabular-nums; }
+  .meter .row { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+  .meter .big { font: 700 1.5rem/1 var(--font-mono); }
+  .meter .cap { font-size: .74rem; color: var(--muted); }
+  .meter .detail { font-size: .74rem; overflow-wrap: anywhere; }
+  .meter .tag { font-size: .62rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; border-radius: 3px; padding: .1em .45em; background: var(--code-bg); color: var(--muted); }
+  .meter.ok .tag { background: var(--green-soft); color: var(--green); }
+  .meter.warn .tag { background: var(--amber-soft); color: var(--amber); }
+  .meter.bad .tag { background: var(--red-soft); color: var(--red); }
+  .meter.bad .big { color: var(--red); }
+  .meter.static .big { color: var(--muted); }
+  .meter ol { margin: .15rem 0 0; padding-left: 1.2rem; font-size: .74rem; }
+
+  /* Machines map */
+  .machines { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: .6rem; align-items: stretch; }
+  .machine { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane); border-radius: 8px; min-width: 0; overflow: hidden; }
+  .machine.lib { --lane: var(--blue); }
+  .machine.drive { --lane: var(--red); }
+  .machine.perf { --lane: var(--amber); }
+  .machine .body { padding: .7rem .9rem .8rem; }
+  .machine .role { font-size: .8rem; color: var(--muted); margin: .15rem 0 .5rem; }
+  .svc { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+  .svc li { display: grid; grid-template-columns: 9px 1fr; column-gap: .55rem; align-items: baseline; font-size: .82rem; }
+  .svc li .dot { transform: translateY(1px); }
+  .svc li span.n { font-family: var(--font-mono); font-size: .78rem; }
+  .svc li small { grid-column: 2; color: var(--muted); font-size: .74rem; }
+  .flow { display: flex; flex-direction: column; justify-content: center; gap: 1.4rem; font-size: .72rem; color: var(--muted); text-align: center; min-width: 5.5rem; }
+  .flow span { display: block; }
+  .flow .arrow { font-size: 1.1rem; color: var(--ink); line-height: 1; }
+  @media (max-width: 860px) {
+    .machines { grid-template-columns: 1fr; }
+    .flow { flex-direction: row; justify-content: center; gap: 1.2rem; min-width: 0; }
+    .flow .arrow { transform: rotate(90deg); display: inline-block; }
+  }
+
+  /* Gig strip */
+  .gig { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
+  .gig .cell { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--lane); border-radius: 8px; padding: .6rem .8rem; font-size: .82rem; min-width: 0; }
+  .gig .cell.drive { --lane: var(--red); }
+  .gig .cell.local { --lane: var(--amber); }
+  .gig .cell.svc { --lane: var(--blue); }
+  .gig .cell.hw { --lane: var(--green); }
+  .gig .cell strong { display: block; font-size: .88rem; }
+  .gig .cell span { color: var(--muted); }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .7rem; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .9rem; font-size: .86rem; min-width: 0; }
+  .fact strong { display: block; margin-bottom: .2rem; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem; }
+  details { margin-top: .8rem; }
+  details > summary { cursor: pointer; font-weight: 600; padding: .5rem 0; }
+  details > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .tree { font-family: var(--font-mono); font-size: .8rem; line-height: 1.75; overflow-x: auto; }
+  .tree .d { font-weight: 600; }
+  .tree .drive { color: var(--red); }
+  .tree .local { color: var(--amber); }
+  .tree .codec { color: var(--blue); }
+  .tree .note { color: var(--muted); font-family: var(--font-body); font-size: .78rem; font-weight: 400; }
+  .tree .dead { text-decoration: line-through; opacity: .65; }
+  .tree .tag { font-size: .62rem; font-weight: 700; letter-spacing: .06em; border-radius: 3px; padding: .1em .4em; margin-right: .3em; }
+  .tree .tag.drive { background: var(--red-soft); color: var(--red); }
+  .tree .tag.local { background: var(--amber-soft); color: var(--amber); }
+  .tree .tag.codet { background: var(--blue-soft); color: var(--blue); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
+  td.red-cell { color: var(--red); font-weight: 600; }
+  td.amber-cell { color: var(--amber); font-weight: 600; }
+  td.green-cell { color: var(--green); font-weight: 600; }
+  footer { margin-top: 2.4rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: .8rem; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>simpleStem README</h1>
+      <p class="sub">How the system works, with live readings laid on top. Each panel explains one part of the system; the shaded strip at the top of a panel shows what that part is doing right now.</p>
+    </div>
+    <div class="live" id="live"><span class="dot"></span><b id="live-mode">STATIC</b><span id="live-text">Checking for live data…</span></div>
+  </div>
+  <div class="legend">
+    <span class="chip"><span class="sw green"></span> You</span>
+    <span class="chip"><span class="sw blue"></span> Librarian (Mac mini)</span>
+    <span class="chip"><span class="sw red"></span> Google Drive folder</span>
+    <span class="chip"><span class="sw amber"></span> Performer (MacBook Pro)</span>
+  </div>
+  <div class="alert" id="alert"></div>
+
+  <h2>A song's journey, from link to playable</h2>
+  <div class="journey">
+    <div class="stage you">
+      <div class="meter static" id="m-drop"><div class="row"><span class="big">–</span><span class="cap">links waiting</span></div></div>
+      <div class="body">
+        <span class="num">STEP 1</span><span class="lane">You &middot; any machine</span>
+        <h3>Drop a link</h3>
+        <p>Paste a YouTube URL in the portal's Add box, run <code>webloc_drop.sh &lt;url&gt;</code>, or use the Chrome Quick Action. Each writes a <code>.webloc</code> file.</p>
+        <span class="where">INCOMING_WEBLOC/</span>
+        <span class="time">Instant</span>
+      </div>
+    </div>
+    <div class="stage lib">
+      <div class="meter static" id="m-fetch"><div class="row"><span class="big">–</span><span class="cap">failed downloads</span></div></div>
+      <div class="body">
+        <span class="num">STEP 2</span><span class="lane">Librarian &middot; webloc_watch.sh</span>
+        <h3>Download and analyze</h3>
+        <p>yt-dlp fetches the audio once and metadata.py finds BPM and key. A video ID already in the library is skipped. A failed fetch stays behind as a <code>.failed</code> file.</p>
+        <span class="where">STEMS/&lt;slug&gt;/source.wav</span>
+        <span class="time">1 to 2 min</span>
+      </div>
+    </div>
+    <div class="stage drive">
+      <div class="meter static" id="m-queue"><div class="row"><span class="big">–</span><span class="cap">waiting to render</span></div></div>
+      <div class="body">
+        <span class="num">STEP 3</span><span class="lane">Drive &middot; render queue</span>
+        <h3>Wait in line</h3>
+        <p>One <code>.json</code> job per song. The next job is the first filename alphabetically, not the oldest drop.</p>
+        <span class="where">STEM_QUEUE/&lt;slug&gt;.json</span>
+        <span class="time">Behind every job ahead of it</span>
+      </div>
+    </div>
+    <div class="stage perf">
+      <div class="meter static" id="m-render"><div class="row"><span class="big">–</span><span class="cap">rendering now</span></div></div>
+      <div class="body">
+        <span class="num">STEP 4</span><span class="lane">Performer &middot; queue_runner.sh</span>
+        <h3>Render six stems</h3>
+        <p>Demucs htdemucs_6s splits vocals, drums, bass, guitar, piano and other. Finished jobs move to <code>_done/</code>, failures to <code>_failed/</code> with a log.</p>
+        <span class="where">STEMS/&lt;slug&gt;/*.m4a</span>
+        <span class="time">10 to 25 min per song</span>
+      </div>
+    </div>
+    <div class="stage lib">
+      <div class="meter static" id="m-index"><div class="row"><span class="big">–</span><span class="cap">songs in the catalog</span></div></div>
+      <div class="body">
+        <span class="num">STEP 5</span><span class="lane">Librarian &middot; catalogwatch</span>
+        <h3>Index the song</h3>
+        <p>New stems trigger catalog.py at once, with an hourly pass as backstop. The portal re-copies CATALOG.json within a minute.</p>
+        <span class="where">CATALOG.json</span>
+        <span class="time">Seconds, worst case 1 h</span>
+      </div>
+    </div>
+    <div class="stage you">
+      <div class="meter static" id="m-lib"><div class="row"><span class="big">–</span><span class="cap">songs in the portal</span></div></div>
+      <div class="body">
+        <span class="num">STEP 6</span><span class="lane">You &middot; the portal</span>
+        <h3>Reload the page</h3>
+        <p>The library table loads once per page visit, so press Cmd-R to see a new song. Stems copy to the laptop's own disk hourly, or right away with Flash Cache.</p>
+        <span class="where">localhost:3000 &middot; ~/.bt-cache/</span>
+        <span class="time">After a reload</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Two machines, one Drive folder</h2>
+  <div class="machines">
+    <div class="machine lib">
+      <div class="meter static" id="m-libsvc"><div class="row"><span class="big">–</span><span class="cap">services up</span></div></div>
+      <div class="body">
+        <h3>Librarian &middot; Mac mini</h3>
+        <p class="role">Always on, 8 GB. Fetches, analyzes, indexes. Never runs Demucs. <code>./librarian.sh</code></p>
+        <ul class="svc" id="svc-lib">
+          <li data-k="lib-watcher"><span class="dot"></span><span class="n">watcher</span><small>webloc_watch.sh, YouTube downloads</small></li>
+          <li data-k="lib-audiowatch"><span class="dot"></span><span class="n">audiowatch</span><small>audio files from INCOMING_AUDIO/</small></li>
+          <li data-k="lib-cataloger"><span class="dot"></span><span class="n">cataloger</span><small>hourly playlist sync + catalog pass</small></li>
+          <li data-k="lib-catalogwatch"><span class="dot"></span><span class="n">catalogwatch</span><small>rebuilds the catalog when stems land</small></li>
+          <li data-k="lib-mpbsync"><span class="dot"></span><span class="n">mpbsync</span><small>daily band-sheet pull</small></li>
+          <li data-k="lib-portal"><span class="dot"></span><span class="n">portal</span><small>librarian view of the portal</small></li>
+          <li data-k="lib-autoupdate"><span class="dot"></span><span class="n">autoupdate</span><small>git pull every 2 min</small></li>
+          <li data-k="lib-heartbeat"><span class="dot"></span><span class="n">heartbeat</span><small>reports these lights every 20 s</small></li>
+        </ul>
+      </div>
+    </div>
+    <div class="flow" aria-hidden="true"><span><span class="arrow">&rarr;</span>source.wav<br>+ jobs</span><span><span class="arrow">&larr;</span>new stems</span></div>
+    <div class="machine drive">
+      <div class="meter static" id="m-drive"><div class="row"><span class="big">–</span><span class="cap">Drive response</span></div></div>
+      <div class="body">
+        <h3>Google Drive &middot; ~/ClaudeDrive/simpleStem</h3>
+        <p class="role">The shared data. Both machines read and write here. It can stall when the internet is down, so the gig path never waits on it.</p>
+        <ul class="svc">
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">INCOMING_WEBLOC/</span><small>links waiting to download</small></li>
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">STEM_QUEUE/</span><small>render jobs, plus _done/ and _failed/</small></li>
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">STEMS/&lt;slug&gt;/</span><small>one folder per song: source.wav, six stems, metadata</small></li>
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">CATALOG.json</span><small>the library index, written only by the Librarian</small></li>
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">GIGS/ &middot; SETLISTS/</span><small>what to play, in what order</small></li>
+        </ul>
+      </div>
+    </div>
+    <div class="flow" aria-hidden="true"><span><span class="arrow">&rarr;</span>next job</span><span><span class="arrow">&larr;</span>six stems</span></div>
+    <div class="machine perf">
+      <div class="meter static" id="m-perfsvc"><div class="row"><span class="big">–</span><span class="cap">services up</span></div></div>
+      <div class="body">
+        <h3>Performer &middot; MacBook Pro</h3>
+        <p class="role">The gig machine, 36 GB. Renders stems and runs the portal. <code>./performer.sh</code></p>
+        <ul class="svc" id="svc-perf">
+          <li data-k="perf-runner"><span class="dot"></span><span class="n">runner</span><small>queue_runner.sh + Demucs</small></li>
+          <li data-k="perf-server"><span class="dot"></span><span class="n">server</span><small>the portal on :3000</small></li>
+          <li data-k="perf-midi"><span class="dot"></span><span class="n">midi</span><small>MIDI sidecar :5555 (Helix, XR18, Logic)</small></li>
+          <li data-k="perf-logic"><span class="dot"></span><span class="n">logic</span><small>Logic Pro mixer bridge :5556</small></li>
+          <li data-k="perf-caffeinate"><span class="dot"></span><span class="n">caffeinate</span><small>keeps the laptop awake</small></li>
+          <li data-k="perf-midiwatch"><span class="dot"></span><span class="n">midiwatch</span><small>restarts the sidecar if it hangs</small></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h2>At the gig, with no internet</h2>
+  <div class="gig">
+    <div class="cell drive"><strong>Google Drive</strong><span>May be unreachable. Copied ahead of time, never read during a song.</span></div>
+    <div class="cell local"><strong>~/.bt-cache</strong><span id="gig-cache">Every song's six stems on the laptop's own disk.</span></div>
+    <div class="cell svc"><strong>Portal :3000</strong><span>Serves audio from the cache and fires timeline events.</span></div>
+    <div class="cell hw"><strong>Chrome</strong><span>Mixes the six stems live; mute, solo, boost per stem.</span></div>
+    <div class="cell hw"><strong>XR18 &middot; Helix &middot; Logic</strong><span>Per-stem outputs and MIDI automation.</span></div>
+  </div>
+
+  <h2>Where is my song?</h2>
+  <div class="facts">
+    <div class="fact"><strong>Follow the file</strong>A <code>.webloc</code> in INCOMING_WEBLOC/ hasn't downloaded yet. A <code>.json</code> in STEM_QUEUE/ is waiting or rendering. A file in <code>_done/</code> is finished. A file in <code>_failed/</code> needs a look.</div>
+    <div class="fact"><strong>Already in the library?</strong>The watcher only catches the same YouTube video twice. A different upload of a song you have becomes a second song, so search STEMS/ before dropping a link.</div>
+    <div class="fact"><strong>Renderer stalled?</strong>Jobs sit in STEM_QUEUE/ and nothing new lands in <code>_done/</code>. Run <code>./performer.sh reset</code> on the Performer. The Step 4 strip turns red when this happens.</div>
+    <div class="fact"><strong>Status at a glance</strong><code>./performer.sh status</code> on the Performer and <code>./librarian.sh status</code> on the Librarian list every service, the queue and the current render.</div>
+  </div>
+
+  <h2>Reference</h2>
+  <details>
+    <summary>Folder map</summary>
+  <div class="panel tree">
+<div><span class="tag drive">DRIVE</span><span class="d drive">~/ClaudeDrive/simpleStem/</span> <span class="note">shared data root, synced both machines; every read can block when offline</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">CATALOG.json</span> <span class="note">the library index; written ONLY by catalog.py on the Librarian; Performer reads its local mirror, never this file, on the hot path</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">STEMS/&lt;slug&gt;/</span> <span class="note">one folder per song; the heart of the library</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ source.wav <span class="note">raw 48 kHz ingest, kept so a song can be re-stemmed without re-downloading (the only permitted wav)</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ vocals / drums / bass / guitar / piano / other .m4a <span class="note">the six Demucs stems, AAC 256k, moov-first mandatory</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ metadata.json <span class="note">producer-consumer contract: title, BPM, key, singer fields, automation timeline, sectionCandidates</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">STEM_QUEUE/</span> <span class="note">render jobs as .json files; setlists one level deep as NN_&lt;slug&gt;.json; the runner takes the first filename alphabetically</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ _done/ &nbsp;_failed/ <span class="note">finished and dead jobs; every find over the queue must -prune these (327 folders in _done wedged a restart for 15 h)</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ .runner.lock/ <span class="note">single-runner mutex, owner-stamped (host + pid) so a reboot no longer leaves it stale</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ .current &nbsp;.paused <span class="note">live render phase for the portal; pause flag honored between songs</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">INCOMING_WEBLOC/</span> <span class="note">drop a .webloc here (portal Add box, webloc_drop.sh, Chrome Quick Action); webloc_watch.sh ingests it and deletes it; a failed fetch stays as .failed</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">INCOMING_AUDIO/ &rarr; AUDIO_SOURCES/</span> <span class="note">audio-file ingest via audio_watch.sh (built 2026-08-28); neither folder exists on Drive yet and the Librarian's status does not list the audiowatch service</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">.run-status/</span> <span class="note">heartbeat files: each machine writes its service pids every ~20 s for the dashboards</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">GIGS/</span> <span class="note">one json per gig, setlists embedded; mpb_sync.py writes gig-tab gigs; _pruned/ holds gigs idle over 72 h</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">SETLISTS/</span> <span class="note">standalone setlists; origin manual (user-owned) or playlist (setlist_sync.py-owned, re-sync overwrites)</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">CUSTOM_LOOPS/</span> <span class="note">Clip Librarian's trimmed .m4a clips for the sampler and + CLIP actions</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">DRUM_MACHINE/</span> <span class="note">&lt;bpm&gt;@&lt;pattern&gt;.m4a loopable patterns matched to each song's drum_pattern pill</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">BACKING_TRACKS/</span> <span class="note">full-song backing m4as auto-matched to library songs</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">LOGS/</span> <span class="note">mpb_sync_report.json and friends, unmatched-row triage</span></div>
+<div>&nbsp;&nbsp;└─ <span class="d drive dead">M4A/</span> <span class="note">retired 2026-06-27; the old -V / -V-G / DO mixdowns; portal mixes stems live instead</span></div>
+<div>&nbsp;</div>
+<div><span class="tag codet">CODE</span><span class="d codec">~/simpleStem-code/</span> <span class="note">the git clone; the ONLY place to run performer.sh (the Drive copy refuses to run)</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">performer.sh</span> <span class="note">laptop switch for six services (runner, midi, logic, server, caffeinate, midiwatch): start / stop / status / reset / test / drill</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">librarian.sh</span> <span class="note">mini switch: watcher, audiowatch, cataloger (hourly), catalogwatch, mpbsync (daily), portal, autoupdate, heartbeat</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">queue_runner.sh &middot; stem.sh</span> <span class="note">queue consumer and the Demucs heavy worker (Performer only, never the 8 GB mini)</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">webloc_watch.sh &middot; audio_watch.sh &middot; metadata.py &middot; catalog.py &middot; mpb_sync.py</span> <span class="note">Librarian-side ingest, analysis, index, sheet sync</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">webloc_drop.sh</span> <span class="note">queue one YouTube URL from any shell; same result as the portal's Add box</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">section_detect.py &middot; midi_sidecar.py &middot; midi_watchdog.sh &middot; logic_bridge.py</span> <span class="note">Performer-side: section analysis after render, MIDI daemon on :5555 and its watchdog, Logic Pro mixer bridge on :5556</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">bt-construction-kit/</span> <span class="note">the portal: server.js (Express :3000) + public/ with every script and font vendored, zero CDN</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">clip_librarian/</span> <span class="note">fetch_clip.sh, trim_clip.sh, BlackHole + Logic capture walkthrough</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">.run/</span> <span class="note">pidfiles + per-service logs (perf-runner.log, perf-server.log, ...), trimmed to 2000 lines per restart</span></div>
+<div>&nbsp;&nbsp;└─ <span class="d codec">docs/ &middot; prompts/</span> <span class="note">deep dives (audio wedge, architecture) and briefs for the Librarian's Claude</span></div>
+<div>&nbsp;</div>
+<div><span class="tag local">LOCAL</span><span class="d local">~/.bt-cache/</span> <span class="note">the offline-gig contract lives here: if a song is in the library, its six stems are in this cache, period</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d local">STEMS/&lt;slug&gt;/</span> <span class="note">six m4as per song + .cached sentinel; filled at boot (Drive-gated) + hourly + Flash Cache button</span></div>
+<div>&nbsp;&nbsp;└─ <span class="d local">CUSTOM_LOOPS/ &middot; DRUM_MACHINE/ &middot; BACKING_TRACKS/</span> <span class="note">precached mirrors so clips and drums fire with zero Drive reads</span></div>
+<div>&nbsp;</div>
+<div><span class="tag local">LOCAL</span><span class="d local">~/.simpleStem-catalog/</span> <span class="note">operator-owned state, deliberately NOT on Drive</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d local">CATALOG.json</span> <span class="note">mirror of the Drive index; the portal's library reads land here, never on Drive</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d local">SETLISTS/ &middot; GIGS/</span> <span class="note">json mirrors kept in lockstep on every write (writeBothJson)</span></div>
+<div>&nbsp;&nbsp;└─ <span class="d local">RECENTS.json</span> <span class="note">last 50 songs loaded, feeds the __recents__ pseudo-gig</span></div>
+  </div>
+  </details>
+  <details>
+    <summary>Every internet and Drive touch, and its guard</summary>
+  <div class="panel tablewrap">
+  <table>
+    <tr><th>Interaction</th><th>Who</th><th>Kind</th><th>Guard</th></tr>
+    <tr><td>yt-dlp downloads source.wav from YouTube</td><td>webloc_watch.sh (Librarian)</td><td class="red-cell">INTERNET</td><td>Runs at home only; audio crosses the network once, then lives in STEMS/ forever</td></tr>
+    <tr><td>Google Sheet songlist pull (gviz CSV)</td><td>mpb_sync.py (Librarian, daily)</td><td class="red-cell">INTERNET</td><td>Off the gig machine entirely; failures land in LOGS/ for triage</td></tr>
+    <tr><td>YouTube playlist re-sync</td><td>setlist_sync.py (Librarian)</td><td class="red-cell">INTERNET</td><td>Owns only origin=playlist setlists; manual ones untouched</td></tr>
+    <tr><td>Google Drive sync daemon itself</td><td>macOS CloudStorage, both machines</td><td class="red-cell">INTERNET + DISK</td><td>The root hazard: offline it BLOCKS instead of failing; hence every guard below</td></tr>
+    <tr><td>Boot precaches (stems, clips, drums, backing)</td><td>server.js background</td><td class="red-cell">DRIVE read</td><td>bootWhenDriveReady gate + withDriveBudget timeouts; skipped loudly if Drive never answers</td></tr>
+    <tr><td>Request-path metadata reads / writes</td><td>server.js handlers</td><td class="red-cell">DRIVE read/write</td><td>readMetaBounded 1.5 s degrade / writeMetaBounded 5 s fail-loud; sync fs on Drive paths trips the violation counter</td></tr>
+    <tr><td>Queue poll + queue depth display</td><td>queue_runner.sh, performer.sh</td><td class="red-cell">DRIVE read</td><td>-prune on _done/_failed; every shell Drive touch wrapped in bounded()</td></tr>
+    <tr><td>Runner lock take / release</td><td>queue_runner.sh</td><td class="red-cell">DRIVE write</td><td>Owner-stamped; self-reclaims after reboot; cross-machine locks always respected</td></tr>
+    <tr><td>Audio serving to the portal</td><td>server.js</td><td class="amber-cell">LOCAL SSD</td><td>Cache-first from ~/.bt-cache; a Drive fallback exists but is bounded at 3 s</td></tr>
+    <tr><td>Library, recents, favorites, gig/setlist reads</td><td>server.js</td><td class="amber-cell">LOCAL SSD</td><td>All served from ~/.simpleStem-catalog mirrors</td></tr>
+    <tr><td>Librarian code self-update (git fetch + fast-forward every 120 s)</td><td>autoupdate_librarian.sh</td><td class="red-cell">INTERNET</td><td>Librarian only; refuses a dirty clone, logs loudly on divergence</td></tr>
+    <tr><td>Logic Pro mixer read/write</td><td>logic_bridge.py (Performer)</td><td class="green-cell">NONE</td><td>localhost HTTP plus virtual MIDI ports; works fully offline</td></tr>
+    <tr><td>Portal page assets (scripts, fonts, icons)</td><td>Chrome</td><td class="green-cell">NONE</td><td>Everything vendored under public/vendor; the page makes zero internet requests</td></tr>
+  </table>
+  </div>
+  </details>
+
+  <footer>
+    <p>Updated 2026-10-11. Live readings come from the portal's own endpoints (<code>/api/librarian/state</code>, <code>/api/dashboard/state</code>, <code>/api/health</code>, <code>/api/identity</code>) every 10 seconds, so they appear only when this page is opened from a running portal: <code>http://localhost:3000/README.html</code> on the Performer or the Librarian. Performer service lights are read on the Performer itself; Librarian lights come from its heartbeat on Drive.</p>
+    <p style="margin-top:.4rem">Keep this page current: every simpleStem documentation update also updates <code>bt-construction-kit/public/README.html</code> (see the Conventions section of CLAUDE.md).</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var POLL_MS = 10000;
+  var STALL_SEC = 2 * 3600;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function pretty(name) { return String(name || '').replace(/\.(json|webloc|failed)$/i, '').replace(/^(portal|chrome)_[0-9TZ-]+_/, '').replace(/_/g, ' ').trim(); }
+  function ago(sec) {
+    if (sec == null || isNaN(sec)) return 'unknown';
+    if (sec < 90) return Math.round(sec) + ' s ago';
+    if (sec < 5400) return Math.round(sec / 60) + ' min ago';
+    if (sec < 172800) return Math.round(sec / 3600) + ' h ago';
+    if (sec < 1209600) return Math.round(sec / 86400) + ' days ago';
+    return Math.round(sec / 604800) + ' weeks ago';
+  }
+  function getJSON(url) {
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, 5000);
+    return fetch(url, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .finally(function () { clearTimeout(t); });
+  }
+  function meter(id, state, big, cap, detailHtml, tag) {
+    var el = $(id); if (!el) return;
+    el.className = 'meter ' + state;
+    el.innerHTML = '<div class="row"><span class="big">' + esc(big) + '</span><span class="cap">' + esc(cap) + '</span>' +
+      (tag ? '<span class="tag">' + esc(tag) + '</span>' : '') + '</div>' + (detailHtml || '');
+  }
+  function lights(listId, daemons, enabled) {
+    var up = 0, known = 0;
+    var items = document.querySelectorAll('#' + listId + ' li');
+    for (var i = 0; i < items.length; i++) {
+      var li = items[i], k = li.getAttribute('data-k'), d = daemons && daemons[k], dot = li.querySelector('.dot');
+      if (!enabled || !d) { dot.className = 'dot'; li.title = enabled ? 'not reported by the portal' : 'not visible from this machine'; continue; }
+      known++;
+      if (d.running) { up++; dot.className = 'dot ok'; li.title = 'running, pid ' + (d.pid || '?'); }
+      else { dot.className = 'dot bad'; li.title = d.reason || 'not running'; }
+    }
+    return { up: up, known: known };
+  }
+
+  function render(ls, dash, health, ident) {
+    var st = ls && ls.state ? ls.state : null;
+    var ds = dash && dash.state ? dash.state : null;
+    var onPerformer = ident && ident.machine === 'performer';
+    var ing = (st && st.ingest) || {};
+    var alerts = [];
+
+    var inc = ing.incoming || [];
+    meter('m-drop', inc.length ? 'warn' : 'ok', inc.length, inc.length === 1 ? 'link waiting' : 'links waiting',
+      inc.length ? '<ol>' + inc.slice(0, 5).map(function (n) { return '<li>' + esc(pretty(n)) + '</li>'; }).join('') + '</ol>' : '<span class="detail">Nothing waiting to download.</span>');
+
+    var fl = ing.failed || [];
+    var watcher = st && st.librarianDaemons && st.librarianDaemons['lib-watcher'];
+    meter('m-fetch', fl.length ? 'bad' : (watcher && !watcher.running ? 'bad' : 'ok'), fl.length, 'failed downloads',
+      '<span class="detail">Watcher ' + (watcher ? (watcher.running ? 'running' : 'DOWN') : 'unknown') + '.</span>' +
+      (fl.length ? '<ol>' + fl.slice(0, 4).map(function (n) { return '<li>' + esc(pretty(n)) + '</li>'; }).join('') + '</ol>' : ''),
+      fl.length ? 'check' : '');
+
+    var q = (ing.queued || []).slice().sort();
+    meter('m-queue', q.length ? 'warn' : 'ok', q.length, 'waiting to render',
+      q.length ? '<span class="cap">In render order:</span><ol>' + q.slice(0, 6).map(function (n) { return '<li>' + esc(pretty(n)) + '</li>'; }).join('') + (q.length > 6 ? '<li>+' + (q.length - 6) + ' more</li>' : '') + '</ol>' : '<span class="detail">Queue is empty.</span>');
+
+    var proc = ing.processing;
+    var done = ing.recentDone || [];
+    var newestDoneSec = done.length ? (Date.now() - new Date(done[0].mtime).getTime()) / 1000 : null;
+    var runner = ds && ds.daemons && ds.daemons['perf-runner'];
+    var stalled = q.length > 0 && !proc && newestDoneSec != null && newestDoneSec > STALL_SEC;
+    var runnerDown = onPerformer && runner && !runner.running && q.length > 0;
+    var lastLine = '<span class="detail">Last finished: ' + (done.length ? esc(pretty(done[0].name)) + ', ' + ago(newestDoneSec) : 'none on record') + '.</span>';
+    if (proc) {
+      meter('m-render', 'ok', proc.phase || 'busy', 'rendering now', '<span class="detail"><b>' + esc(pretty(proc.song || proc.job || '')) + '</b></span>' + lastLine, 'live');
+    } else if (stalled || runnerDown) {
+      meter('m-render', 'bad', 'stalled', q.length + ' waiting, nothing rendering', lastLine, 'reset');
+      alerts.push('The renderer looks stalled: ' + q.length + ' job(s) waiting and nothing has finished since ' + ago(newestDoneSec) + '. Run <code>./performer.sh reset</code> on the Performer.');
+    } else {
+      meter('m-render', 'ok', 'idle', 'nothing rendering', lastLine);
+    }
+
+    var cat = (st && st.catalog) || {};
+    var cw = st && st.librarianDaemons && st.librarianDaemons['lib-catalogwatch'];
+    var catCount = cat.songCount != null ? cat.songCount : (st && st.libraryStats && st.libraryStats.songs);
+    meter('m-index', cw && !cw.running ? 'bad' : 'ok', catCount != null ? catCount : '?', 'songs in the catalog',
+      '<span class="detail">Rebuilt ' + ago(cat.ageSec) + '. catalogwatch ' + (cw ? (cw.running ? 'running' : 'DOWN') : 'unknown') + '.</span>');
+
+    var libN = health && health.librarySongs;
+    var cache = ds && ds.cache;
+    var cacheTxt = cache && cache.cached != null ? cache.cached + ' of ' + cache.totalSongs + ' cached on this machine' : 'cache count unknown';
+    var cacheGap = cache && cache.uncached > 0;
+    meter('m-lib', cacheGap ? 'warn' : 'ok', libN != null ? libN : '?', 'songs in the portal', '<span class="detail">' + esc(cacheTxt) + '. Reload the page to see new ones.</span>', cacheGap ? 'flash cache' : '');
+    if ($('gig-cache')) $('gig-cache').textContent = 'Every song’s six stems on the laptop’s own disk. Now: ' + cacheTxt + '.';
+
+    var lib = lights('svc-lib', st && st.librarianDaemons, !!st);
+    meter('m-libsvc', lib.known && lib.up < lib.known ? 'bad' : 'ok', lib.up + '/' + lib.known, 'reported services up',
+      '<span class="detail">From the Librarian heartbeat on Drive.</span>');
+    if (lib.known && lib.up < lib.known) alerts.push('Librarian: ' + (lib.known - lib.up) + ' service(s) down. Run <code>./librarian.sh status</code> on the Librarian.');
+
+    var perf = lights('svc-perf', ds && ds.daemons, onPerformer);
+    if (onPerformer) {
+      meter('m-perfsvc', perf.known && perf.up < perf.known ? 'bad' : 'ok', perf.up + '/' + perf.known, 'reported services up', '<span class="detail">Read on this laptop.</span>');
+    } else {
+      meter('m-perfsvc', 'static', '–', 'open this page on the Performer', '<span class="detail">Its service lights are only visible there.</span>');
+    }
+
+    var drv = (st && st.drive) || {};
+    meter('m-drive', drv.accessible ? (drv.latencyMs > 1000 ? 'warn' : 'ok') : 'bad', drv.accessible ? drv.latencyMs + ' ms' : 'no answer', 'Drive response',
+      drv.accessible ? '' : '<span class="detail">Drive did not answer in 1.5 s. The gig path still plays from the cache.</span>');
+
+    var a = $('alert');
+    a.innerHTML = alerts.join('<br>');
+    a.className = alerts.length ? 'alert show' : 'alert';
+  }
+
+  function setLive(on, text) {
+    $('live').className = on ? 'live on' : 'live';
+    $('live').querySelector('.dot').className = on ? 'dot ok' : 'dot';
+    $('live-mode').textContent = on ? 'LIVE' : 'STATIC';
+    $('live-text').textContent = text;
+  }
+
+  var ident = null;
+  function poll() {
+    var reqs = [getJSON('/api/librarian/state'), getJSON('/api/dashboard/state'), getJSON('/api/health'), ident ? Promise.resolve(ident) : getJSON('/api/identity')];
+    Promise.allSettled(reqs).then(function (r) {
+      var v = r.map(function (x) { return x.status === 'fulfilled' ? x.value : null; });
+      if (!v[0] && !v[1] && !v[2]) {
+        setLive(false, 'No live data here. Open http://localhost:3000/README.html from a running portal.');
+        return;
+      }
+      ident = v[3] || ident;
+      render(v[0], v[1], v[2], ident);
+      var who = ident ? (ident.machine || ident.hostname || 'portal') : 'portal';
+      setLive(true, who + ' · updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    });
+  }
+
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    poll();
+    setInterval(poll, POLL_MS);
+  } else {
+    setLive(false, 'Opened as a file. Open http://localhost:3000/README.html for live data.');
+  }
+})();
+</script>
+</body>
+</html>

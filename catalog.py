@@ -173,6 +173,18 @@ def fill_gaps(base, stem_dir, meta):
 
     need_bpm = not meta.get('bpm')
     need_key = not meta.get('key')
+    # Songs keep only <base>_SOURCE.m4a at rest since 2026-11-01 (F-1/F-9);
+    # soundfile can't read m4a, so decode it to a temporary WAV for analysis.
+    tmp_wav = None
+    if (need_bpm or need_key) and not src.exists():
+        m4a = stem_dir / f'{stem_dir.name}_SOURCE.m4a'
+        if m4a.exists():
+            import subprocess, tempfile
+            fd, tmp_wav = tempfile.mkstemp(suffix='.wav'); os.close(fd)
+            r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(m4a),
+                                '-ac', '2', tmp_wav], stdin=subprocess.DEVNULL)
+            if r.returncode == 0:
+                src = Path(tmp_wav)
     if (need_bpm or need_key) and src.exists():
         try:
             bpm, key = md.detect_bpm_key(src)
@@ -185,6 +197,9 @@ def fill_gaps(base, stem_dir, meta):
             print(f"   + {base}: filled bpm/key locally")
         except Exception as e:
             print(f"   !! {base}: bpm/key detection failed ({e})", file=sys.stderr)
+    if tmp_wav:
+        try: os.remove(tmp_wav)
+        except OSError: pass
 
     # release_date fill via MusicBrainz retired 2026-06-28. fill_gaps now
     # only touches bpm/key (locally via librosa). Anything else the
@@ -200,6 +215,37 @@ def fill_gaps(base, stem_dir, meta):
         except Exception as e:
             print(f"   !! {base}: could not write metadata.json ({e})", file=sys.stderr)
     return meta, changed
+
+
+# Stem sets (2026-10-20) — keep in lockstep with server.js
+# logicStemSetFrom / resolveStemSet. Demucs stems sit at the top of the song
+# folder; an optional Logic Pro set sits in logic/. metadata.json
+# `stem_set` picks which one plays; with nothing saved, Logic wins when it
+# exists.
+LOGIC_STEM_SUBDIR = 'logic'
+STEM_SET_NAMES = ('demucs', 'logic')
+SIX_STEM_NAMES = ('vocals', 'drums', 'bass', 'guitar', 'piano', 'other')
+
+
+def pick_logic_stems(stem_dir, files_in_folder):
+    """The logic/ set, only when all six m4a stems are present."""
+    if LOGIC_STEM_SUBDIR not in files_in_folder:
+        return None
+    try:
+        have = set(os.listdir(os.path.join(stem_dir, LOGIC_STEM_SUBDIR)))
+    except OSError:
+        return None
+    if not all(f'{n}.m4a' in have for n in SIX_STEM_NAMES):
+        return None
+    return {n: f'{LOGIC_STEM_SUBDIR}/{n}.m4a' for n in SIX_STEM_NAMES}
+
+
+def resolve_stem_set(demucs, logic, saved):
+    by_set = {'demucs': demucs}
+    if logic:
+        by_set['logic'] = logic
+    chosen = saved if saved in by_set else ('logic' if logic else 'demucs')
+    return by_set[chosen], by_set, list(by_set), chosen
 
 
 def _stemmed_at_iso(stem_dir, stems):
@@ -218,6 +264,9 @@ def _stemmed_at_iso(stem_dir, stems):
 def build_stems_row(base, stem_dir, files_in_folder, meta):
     """Match scanStems output in bt-construction-kit/server.js byte-for-byte."""
     stems = pick_stem_files(files_in_folder)
+    saved_set = meta.get('stem_set') if meta.get('stem_set') in STEM_SET_NAMES else None
+    play_stems, stems_by_set, stem_sets, stem_set = resolve_stem_set(
+        stems, pick_logic_stems(stem_dir, files_in_folder), saved_set)
     loops, raw_loop_count = scan_per_folder_loops(files_in_folder)
     practice_bpm = round(meta['bpm']) if isinstance(meta.get('bpm'), (int, float)) else None
     duration = meta.get('duration_sec') if isinstance(meta.get('duration_sec'), (int, float)) else None
@@ -258,7 +307,13 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # flat text as a fallback. Both null when Genius had no match.
         'lyrics':             meta.get('lyrics'),
         'lyrics_chunks':      meta.get('lyrics_chunks'),
-        'stems': stems,
+        # Fill-missing-lyrics workflow: "Skip for all" (server.js
+        # PUT /api/song/:base/lyrics-skip).
+        'lyrics_skip':        bool(meta.get('lyrics_skip')),
+        'stems': play_stems,
+        'stemsBySet': stems_by_set,
+        'stemSets': stem_sets,
+        'stemSet': stem_set,
         'cached': False,
         'logicProjectName': find_logicx(files_in_folder),
         'loops': loops,

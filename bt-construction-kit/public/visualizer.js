@@ -305,6 +305,9 @@ async function setWaveformStems(sources) {
   // MIDI clock) consumes window.songBeatGrid so all four stay in lockstep
   // with the audio the operator is actually hearing.
   window.songBeatGrid = chooseBeatGrid(window.songOnsetTimes);
+  if (window.songBeatGrid) window.songBeatGrid.fit = beatFitEnvName;
+  // app.js swaps in the grid cached in metadata.json, or saves this one.
+  try { if (typeof window.onSongBeatGrid === 'function') window.onSongBeatGrid(window.songBeatGrid); } catch (e) {}
   if (window.songBeatGrid) {
     const g = window.songBeatGrid;
     console.log(`[visualizer] beat grid: ${g.bpm.toFixed(1)} bpm, phase ${g.phase.toFixed(3)}s, ` +

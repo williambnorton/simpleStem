@@ -429,13 +429,18 @@ async function _fetchSongStems(songBase) {
     const folder = encodeURIComponent(songBase);
     const stems = {};
     const blobs = {};
+    // Stem sets (2026-10-20): fetch whichever set the song plays —
+    // row.stems holds 'vocals.m4a' (Demucs) or 'logic/vocals.m4a'.
+    const row = stemsRowFor(songBase);
+    const set = (row && row.stemSet) || 'demucs';
     // Fetch all six in parallel — each request is independent; if any one
     // 503s we mark the whole song failed (we need all six to play).
     const results = await Promise.all(CHANNELS.map(async (ch) => {
       const ctrl = new AbortController();
       const tmo = setTimeout(() => ctrl.abort(), 12000); // 12s per stem max
       try {
-        const r = await fetch(`/api/audio/stems/${folder}/${ch}.m4a`, {
+        const fileName = (row && row.stems && row.stems[ch]) || `${ch}.m4a`;
+        const r = await fetch(`/api/audio/stems/${folder}/${fileName}`, {
           cache: 'force-cache',
           signal: ctrl.signal,
         });
@@ -450,6 +455,7 @@ async function _fetchSongStems(songBase) {
     }
     entry.stems = stems;
     entry.blobs = blobs;
+    entry.set = set;
     entry.state = STEM_CACHE_READY;
     entry.error = null;
   } catch (e) {
@@ -460,9 +466,20 @@ async function _fetchSongStems(songBase) {
   _stemCacheNotify(songBase);
   return entry;
 }
+// The library row for a stems song folder (carries stemSet / stemsBySet).
+function stemsRowFor(songBase) {
+  return (songLibrary || []).find(s => s && s.type === 'stems' && s.folderName === songBase) || null;
+}
 function ensureSongStemsCached(songBase, priority) {
   if (!songBase) return null;
   let entry = stemCache.get(songBase);
+  // Holding the other stem set (the song was switched D ↔ L)? Drop it.
+  const row = stemsRowFor(songBase);
+  if (entry && entry.set && row && row.stemSet && entry.set !== row.stemSet
+      && entry.state !== STEM_CACHE_FETCHING) {
+    evictSongStems(songBase);
+    entry = null;
+  }
   if (!entry) {
     entry = { state: STEM_CACHE_PENDING, stems: {}, blobs: {}, error: null };
     stemCache.set(songBase, entry);
@@ -3460,6 +3477,218 @@ function setupQueueUI() {
   setInterval(refreshQueue, 5000);
 }
 
+// ─── Ingest-row names (Bill 2026-10-31) ─────────────────────────────────
+// Until the song reaches the library, name the row from YouTube (title +
+// channel via the server's oEmbed lookup); offline it keeps the video id.
+async function fetchIngestTitle(videoId, url) {
+  try {
+    const j = await fetch('/api/yt/title?url=' + encodeURIComponent(url)).then(r => r.json());
+    if (!j || !j.title) return;
+    const watch = loadIngestWatch();
+    const w = watch.find(x => x.videoId === videoId);
+    if (!w || w.base) return;
+    w.title = j.title;
+    if (j.channel && !w.artist) w.artist = j.channel;
+    saveIngestWatch(watch);
+    renderIngestTracker();
+  } catch (e) {}
+}
+function loadSongByBase(base, autoplay) {
+  const v = (songLibrary || []).find(s => s && s.type === 'stems' && s.folderName === base);
+  if (!v) { showToast('That song isn\'t in the library list yet — try again in a moment.'); return false; }
+  loadSong(v, { autoplay: !!autoplay });
+  return true;
+}
+
+// ─── Jam mode (Bill 2026-10-31) ─────────────────────────────────────────
+// jam.html (the 🎸 Jam tab) fetches a YouTube backing track's audio and
+// tells this page to play it. The stereo file plays through the backing-
+// track element, but instead of going straight to the master it is split:
+// LEFT feeds strip 1 (vocals, relabelled SRC L) and RIGHT feeds strip 2
+// (drums, SRC R) — so faders, mute/solo, boosts, meters and the
+// routing buttons all work on it. The same URL is queued for stemming;
+// the ingest row's ▶ link switches to the stems when they land.
+let jamMode = null;        // { id, file, title, channel, url, duration }
+let jamNodes = null;       // { splitter, upL, upR }
+let jamLabelsSaved = null;
+const jamChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-jam') : null;
+
+function wireJamIntoStrips() {
+  if (!audioCtx || !stripNodes || !stripNodes.vocals || !stripNodes.drums) return false;
+  ensureBackingTrackEl();
+  wireBackingTrackIntoMaster();
+  if (!backingTrackSrc) return false;
+  try { backingTrackSrc.disconnect(); } catch (e) {}
+  if (!jamNodes) {
+    const splitter = audioCtx.createChannelSplitter(2);
+    // Each side becomes a 2-channel (L = R) signal so the strip's
+    // routing treats it like any stem.
+    const mk = () => {
+      const g = audioCtx.createGain();
+      g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers';
+      return g;
+    };
+    const upL = mk(), upR = mk();
+    splitter.connect(upL, 0);
+    splitter.connect(upR, 1);
+    jamNodes = { splitter, upL, upR };
+  }
+  try { jamNodes.upL.disconnect(); } catch (e) {}
+  try { jamNodes.upR.disconnect(); } catch (e) {}
+  backingTrackSrc.connect(jamNodes.splitter);
+  jamNodes.upL.connect(stripNodes.vocals.preFader || stripNodes.vocals.stripGain);
+  jamNodes.upR.connect(stripNodes.drums.preFader || stripNodes.drums.stripGain);
+  return true;
+}
+function unwireJamFromStrips() {
+  if (!backingTrackSrc) return;
+  try { backingTrackSrc.disconnect(); } catch (e) {}
+  if (jamNodes) {
+    try { jamNodes.upL.disconnect(); } catch (e) {}
+    try { jamNodes.upR.disconnect(); } catch (e) {}
+  }
+  // Back to the regular backing-track path (straight to the master).
+  try { backingTrackSrc.connect(analyserNode || masterGainNode); } catch (e) {}
+}
+function setJamStripLabels(on) {
+  const pairs = [['vocals', 'SRC L'], ['drums', 'SRC R']];
+  if (on && !jamLabelsSaved) jamLabelsSaved = {};
+  for (const [chan, txt] of pairs) {
+    const el = document.querySelector(`.channel-strip.${chan}-strip .channel-name`);
+    if (!el) continue;
+    if (on) { if (jamLabelsSaved[chan] == null) jamLabelsSaved[chan] = el.textContent; el.textContent = txt; }
+    else if (jamLabelsSaved && jamLabelsSaved[chan] != null) el.textContent = jamLabelsSaved[chan];
+  }
+  if (!on) jamLabelsSaved = null;
+}
+async function engageJam(j) {
+  if (!j || !j.file) return;
+  try { initAudioCtx(); } catch (e) {}
+  if (audioCtx && audioCtx.state === 'suspended') { try { await audioCtx.resume(); } catch (e) {} }
+  if (drumMachineActive) { try { disengageDrumMachine(); } catch (e) {} }
+  if (backingTrackActive) { try { disengageBackingTrack(); } catch (e) {} }
+  try { stopLooperIfActive(); } catch (e) {}
+  if (isPlaying || Object.values(audioElements).some(audioHasSrc)) { try { stopAudio(); } catch (e) {} }
+  if (!wireJamIntoStrips()) {
+    showToast('The audio engine is not running yet — click anywhere on this page, then press Play in the Jam tab again.', 6000);
+    return;
+  }
+  // kind 'source' = a library song's original stereo (SOURCE pill); 'song'
+  // is that song, so the 6 STEMS / SOURCE pills can go back to it.
+  const kind = j.kind || 'jam';
+  jamMode = { id: j.id, file: j.file, title: j.title || j.id, channel: j.channel || '', url: j.url,
+              duration: j.duration || null, kind, song: j.song || null };
+  const url = j.srcUrl || `/api/audio/jam/${encodeURIComponent(j.file)}`;
+  // A stand-in "song" so the transport, header and waveform have something
+  // to show; it has no folder, so markers / automation / lyrics stay idle.
+  currentSong = { id: 'jam-' + j.id, type: 'jam', title: jamMode.title, artist: jamMode.channel,
+                  folderName: null, stems: {}, loops: [], duration: jamMode.duration };
+  window.currentSong = currentSong;
+  automationCurrentBase = null;
+  automationEvents = [];
+  automationSections = [];
+  try { renderAutomationLane(); } catch (e) {}
+  try { showSeamPanel(false); } catch (e) {}
+  if (els.playerIdle) els.playerIdle.style.display = 'none';
+  if (els.playerActive) els.playerActive.style.display = 'block';
+  if (els.trackTitle) els.trackTitle.textContent = jamMode.title;
+  if (els.trackArtist) {
+    els.trackArtist.textContent = kind === 'source'
+      ? `${jamMode.channel ? jamMode.channel + ' · ' : ''}original stereo (SOURCE)`
+      : (jamMode.channel ? `${jamMode.channel} · YouTube` : 'YouTube');
+  }
+  if (els.mixerContainer) els.mixerContainer.style.display = 'block';
+  CHANNELS.forEach(chan => {
+    const strip = document.querySelector(`.${chan}-strip`);
+    if (strip) strip.style.display = (chan === 'vocals' || chan === 'drums') ? 'flex' : 'none';
+  });
+  setJamStripLabels(true);
+  const el = ensureBackingTrackEl();
+  el.src = url;
+  el.currentTime = j.startAt || 0;
+  backingTrackActive = true;
+  try { applyRateToBackingTrack(); } catch (e) {}
+  try { applyMixerVolumes(); } catch (e) {}
+  if (j.autoplay !== false) el.play().catch(e => { console.warn('[jam] play failed:', e); showToast('Press Play to start the jam track.'); });
+  if (typeof window.setWaveformStems === 'function') {
+    window.songBpmHint = null;
+    window.setWaveformStems({ __m4a__: url });
+  }
+  try { updateModePills(); updateTransportIcon(); } catch (e) {}
+  if (kind === 'source') {
+    showToast(`SOURCE: original stereo of "${jamMode.title}" on strips 1–2 — stems, automation and looper are off`, 5000);
+    return;
+  }
+  // Follow the stemming in the ingest tracker.
+  const watch = loadIngestWatch();
+  if (!watch.some(w => w.videoId === j.id)) {
+    watch.push({ url: j.url || `https://www.youtube.com/watch?v=${j.id}`, videoId: j.id, title: jamMode.title,
+                 artist: jamMode.channel, status: 'pasted', submittedAt: Date.now(), lastSeenAt: Date.now() });
+    saveIngestWatch(watch);
+  }
+  renderIngestTracker();
+  showToast(`Jam: "${jamMode.title}" on strips 1–2 (SRC L / SRC R) · stemming queued`, 5000);
+}
+function exitJam() {
+  if (!jamMode) return;
+  try { if (backingTrackEl) { backingTrackEl.pause(); backingTrackEl.removeAttribute('src'); backingTrackEl.load(); } } catch (e) {}
+  backingTrackActive = false;
+  unwireJamFromStrips();
+  setJamStripLabels(false);
+  const wasJam = jamMode.kind === 'jam';
+  jamMode = null;
+  try { updateModePills(); updateTransportIcon(); } catch (e) {}
+  if (wasJam && jamChannel) { try { jamChannel.postMessage({ type: 'jam-ended' }); } catch (e) {} }
+}
+if (jamChannel) {
+  jamChannel.onmessage = (ev) => {
+    const m = ev.data || {};
+    if (m.type === 'play' && m.file) {
+      jamChannel.postMessage({ type: 'ack', id: m.id });
+      engageJam(m);
+    } else if (m.type === 'loadSong' && m.base) {
+      jamChannel.postMessage({ type: 'ack', id: m.id || m.base });
+      loadSongByBase(m.base, true);
+    }
+  };
+  // The Jam tab's muted video follows this clock.
+  setInterval(() => {
+    if (!jamMode || jamMode.kind !== 'jam' || !backingTrackEl) return;
+    try {
+      jamChannel.postMessage({ type: 'clock', id: jamMode.id, t: backingTrackEl.currentTime || 0,
+                               playing: !backingTrackEl.paused, rate: backingTrackEl.playbackRate || 1 });
+    } catch (e) {}
+  }, 250);
+}
+// Opened as /#jam=<videoId> (the Jam tab found no Performer open): offer a
+// start button — the browser needs a click on THIS page before it plays.
+(function jamFromHash() {
+  const m = (location.hash || '').match(/^#jam=([\w-]{11})$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  const id = m[1];
+  const go = async () => {
+    try {
+      const j = await fetch('/api/jam/status/' + id).then(r => r.json());
+      if (j && j.inLibrary) { loadSongByBase(j.inLibrary, true); return; }
+      if (j && j.state === 'ready') engageJam(j);
+      else showToast('The jam track is not ready yet — try Play in the Jam tab again.');
+    } catch (e) { showToast('Could not reach the jam track.'); }
+  };
+  const b = document.createElement('button');
+  b.className = 'jam-start-overlay';
+  b.textContent = '🎸 Start the jam track';
+  b.addEventListener('click', () => { b.remove(); go(); });
+  const add = () => document.body.appendChild(b);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+})();
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('#jam-open-btn') : null;
+  if (!b) return;
+  e.preventDefault();
+  window.open('/jam.html', 'simplestem-jam');
+});
+
 // Track every URL the operator submits in this session so we can show
 // per-submission status. Persists to localStorage so a page reload
 // doesn't lose what you were watching. Entries:
@@ -3494,7 +3723,9 @@ function renderIngestTracker() {
   const STALE_MS = 2 * 60 * 60 * 1000;   // 2 hours
   const now = Date.now();
   const pruned = watch.filter(w => {
-    if (w.status === 'done') return (now - (w.doneAt || 0)) < 60000;
+    // Finished rows stay a day (or until "clear all") so the ▶ link to the
+    // stemmed song stays handy (Bill 2026-10-31; was 60 s).
+    if (w.status === 'done') return (now - (w.doneAt || 0)) < 24 * 60 * 60 * 1000;
     if (w.status === 'pasted' || w.status === 'librarian') {
       // Stale 'pasted'/'librarian' — assume it landed and we missed it.
       if (now - (w.submittedAt || 0) > STALE_MS) return false;
@@ -3512,7 +3743,11 @@ function renderIngestTracker() {
                  : w.status === 'done'      ? 'ok'
                  : w.status === 'rendering' ? 'busy'
                  : 'pending';
-    const label = w.title || w.videoId || w.url.slice(0, 40);
+    const name = w.title ? (w.title + (w.artist ? ' — ' + w.artist : '')) : (w.videoId || w.url.slice(0, 40));
+    const vid = (w.title && w.videoId) ? ` <span class="ingest-vid">${escapeHtml(w.videoId)}</span>` : '';
+    const labelHtml = (w.status === 'done' && w.base)
+      ? `<a href="#" class="ingest-load" data-base="${escapeHtml(w.base)}" title="Load the stemmed song">▶ ${escapeHtml(name)}</a>${vid}`
+      : `${escapeHtml(name)}${vid}`;
     const stageLabel = ({
       pasted:     'submitted',
       librarian:  'reading metadata',
@@ -3523,13 +3758,17 @@ function renderIngestTracker() {
     })[w.status] || w.status;
     return `<div class="ingest-row">
       <span class="ingest-dot ${dotCls}"></span>
-      <span class="ingest-label" title="${escapeHtml(w.url)}">${escapeHtml(label)}</span>
+      <span class="ingest-label" title="${escapeHtml(w.url)}">${labelHtml}</span>
       <span class="ingest-stage">${escapeHtml(stageLabel)}</span>
     </div>`;
   }).join('');
   // Append a clear-all link at the bottom so the operator can nuke
   // stuck rows immediately instead of waiting for the 2-hour timeout.
   el.innerHTML += `<div class="ingest-row ingest-clear-row"><a id="ingest-clear-all" class="ingest-clear-link" href="#" title="Remove all rows from the tracker. Doesn't affect the queue or library — just the visible list.">clear all</a></div>`;
+  el.querySelectorAll('.ingest-load').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadSongByBase(a.dataset.base, false);
+  }));
   const clr = document.getElementById('ingest-clear-all');
   if (clr) clr.addEventListener('click', (e) => {
     e.preventDefault();
@@ -3553,6 +3792,8 @@ async function pollIngestWatch() {
   let changed = false;
   for (const w of watch) {
     const prev = w.status;
+    const prevBase = w.base;
+    let hit = null;
     if (failedIds.has(w.videoId)) w.status = 'failed';
     else if (procId && procId === w.videoId) {
       w.status = 'rendering';
@@ -3567,15 +3808,19 @@ async function pollIngestWatch() {
     // emitted source_url. Once any match hits, the row turns green
     // ("in library") and the renderer drops it from the visible list
     // after the doneAt grace window (60s by default).
-    else if (libSongs.some(s =>
+    else if ((hit = libSongs.find(s =>
         (w.videoId && s.videoId === w.videoId)
         || (w.videoId && (s.source_url || '').includes(w.videoId))
         || (w.videoId && (s.folderName || s.base || '').toLowerCase().includes(w.videoId.toLowerCase()))
-    )) {
+    ))) {
       if (w.status !== 'done') { w.doneAt = Date.now(); }
       w.status = 'done';
+      // Name the row after the library song and remember it for the ▶ link.
+      w.base = hit.folderName || hit.base || null;
+      if (hit.title) w.title = hit.title;
+      if (hit.artist && hit.artist !== 'Unknown Artist') w.artist = hit.artist;
     }
-    if (w.status !== prev) {
+    if (w.status !== prev || w.base !== prevBase) {
       changed = true;
       w.lastSeenAt = Date.now();
     }
@@ -3608,6 +3853,7 @@ async function enqueueUrl() {
     });
     saveIngestWatch(watch);
     renderIngestTracker();
+    fetchIngestTitle(extractVideoId(url), url);
     // Poll fast for the first 30s, then back off.
     setTimeout(pollIngestWatch, 1500);
     setTimeout(pollIngestWatch, 4000);
@@ -5471,10 +5717,23 @@ function initAudioCtx() {
     const mediaMute = audioCtx.createGain();
     mediaMute.gain.value = 1;
     const splitter = audioCtx.createChannelSplitter(2);
+    // preFader (2026-11-01): every input of the strip (stem, looper, jam,
+    // click, spoken words) joins here, ahead of the fader, so the coloured
+    // level fill can read the signal as if the fader were all the way up.
+    const preFader = audioCtx.createGain();
     source.connect(mediaMute);
-    mediaMute.connect(stripGain);
+    mediaMute.connect(preFader);
+    preFader.connect(stripGain);
     stripGain.connect(splitter);
-    stripNodes[chan] = { source, mediaMute, stripGain, splitter };
+    // Level tap for the strip's coloured fill (2026-10-28) — PRE-fader
+    // since 2026-11-01 (Bill: show every stem's colour whenever it has
+    // signal, as if all faders were at 10). Fader, mute and boost don't
+    // change it.
+    const meter = audioCtx.createAnalyser();
+    meter.fftSize = 1024;
+    meter.smoothingTimeConstant = 0;
+    preFader.connect(meter);
+    stripNodes[chan] = { source, mediaMute, preFader, stripGain, splitter, meter };
     trackSources[chan] = source;
   });
 
@@ -6002,6 +6261,249 @@ async function presetSpreadToSixAux() {
   renderRoutingGrids();
 }
 
+// ── Routing effects (Reset / All / Swirl / Flip) ──────────────────────────
+// Live tricks on the routing matrix. The six "amps" are the letter outputs
+// around each fader, read clockwise from the top: V(ch11) P(ch15) B(ch13)
+// D(ch12) G(ch14) O(ch16). L/R (ch1/2) sit at the sides and never rotate.
+// Fader levels and boosts stay with their stem; only destinations change.
+// The first effect press snapshots the matrix; Reset restores it and clears
+// the snapshot. Nothing here touches the song's saved metadata.
+// Offline behavior: pure client-side Web Audio rewiring, no network at all.
+const AMP_RING = [10, 14, 12, 11, 13, 15];
+const FLIP_LR = { 15: 14, 14: 15, 13: 12, 12: 13, 0: 1, 1: 0 };
+const ALL_AMPS_ROUTES = [0, 1, 10, 11, 12, 13, 14, 15];
+// LR (Bill 2026-11-01): left side → house-left amps 1/3/5 (ch11/13/15) + L,
+// right side → house-right amps 2/4/6 (ch12/14/16) + R.
+const LR_LEFT_ROUTES = [0, 10, 12, 14];
+const LR_RIGHT_ROUTES = [1, 11, 13, 15];
+// Swirl (Bill 2026-11-01): one amp position per second for 18 seconds —
+// three laps of the six-amp ring — ending back on the original amps.
+const SWIRL_STEP_MS = 1000;
+const SWIRL_STEPS = 18;
+const ROUTING_FX_SNAPSHOT_KEY = 'simpleStem.routingFxSnapshot.v1';
+let routingFxSnapshot = null;
+let swirlTimer = null;
+let swirlStep = 0;
+
+function loadRoutingFxSnapshot() {
+  try {
+    const raw = localStorage.getItem(ROUTING_FX_SNAPSHOT_KEY);
+    routingFxSnapshot = raw ? JSON.parse(raw) : null;
+  } catch (e) { routingFxSnapshot = null; }
+}
+
+function takeRoutingFxSnapshot() {
+  if (routingFxSnapshot) return;
+  routingFxSnapshot = JSON.parse(JSON.stringify(routingMatrix));
+  try { localStorage.setItem(ROUTING_FX_SNAPSHOT_KEY, JSON.stringify(routingFxSnapshot)); } catch (e) {}
+}
+
+function clearRoutingFxSnapshot() {
+  routingFxSnapshot = null;
+  try { localStorage.removeItem(ROUTING_FX_SNAPSHOT_KEY); } catch (e) {}
+}
+
+// Replace the matrix wholesale, rebuilding only the stems whose routes
+// actually changed (a full applyRouting() stutters the untouched stems).
+function applyRoutingMatrix(next) {
+  Object.keys(audioElements).forEach(ch => {
+    const before = (routingMatrix[ch] || []).join(',');
+    const after = [...(next[ch] || [])].sort((a, b) => a - b);
+    routingMatrix[ch] = after;
+    if (after.join(',') !== before) applyRoutingForStem(ch);
+  });
+  saveRoutingMatrix();
+  renderRoutingGrids();
+  renderRoutingFxButtons();
+}
+
+function mapRoutingMatrix(fn) {
+  const next = {};
+  Object.keys(audioElements).forEach(ch => {
+    next[ch] = [...new Set((routingMatrix[ch] || []).map(fn))];
+  });
+  return next;
+}
+
+function rotateRingOnce() {
+  return mapRoutingMatrix(out => {
+    const i = AMP_RING.indexOf(out);
+    return i < 0 ? out : AMP_RING[(i + 1) % AMP_RING.length];
+  });
+}
+
+function stopSwirl() {
+  if (swirlTimer) clearInterval(swirlTimer);
+  swirlTimer = null;
+  swirlStep = 0;
+}
+
+function routingFxReset() {
+  stopSwirl();
+  if (routingFxSnapshot) {
+    const snap = routingFxSnapshot;
+    clearRoutingFxSnapshot();
+    applyRoutingMatrix(snap);
+  } else {
+    renderRoutingFxButtons();
+  }
+}
+
+function routingFxAll() {
+  stopSwirl();
+  takeRoutingFxSnapshot();
+  const next = {};
+  Object.keys(audioElements).forEach(ch => { next[ch] = [...ALL_AMPS_ROUTES]; });
+  applyRoutingMatrix(next);
+}
+
+// LR: a stereo source across every amp, kept left/right. In SOURCE / jam
+// mode strip 1 carries the left channel and strip 2 the right, so strip 1
+// goes to the house-left amps and strip 2 to the house-right amps. With
+// stems, every stem goes to every amp; the stem's left channel lands on the
+// odd outputs and its right on the even ones (applyRoutingForStem pairs
+// sorted outputs L,R,L,R…).
+function routingFxLR() {
+  stopSwirl();
+  takeRoutingFxSnapshot();
+  const next = {};
+  Object.keys(audioElements).forEach(ch => {
+    if (jamMode && ch === 'vocals') next[ch] = [...LR_LEFT_ROUTES];
+    else if (jamMode && ch === 'drums') next[ch] = [...LR_RIGHT_ROUTES];
+    else next[ch] = [...LR_LEFT_ROUTES, ...LR_RIGHT_ROUTES];
+  });
+  applyRoutingMatrix(next);
+}
+
+function routingFxFlip() {
+  stopSwirl();
+  takeRoutingFxSnapshot();
+  applyRoutingMatrix(mapRoutingMatrix(out => (out in FLIP_LR ? FLIP_LR[out] : out)));
+}
+
+// Hold the current pattern for a step, then shift one position around the
+// ring each step. SWIRL_STEPS is a whole number of laps, so the pattern is
+// back where it started when it ends. Pressing Swirl mid-way stops it and
+// restores the snapshot.
+function routingFxSwirl() {
+  if (swirlTimer) { routingFxReset(); return; }
+  takeRoutingFxSnapshot();
+  swirlStep = 0;
+  swirlTimer = setInterval(() => {
+    swirlStep += 1;
+    applyRoutingMatrix(rotateRingOnce());
+    if (swirlStep >= SWIRL_STEPS) {
+      stopSwirl();
+      // A clean lap ends exactly where it began; if nothing else was
+      // changed along the way, there is nothing left for Reset to undo.
+      if (JSON.stringify(routingMatrix) === JSON.stringify(routingFxSnapshot)) clearRoutingFxSnapshot();
+      renderRoutingFxButtons();
+    }
+  }, SWIRL_STEP_MS);
+  renderRoutingFxButtons();
+}
+
+// ── Routing › Input (Bill 2026-11-01) ─────────────────────────────────────
+// One-click picks of WHAT plays, beside the amp tricks: SOURCE (the song's
+// original stereo, see the SOURCE pill), ALL STEMS, or a stem combination.
+// A combination unmutes just those stems, mutes the rest and clears solos;
+// mute state is global, so the pick carries over to the next song (the
+// same as the mute buttons). Add a combination by adding a row here and a
+// button with the same data-input in index.html.
+const ROUTING_INPUTS = {
+  ALL: ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'],
+  D:   ['drums'],
+  BD:  ['bass', 'drums'],
+  B:   ['bass'],
+  BDV: ['bass', 'drums', 'vocals'],
+};
+
+function setStemInputs(list) {
+  const on = new Set(list);
+  CHANNELS.forEach(ch => {
+    mixerState.muted[ch] = !on.has(ch);
+    mixerState.soloed[ch] = false;
+    const m = document.getElementById(`mute-${ch}`);
+    const so = document.getElementById(`solo-${ch}`);
+    if (m) m.classList.toggle('active', mixerState.muted[ch]);
+    if (so) so.classList.remove('active');
+  });
+  try { applyMixerVolumes(); } catch (e) {}
+  try { saveMixerState(); } catch (e) {}
+  try { updateClearAllSolosBtn(); } catch (e) {}
+  renderRoutingInputButtons();
+}
+
+function routingInputSelect(key) {
+  if (key === 'SOURCE') {
+    if (jamMode && jamMode.kind === 'source') return;
+    if (!currentSong || currentSong.type !== 'stems') { showToast('Load a song first, then pick SOURCE.'); return; }
+    engageSongSource(currentSong);
+    return;
+  }
+  const list = ROUTING_INPUTS[key];
+  if (!list) return;
+  if (jamMode && jamMode.kind === 'source') leaveSongSource();
+  setStemInputs(list);
+}
+
+function currentRoutingInput() {
+  if (jamMode && jamMode.kind === 'source') return 'SOURCE';
+  if (CHANNELS.some(ch => mixerState.soloed[ch])) return null;
+  const on = CHANNELS.filter(ch => !mixerState.muted[ch]).sort().join(',');
+  for (const [k, list] of Object.entries(ROUTING_INPUTS)) {
+    if ([...list].sort().join(',') === on) return k;
+  }
+  return null;
+}
+
+function renderRoutingInputButtons() {
+  const cur = currentRoutingInput();
+  document.querySelectorAll('.routing-in').forEach(b => {
+    b.classList.toggle('active', b.dataset.input === cur);
+  });
+}
+// Mutes and solos change from many places; keep the highlight honest.
+setInterval(() => { try { renderRoutingInputButtons(); } catch (e) {} }, 1000);
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('.routing-in') : null;
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  routingInputSelect(b.dataset.input);
+});
+
+function bindRoutingFxButtons() {
+  const bind = (sel, fn) => {
+    const b = document.querySelector(sel);
+    if (b && !b.dataset.fxBound) {
+      b.dataset.fxBound = '1';
+      b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+    }
+  };
+  bind('.routing-fx-reset', routingFxReset);
+  bind('.routing-fx-all', routingFxAll);
+  bind('.routing-fx-swirl', routingFxSwirl);
+  bind('.routing-fx-flip', routingFxFlip);
+  bind('.routing-fx-lr', routingFxLR);
+}
+
+function renderRoutingFxButtons() {
+  const reset = document.querySelector('.routing-fx-reset');
+  const swirl = document.querySelector('.routing-fx-swirl');
+  const multi = outputChannelCount > 2;
+  // Amp tricks need a multi-channel device; the Input picks always work.
+  document.querySelectorAll('.routing-fx button:not(.routing-in)').forEach(b => { b.disabled = !multi; });
+  if (reset) {
+    reset.classList.toggle('active', !!routingFxSnapshot);
+    // Greyed out when the routing is already back to normal (2026-10-31).
+    reset.disabled = !multi || (!routingFxSnapshot && !swirlTimer);
+  }
+  if (swirl) {
+    swirl.classList.toggle('active', !!swirlTimer);
+    swirl.textContent = swirlTimer ? `Swirl ${swirlStep}/${SWIRL_STEPS}` : 'Swirl';
+  }
+}
+
 // ── Sidebar splitter ──────────────────────────────────────────────────────
 // Drag the 6px bar between the sidebar and the main content to resize the
 // left pane. Width persists in localStorage. Double-click to reset to the
@@ -6134,7 +6636,7 @@ function getBeatOffsetSec() {
 // have been built (first stems init).
 function clickOutputNode() {
   const st = (typeof stripNodes === 'object' && stripNodes) ? stripNodes.other : null;
-  return (st && st.stripGain) ? st.stripGain : masterGainNode;
+  return (st && st.stripGain) ? (st.preFader || st.stripGain) : masterGainNode;
 }
 
 // Click timing trim. The automatic outputLatency compensation tried here
@@ -6783,7 +7285,9 @@ function setupRoutingUI() {
   // output device supports (defaults to 2 until we know more). On the first
   // user click we revisit to sync outputChannelCount + re-render.
   loadRoutingMatrix();
+  loadRoutingFxSnapshot();
   injectStripRoutingButtons();
+  bindRoutingFxButtons();
   renderRoutingButtons();
   document.addEventListener('click', maybeInitRoutingUI, { once: false });
 }
@@ -7475,28 +7979,30 @@ async function captureStateSnapshot(label) {
   return snap;
 }
 
-// Sound Check plays a fixed 8-word sequence on a fixed 8-channel route:
-//   "Left"  → ch 0  (XR18 Out 1, Main L)
-//   "Right" → ch 1  (XR18 Out 2, Main R)
-//   "One"   → ch 10 (XR18 Out 11, Spread-preset Voice)
-//   "Two"   → ch 11 (XR18 Out 12, Spread-preset Drums)
-//   "Three" → ch 12 (XR18 Out 13, Spread-preset Bass)
-//   "Four"  → ch 13 (XR18 Out 14, Spread-preset Guitar)
-//   "Five"  → ch 14 (XR18 Out 15, Spread-preset Piano)
-//   "Six"   → ch 15 (XR18 Out 16, Spread-preset Other)
-// The numbered labels (instead of stem names) let the operator verify each
-// XR18 output without having to remember the stem-to-channel map. Other
-// in-use XR18 channels (2-9, 16-17) are skipped — Sound Check is a
-// targeted check of the 8 channels simpleStem actually drives.
+// Sound Check plays a fixed 8-word sequence THROUGH THE SONG MIXER so the
+// operator hears each word at the level the band will actually hear it:
+//   "Left"  → masterMerger ch 0 (XR18 Out 1, Main L) → master
+//   "Right" → masterMerger ch 1 (XR18 Out 2, Main R) → master
+//   "One"   → vocals strip  (fader × mute/solo × boost → its routing → master)
+//   "Two"   → drums strip
+//   "Three" → bass strip
+//   "Four"  → guitar strip
+//   "Five"  → piano strip
+//   "Six"   → other strip
+// So "One".."Six" come out of whichever XR18 output(s) each stem is routed
+// to, at the stem's current fader level — a muted stem is silent, a boosted
+// stem is loud. Left/Right bypass the strips but still ride the master.
+// Levels across the room should therefore match except for whatever each
+// strip's fader is doing.
 const SOUNDCHECK_SEQUENCE = [
-  { ch: 0,  word: 'left'  },
-  { ch: 1,  word: 'right' },
-  { ch: 10, word: 'one'   },
-  { ch: 11, word: 'two'   },
-  { ch: 12, word: 'three' },
-  { ch: 13, word: 'four'  },
-  { ch: 14, word: 'five'  },
-  { ch: 15, word: 'six'   },
+  { ch: 0,          word: 'left'  },
+  { ch: 1,          word: 'right' },
+  { stem: 'vocals', word: 'one'   },
+  { stem: 'drums',  word: 'two'   },
+  { stem: 'bass',   word: 'three' },
+  { stem: 'guitar', word: 'four'  },
+  { stem: 'piano',  word: 'five'  },
+  { stem: 'other',  word: 'six'   },
 ];
 // Decoded-AudioBuffer cache keyed by word slug. First Sound Check fetches
 // + decodes once per word (~150 ms each on first run; server-side cache
@@ -7519,10 +8025,9 @@ async function fetchSoundCheckWord(slug) {
 // 2. Creates the AudioContext (initAudioCtx is gated on the gesture flag).
 // 3. Probes destination.maxChannelCount. If the XR18 is selected as system
 //    output, this is the moment we learn 18 not 2.
-// 4. Walks the fixed 8-step SOUNDCHECK_SEQUENCE — speaks "Left", "Right",
-//    "One", "Two", "Three", "Four", "Five", "Six" onto XR18 channels
-//    1, 2, 11, 12, 13, 14, 15, 16 in turn. Channels not present on the
-//    active device are skipped (so MacBook Speakers fires only L+R).
+// 4. Walks the fixed 8-step SOUNDCHECK_SEQUENCE — speaks "Left", "Right"
+//    onto the master bus and "One".."Six" into the six stem strips, so
+//    every word passes through the same gain/routing the song does.
 // 5. Updates the badge to "✓ N channels verified at HH:MM" so the band can
 //    see at a glance that the rig is hot before downbeat.
 let soundCheckInProgress = false;
@@ -7556,42 +8061,40 @@ async function runSoundCheck() {
       tag.classList.add('soundcheck-running');
     }
 
-    // Build a dedicated test-tone subgraph: osc → gain → merger → destination.
-    // We don't reuse stripNodes because the song graph may not exist yet on a
-    // cold launch and we want this to work whether or not a song is loaded.
-    const merger = audioCtx.createChannelMerger(detected);
-    try {
-      merger.channelCount = detected;
-      merger.channelCountMode = 'explicit';
-      merger.channelInterpretation = 'discrete';
-    } catch (e) {}
-    merger.connect(audioCtx.destination);
-
+    // Inject into the song graph (built by initAudioCtx above, with or
+    // without a song loaded): Left/Right → masterMerger ch 0/1; One..Six →
+    // the stem's stripGain input, so fader/mute/solo/boost/routing/master
+    // all apply exactly as they do to the stem itself.
     const GAP_MS  = 120;
     const SPOKEN_GAIN = 1.0;
-    // Only the 8 sequence steps whose target channel exists on the active
-    // output device. On a 2-channel default (MacBook speakers) that filters
-    // down to just "Left" and "Right". On the XR18 (18 ch) all 8 fire.
-    const steps = SOUNDCHECK_SEQUENCE.filter(s => s.ch < detected);
+    const steps = SOUNDCHECK_SEQUENCE;
     // Pre-fetch every word we'll need, concurrently.
     await Promise.all(steps.map(s => fetchSoundCheckWord(s.word).catch(e => {
       console.warn('[soundcheck] word fetch failed:', s.word, e.message);
     })));
     for (let i = 0; i < steps.length; i++) {
-      const { ch, word } = steps[i];
+      const { ch, stem, word } = steps[i];
       const buf = SC_WORD_BUFFER_CACHE[word];
-      if (tag) tag.textContent = `🔊 Sound check… ${i + 1}/${steps.length} "${word}" → ch ${ch + 1}`;
-      document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
-        b.classList.add('soundcheck-flash')
-      );
+      const strip = stem ? (stripNodes && stripNodes[stem]) : null;
+      if (stem && !strip) {
+        console.warn('[soundcheck] no strip for', stem, '— skipping', word);
+        continue;
+      }
+      const where = stem ? `${stem} → ch ${(routingMatrix[stem] || []).map(c => c + 1).join('+') || '?'}`
+                         : `ch ${ch + 1}`;
+      if (tag) tag.textContent = `🔊 Sound check… ${i + 1}/${steps.length} "${word}" → ${where}`;
+      const flashBtns = stem
+        ? document.querySelectorAll(`.${stem}-strip .pos-btn.active`)
+        : document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`);
+      flashBtns.forEach(b => b.classList.add('soundcheck-flash'));
       let durMs = 600; // safe default if buffer didn't load
+      // Mono source for the word: fold any stereo clip to mono first.
+      let mono = null;
       if (buf) {
         const src = audioCtx.createBufferSource();
         src.buffer = buf;
-        const g = audioCtx.createGain();
-        g.gain.value = SPOKEN_GAIN;
-        // Fold any stereo source to mono so the word lands cleanly on one
-        // output channel rather than smearing across destination L+R.
+        mono = audioCtx.createGain();
+        mono.gain.value = SPOKEN_GAIN;
         if (buf.numberOfChannels > 1) {
           const splitter = audioCtx.createChannelSplitter(buf.numberOfChannels);
           const monoMix = audioCtx.createGain();
@@ -7600,34 +8103,40 @@ async function runSoundCheck() {
           for (let j = 0; j < buf.numberOfChannels; j++) {
             splitter.connect(monoMix, j, 0);
           }
-          monoMix.connect(g);
+          monoMix.connect(mono);
         } else {
-          src.connect(g);
+          src.connect(mono);
         }
-        g.connect(merger, 0, ch);
         src.start();
         durMs = Math.ceil(buf.duration * 1000);
       } else {
         // Word fetch failed — fall through to a short tone so the channel
         // still gets verified.
         const osc = audioCtx.createOscillator();
-        const g   = audioCtx.createGain();
+        mono = audioCtx.createGain();
+        mono.gain.setValueAtTime(0, audioCtx.currentTime);
+        mono.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
+        mono.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.18);
         osc.frequency.value = 440;
-        g.gain.setValueAtTime(0, audioCtx.currentTime);
-        g.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
-        g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.18);
-        osc.connect(g);
-        g.connect(merger, 0, ch);
+        osc.connect(mono);
         osc.start();
         osc.stop(audioCtx.currentTime + 0.20);
         durMs = 180;
       }
+      if (stem) {
+        // Present the word as a centred stereo signal (same L/R shape as a
+        // stem) so the strip's 2-way splitter and routing treat it like one.
+        const stereo = audioCtx.createChannelMerger(2);
+        mono.connect(stereo, 0, 0);
+        mono.connect(stereo, 0, 1);
+        stereo.connect(strip.preFader || strip.stripGain);
+      } else {
+        mono.connect(masterMerger, 0, ch);
+      }
       await new Promise(r => setTimeout(r, durMs + GAP_MS));
-      document.querySelectorAll(`.pos-btn[data-ch="${ch}"]`).forEach(b =>
-        b.classList.remove('soundcheck-flash')
-      );
+      flashBtns.forEach(b => b.classList.remove('soundcheck-flash'));
+      try { mono.disconnect(); } catch (e) {}
     }
-    try { merger.disconnect(); } catch (e) {}
 
     if (tag) tag.classList.remove('soundcheck-running');
     const now = new Date();
@@ -7828,6 +8337,7 @@ function renderRoutingGrids() {
       btn.disabled = ch >= outputChannelCount;
     });
   });
+  renderRoutingFxButtons();
 }
 
 // Alias: legacy call sites still use renderRoutingButtons; route them to the
@@ -8113,6 +8623,8 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
 
 function loadSong(song, opts) {
   opts = opts || {};
+  // A real song replaces a jam source; every song starts with pans centred.
+  try { if (jamMode) exitJam(); } catch (e) {}
   // Instrumentation marker — every loadSong call is tagged with the song
   // identity so the SS_DEBUG timeline shows the trigger point for each
   // chain of audio events that follows.
@@ -8150,7 +8662,7 @@ function loadSong(song, opts) {
   // the new variant finishes loading. Only when they share a merged group.
   let resumeAt = 0;
   let resumePlaying = false;
-  if (currentSong && song && currentSong.id !== song.id) {
+  if (currentSong && song && (currentSong.id !== song.id || opts.keepPosition)) {
     const oldMerged = mergedLibrary.find(m => m.variants.some(v => v.id === currentSong.id));
     const newMerged = mergedLibrary.find(m => m.variants.some(v => v.id === song.id));
     if (oldMerged && oldMerged === newMerged) {
@@ -8161,6 +8673,8 @@ function loadSong(song, opts) {
       }
     }
   }
+  // Explicit resume point (SOURCE pill going back to the stems, 2026-11-01).
+  if (opts.resumeAt > 0) resumeAt = opts.resumeAt;
 
   // Stop running outro timers or playback
   if (stretchTimer) clearTimeout(stretchTimer);
@@ -8431,7 +8945,8 @@ function loadSong(song, opts) {
       let src = '';
       let srcKind = 'none';
       if (fileName) {
-        if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]) {
+        if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]
+            && (cached.set || 'demucs') === (song.stemSet || 'demucs')) {
           // Best case: pure in-memory Blob URL. Zero server touch.
           src = cached.stems[chan];
           srcKind = 'blob';
@@ -9418,13 +9933,17 @@ function updateTransportIcon() {
   }
 }
 function updateModePills() {
-  const mode = drumMachineActive ? 'drum' : backingTrackActive ? 'backing' : 'stems';
+  const mode = drumMachineActive ? 'drum'
+             : (jamMode && jamMode.kind === 'source') ? 'source'
+             : backingTrackActive ? 'backing' : 'stems';
   const playing = {
     stems:   isPlaying,
     drum:    !!(drumMachineEl && !drumMachineEl.paused),
     backing: !!(backingTrackEl && !backingTrackEl.paused),
+    source:  !!(backingTrackEl && !backingTrackEl.paused),
   };
-  const map = { stems: 'active-meta-stems', drum: 'active-meta-drum', backing: 'active-meta-backing' };
+  const map = { stems: 'active-meta-stems', drum: 'active-meta-drum', backing: 'active-meta-backing',
+                source: 'active-meta-source' };
   for (const [m, id] of Object.entries(map)) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -9442,6 +9961,7 @@ document.addEventListener('click', (e) => {
   const pill = e.target && e.target.closest ? e.target.closest('#active-meta-stems') : null;
   if (!pill) return;
   e.preventDefault(); e.stopPropagation();
+  if (jamMode && jamMode.kind === 'source') { leaveSongSource(); return; }
   try {
     if (drumMachineActive) disengageDrumMachine();
     if (backingTrackActive) disengageBackingTrack();
@@ -9458,6 +9978,108 @@ document.addEventListener('click', (e) => {
     }
     updateModePills(); updateTransportIcon();
   } catch (err) { console.warn('[stems-pill]', err); }
+});
+
+// SOURCE pill (Bill 2026-11-01): play the song's original stereo
+// (<folder>_SOURCE.m4a) instead of the stems — left on strip 1, right on
+// strip 2, through the jam path. Nothing of the stem song plays: no stems,
+// no automation, no looper, no drum machine. It starts where the stems
+// were; clicking SOURCE (or 6 STEMS) again goes back to the stems at the
+// same place.
+function updateSourcePill() {
+  const pill = document.getElementById('active-meta-source');
+  if (!pill) return;
+  const on = !!(jamMode && jamMode.kind === 'source');
+  const can = on || !!(currentSong && currentSong.type === 'stems' && currentSong.folderName);
+  pill.classList.toggle('disabled', !can);
+  const v = document.getElementById('active-source-value');
+  if (v) v.textContent = on ? 'ON' : 'SRC';
+}
+setInterval(() => { try { updateSourcePill(); } catch (e) {} }, 1000);
+async function engageSongSource(song) {
+  const base = song && song.folderName;
+  if (!base) return;
+  const url = `/api/audio/song-source/${encodeURIComponent(base)}`;
+  try {
+    const r = await fetch(url, { method: 'HEAD' });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || /text\/html/.test(ct)) {
+      showToast(r.status === 404
+        ? `No original stereo for "${song.title}" yet — the _SOURCE.m4a backfill hasn't reached it.`
+        : (/text\/html/.test(ct) ? 'The server is an older version — press ⟳ reset, then try SOURCE again.'
+                                  : `Couldn't open the original stereo (${r.status}).`), 6000);
+      return;
+    }
+  } catch (e) { showToast('Server not answering — SOURCE unavailable.'); return; }
+  const live = Object.values(audioElements).find(audioHasSrc);
+  const startAt = live ? (live.currentTime || 0) : 0;
+  const wasPlaying = isPlaying;
+  // Strips 1–2 carry SOURCE left/right; an input pick like D or B may have
+  // muted them, so open them up (solos off too).
+  setStemInputs(['vocals', 'drums']);
+  await engageJam({ kind: 'source', song, id: base, file: `${base}_SOURCE.m4a`, srcUrl: url,
+                    title: song.title || base, channel: song.artist || '', startAt,
+                    duration: song.duration || null, autoplay: wasPlaying });
+}
+function leaveSongSource() {
+  if (!jamMode || jamMode.kind !== 'source') return;
+  const song = jamMode.song;
+  const at = backingTrackEl ? (backingTrackEl.currentTime || 0) : 0;
+  const playing = !!(backingTrackEl && !backingTrackEl.paused);
+  exitJam();
+  if (song) loadSong(song, { autoplay: playing, resumeAt: at });
+}
+document.addEventListener('click', (e) => {
+  const pill = e.target && e.target.closest ? e.target.closest('#active-meta-source') : null;
+  if (!pill) return;
+  e.preventDefault(); e.stopPropagation();
+  if (jamMode && jamMode.kind === 'source') { leaveSongSource(); return; }
+  if (pill.classList.contains('disabled')) return;
+  engageSongSource(currentSong);
+});
+
+// Stem-set pill (Bill 2026-10-20): D = Demucs stems, L = Logic Pro stems
+// (STEMS/<song>/logic/). Shown only when the loaded song has both sets.
+// Click switches, saves the pick per song, and reloads the song at the
+// same playhead (and keeps playing if it was).
+function updateStemSetPill() {
+  const pill = document.getElementById('active-meta-stemset');
+  if (!pill) return;
+  const sets = (currentSong && currentSong.type === 'stems' && currentSong.stemSets) || [];
+  const show = sets.length > 1;
+  pill.style.display = show ? '' : 'none';
+  if (!show) return;
+  const logic = currentSong.stemSet === 'logic';
+  document.getElementById('active-stemset-value').textContent = logic ? 'L' : 'D';
+  document.getElementById('active-stemset-label').textContent = logic ? 'Logic' : 'Demucs';
+}
+setInterval(() => { try { updateStemSetPill(); } catch (e) {} }, 1000);
+document.addEventListener('click', (e) => {
+  const pill = e.target && e.target.closest ? e.target.closest('#active-meta-stemset') : null;
+  if (!pill) return;
+  e.preventDefault(); e.stopPropagation();
+  const song = currentSong;
+  if (!song || !song.stemsBySet) return;
+  const base = song.folderName;
+  const next = song.stemSet === 'logic' ? 'demucs' : 'logic';
+  if (!song.stemsBySet[next]) return;
+  fetch(`/api/song/${encodeURIComponent(base)}/stem-set`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ set: next }),
+  }).then(r => r.json()).then(j => {
+    if (!j || !j.ok) { showToast(`Couldn't switch stems: ${(j && j.error) || 'server error'}`); return; }
+    for (const row of songLibrary) {
+      if (row && row.type === 'stems' && row.folderName === base && row.stemsBySet) {
+        row.stemSet = next;
+        row.stems = row.stemsBySet[next];
+      }
+    }
+    song.stemSet = next;
+    song.stems = song.stemsBySet[next];
+    updateStemSetPill();
+    if (currentSong === song) loadSong(song, { keepPosition: true });
+  }).catch(err => { console.warn('[stem-set]', err); showToast("Couldn't switch stems — server not answering"); });
 });
 
 function toggleDrumMachine() {
@@ -10541,6 +11163,7 @@ function refreshLyricsForNewSong() {
         }
         currentSong.lyrics = d.lyrics;
         currentSong.lyrics_chunks = d.lyrics_chunks;
+        currentSong.lyrics_source = d.source || null;
         lyricsState.cachedLines = _normalizeLyrics(d.lyrics);
         _renderLyricDisplay();
         console.log('[lyric] prefetched lyrics from disk for', currentSong.folderName);
@@ -10624,6 +11247,7 @@ async function onLyricTap(e) {
           console.log('[lyric] self-heal: pulled lyrics from disk');
           currentSong.lyrics = data.lyrics;
           currentSong.lyrics_chunks = data.lyrics_chunks;
+          currentSong.lyrics_source = data.source || null;
           lyricsState.cachedLines = _normalizeLyrics(data.lyrics);
           lyricsState.cursor = 0;
         }
@@ -10890,6 +11514,21 @@ function _renderLyricDisplay() {
   ov.classList.toggle('mode-playback', inPlayback);
   ov.classList.toggle('mode-placement', !inPlayback);
   ov.style.display = 'flex';
+  _fitLyricsOverlay(ov);
+}
+
+// Bill 2026-10-23: the overlay must not cover the strips' lower controls.
+// Stop it just above the highest visible +5 / +10 boost row so the boost
+// buttons, M / S, and the output-number row stay exposed and clickable.
+// Re-measured on every render (250 ms tick), so it tracks resizes and
+// mixer collapse. No boost row found → full cover, as before.
+function _fitLyricsOverlay(ov) {
+  const mixer = ov.parentElement;
+  const tops = mixer ? [...mixer.querySelectorAll('.pos-bottom-row')]
+    .filter(r => r.offsetParent).map(r => r.getBoundingClientRect().top) : [];
+  if (!tops.length) { ov.style.bottom = ''; return; }
+  const exposed = mixer.getBoundingClientRect().bottom - Math.min(...tops) + 4;
+  ov.style.bottom = Math.max(0, Math.round(exposed)) + 'px';
 }
 
 // Build (or return existing) overlay element absolutely-positioned over
@@ -11023,9 +11662,14 @@ function openLyricsModal(mode = 'initial') {
   if (!modal) { console.warn('[lyric] could not create modal'); return; }
   const songTitle = (currentSong && currentSong.title) || (currentSong && currentSong.folderName) || 'this song';
   const titleEl = modal.querySelector('#lyrics-modal-title');
-  if (titleEl) titleEl.textContent = `Lyrics editor — ${songTitle}`;
-  els.lyricsModalPaste.value = (currentSong && currentSong.lyrics) || '';
-  if (mode === 'edit') {
+  // Artist too (Bill 2026-11-02): several songs share a title (Heartbreaker).
+  const songArtist = (currentSong && currentSong.artist) || '';
+  if (titleEl) titleEl.textContent = `Lyrics editor — ${songTitle}${songArtist ? ` by ${songArtist}` : ''}`;
+  const autoOnly = mode !== 'edit' && _isAutoLyrics(currentSong);
+  els.lyricsModalPaste.value = autoOnly ? '' : ((currentSong && currentSong.lyrics) || '');
+  if (autoOnly) {
+    els.lyricsModalStatus.innerHTML = `Only old auto-fetched lyrics on file — they don't count. Use Google / Ultimate Guitar / AZLyrics on the left, then paste the lyrics here; <strong>Save</strong> replaces the old ones.`;
+  } else if (mode === 'edit') {
     els.lyricsModalStatus.innerHTML = `Edit the lyrics file. One line per displayed line. <strong>Save</strong> overwrites. Use the Google / Ultimate Guitar / AZLyrics buttons on the left to open a search in a new window, then paste here. Right-click the + Lyric button to re-open this editor anytime.`;
   } else if (currentSong && currentSong.lyrics) {
     els.lyricsModalStatus.innerHTML = `Lyrics already cached. Edit + <strong>Save</strong> to overwrite, or close to start tapping along.`;
@@ -11155,6 +11799,154 @@ async function onLyricsReloadTxt() {
 // deleted 2026-06-28. Paste workflow is the only path now — left/middle
 // search buttons open new windows, user pastes the result into the
 // textarea, Save persists it to lyrics.txt + metadata.json.lyrics.
+// ─── Fill-missing-lyrics workflow (Bill 2026-10-23) ─────────────────────
+// Library button "Fill missing lyrics" walks every song with no pasted
+// lyrics, A to Z: loads it and opens the lyrics editor. Save → next song.
+// Skip → next song (asked again next run). Skip for all → marks
+// metadata.json lyrics_skip so later runs leave it out. Cancel (or the
+// backdrop) stops the run.
+const lyricsBatch = { active: false, queue: [], index: 0, saved: 0, skipped: 0 };
+
+// Old auto-fetched lyrics don't count as lyrics (only pasted ones do —
+// lyrics_source 'manual' or a lyrics.txt). Unknown source = treat as real.
+function _isAutoLyrics(song) {
+  const src = song && song.lyrics_source;
+  return !!(song && song.lyrics && String(song.lyrics).trim() && src && src !== 'manual' && src !== 'lyrics.txt');
+}
+
+function _lyricsBatchCandidates() {
+  return (mergedLibrary || [])
+    .map(m => m && m.variants && m.variants.find(v => v && v.type === 'stems'))
+    .filter(v => v && v.folderName && !(v.lyrics && String(v.lyrics).trim()) && !v.lyrics_skip)
+    .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+}
+async function startLyricsBatch() {
+  if (lyricsBatch.active) return;
+  // Ask the server which songs still need lyrics, from disk (2026-11-02):
+  // the library list lags behind saves and Skip-for-all marks. Falls back
+  // to the library list if the server can't answer.
+  let queue = null;
+  showToast('Checking which songs still need lyrics…', 2500);
+  try {
+    const r = await fetch('/api/lyrics/missing', { cache: 'no-store' });
+    const j = (r.headers.get('content-type') || '').includes('json') ? await r.json() : null;
+    if (j && j.ok && Array.isArray(j.bases)) {
+      const want = new Set(j.bases);
+      queue = (mergedLibrary || [])
+        .map(m => m && m.variants && m.variants.find(v => v && v.type === 'stems'))
+        .filter(v => v && v.folderName && want.has(v.folderName))
+        .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+    }
+  } catch (e) {}
+  if (!queue) queue = _lyricsBatchCandidates();
+  if (!queue.length) { showToast('Every song already has lyrics (or is marked Skip for all).'); return; }
+  if (!confirm(`${queue.length} song${queue.length === 1 ? ' has' : 's have'} no lyrics. Go through them now, A to Z?\n\n` +
+      `Save — saves and moves to the next song\nSkip — moves on; it comes up again next time\n` +
+      `Skip for all — marks the song so it never comes up again\nCancel — stops`)) return;
+  Object.assign(lyricsBatch, { active: true, queue, index: 0, saved: 0, skipped: 0 });
+  _lyricsBatchOpenCurrent();
+}
+async function _lyricsBatchOpenCurrent() {
+  while (lyricsBatch.active && lyricsBatch.index < lyricsBatch.queue.length) {
+    const song = lyricsBatch.queue[lyricsBatch.index];
+    // The library list can lag behind disk (CATALOG.json), so confirm on
+    // disk: pasted lyrics already there → move on without asking.
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(song.folderName)}/lyrics`, { cache: 'no-store' });
+      const d = r.ok ? await r.json() : null;
+      if (d && d.lyrics && String(d.lyrics).trim() && (d.source === 'manual' || d.source === 'lyrics.txt')) {
+        song.lyrics = d.lyrics;
+        lyricsBatch.index++;
+        continue;
+      }
+      // Old auto-fetched lyrics: hand them to the song up front, marked as
+      // such, so the editor says so and Save doesn't call them "saved
+      // lyrics" (Bill 2026-11-02: it said no lyrics, then "already has").
+      if (d && d.lyrics) {
+        song.lyrics = d.lyrics;
+        song.lyrics_chunks = d.lyrics_chunks || null;
+        song.lyrics_source = d.source || 'auto';
+      }
+    } catch (e) {}
+    if (!lyricsBatch.active) return;
+    try { loadSong(song, { silentRestore: true }); } catch (e) { console.warn('[lyrics-batch] load failed', e); }
+    openLyricsModal('initial');
+    _lyricsBatchDecorateModal();
+    return;
+  }
+  stopLyricsBatch('done');
+}
+function _lyricsBatchDecorateModal() {
+  const m = els.lyricsModal || document.getElementById('lyrics-modal');
+  if (!m) return;
+  const t = m.querySelector('#lyrics-modal-title');
+  if (t) t.textContent += `  ·  ${lyricsBatch.index + 1} of ${lyricsBatch.queue.length}`;
+  const row = m.querySelector('.midi-modal-buttons');
+  const save = m.querySelector('#lyrics-modal-save');
+  if (!row || !save) return;
+  if (!row.querySelector('#lyrics-batch-skip')) {
+    const mk = (id, label, title, fn) => {
+      const b = document.createElement('button');
+      b.id = id; b.type = 'button'; b.className = 'btn-secondary lyrics-batch-btn';
+      b.textContent = label; b.title = title;
+      b.addEventListener('click', fn);
+      row.insertBefore(b, save);
+    };
+    mk('lyrics-batch-skip', 'Skip', 'Move to the next song without saving. This song comes up again next run.', () => lyricsBatchSkip(false));
+    mk('lyrics-batch-skip-all', 'Skip for all', 'Mark this song (an instrumental, say) so future runs never ask again.', () => lyricsBatchSkip(true));
+  }
+  row.querySelectorAll('.lyrics-batch-btn').forEach(b => { b.style.display = ''; });
+  save.textContent = 'Save & next';
+}
+async function lyricsBatchSkip(forAll) {
+  if (!lyricsBatch.active) return;
+  const song = lyricsBatch.queue[lyricsBatch.index];
+  if (forAll && song) {
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(song.folderName)}/lyrics-skip`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skip: true }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      song.lyrics_skip = true;
+    } catch (e) {
+      showToast(`Couldn't mark "${song.title}" Skip for all: ${e.message}`);
+      return;
+    }
+  }
+  lyricsBatch.skipped++;
+  lyricsBatchAdvance();
+}
+function lyricsBatchAdvance() {
+  if (!lyricsBatch.active) return;
+  lyricsBatch.index++;
+  closeLyricsModal();
+  _lyricsBatchOpenCurrent();
+}
+function stopLyricsBatch(why) {
+  if (!lyricsBatch.active) return;
+  lyricsBatch.active = false;
+  closeLyricsModal();
+  document.querySelectorAll('.lyrics-batch-btn').forEach(b => { b.style.display = 'none'; });
+  const save = document.getElementById('lyrics-modal-save');
+  if (save) save.textContent = 'Save lyrics';
+  const { saved, skipped } = lyricsBatch;
+  const left = Math.max(0, lyricsBatch.queue.length - lyricsBatch.index);
+  showToast(why === 'done'
+    ? `Lyrics pass done — ${saved} saved, ${skipped} skipped.`
+    : `Lyrics pass stopped — ${saved} saved, ${skipped} skipped, ${left} still to do.`, 6000);
+  try { if (typeof renderLibrary === 'function') renderLibrary(); } catch (e) {}
+}
+// Start button + Cancel/backdrop, by delegation so they survive re-renders
+// and the modal's re-injection.
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  if (t.closest('#lfb-fill-lyrics')) { e.preventDefault(); startLyricsBatch(); return; }
+  if (lyricsBatch.active && t.closest('[data-close-lyrics-modal]')) stopLyricsBatch('cancelled');
+}, true);
+
 async function onLyricsModalSave() {
   const base = currentSong && currentSong.folderName;
   if (!base) return;
@@ -11167,7 +11959,7 @@ async function onLyricsModalSave() {
   // one without asking).
   const placedNow = (Array.isArray(automationEvents) ? automationEvents : [])
     .filter(e => e.type === 'lyric-line').length;
-  const hadLyrics = !!(currentSong.lyrics && String(currentSong.lyrics).trim());
+  const hadLyrics = !!(currentSong.lyrics && String(currentSong.lyrics).trim()) && !_isAutoLyrics(currentSong);
   if (hadLyrics || placedNow) {
     // One-shot bypass: if the operator already consented to the replace
     // when they clicked Fetch Lyrics (see onLyricTap), don't ask again.
@@ -11203,6 +11995,7 @@ async function onLyricsModalSave() {
     // can't silently empty cachedLines).
     const persisted = (data && data.lyrics) || text;
     currentSong.lyrics = persisted;
+    currentSong.lyrics_source = 'manual';
     currentSong.lyrics_chunks = data.lyrics_chunks || null;
     lyricsState.cachedLines = _normalizeLyrics(persisted);
     lyricsState.cursor = 0;
@@ -11237,6 +12030,7 @@ async function onLyricsModalSave() {
     lyricsState.activeLines = [];
     if (typeof _renderLyricDisplay === 'function') _renderLyricDisplay();
     closeLyricsModal();
+    if (lyricsBatch.active) { lyricsBatch.saved++; lyricsBatchAdvance(); }
   } finally {
     els.lyricsModalSave.disabled = false;
   }
@@ -12361,6 +13155,7 @@ async function loadAutomationForSong(songBase) {
   const looperLabel = document.getElementById('looper-section-text');
   if (looperBtn) looperBtn.classList.remove('active');
   if (looperLabel) looperLabel.textContent = 'no section';
+  try { showSeamPanel(false); } catch (e) {}
   if (!songBase) {
     automationEvents = [];
     automationSections = [];
@@ -12424,6 +13219,7 @@ async function loadAutomationForSong(songBase) {
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
     automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
+    setCachedBeatGrid(songBase, d.beat_grid);
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
     // Auto-accept candidates: if this song has zero saved sections AND the
     // backfill produced candidate timestamps, materialize them as draft
@@ -12687,6 +13483,7 @@ const AUTOMATION_ROW_GAP    = 2;    // px between rows
 const AUTOMATION_MARKER_MIN_GAP_PX = 4;  // markers closer than this stack
 
 function renderAutomationLane() {
+  try { ensureSectionStrip(); } catch (e) {}
   const lane = document.getElementById('midi-lane');
   const markers = document.getElementById('midi-lane-markers');
   const bands   = document.getElementById('midi-lane-bands');
@@ -12900,6 +13697,8 @@ function attachSectionDividerHandlers(node, idx) {
   node.addEventListener('mousedown', (ev) => {
     ev.stopPropagation();
     downX = ev.clientX;
+    const downInStrip = isInSectionStrip(ev.clientY);
+    lastTouchedDividerT = automationSections[idx] ? automationSections[idx].t : null;
     dragging = false;
     startTime = automationSections[idx]?.t || 0;
     const onMove = (mv) => {
@@ -12922,6 +13721,9 @@ function attachSectionDividerHandlers(node, idx) {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      // Marker strip (2026-10-28): a plain click on a divider up in the
+      // strip deletes it.
+      if (!dragging && downInStrip) { deleteSectionDividerAt(idx); return; }
       if (dragging) {
         // Snap window scales with zoom — when the user has zoomed in to
         // fine-tune a loop boundary, a 2-second candidate magnet would
@@ -12948,6 +13750,7 @@ function attachSectionDividerHandlers(node, idx) {
         // its color/label).
         const MERGE_WINDOW = 0.4;
         const myTime = automationSections[idx].t;
+        lastTouchedDividerT = myTime;
         for (let j = automationSections.length - 1; j >= 0; j--) {
           if (j === idx) continue;
           if (Math.abs(automationSections[j].t - myTime) < MERGE_WINDOW) {
@@ -12965,17 +13768,16 @@ function attachSectionDividerHandlers(node, idx) {
         // loop is unrelated.
         if (sectionLooperActive && sectionLooperRange) {
           const playheadT = currentPlayheadSec();
-          const newRange = findSectionAt(playheadT);
+          const rawRange = findSectionAt(playheadT);
+          const newRange = rawRange && downbeatLockRange(rawRange);
           if (newRange && (
             Math.abs(newRange.startT - sectionLooperRange.startT) > 0.001 ||
             Math.abs(newRange.endT   - sectionLooperRange.endT)   > 0.001
           )) {
             sectionLooperRange = newRange;
-            const label = document.getElementById('looper-section-text');
-            if (label) {
-              const colorName = SECTION_COLORS[newRange.color]?.name || 'section';
-              label.textContent = `${colorName}  ${newRange.startT.toFixed(1)}s → ${newRange.endT.toFixed(1)}s · automation recording paused`;
-            }
+            newRange.origStartT = rawRange.startT;
+            newRange.origEndT = rawRange.endT;
+            setLooperLabel(newRange);
             // Re-setup with the new bounds — generation counter in
             // setupSeamlessLoop guarantees the OLD buffer sources are
             // aborted, AND the latest tearDown call would have killed
@@ -13068,22 +13870,22 @@ function toggleSectionLooper() {
   const label = document.getElementById('looper-section-text');
   if (!sectionLooperActive) {
     const t = currentPlayheadSec();
-    const range = findSectionAt(t);
-    if (!range) {
+    const rawRange = findSectionAt(t);
+    if (!rawRange) {
       if (label) label.textContent = 'no section here';
       return;
     }
+    // Loop edges lock to the nearest downbeats (whole bars); the marker
+    // times are kept so "Write to markers" can move the dividers there.
+    const range = downbeatLockRange(rawRange);
     sectionLooperRange = range;
     sectionLooperActive = true;
     if (btn) btn.classList.add('active');
-    if (label) {
-      const colorName = SECTION_COLORS[range.color]?.name || 'section';
-      label.textContent = `${colorName}  ${range.startT.toFixed(1)}s → ${range.endT.toFixed(1)}s · automation recording paused`;
-      label.classList.add('looper-active-label');
-    }
-    sectionLooperRange.origEndT = range.endT;
-    const st = document.getElementById('loop-seam-tools');
-    if (st) st.style.display = '';
+    if (label) label.classList.add('looper-active-label');
+    setLooperLabel(range);
+    sectionLooperRange.origEndT = rawRange.endT;
+    sectionLooperRange.origStartT = rawRange.startT;
+    showSeamPanel(true);
     setupSeamlessLoop(range.startT, range.endT).catch(err =>
       console.warn('[loop] seamless setup failed (will fall back to seek):', err)
     );
@@ -13095,8 +13897,7 @@ function toggleSectionLooper() {
       label.textContent = 'play through';
       label.classList.remove('looper-active-label', 'looper-recording-disabled');
     }
-    const st2 = document.getElementById('loop-seam-tools');
-    if (st2) st2.style.display = 'none';
+    showSeamPanel(false);
     tearDownSeamlessLoop();
   }
 }
@@ -13121,16 +13922,484 @@ function loopSeamNudge(dir) {
     label.textContent = `${sectionLooperRange.startT.toFixed(1)}s → ${sectionLooperRange.endT.toFixed(1)}s (seam ${trim > 0 ? '+' : ''}${trim} beat)`;
   }
   setupSeamlessLoop(sectionLooperRange.startT, sectionLooperRange.endT).catch(() => {});
+  renderSeamEditor();
 }
+// "Write to markers": move the dividers that bound the loop to the adjusted
+// start / end (seam editor ms nudges, snaps, ±beat). SAVE persists.
 function loopSeamWrite() {
-  if (!sectionLooperActive || !sectionLooperRange || sectionLooperRange.origEndT == null) return;
-  const m = (automationSections || []).find(x => Math.abs(x.t - sectionLooperRange.origEndT) < 0.05);
-  if (!m) { showToast('No section marker at the loop end (song-end loop) — nothing to move.'); return; }
-  m.t = Math.round(sectionLooperRange.endT * 1000) / 1000;
-  sectionLooperRange.origEndT = sectionLooperRange.endT;
-  automationDirty = true;
-  try { renderAutomationLane(); refreshAutomationToolbar(); } catch (e) {}
-  showToast('Section divider moved to ' + m.t.toFixed(2) + 's — press SAVE to make it permanent.');
+  const r = sectionLooperRange;
+  if (!sectionLooperActive || !r) return;
+  const near = (t) => (automationSections || []).find(x => Math.abs(x.t - t) < 0.05);
+  const round = (t) => Math.round(t * 10000) / 10000;
+  const done = [], missing = [];
+  if (r.origEndT != null && Math.abs(r.endT - r.origEndT) > 1e-6) {
+    const m = near(r.origEndT);
+    if (m) { m.t = round(r.endT); r.origEndT = r.endT; done.push(`end → ${m.t.toFixed(3)}s`); }
+    else missing.push('end (the loop runs to the end of the song)');
+  }
+  if (r.origStartT != null && Math.abs(r.startT - r.origStartT) > 1e-6) {
+    const m = r.origStartT > 0.001 ? near(r.origStartT) : null;
+    if (m) { m.t = round(r.startT); r.origStartT = r.startT; done.push(`start → ${m.t.toFixed(3)}s`); }
+    else missing.push('start (the loop starts at the top of the song)');
+  }
+  if (!done.length && !missing.length) { showToast('The loop edges already match the markers.'); return; }
+  if (done.length) {
+    automationSections.sort((a, b) => a.t - b.t);
+    automationDirty = true;
+    try { markAutomationDirty(); } catch (e) {}
+    try { renderAutomationLane(); refreshAutomationToolbar(); } catch (e) {}
+  }
+  showToast((done.length ? 'Moved divider ' + done.join(', ') + ' — press SAVE to keep it.' : '') +
+            (missing.length ? ' No divider to move at the ' + missing.join(' or ') + '.' : ''));
+}
+
+// ─── Loop seam editor (Bill 2026-10-28) ─────────────────────────────────
+// While LOOPER runs: the drum stem around the loop END (orange) laid over
+// the drum stem around the loop START (blue), both centred on the wrap and
+// drawn sample by sample, so the hits that meet at the seam can be lined
+// up. START / END nudge ±1 / ±10 ms or snap to the nearest drum attack;
+// each change re-arms the running loop. "Write to markers" moves the
+// dividers; SAVE keeps them.
+const SEAM_KEEP_SEC = 0.75;   // audio kept either side of each edge
+let seamView = null;          // { sr, half, startT, endT, chan, startData, endData }
+let seamRearmTimer = null;
+
+function captureSeamView(items, startT, endT) {
+  const it = items.find(x => x.chan === 'drums') || items[0];
+  if (!it) { seamView = null; return; }
+  const fb = it.fullBuffer, sr = it.sr, nch = fb.numberOfChannels;
+  const half = Math.round(SEAM_KEEP_SEC * sr);
+  const slice = (centerT) => {
+    const c = Math.round(centerT * sr);
+    const out = new Float32Array(2 * half);
+    for (let ch = 0; ch < nch; ch++) {
+      const d = fb.getChannelData(ch);
+      for (let i = 0; i < 2 * half; i++) {
+        const k = c - half + i;
+        if (k >= 0 && k < d.length) out[i] += d[k] / nch;
+      }
+    }
+    return out;
+  };
+  seamView = { sr, half, startT, endT, chan: it.chan, startData: slice(startT), endData: slice(endT) };
+}
+
+function showSeamPanel(on) {
+  const p = document.getElementById('loop-seam-panel');
+  if (!p) return;
+  p.style.display = on ? '' : 'none';
+  if (!on) { seamView = null; return; }
+  renderSeamEditor();
+}
+
+function seamWindowSec() {
+  const sel = document.getElementById('seam-window');
+  const ms = sel ? parseInt(sel.value, 10) : 150;
+  return (ms > 0 ? ms : 150) / 1000;
+}
+
+function renderSeamEditor() {
+  const panel = document.getElementById('loop-seam-panel');
+  if (!panel || panel.style.display === 'none') return;
+  const r = sectionLooperRange;
+  const info = document.getElementById('seam-info');
+  if (r && info) {
+    const v = currentSong || {};
+    const bpm = v.practiceBpm || v.bpm || 0;
+    const len = r.endT - r.startT;
+    const beats = bpm ? ` = ${(len / (60 / bpm)).toFixed(2)} beats @ ${Math.round(bpm)} BPM` : '';
+    info.textContent = `start ${r.startT.toFixed(3)}s · end ${r.endT.toFixed(3)}s · length ${len.toFixed(3)}s${beats}` +
+                       (seamView ? ` · showing ${seamView.chan}` : '');
+  }
+  const cv = document.getElementById('seam-canvas');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#0d1117'; g.fillRect(0, 0, W, H);
+  const mid = H / 2, cx = W / 2;
+  const win = seamWindowSec();
+  // ms grid
+  const step = win <= 0.03 ? 0.005 : win <= 0.06 ? 0.01 : win <= 0.2 ? 0.025 : 0.1;
+  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '10px sans-serif'; g.textAlign = 'center';
+  for (let t = -Math.floor(win / step) * step; t <= win + 1e-9; t += step) {
+    const x = cx + (t / win) * (W / 2);
+    g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(Math.round(x), 0, 1, H);
+    if (Math.abs(t) > 1e-9) { g.fillStyle = 'rgba(255,255,255,0.4)'; g.fillText(`${t > 0 ? '+' : ''}${Math.round(t * 1000)}`, x, H - 3); }
+  }
+  g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(0, Math.round(mid), W, 1);
+  if (!seamView || !r) {
+    g.fillStyle = 'rgba(255,255,255,0.6)'; g.textAlign = 'center';
+    g.fillText('waiting for the loop audio…', cx, mid - 6);
+    return;
+  }
+  const sv = seamView, sr = sv.sr;
+  // Sample index into a slice for time x (s) relative to edge edgeT.
+  const idxOf = (centerT, edgeT, x) => sv.half + Math.round((edgeT + x - centerT) * sr);
+  // Normalise to the loudest sample on screen (either wave).
+  let peak = 1e-4;
+  for (const [data, c, e] of [[sv.endData, sv.endT, r.endT], [sv.startData, sv.startT, r.startT]]) {
+    const a = Math.max(0, idxOf(c, e, -win)), b = Math.min(data.length, idxOf(c, e, win));
+    for (let i = a; i < b; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
+  }
+  const amp = (H / 2 - 12) / peak;
+  // pass 'faint' = the part of each wave the loop does NOT play (the song
+  // carrying on past the end / leading into the start); pass 'bold' = the
+  // part that plays. Faint first so both bold halves sit on top.
+  const draw = (data, centerT, edgeT, rgb, boldLeft, pass) => {
+    for (let px = 0; px < W; px++) {
+      const x0 = ((px / W) * 2 - 1) * win, x1 = (((px + 1) / W) * 2 - 1) * win;
+      const plays = boldLeft ? (x0 < 0) : (x0 >= 0);
+      if ((pass === 'bold') !== plays) continue;
+      let i0 = idxOf(centerT, edgeT, x0), i1 = Math.max(i0 + 1, idxOf(centerT, edgeT, x1));
+      if (i1 <= 0 || i0 >= data.length) continue;
+      i0 = Math.max(0, i0); i1 = Math.min(data.length, i1);
+      let lo = 0, hi = 0;
+      for (let i = i0; i < i1; i++) { const v = data[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      g.fillStyle = `rgba(${rgb},${plays ? 0.95 : 0.4})`;
+      const y0 = mid - hi * amp, y1 = mid - lo * amp;
+      g.fillRect(px, y0, 1, Math.max(1, y1 - y0));
+    }
+  };
+  for (const pass of ['faint', 'bold']) {
+    draw(sv.endData, sv.endT, r.endT, '255,159,67', true, pass);      // plays BEFORE the wrap
+    draw(sv.startData, sv.startT, r.startT, '79,179,255', false, pass); // plays AFTER the wrap
+  }
+  g.fillStyle = '#ffffff'; g.fillRect(Math.round(cx) - 1, 0, 2, H);
+  g.textAlign = 'left'; g.fillStyle = 'rgba(255,159,67,0.95)'; g.fillText('← loop end', 6, 12);
+  g.textAlign = 'right'; g.fillStyle = 'rgba(79,179,255,0.95)'; g.fillText('loop start →', W - 6, 12);
+}
+
+// Re-arm the running loop with the edited edges (debounced so a burst of
+// clicks re-decodes once). The editor redraws immediately from the audio
+// it already holds.
+function seamRearm() {
+  renderSeamEditor();
+  clearTimeout(seamRearmTimer);
+  seamRearmTimer = setTimeout(() => {
+    const r = sectionLooperRange;
+    if (!sectionLooperActive || !r) return;
+    const label = document.getElementById('looper-section-text');
+    if (label) label.textContent = `${r.startT.toFixed(3)}s → ${r.endT.toFixed(3)}s (seam edited — Write to markers, then SAVE)`;
+    setupSeamlessLoop(r.startT, r.endT).catch(err => console.warn('[seam] re-arm failed:', err));
+  }, 250);
+}
+
+function seamNudge(edge, ms) {
+  const r = sectionLooperRange;
+  if (!sectionLooperActive || !r) return;
+  const d = ms / 1000, round = (t) => Math.round(t * 100000) / 100000;
+  if (edge === 'start') {
+    const v = round(Math.max(0, r.startT + d));
+    if (v >= r.endT - 0.25) return;
+    r.startT = v;
+  } else {
+    const dur = songDurationSec() || Infinity;
+    const v = round(Math.min(dur, r.endT + d));
+    if (v <= r.startT + 0.25) return;
+    r.endT = v;
+  }
+  seamRearm();
+}
+
+// Onset near relT (s, relative to the slice centre): the biggest 2 ms
+// rise in the 1 ms envelope within ±win, walked back to where the hit
+// starts (15 % of its level). Returns seconds relative to the centre, or
+// null when nothing stands out.
+function findOnsetNear(data, sr, half, relT, win) {
+  const sm = Math.max(1, Math.round(sr * 0.001)), lag = 2 * sm;
+  const c = half + Math.round(relT * sr), w = Math.round(win * sr);
+  const a = Math.max(lag + sm, c - w), b = Math.min(data.length - 1, c + w);
+  const env = (i) => { let m = 0; for (let k = i - sm; k <= i; k++) { const v = Math.abs(data[k]); if (v > m) m = v; } return m; };
+  let best = 0, bi = -1;
+  const stride = Math.max(1, Math.round(sm / 4));
+  for (let i = a; i <= b; i += stride) {
+    const rise = env(i) - env(i - lag);
+    if (rise > best) { best = rise; bi = i; }
+  }
+  if (bi < 0 || best < 0.01) return null;
+  const lvl = env(bi);
+  let j = bi;
+  const back = Math.max(1, Math.round(sm / 8));
+  while (j > a - lag && env(j) > 0.15 * lvl) j -= back;
+  return (j - half) / sr;
+}
+
+function seamSnap(edge) {
+  const r = sectionLooperRange, sv = seamView;
+  if (!sectionLooperActive || !r) return;
+  if (!sv) { showToast('Still loading the loop audio — try again in a moment.'); return; }
+  const isStart = edge === 'start';
+  const data = isStart ? sv.startData : sv.endData;
+  const centerT = isStart ? sv.startT : sv.endT;
+  const cur = isStart ? r.startT : r.endT;
+  const rel = findOnsetNear(data, sv.sr, sv.half, cur - centerT, 0.03);
+  if (rel == null) { showToast(`No clear drum hit within 30 ms of the loop ${edge}.`); return; }
+  const t = Math.round((centerT + rel) * 100000) / 100000;
+  if (isStart) { if (t >= r.endT - 0.25) return; r.startT = Math.max(0, t); }
+  else { if (t <= r.startT + 0.25) return; r.endT = t; }
+  seamRearm();
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  const nb = t.closest('[data-seam]');
+  if (nb) { const [edge, ms] = nb.dataset.seam.split(':'); seamNudge(edge, parseFloat(ms)); return; }
+  const sb = t.closest('[data-seam-snap]');
+  if (sb) { seamSnap(sb.dataset.seamSnap); return; }
+});
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'seam-window') renderSeamEditor();
+});
+window.addEventListener('resize', () => { try { renderSeamEditor(); } catch (e) {} });
+
+// ─── Beat grid cache, downbeats, bar nudges (Bill 2026-10-28) ───────────
+// The visualizer beat-tracks the drums stem (beats + which beat is the 1,
+// from the kick). The first load saves that grid to metadata.json; later
+// loads use the saved one, so markers, the looper and the click agree.
+let cachedBeatGrid = null;          // { base, grid } from metadata.json
+let beatGridMetaLoadedFor = null;   // song whose metadata has been read
+let pendingComputedGrid = null;     // computed before the metadata arrived
+let lastTouchedDividerT = null;     // divider the arrow keys act on
+
+function applyCachedBeatGrid() {
+  if (!cachedBeatGrid || !currentSong || currentSong.folderName !== cachedBeatGrid.base) return false;
+  const g = window.songBeatGrid;
+  if (g && g.source === 'cached' && g.base === cachedBeatGrid.base) return true;
+  const c = cachedBeatGrid.grid, b = c.beats;
+  const period = b.length > 1 ? (b[b.length - 1] - b[0]) / (b.length - 1) : 60 / (c.bpm || 120);
+  window.songBeatGrid = {
+    bpm: c.bpm || 60 / period, period, phase: b[0], beats: b.slice(),
+    downbeat: (c.downbeat | 0), source: 'cached', fit: c.fit || 'drums', base: cachedBeatGrid.base,
+  };
+  return true;
+}
+function saveComputedBeatGrid(base, g) {
+  if (!g || g.fit !== 'drums' || !Array.isArray(g.beats) || g.beats.length < 8) return;
+  const body = {
+    beats: g.beats.map(t => Math.round(t * 1000) / 1000),
+    downbeat: g.downbeat | 0, bpm: Math.round((g.bpm || 0) * 100) / 100,
+    source: g.source || '', fit: g.fit,
+  };
+  fetch(`/api/song/${encodeURIComponent(base)}/beat-grid`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then(r => { if (r.ok && !cachedBeatGrid) cachedBeatGrid = { base, grid: body }; }).catch(() => {});
+}
+function setCachedBeatGrid(base, bg) {
+  beatGridMetaLoadedFor = base;
+  cachedBeatGrid = (bg && Array.isArray(bg.beats) && bg.beats.length >= 8) ? { base, grid: bg } : null;
+  if (applyCachedBeatGrid()) return;
+  if (pendingComputedGrid && pendingComputedGrid.base === base) saveComputedBeatGrid(base, pendingComputedGrid.grid);
+  pendingComputedGrid = null;
+}
+// Called by visualizer.js each time it fits a grid for the loaded song.
+window.onSongBeatGrid = function (g) {
+  if (applyCachedBeatGrid()) return;          // the saved grid wins
+  const base = currentSong && currentSong.type === 'stems' ? currentSong.folderName : null;
+  if (!base || !g) return;
+  if (beatGridMetaLoadedFor !== base) { pendingComputedGrid = { base, grid: g }; return; }
+  saveComputedBeatGrid(base, g);
+};
+
+function songDownbeats() {
+  const g = window.songBeatGrid;
+  if (!g || !Array.isArray(g.beats) || g.beats.length < 4) return null;
+  const out = [];
+  for (let k = (((g.downbeat | 0) % 4) + 4) % 4; k < g.beats.length; k += 4) out.push(g.beats[k]);
+  return out.length >= 2 ? out : null;
+}
+function nearestIn(arr, t) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < t) lo = m + 1; else hi = m; }
+  if (lo <= 0) return arr[0];
+  if (lo >= arr.length) return arr[arr.length - 1];
+  return (t - arr[lo - 1] <= arr[lo] - t) ? arr[lo - 1] : arr[lo];
+}
+// Lock a section's loop edges to the nearest downbeats and count its
+// bars. Only edges within half a beat of a downbeat snap, so a divider you
+// deliberately moved by a beat (Shift+arrow — the tracker picked the
+// wrong 1) is left where you put it. No grid → unchanged, bars unknown.
+function downbeatLockRange(range) {
+  const db = songDownbeats();
+  if (!db) return { ...range, bars: null };
+  const bar = (db[db.length - 1] - db[0]) / (db.length - 1);
+  const snap = (t) => { const n = nearestIn(db, t); return Math.abs(n - t) <= bar / 8 ? n : t; };
+  let s = snap(range.startT), e = snap(range.endT);
+  if (e - s < bar * 0.5) { s = range.startT; e = range.endT; }
+  const bars = Math.round(((e - s) / bar) * 4) / 4;   // to the beat
+  return { ...range, startT: s, endT: e, bars };
+}
+function setLooperLabel(range) {
+  const label = document.getElementById('looper-section-text');
+  if (!label || !range) return;
+  const name = SECTION_COLORS[range.color]?.name || 'section';
+  const bars = range.bars ? ` · ${range.bars} bar${range.bars === 1 ? '' : 's'}${Number.isInteger(range.bars) ? '' : ' (not whole bars)'}` : '';
+  label.textContent = `${name}${bars} · ${range.startT.toFixed(2)}s → ${range.endT.toFixed(2)}s`;
+}
+// After a divider moves while LOOPER runs, re-lock and re-arm the loop.
+function rearmLooperFromMarkers() {
+  if (!sectionLooperActive || !sectionLooperRange) return;
+  const raw = findSectionAt(currentPlayheadSec());
+  if (!raw) return;
+  const nr = downbeatLockRange(raw);
+  if (Math.abs(nr.startT - sectionLooperRange.startT) < 0.001 && Math.abs(nr.endT - sectionLooperRange.endT) < 0.001) return;
+  nr.origStartT = raw.startT;
+  nr.origEndT = raw.endT;
+  sectionLooperRange = nr;
+  setLooperLabel(nr);
+  setupSeamlessLoop(nr.startT, nr.endT).catch(err => console.warn('[loop] re-arm failed:', err));
+  renderSeamEditor();
+}
+// ←/→ move the hovered (or last clicked) divider one bar; Shift = one beat.
+function moveDividerByGrid(idx, dir, unit) {
+  const s = automationSections[idx];
+  if (!s) return;
+  const g = window.songBeatGrid;
+  const grid = unit === 'bar' ? songDownbeats() : (g && Array.isArray(g.beats) ? g.beats : null);
+  let newT = null;
+  if (grid && grid.length) {
+    if (dir > 0) newT = grid.find(x => x > s.t + 0.01);
+    else for (let k = grid.length - 1; k >= 0; k--) if (grid[k] < s.t - 0.01) { newT = grid[k]; break; }
+  } else {
+    const v = currentSong || {};
+    const beat = 60 / (v.practiceBpm || v.bpm || 120);
+    newT = s.t + dir * (unit === 'bar' ? 4 : 1) * beat;
+  }
+  if (newT == null) return;
+  const sorted = automationSections.slice().sort((a, b) => a.t - b.t);
+  const pos = sorted.indexOf(s);
+  const prev = sorted[pos - 1], next = sorted[pos + 1];
+  const dur = songDurationSec() || Infinity;
+  if (newT <= (prev ? prev.t + 0.05 : 0.05) || newT >= (next ? next.t - 0.05 : dur - 0.05)) return;
+  s.t = Math.round(newT * 1000) / 1000;
+  lastTouchedDividerT = s.t;
+  renderAutomationLane();
+  markAutomationDirty();
+  rearmLooperFromMarkers();
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const tgt = e.target;
+  if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+  let idx = (hoveredSectionDividerIdx != null && automationSections[hoveredSectionDividerIdx]) ? hoveredSectionDividerIdx : null;
+  if (idx == null && lastTouchedDividerT != null) {
+    const i = automationSections.findIndex(x => Math.abs(x.t - lastTouchedDividerT) < 0.001);
+    if (i >= 0) idx = i;
+  }
+  if (idx == null) return;
+  e.preventDefault();
+  moveDividerByGrid(idx, e.key === 'ArrowRight' ? 1 : -1, e.shiftKey ? 'beat' : 'bar');
+});
+
+// ─── Level-filled fader panes (Bill 2026-10-28) ─────────────────────────
+// Each strip's background fills from the bottom with its stem's colour
+// (the waveform lane colours) to the height of that channel's live,
+// post-fader level.
+const STEM_LEVEL_RGB = {
+  vocals: '233, 30, 99', drums: '46, 204, 113', bass: '41, 128, 185',
+  guitar: '241, 196, 15', piano: '156, 39, 176', other: '255, 152, 0',
+};
+const stripLevelHold = {};
+let stripLevelBuf = null, stripLevelLastT = 0;
+function tickStripLevels(now) {
+  requestAnimationFrame(tickStripLevels);
+  if (now - stripLevelLastT < 33) return;            // ~30 fps is plenty
+  stripLevelLastT = now;
+  for (const chan of Object.keys(STEM_LEVEL_RGB)) {
+    const strip = document.querySelector(`.channel-strip.${chan}-strip`);
+    if (!strip || !strip.offsetParent) continue;
+    let fill = strip.querySelector(':scope > .strip-level-fill');
+    if (!fill) {
+      fill = document.createElement('div');
+      fill.className = 'strip-level-fill';
+      fill.style.setProperty('--lvl-rgb', STEM_LEVEL_RGB[chan]);
+      strip.insertBefore(fill, strip.firstChild);
+    }
+    let lvl = 0;
+    const m = typeof stripNodes !== 'undefined' && stripNodes && stripNodes[chan] && stripNodes[chan].meter;
+    if (m) {
+      if (!stripLevelBuf || stripLevelBuf.length !== m.fftSize) stripLevelBuf = new Float32Array(m.fftSize);
+      m.getFloatTimeDomainData(stripLevelBuf);
+      let sum = 0;
+      for (let i = 0; i < stripLevelBuf.length; i++) sum += stripLevelBuf[i] * stripLevelBuf[i];
+      const rms = Math.sqrt(sum / stripLevelBuf.length);
+      const db = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
+      lvl = Math.min(1, Math.max(0, (db + 50) / 44));   // −50 dBFS → empty, −6 dBFS → full
+    }
+    const prev = stripLevelHold[chan] || 0;
+    const v = lvl >= prev ? lvl : prev * 0.85 + lvl * 0.15;   // fast up, slow fall
+    stripLevelHold[chan] = v;
+    fill.style.height = (v * 100).toFixed(1) + '%';
+  }
+}
+requestAnimationFrame(tickStripLevels);
+
+// ─── Section marker strip (Bill 2026-10-28) ─────────────────────────────
+// The strip along the top of the waveform (where the section labels sit)
+// is the marker strip: click an empty spot to add a divider there, click a
+// divider up in the strip to delete it, drag a divider to move it, click a
+// label to pick its name. A click on the waveform itself still seeks.
+function ensureSectionStrip() {
+  const canvas = document.getElementById('visualizer-canvas');
+  const wrap = canvas && canvas.parentElement;
+  if (!wrap) return null;
+  let strip = document.getElementById('section-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.id = 'section-strip';
+    strip.className = 'section-strip';
+    strip.title = 'Section markers: click to add a divider here · click a divider up here to delete it · drag a divider to move it · click a label to name the section';
+    strip.addEventListener('click', onSectionStripClick);
+    wrap.insertBefore(strip, wrap.firstChild);
+  }
+  strip.style.height = Math.max(14, canvas.offsetTop) + 'px';
+  return strip;
+}
+function isInSectionStrip(clientY) {
+  const s = document.getElementById('section-strip');
+  if (!s) return false;
+  const r = s.getBoundingClientRect();
+  return clientY >= r.top && clientY <= r.bottom;
+}
+function onSectionStripClick(ev) {
+  if (!automationCurrentBase) { showToast('Load a song first.'); return; }
+  const dur = songDurationSec();
+  if (!dur) return;
+  const overlay = document.getElementById('automation-overlay');
+  const rect = (overlay || ev.currentTarget).getBoundingClientRect();
+  if (!rect.width) return;
+  const { s: vs, span } = getViewWindow(dur);
+  addSectionDividerAt(vs + ((ev.clientX - rect.left) / rect.width) * span);
+}
+function addSectionDividerAt(rawT) {
+  const dur = songDurationSec();
+  if (!dur) return;
+  // Same zoom-scaled snap as a divider drag: generous at 1×, raw when
+  // zoomed in for fine placement.
+  const { span } = getViewWindow(dur);
+  const zoomFactor = span > 0 ? dur / span : 1;
+  const t = snapSectionToCandidate(rawT, {
+    maxWindow: Math.max(0.05, Math.min(2.0, span * 0.04)),
+    allowBeatFallback: zoomFactor < 10,
+  });
+  if (t <= 0.05 || t >= dur - 0.05) return;
+  if ((automationSections || []).some(s => Math.abs(s.t - t) < 0.2)) return;   // already a divider there
+  const next = automationSections.slice().sort((a, b) => a.t - b.t).find(s => s.t > t);
+  // The split-off part keeps the name of the section it came from; a
+  // divider after the last one starts as Verse. Click the label to rename.
+  automationSections.push({ t, color: next ? next.color : 2 });
+  automationSections.sort((a, b) => a.t - b.t);
+  lastTouchedDividerT = t;
+  renderAutomationLane();
+  markAutomationDirty();
 }
 
 // Stored so we can restore the volumes the user had before LOOPER engaged.
@@ -13191,14 +14460,34 @@ async function setupSeamlessLoop(startT, endT) {
   const mediaRate = (anyAe && anyAe.playbackRate) || 1;
   const rawOffset = anyAe ? (anyAe.currentTime - startT) : 0;
 
+  // Seam editor: keep a sample-accurate view of the drums around both edges.
+  try { captureSeamView(decoded.filter(Boolean), startT, endT); renderSeamEditor(); } catch (e) {}
+
+  // Re-arm (seam nudges, Write, divider drags): stop the previous loop's
+  // sources right as the new ones start, so the loop never doubles up.
+  for (const old of allLoopBufferSources) {
+    try { old.stop(); } catch (e) {}
+    try { old.disconnect(); } catch (e) {}
+  }
+  allLoopBufferSources.clear();
+
   const sources = {};
   for (const item of decoded.filter(Boolean)) {
     const { chan, ae, nodes, fullBuffer, startSample, loopLen, sr } = item;
     const buf = audioCtx.createBuffer(fullBuffer.numberOfChannels, loopLen, sr);
+    // 8 ms equal-power crossfade at the seam (Bill 2026-10-28): the loop's
+    // last 8 ms blend into the audio just BEFORE the loop start, so the
+    // wrap lands on a continuous waveform — no click.
+    const xf = Math.min(Math.round(0.008 * sr), Math.floor(loopLen / 4), startSample);
     for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
-      buf.getChannelData(ch).set(
-        fullBuffer.getChannelData(ch).subarray(startSample, startSample + loopLen)
-      );
+      const full = fullBuffer.getChannelData(ch);
+      const d = buf.getChannelData(ch);
+      d.set(full.subarray(startSample, startSample + loopLen));
+      for (let i = 0; i < xf; i++) {
+        const w = ((i + 1) / xf) * Math.PI / 2;
+        const k = loopLen - xf + i;
+        d[k] = d[k] * Math.cos(w) + full[startSample - xf + i] * Math.sin(w);
+      }
     }
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
@@ -13211,7 +14500,7 @@ async function setupSeamlessLoop(startT, endT) {
     // to animate the playhead. The BufferSource feeds stripGain in
     // parallel; mediaMute=0 means the MediaElement audio adds nothing.
     if (nodes.mediaMute) nodes.mediaMute.gain.value = 0;
-    src.connect(nodes.stripGain);
+    src.connect(nodes.preFader || nodes.stripGain);
     const offset = Math.max(0, Math.min(loopLen / sr, rawOffset));
     src.start(0, offset);
     sources[chan] = src;
@@ -14469,6 +15758,13 @@ function snapSectionToCandidate(t, opts) {
   // a fine-tune drag at high zoom doesn't get re-quantized to a beat.
   const CANDIDATE_WINDOW = (opts && opts.maxWindow != null) ? opts.maxWindow : 2.0;
   const allowBeatFallback = !(opts && opts.allowBeatFallback === false);
+  // Downbeat lock (Bill 2026-10-28): with a beat grid, a marker lands on
+  // the nearest 1 so every section is whole bars and loops line up. Fine
+  // drags past 10× zoom (allowBeatFallback=false) stay unsnapped.
+  if (allowBeatFallback) {
+    const db = songDownbeats();
+    if (db) return Math.max(0, Math.round(nearestIn(db, t) * 1000) / 1000);
+  }
   if (Array.isArray(automationSectionCandidates) && automationSectionCandidates.length) {
     let best = null, bestDist = CANDIDATE_WINDOW;
     for (const ct of automationSectionCandidates) {

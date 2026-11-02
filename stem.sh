@@ -207,6 +207,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 SRC="${OUT_DIR}/source.wav"
+# Songs keep only the m4a original at rest (2026-11-01, CONTRACTS F-1/F-9);
+# source.wav is a working file, rebuilt from it on a re-stem and deleted at
+# the end of this script.
+SOURCE_M4A="$OUT_DIR/$(basename "$OUT_DIR")_SOURCE.m4a"
 
 # 1) Get source.wav. Three branches:
 #    (a) source.wav already present → skip entirely (idempotent re-runs)
@@ -221,7 +225,7 @@ SRC="${OUT_DIR}/source.wav"
 # Librarian's copy to land before falling back to our own download.
 # Tune/disable: SIMPLE_STEM_SOURCE_WAIT=0 (seconds; default 90).
 SOURCE_WAIT="${SIMPLE_STEM_SOURCE_WAIT:-90}"
-if [[ ! -f "$SRC" && -z "$LOCAL_SOURCE" && -n "$URL_OVERRIDE" && "$SOURCE_WAIT" -gt 0 ]]; then
+if [[ ! -f "$SRC" && ! -f "$SOURCE_M4A" && -z "$LOCAL_SOURCE" && -n "$URL_OVERRIDE" && "$SOURCE_WAIT" -gt 0 ]]; then
   _waited=0
   while [[ ! -f "$SRC" && $_waited -lt $SOURCE_WAIT ]]; do
     (( _waited == 0 )) && echo ">> source.wav not synced yet — waiting up to ${SOURCE_WAIT}s for the Librarian's copy…"
@@ -238,6 +242,13 @@ fi
 
 if [[ -f "$SRC" ]]; then
   echo ">> source.wav already present, skipping import/download."
+elif [[ -f "$SOURCE_M4A" ]]; then
+  echo ">> Rebuilding working source.wav from $(basename "$SOURCE_M4A") (no download)."
+  ffmpeg -y -loglevel error -i "$SOURCE_M4A" -ac 2 -c:a pcm_s16le "$SRC" </dev/null
+  if [[ ! -f "$SRC" ]]; then
+    echo "ffmpeg failed to decode $SOURCE_M4A" >&2
+    exit 1
+  fi
 elif [[ -n "$LOCAL_SOURCE" ]]; then
   echo ">> Importing local source: $LOCAL_SOURCE"
   # ffmpeg handles any input format → PCM 16-bit stereo WAV.
@@ -391,6 +402,23 @@ for stem in vocals drums bass other piano guitar; do
          -movflags +faststart -brand mp42 "$stem_m4a"
 done
 
+# 3b) The stereo original beside the stems (Bill 2026-11-01):
+#     STEMS/<folder>/<folder>_SOURCE.m4a — same AAC 256k + faststart +
+#     brand mp42 rules as the stems (CONTRACTS F-9). Written once; an
+#     existing file is left alone. backfill_source_m4a.sh does old songs.
+if [[ -f "$SOURCE_M4A" ]]; then
+  echo ">> $(basename "$SOURCE_M4A") present, skipping."
+elif [[ -f "$SRC" ]]; then
+  echo ">> Encoding $(basename "$SOURCE_M4A") (stereo original, AAC 256k + faststart + brand mp42)"
+  if ffmpeg -y -loglevel error -i "$SRC" -vn -ac 2 -c:a aac -b:a 256k \
+            -movflags +faststart -brand mp42 "${SOURCE_M4A%.m4a}.tmp.m4a" </dev/null; then
+    mv -f "${SOURCE_M4A%.m4a}.tmp.m4a" "$SOURCE_M4A"
+  else
+    rm -f "${SOURCE_M4A%.m4a}.tmp.m4a"
+    echo "!! could not encode $(basename "$SOURCE_M4A") — stems are unaffected" >&2
+  fi
+fi
+
 # Default: delete stem .wav files after m4a transcode. Opt-out via
 # KEEP_STEM_WAVS=1 for post-process workflows.
 if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
@@ -420,6 +448,14 @@ if [[ -f "$SECTION_SCRIPT" ]]; then
   else
     python3 "$SECTION_SCRIPT" "$OUT_DIR" || echo "  WARN: section_detect failed (non-fatal)"
   fi
+fi
+
+# m4a-only at rest (Bill 2026-11-01): once the stereo original is safely
+# in <folder>_SOURCE.m4a, drop the working source.wav and any Drive-sync
+# duplicates of it. KEEP_SOURCE_WAV=1 keeps them.
+if [[ "${KEEP_SOURCE_WAV:-0}" != "1" && -f "$SOURCE_M4A" ]]; then
+  rm -f "$SRC" "$OUT_DIR"/source\ *.wav 2>/dev/null || true
+  echo ">> Deleted source.wav (kept $(basename "$SOURCE_M4A"); set KEEP_SOURCE_WAV=1 to keep)."
 fi
 
 echo ">> Done. Files:"

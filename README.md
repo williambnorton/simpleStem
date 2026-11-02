@@ -9,6 +9,10 @@ Built for and around the New Mitchell Park band. Two Macs share the
 work: a Mac mini (Librarian) ingests and indexes; a MacBook Pro
 (Performer) renders the stems and serves the portal on stage.
 
+**See it working:** open `http://localhost:3000/README.html` from a running
+portal for the active infographic, an explanation of every stage with live
+readings laid on top.
+
 ---
 
 ## The shape of the system

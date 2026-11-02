@@ -110,3 +110,5 @@ If more than one agent is working at once:
 - **Same slug in two setlists / gigs** is fine (files are content-addressed by folder name); duplicating the folder is the bug.
 - **`git commit -m 'msg with !'`** — zsh history expansion kills the commit. Use `git commit -F <file>` with a heredoc. See memory notes.
 - **Long shell paste blocks with `#` comments** — zsh eats them as args. Prose goes outside the block.
+
+## Imported Claude Cowork project instructions

@@ -250,6 +250,13 @@ each chapter is sliced to its own per-song `source.wav` cache. (Earlier
 versions re-downloaded the whole album once per chapter — N times the
 bandwidth.)
 
+Since 2026-11-01 nothing is kept as WAV (CONTRACTS F-1). When `stem.sh`
+finishes, the stereo original is in `STEMS/<slug>/<slug>_SOURCE.m4a`
+(F-9) and `source.wav` is deleted. A re-stem rebuilds the working
+`source.wav` from that m4a instead of downloading again; the Logic re-stem
+macro and the catalog's BPM/key fill read the m4a. Older songs were
+converted by `backfill_source_m4a.sh` (YouTube fetches paced 1–3 min apart).
+
 The benefit: at a gig, the laptop tether never hits YouTube. All audio
 is already in Drive, and the portal serves from the on-disk
 `~/.bt-cache` mirror.
@@ -708,6 +715,11 @@ librosa; explicit for clarity).
 | `GET` | `/api/song/:base/metadata` | Per-song metadata + artifact summary. |
 | `POST` | `/api/song/:base/refetch` | Wipe artifacts; re-ingest from a new URL. |
 | `POST` | `/api/song/:base/logic-restem` | Trigger the optional Logic Pro re-stem macro (see below). |
+| `PUT` | `/api/song/:base/stem-set` | Pick which stem set plays: `{ "set": "demucs" \| "logic" }`. Saved as `metadata.json` `stem_set`. |
+| `GET` | `/api/audio/stems/:song/logic/:file` | Stream one Logic-set stem; same cache. |
+| `GET` | `/api/audio/song-source/:folder` | The song's stereo original for the SOURCE pill: `STEMS/<folder>/<folder>_SOURCE.m4a`, else `AUDIO_SOURCES/<folder>.m4a`; cached on first play in `~/.bt-cache/SONG_SOURCES/`. |
+| `GET` | `/api/prune/candidates` | Prune page (`/prune.html`): duplicate-version groups with a suggested keeper, live tracks, songs with ≤ 1 play, and the gigs/setlists that use each. |
+| `POST` | `/api/prune/apply` | Merge each duplicate group into its keeper (plays, favorite, tags, lyrics; same-video timed data; setlist/gig entries re-pointed), then hard-delete the rest. Needs `confirm: <count>`. |
 | `POST` | `/api/logic-restem/unlock` | Manual escape hatch for a stuck Logic re-stem lock. |
 | `DELETE` | `/api/song/:base` | Two-click deletion of a song's stems + m4as + metadata. |
 
@@ -718,9 +730,13 @@ librosa; explicit for clarity).
 A per-song escape hatch for when Demucs's separation isn't good enough.
 The portal's `⋯` menu has a "Re-stem in Logic" button that hands the
 song off to a Keyboard Maestro macro on the Performer, which drives
-Logic Pro's Stem Splitter and bounces replacement m4a mixdowns into
-the same `M4A/` directory with the same filenames. The demucs path is
-unchanged; Logic is purely an opt-in upgrade per song.
+Logic Pro's Stem Splitter and bounces six m4a stems into the song's
+`logic/` subfolder (`STEMS/<slug>/logic/vocals.m4a` …), beside the
+Demucs stems rather than over them. The demucs path is unchanged; Logic
+is purely an opt-in second set per song. When a song has both sets the
+Performer's player shows a **D / L** pill to switch between them; the
+pick is saved per song (`metadata.json` `stem_set`), and with no pick
+saved the Logic set plays. See CONTRACTS.md F-8.
 
 ### Trigger flow
 
@@ -731,7 +747,7 @@ sequenceDiagram
     participant SRV as server.js
     participant KBM as KBM Engine
     participant LOGIC as Logic Pro
-    participant FS as M4A/
+    participant FS as STEMS/<slug>/logic/
 
     UI->>SRV: POST /api/song/:base/logic-restem
     SRV->>KBM: osascript (atomic check + set 17 vars + Running=base)
@@ -739,8 +755,8 @@ sequenceDiagram
     SRV->>KBM: spawn(open kmtrigger://macro=simpleStem) — detached
     SRV-->>UI: 200 OK (returns in <1s)
     KBM->>LOGIC: open source.wav, run Stem Splitter
-    LOGIC->>KBM: 4 stems available
-    KBM->>FS: bounce <base>_-V.m4a, _-V-G.m4a, _-V-G-B.m4a, _DO.m4a
+    LOGIC->>KBM: 6 stems available
+    KBM->>FS: bounce vocals, drums, bass, guitar, piano, other (.m4a)
     KBM->>KBM: set simpleStem_Running = "" (release lock)
     Note over UI,FS: Macro takes ~3 min; UI is responsive throughout
 ```
@@ -768,8 +784,9 @@ variables).
 
 ### Variables passed to the macro
 
-All prefixed `simpleStem_`. Paths: `SourceDir`, `SourceWav`, `M4ADir`,
-`M4ABase`. Identity: `Title`, `Artist`, `Version`, `SourceUrl`.
+All prefixed `simpleStem_`. Paths: `SourceDir`, `SourceWav`, `StemDir`
+(the song's `logic/` folder), the six `VocalsFile` … `OtherFile` bounce
+targets inside it, and the legacy `M4ADir` (same folder), `M4ABase`. Identity: `Title`, `Artist`, `Version`, `SourceUrl`.
 Musical metadata: `BPM`, `Key`, `KeySignature`, `Duration`, `Bars`
 (ceil of BPM × Duration / 240, 4/4 assumed), `ClipStartSec`,
 `ClipEndSec`. References: `LyricsUrl`, `ChordsUrl`. Lock: `Running`.

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>simpleStem · Jam</title>
+<!--
+  Jam (Bill 2026-10-31) — find a YouTube backing track, preview it, then
+  hand it to the simpleStem Performer tab:
+    • search: GET /api/jam/search (yt-dlp, no API key)
+    • preview: a normal YouTube player — sound comes out of the system output
+    • "Play in simpleStem": POST /api/jam/fetch downloads the audio only (a few
+      seconds) and queues stemming; then this page tells the Performer tab
+      (BroadcastChannel 'simplestem-jam') to play it on strips 1–2.
+    • after that the video here is muted and follows the Performer's clock.
+  Songs already stemmed go straight to the Performer's stems.
+-->
+<style>
+  :root { --ink:#16181d; --muted:#6b7280; --line:#e3e5ea; --card:#fff; --bg:#f5f6f8; --red:#e74c3c; --green:#2ecc71; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.05rem; }
+  #q { flex: 1; min-width: 220px; font: inherit; font-size: 1rem; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px; }
+  #go { font: inherit; font-weight: 700; padding: 9px 16px; border-radius: 10px; border: 0; background: var(--ink); color: #fff; cursor: pointer; }
+  label.bt { font-size: 0.85rem; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+  main { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.25fr); gap: 16px; padding: 16px 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  #results { display: flex; flex-direction: column; gap: 8px; }
+  .card { display: grid; grid-template-columns: 136px 1fr auto; gap: 10px; align-items: center; background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; }
+  .card:hover { border-color: #b8bcc6; }
+  .card.sel { border-color: var(--red); box-shadow: 0 0 0 2px rgba(231,76,60,0.15); }
+  .card.cur { outline: 3px solid #3b82f6; outline-offset: 1px; }
+  .playnow { font: inherit; font-weight: 800; font-size: 0.85rem; padding: 8px 12px; border-radius: 9px; border: 0; background: var(--red); color: #fff; cursor: pointer; white-space: nowrap; }
+  .playnow:disabled { background: #d5d7dc; color: #888; cursor: default; }
+  #keys { color: var(--muted); font-size: 0.8rem; margin: 0 0 8px; }
+  #keys kbd { font: 700 0.75rem ui-monospace, monospace; border: 1px solid #c9ccd3; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #fff; }
+  .card img { width: 136px; height: 76px; object-fit: cover; border-radius: 6px; background: #ddd; }
+  .card .t { font-weight: 700; }
+  .card .m { color: var(--muted); font-size: 0.85rem; }
+  .badge { display: inline-block; font-size: 0.7rem; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: var(--green); color: #fff; margin-left: 6px; vertical-align: 1px; }
+  #stage { position: sticky; top: 70px; align-self: start; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; }
+  #player-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #111; border-radius: 8px; overflow: hidden; }
+  #player-wrap iframe, #player { width: 100%; height: 100%; }
+  #empty { color: #aaa; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  #now { margin: 10px 0 4px; font-weight: 700; }
+  #playbtn { width: 100%; font: inherit; font-size: 1.05rem; font-weight: 800; padding: 12px; border-radius: 10px; border: 0; background: var(--red); color: #fff; cursor: pointer; margin-top: 6px; }
+  #playbtn:disabled { background: #d5d7dc; color: #888; cursor: default; }
+  #status { margin-top: 8px; font-size: 0.9rem; color: var(--muted); min-height: 1.4em; }
+  #status a { color: var(--ink); font-weight: 700; }
+  .follow { display: inline-block; font-size: 0.75rem; font-weight: 800; padding: 1px 7px; border-radius: 6px; background: var(--ink); color: #fff; }
+  .msg { color: var(--muted); padding: 10px 2px; }
+  #paste { width: 240px; font: inherit; padding: 9px 12px; border: 1.5px dashed #b8bcc6; border-radius: 10px; }
+  #modes { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  #modes .mode { font: inherit; font-weight: 700; padding: 8px 12px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
+  #modes .mode + .mode { border-left: 1.5px solid var(--ink); }
+  #modes .mode.on { background: var(--ink); color: #fff; }
+  .nothumb { width: 136px; height: 76px; border-radius: 6px; background: #2a2d35; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+  #ytlink { font-size: 0.85rem; color: var(--ink); font-weight: 700; white-space: nowrap; }
+  .fixbtn { font: inherit; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 0; background: var(--red); color: #fff; cursor: pointer; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎸 Jam</h1>
+  <input id="q" type="search" placeholder="Search YouTube — e.g. Sultans of Swing" autocomplete="off">
+  <label class="bt"><input type="checkbox" id="addbt" checked> + "backing track"</label>
+  <button id="go" type="button">Search</button>
+  <input id="paste" type="url" placeholder="…or paste a YouTube link" autocomplete="off">
+  <div id="modes" role="tablist" aria-label="What to search">
+    <button type="button" class="mode on" data-mode="yt" title="Search YouTube itself for new backing tracks">YouTube</button>
+    <button type="button" class="mode" data-mode="jammed" title="Backing tracks you've already pulled in through Jam — stored on this Mac, works offline">YT Jamn Tracks</button>
+    <button type="button" class="mode" data-mode="library" title="Your stemmed songs — Play loads the stems">Stem Library</button>
+  </div>
+  <a id="ytlink" href="https://www.youtube.com/results?search_query=backing+track" target="_blank" rel="noopener" title="Open this search on youtube.com in a new tab. Copy any video's address and paste it in the box on the left.">Search on YouTube ↗</a>
+</header>
+<main>
+  <section>
+    <div id="keys"><kbd>↓</kbd> from the search box, then <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Space</kbd> preview · <kbd>Enter</kbd> play in simpleStem · <kbd>Esc</kbd> back to search</div>
+    <div id="results"><div class="msg">Search for a song. Click a result to preview it here — the preview plays out of the system output. When you like one, press <b>Play in simpleStem</b>.</div></div>
+  </section>
+  <aside id="stage">
+    <div id="player-wrap"><div id="empty">Pick a result to preview it</div><div id="player"></div></div>
+    <div id="now"></div>
+    <button id="playbtn" type="button" disabled>▶ Play in simpleStem</button>
+    <div id="status"></div>
+  </aside>
+</main>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const chan = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-jam') : null;
+let mode = 'yt';
+let results = [], current = null, player = null, playerReady = false, following = null, pendingAck = null;
+let cursor = -1;   // keyboard position in the results (Bill 2026-11-01)
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function fmtDur(s) { if (!s && s !== 0) return ''; s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function setStatus(html) { $('status').innerHTML = html; }
+
+// The server answers unknown /api routes with the main web page, so HTML
+// back from an /api call means the server is still running older code
+// than these files (it was not restarted after an update).
+class OldServerError extends Error {}
+async function getJSON(url, opts) {
+  const r = await fetch(url, opts);
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new OldServerError('server out of date');
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function showOldServer(where, retry) {
+  where.innerHTML = `<div class="msg"><b>The simpleStem server is running older code than this page</b> — it was not restarted after the update, so the Jam search isn't there yet.<br>
+    <button type="button" class="fixbtn" id="fix-restart">Restart simpleStem server</button>
+    <div class="m">Same as the ⟳ reset button at the top-left of the Performer: restarts the portal and MIDI helper; a render in progress is left alone. Takes about 10 seconds.</div></div>`;
+  document.getElementById('fix-restart').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Restarting…';
+    try { await fetch('/api/performer/reset', { method: 'POST' }); } catch (er) {}
+    const t0 = Date.now();
+    while (Date.now() - t0 < 60000) {
+      await new Promise(res => setTimeout(res, 1500));
+      try {
+        const v = await fetch('/api/version', { cache: 'no-store' }).then(r => r.json());
+        if (v && !v.updateAvailable) {
+          const ok = await fetch('/api/jam/status/aaaaaaaaaaa').then(r => (r.headers.get('content-type') || '').includes('json')).catch(() => false);
+          if (ok) { retry(); return; }
+        }
+      } catch (er) {}
+      e.target.textContent = `Restarting… ${Math.round((Date.now() - t0) / 1000)} s`;
+    }
+    e.target.disabled = false;
+    e.target.textContent = 'Still old — restart from the Terminal: ./performer.sh restart';
+  };
+}
+
+async function search() {
+  if (mode === 'jammed') return searchJammed();
+  if (mode === 'library') return searchLibrary();
+  let q = $('q').value.trim();
+  if (!q) return;
+  try { localStorage.setItem('simpleStem.jam.q', q); } catch (e) {}
+  if ($('addbt').checked && !/backing\s*track/i.test(q)) q += ' backing track';
+  $('results').innerHTML = '<div class="msg">Searching YouTube…</div>';
+  $('ytlink').href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q);
+  try {
+    const j = await getJSON('/api/jam/search?q=' + encodeURIComponent(q));
+    results = j.results || [];
+    cursor = -1;
+    renderResults();
+  } catch (e) {
+    if (e instanceof OldServerError) { showOldServer($('results'), search); return; }
+    $('results').innerHTML = `<div class="msg">Search failed: ${esc(e.message)}<br>You can still use <b>Search on YouTube ↗</b> and paste a video's link in the box at the top.</div>`;
+  }
+}
+// "YT Jamn Tracks": tracks already pulled in through Jam (stored on the Mac).
+async function searchJammed() {
+  const q = $('q').value.trim();
+  $('results').innerHTML = '<div class="msg">Looking through your jammed tracks…</div>';
+  try {
+    const j = await getJSON('/api/jam/jammed?q=' + encodeURIComponent(q));
+    results = j.results || [];
+    cursor = -1;
+    if (!results.length) { $('results').innerHTML = `<div class="msg">${q ? 'No jammed track matches that.' : 'Nothing jammed yet — find one under YouTube and press Play in simpleStem.'}</div>`; return; }
+    renderResults();
+  } catch (e) {
+    if (e instanceof OldServerError) { showOldServer($('results'), search); return; }
+    $('results').innerHTML = `<div class="msg">Could not list jammed tracks: ${esc(e.message)}</div>`;
+  }
+}
+// "Stem Library": your stemmed songs; every word must match title, artist,
+// singer or a tag. Play loads the stems in the Performer.
+async function searchLibrary() {
+  const words = $('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  $('results').innerHTML = '<div class="msg">Looking through the Stem Library…</div>';
+  try {
+    const lib = await getJSON('/api/library');
+    const songs = (lib.songs || []).filter(s => s && s.type === 'stems' && s.folderName);
+    results = songs.filter(s => {
+      const hay = [s.title, s.artist, s.singer_lead, ...(Array.isArray(s.tags) ? s.tags : [])].join(' ').toLowerCase();
+      return words.every(w => hay.includes(w));
+    }).sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''))).slice(0, 300).map(s => ({
+      id: s.videoId && /^[\w-]{11}$/.test(s.videoId) ? s.videoId : null,
+      url: s.source_url || null, title: s.title || s.folderName, channel: s.artist || '',
+      duration: s.duration || null, inLibrary: s.folderName, library: true,
+    }));
+    cursor = -1;
+    if (!results.length) { $('results').innerHTML = '<div class="msg">No song in the Stem Library matches that.</div>'; return; }
+    renderResults();
+  } catch (e) {
+    if (e instanceof OldServerError) { showOldServer($('results'), search); return; }
+    $('results').innerHTML = `<div class="msg">Could not read the library: ${esc(e.message)}</div>`;
+  }
+}
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#modes .mode').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  document.querySelector('label.bt').style.display = (m === 'yt') ? '' : 'none';
+  $('q').placeholder = m === 'yt' ? 'Search YouTube — e.g. Sultans of Swing'
+                     : m === 'jammed' ? 'Filter your jammed tracks (empty = all)'
+                     : 'Search the Stem Library — title, artist, singer, tag (empty = all)';
+  try { localStorage.setItem('simpleStem.jam.mode', m); } catch (e) {}
+  if (m !== 'yt' || $('q').value.trim()) search();
+  else $('results').innerHTML = '<div class="msg">Search YouTube for a song. Click a result to preview it — the preview plays out of the system output. When you like one, press <b>Play in simpleStem</b>.</div>';
+}
+document.getElementById('modes').addEventListener('click', (e) => {
+  const b = e.target.closest('.mode');
+  if (b) setMode(b.dataset.mode);
+});
+
+function renderResults() {
+  if (!results.length) { $('results').innerHTML = '<div class="msg">Nothing found.</div>'; return; }
+  $('results').innerHTML = results.map((v, i) => `
+    <div class="card${current && current === v ? ' sel' : ''}${i === cursor ? ' cur' : ''}" data-i="${i}">
+      ${v.id ? `<img loading="lazy" src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt="">` : '<div class="nothumb">♪</div>'}
+      <div>
+        <div class="t">${esc(v.title)}${v.inLibrary && !v.library ? '<span class="badge">IN LIBRARY</span>' : ''}</div>
+        <div class="m">${esc(v.channel)}${v.duration ? ' · ' + fmtDur(v.duration) : ''}${v.views ? ' · ' + v.views.toLocaleString() + ' views' : ''}</div>
+      </div>
+      <button type="button" class="playnow" data-play="${i}" title="Start it in simpleStem now — no preview">▶ Play now</button>
+    </div>`).join('');
+}
+$('results').addEventListener('click', (e) => {
+  const pn = e.target.closest('.playnow');
+  if (pn) { cursor = +pn.dataset.play; playNow(results[cursor]); return; }
+  const c = e.target.closest('.card');
+  if (!c) return;
+  cursor = +c.dataset.i;
+  preview(results[cursor]);
+});
+
+function preview(v) {
+  current = v;
+  following = null;          // browsing again: the preview has its own sound
+  renderResults();
+  $('empty').style.display = 'none';
+  $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
+  $('playbtn').disabled = false;
+  $('playbtn').textContent = v.inLibrary ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  if (!v.id) {
+    try { player && player.stopVideo(); } catch (e) {}
+    $('empty').style.display = 'flex';
+    $('empty').textContent = 'No YouTube video on file for this song — press Play to load its stems.';
+    setStatus('');
+    return;
+  }
+  setStatus('Previewing — sound comes out of the system output.');
+  if (!window.YT || !YT.Player) { setStatus('The YouTube player did not load (offline?). You can still press Play in simpleStem.'); return; }
+  if (player && playerReady) {
+    try { player.unMute(); player.loadVideoById(v.id); } catch (e) {}
+  } else {
+    player = new YT.Player('player', {
+      videoId: v.id,
+      playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+      events: { onReady: () => { playerReady = true; try { player.playVideo(); } catch (e) {} } },
+    });
+  }
+}
+
+function sendToPerformer(msg, onAck) {
+  if (!chan) { setStatus('This browser cannot talk to the Performer tab.'); return; }
+  pendingAck = { id: msg.id || msg.base, onAck };
+  chan.postMessage(msg);
+  setTimeout(() => {
+    if (!pendingAck) return;
+    pendingAck = null;
+    const id = msg.id;
+    setStatus(`No simpleStem Performer tab answered. <a href="/#jam=${esc(id)}" target="simplestem-performer">Open the Performer</a> and press the start button there.`);
+  }, 1500);
+}
+
+$('playbtn').addEventListener('click', () => playItem(current));
+
+// One-click Play now (Bill 2026-11-01): skip the preview — select the
+// result, cue its video silently (it follows simpleStem once playing), and
+// start it in simpleStem straight away.
+function playNow(v) {
+  if (!v) return;
+  current = v;
+  following = null;
+  renderResults();
+  $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
+  $('playbtn').textContent = v.inLibrary ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  if (v.id && window.YT && YT.Player) {
+    $('empty').style.display = 'none';
+    if (player && playerReady) { try { player.mute(); player.cueVideoById(v.id); } catch (e) {} }
+    else if (!player) {
+      player = new YT.Player('player', {
+        videoId: v.id,
+        playerVars: { autoplay: 0, mute: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+        events: { onReady: () => { playerReady = true; try { player.mute(); } catch (e) {} } },
+      });
+    }
+  }
+  playItem(v);
+}
+
+let playBusy = false;
+async function playItem(v) {
+  if (!v || playBusy) return;
+  playBusy = true;
+  document.querySelectorAll('.playnow').forEach(b => { b.disabled = true; });
+  $('playbtn').disabled = true;
+  if (v.library && v.inLibrary) {
+    try { player && player.pauseVideo(); } catch (e) {}
+    setStatus('Loading the stems in simpleStem…');
+    sendToPerformer({ type: 'loadSong', base: v.inLibrary, id: v.id || v.inLibrary }, () => setStatus('Playing the stems in simpleStem.'));
+    playDone();
+    return;
+  }
+  try {
+    let j;
+    try {
+      j = await getJSON('/api/jam/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v.url }) });
+    } catch (e) {
+      if (e instanceof OldServerError) { showOldServer($('status'), () => { setStatus('Server restarted — press Play in simpleStem again.'); }); return; }
+      throw e;
+    }
+    if (j.state === 'library' && j.inLibrary) {
+      try { player && player.pauseVideo(); } catch (e) {}
+      setStatus('Loading the stemmed version in simpleStem…');
+      sendToPerformer({ type: 'loadSong', base: j.inLibrary, id: v.id }, () => setStatus('Playing the stems in simpleStem.'));
+      return;
+    }
+    const t0 = Date.now();
+    let job = j;
+    while (job.state === 'downloading') {
+      setStatus(`Fetching the audio… ${Math.round((Date.now() - t0) / 1000)} s`);
+      await new Promise(res => setTimeout(res, 700));
+      job = await getJSON('/api/jam/status/' + v.id);
+    }
+    if (job.state !== 'ready') throw new Error(job.error || 'the audio download failed');
+    try { player && player.pauseVideo(); } catch (e) {}
+    sendToPerformer({ type: 'play', id: job.id, file: job.file, title: job.title || v.title, channel: job.channel || v.channel,
+                      url: job.url, duration: job.duration }, () => {
+      following = job.id;
+      try { player && player.mute(); } catch (e) {}
+      setStatus(`<span class="follow">FOLLOWING SIMPLESTEM</span> Playing on strips 1–2 (SRC L / SRC R)${job.stemQueued !== false ? ' · stemming queued — the Performer\'s ingest line turns into a ▶ link when the stems are ready' : ''}. The video is muted and follows simpleStem.`);
+    });
+  } catch (e) {
+    setStatus('Could not start it: ' + esc(e.message));
+  } finally {
+    playDone();
+  }
+}
+function playDone() {
+  playBusy = false;
+  $('playbtn').disabled = !current;
+  document.querySelectorAll('.playnow').forEach(b => { b.disabled = false; });
+}
+
+// Keyboard flow (Bill 2026-11-01): ↓ from the search box into the results,
+// ↑/↓ move, Space previews (again = pause/resume), Enter plays the result
+// in simpleStem, Esc goes back to the search box.
+function moveCursor(n) {
+  if (!results.length) return;
+  cursor = Math.max(0, Math.min(results.length - 1, n));
+  renderResults();
+  const el = document.querySelector(`.card[data-i="${cursor}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  const inSearch = t === $('q');
+  const typing = !inSearch && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (inSearch) {
+    if (e.key === 'ArrowDown' && results.length) { e.preventDefault(); $('q').blur(); moveCursor(cursor < 0 ? 0 : cursor); }
+    return;
+  }
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveCursor(cursor + 1); }
+  else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (cursor <= 0) { cursor = -1; renderResults(); $('q').focus(); }
+    else moveCursor(cursor - 1);
+  } else if (e.key === ' ' && cursor >= 0) {
+    e.preventDefault();
+    const v = results[cursor];
+    if (current === v && player && playerReady && !following) {
+      try { player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo(); } catch (er) {}
+    } else preview(v);
+  } else if (e.key === 'Enter' && cursor >= 0) {
+    e.preventDefault();
+    playNow(results[cursor]);
+  } else if (e.key === 'Escape') {
+    cursor = -1; renderResults(); $('q').focus();
+  }
+});
+
+if (chan) chan.onmessage = (ev) => {
+  const m = ev.data || {};
+  if (m.type === 'ack' && pendingAck && (m.id === pendingAck.id)) {
+    const cb = pendingAck.onAck; pendingAck = null; if (cb) cb();
+  } else if (m.type === 'clock' && following && m.id === following && player && playerReady) {
+    try {
+      player.mute();
+      const st = player.getPlayerState();       // 1 playing, 2 paused
+      if (m.playing && st !== 1) player.playVideo();
+      if (!m.playing && st === 1) player.pauseVideo();
+      const drift = Math.abs((player.getCurrentTime() || 0) - m.t);
+      if (drift > 0.35) player.seekTo(m.t, true);
+      if (m.rate && player.getPlaybackRate && Math.abs(player.getPlaybackRate() - m.rate) > 0.01) {
+        const rates = player.getAvailablePlaybackRates ? player.getAvailablePlaybackRates() : [];
+        if (rates.includes(m.rate)) player.setPlaybackRate(m.rate);
+      }
+    } catch (e) {}
+  } else if (m.type === 'jam-ended') {
+    if (following) { following = null; setStatus('simpleStem moved on to another song.'); }
+  }
+};
+
+// Paste a YouTube link (from browsing youtube.com yourself) → preview it.
+function idFromUrl(u) {
+  const m = String(u || '').match(/(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/);
+  return m ? m[1] : (/^[\w-]{11}$/.test(String(u).trim()) ? String(u).trim() : null);
+}
+async function usePasted() {
+  const raw = $('paste').value.trim();
+  if (!raw) return;
+  const id = idFromUrl(raw);
+  if (!id) { setStatus('That doesn\'t look like a YouTube video link.'); return; }
+  const v = { id, url: 'https://www.youtube.com/watch?v=' + id, title: 'YouTube video ' + id, channel: '', duration: null, inLibrary: null };
+  results = [v, ...results.filter(r => r.id !== id)];
+  preview(v);
+  $('paste').value = '';
+  try {
+    const t = await getJSON('/api/yt/title?url=' + encodeURIComponent(v.url));
+    if (t && t.title) { v.title = t.title; v.channel = t.channel || ''; renderResults(); $('now').innerHTML = esc(v.title); }
+  } catch (e) {}
+}
+$('paste').addEventListener('keydown', (e) => { if (e.key === 'Enter') usePasted(); });
+$('paste').addEventListener('paste', () => setTimeout(usePasted, 0));
+$('go').addEventListener('click', search);
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
+try { const last = localStorage.getItem('simpleStem.jam.q'); if (last) $('q').value = last; } catch (e) {}
+try { const m = localStorage.getItem('simpleStem.jam.mode'); if (m && m !== 'yt') setMode(m); } catch (e) {}
+$('q').focus();
+window.onYouTubeIframeAPIReady = () => {};
+</script>
+</body>
+</html>

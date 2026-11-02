@@ -92,8 +92,12 @@
         s('Active tasks', [
           'The countdown badges are the scheduled passes: stem precache (hourly), clip, drum, and backing precache (hourly), catalog consistency (hourly on the mini), band-sheet sync (daily). Each badge shows when it last ran and when it fires next.',
         ]),
+        s('Audio sources', [
+          'Stereo m4a files ingested from audio files you dropped into INCOMING_AUDIO on Drive. These double as the Easy Performer imports on the iPad. Each row has a play button (listen-check through the speakers) and a delete. Deleting a source leaves its rendered stems alone.',
+          ['Deleting a whole song', 'The trash button on a library row removes the stems folder, the stereo source, and every cache, after you type the folder name to confirm. Setlists that referenced it simply skip it.'],
+        ]),
         s('Librarian daemons', [
-          'Status of the services on the Mac mini: the webloc watcher, the cataloger, and the sheet sync. If one is down, run ./librarian.sh start on the mini.',
+          'Status of the services on the Mac mini: the webloc watcher, the audio-file watcher, the cataloger, and the sheet sync. If one is down, run ./librarian.sh start on the mini.',
         ]),
       ],
     },

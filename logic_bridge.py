@@ -197,9 +197,25 @@ class Bridge:
         needle = str(body.get("name") or "").strip().lower()
         if not needle:
             raise ValueError("need track (1-%d) or name" % STRIPS)
-        hits = [s for s in self.strips
-                if s.name and (needle in s.name.lower()
-                               or s.name.lower() in needle)]
+        named = [s for s in self.strips if s.name]
+        # Most specific match wins: exact, then prefix, then substring.
+        # Without the tiers, a track named "Dan" next to "Dan Left" and
+        # "Dan Right" would make "dan" unresolvable.
+        exact = [s for s in named if s.name.lower() == needle]
+        if len(exact) == 1:
+            return exact[0]
+        pref = [s for s in named if s.name.lower().startswith(needle)]
+        if len(pref) == 1:
+            return pref[0]
+        # Scribble strips truncate at 7 chars, so "dan left" must find
+        # "Dan Lef": when the request starts with a strip's whole name,
+        # the LONGEST such name wins ("Dan Lef" beats "Dan").
+        starts = sorted((s for s in named if needle.startswith(s.name.lower())),
+                        key=lambda s: -len(s.name))
+        if starts and (len(starts) == 1 or len(starts[0].name) > len(starts[1].name)):
+            return starts[0]
+        hits = pref or [s for s in named
+                        if needle in s.name.lower() or s.name.lower() in needle]
         if not hits:
             raise ValueError("no visible track matches %r (visible: %s)"
                              % (needle, [s.name for s in self.strips if s.name]))

@@ -37,8 +37,8 @@ just by hardware. Three roles share the same Drive folder
 
 | Role | Hardware (typical) | Drive mode | Responsibility |
 |---|---|---|---|
-| **Performer** — the **live App** | MacBook Pro (36 GB, travels) | streams Drive, pins active jobs | The portal at gig time. Plays back the six stems (mixed client-side) plus drum patterns and clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
-| **Song Librarian** | Mac mini (8 GB, 24/7) | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/` and `CATALOG.json`. |
+| **Performer** — the **live App** | MacBook Pro (36 GB, travels); hostname `Performer` (formerly `doghouse`), prompt `wbn@Performer` | streams Drive, pins active jobs | The portal at gig time. Plays back the six stems (mixed client-side) plus drum patterns and clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
+| **Song Librarian** | Mac mini (8 GB, 24/7); hostname `Librarian`, prompt `wbn@Librarian` | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/` and `CATALOG.json`. |
 | **Clip Librarian** | Any Mac with Logic Pro + BlackHole | mirrors Drive (or copy out) | Curates the clip library. Uses video downloaders, BlackHole + Logic Pro for hard-to-grab sources, ffmpeg trim. Writes to `CUSTOM_LOOPS/`. **Lives outside the App** — see `clip_librarian/README.md`. |
 
 **Why this split:**
@@ -167,13 +167,19 @@ UI (studio machine):
   `GET /api/queue` (live status), `POST /api/precache/...`. Reads `STEMS/`,
   `M4A/`, and each song's `metadata.json`; caches audio to `~/.bt-cache`.
 - `start_server.bash` — `cd bt-construction-kit && node server.js`.
+- `bt-construction-kit/public/README.html` — the active infographic: how the
+  system works, with live readings from `/api/librarian/state`,
+  `/api/dashboard/state`, `/api/health` and `/api/identity` laid on top of each
+  panel. Open `http://localhost:3000/README.html` on either machine. Same
+  content is published as the "simpleStem README" artifact (static there).
 
 Data (shared via Drive, git-ignored — see below):
 - `STEMS/<slug>/` — `source.wav`, 6 stems, `metadata.json`, loops.
 - `M4A/` — mixdowns `<Title>_<Artist>_<suffix>.m4a`.
 - `STEM_QUEUE/`, `INCOMING_WEBLOC/` — runtime queues. `.run/` — PIDs/logs.
 
-Docs: `WORKFLOW.md` (diagram), `README.md`, `README-DRAFT.md`.
+Docs: `WORKFLOW.md` (diagram), `README.md`, `README-DRAFT.md`,
+`bt-construction-kit/public/README.html` (active infographic).
 
 ## Running it
 
@@ -392,6 +398,16 @@ times are computed by summing durations from a gig-level "start time"
 field. This is NOT YET WIRED — see the roadmap.
 
 ## Conventions
+
+- **Every documentation update also updates `README.html`** (Bill
+  2026-10-11). `bt-construction-kit/public/README.html` is the project's
+  active infographic: an explanation of how the system works with live
+  instrumentation displayed on top of it, so the reader sees what each part
+  is doing while reading what it is. When a doc change alters the pipeline,
+  services, folders or commands, change the matching panel and, if a new
+  part has a live signal, add a meter for it. Then republish the "simpleStem
+  README" artifact from the same file. Offline mandate applies: no CDN,
+  no remote fonts, everything inline.
 
 - **All songs' m4a stems must be in `~/.bt-cache` at all times — there is NO
   warming phase.** simpleStem's offline-gig contract is absolute: if a song

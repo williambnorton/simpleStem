@@ -924,7 +924,8 @@
   <div class="tb-grid"><a class="pb pb-performer" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian here" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
       <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
-      <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library</span>
+      <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library
+        · <a href="/prune.html" target="simplestem-prune" style="font-weight:700;color:#d11a2a" title="Remove duplicate versions, live tracks and rarely played songs">🧹 Prune library</a></span>
     </h1>
     <div class="meta">
       <span id="hostname">…</span>
@@ -1240,12 +1241,33 @@
               <th data-sort="singer">Singer</th>
               <th data-sort="stems">Stems</th>
               <th data-sort="base">Folder</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="lib-tbody">
-            <tr><td colspan="7" style="text-align:center; padding: 20px; color: var(--ink-dim); font-style: italic;">loading…</td></tr>
+            <tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--ink-dim); font-style: italic;">loading…</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Audio sources</h2>
+        <span class="blurb">Stereo m4a files ingested from INCOMING_AUDIO. Listen-check each one through the speakers; these are also the Easy Performer imports on the iPad (Drive &rsaquo; AUDIO_SOURCES).</span>
+      </div>
+      <div id="asrc-panel">
+        <audio id="asrc-player" controls preload="none" style="width:100%; margin-bottom:8px; display:none;"></audio>
+        <div class="lib-table-wrap">
+          <table class="lib-table">
+            <thead>
+              <tr><th>File</th><th>Size</th><th>Rendered</th><th></th></tr>
+            </thead>
+            <tbody id="asrc-tbody">
+              <tr><td colspan="4" style="text-align:center; padding: 16px; color: var(--ink-dim); font-style: italic;">loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -2229,7 +2251,7 @@
         renderLibrary();
       } catch (e) {
         document.getElementById('lib-tbody').innerHTML =
-          `<tr><td colspan="7" style="text-align:center; padding:20px; color: var(--c-bad);">load failed: ${e.message}</td></tr>`;
+          `<tr><td colspan="8" style="text-align:center; padding:20px; color: var(--c-bad);">load failed: ${e.message}</td></tr>`;
       }
     }
 
@@ -2261,7 +2283,7 @@
         });
       const tbody = document.getElementById('lib-tbody');
       if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color: var(--ink-dim); font-style: italic;">no songs match</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color: var(--ink-dim); font-style: italic;">no songs match</td></tr>`;
       } else {
         tbody.innerHTML = rows.map(r => {
           const cls = r.stemsPresent === 6 ? 'full'
@@ -2277,6 +2299,10 @@
             <td class="col-singer">${escapeHtml(r.singer || '')}</td>
             <td><span class="stems-health ${cls}">${r.stemsPresent}/6 ${missLabel}</span></td>
             <td class="col-base">${escapeHtml(r.base)}</td>
+            <td class="col-actions" style="white-space:nowrap">
+              <button class="row-play" data-base="${escapeHtml(r.base)}" title="Play the stereo source through the speakers (only songs ingested from an audio file have one)">▶</button>
+              <button class="row-del" data-base="${escapeHtml(r.base)}" title="Delete this song: stems folder, stereo source, caches. Asks for typed confirmation.">🗑</button>
+            </td>
           </tr>`;
         }).join('');
       }
@@ -2348,6 +2374,93 @@
     // Refresh the library table periodically so renders that complete
     // while the page is open show up without a manual reload.
     setInterval(loadLibrary, 30000);
+
+    // =================================================================
+    // AUDIO SOURCES — listen-check + delete for the stereo m4a files
+    // audio_watch.sh ingests, and per-song delete on the library rows.
+    // Deletes are HARD (Bill 2026-08-28): the server requires the exact
+    // name echoed back in the body, the UI requires a typed confirm for
+    // whole songs and a click confirm for single source files.
+    // =================================================================
+    let asrcRows = [];
+    const asrcPlayer = document.getElementById('asrc-player');
+
+    function playSource(file) {
+      asrcPlayer.style.display = 'block';
+      asrcPlayer.src = '/api/audio/source/' + encodeURIComponent(file);
+      asrcPlayer.play().catch(() => {});
+    }
+
+    async function loadAudioSources() {
+      try {
+        const r = await fetch('/api/audio-sources', { cache: 'no-store' });
+        const j = await r.json();
+        asrcRows = j.sources || [];
+        const tb = document.getElementById('asrc-tbody');
+        if (!asrcRows.length) {
+          tb.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:16px; color: var(--ink-dim); font-style: italic;">none yet — drop audio files into INCOMING_AUDIO on Drive${j.driveTimeout ? ' (Drive not answering; showing local cache only)' : ''}</td></tr>`;
+          return;
+        }
+        tb.innerHTML = asrcRows.map(s => `<tr>
+          <td>${escapeHtml(s.file)}</td>
+          <td>${s.sizeBytes ? (s.sizeBytes / 1048576).toFixed(1) + ' MB' : '<span style="color:var(--c-warn)">not cached yet</span>'}</td>
+          <td>${s.inLibrary ? '<span style="color:var(--c-good)">✓ stems in library</span>' : '<span style="color:var(--ink-dim)">render pending</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="asrc-play" data-file="${escapeHtml(s.file)}" title="Play through the speakers">▶</button>
+            <button class="asrc-del" data-file="${escapeHtml(s.file)}" title="Delete this stereo file (the rendered stems, if any, are untouched)">🗑</button>
+          </td>
+        </tr>`).join('');
+      } catch (e) {
+        document.getElementById('asrc-tbody').innerHTML =
+          `<tr><td colspan="4" style="text-align:center; padding:16px; color: var(--c-bad);">load failed: ${e.message}</td></tr>`;
+      }
+    }
+
+    document.getElementById('asrc-tbody').addEventListener('click', async (e) => {
+      const play = e.target.closest('.asrc-play');
+      const del = e.target.closest('.asrc-del');
+      if (play) return playSource(play.dataset.file);
+      if (del) {
+        const f = del.dataset.file;
+        if (!confirm('Delete ' + f + ' from AUDIO_SOURCES?\n\nThis is permanent. Rendered stems (if any) are NOT touched.')) return;
+        const r = await fetch('/api/audio-sources/' + encodeURIComponent(f), {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: f }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) alert(j.error || 'delete failed');
+        loadAudioSources();
+      }
+    });
+
+    document.getElementById('lib-tbody').addEventListener('click', async (e) => {
+      const play = e.target.closest('.row-play');
+      const del = e.target.closest('.row-del');
+      if (play) {
+        const base = play.dataset.base;
+        const src = asrcRows.find(s => s.base === base);
+        if (src) return playSource(src.file);
+        return alert('No stereo source file for this song (it was ingested from YouTube). Play it in the Performer view.');
+      }
+      if (del) {
+        const base = del.dataset.base;
+        const typed = prompt(
+          'HARD DELETE this song?\n\nRemoves: STEMS/' + base + '/ on Drive, its stereo source file if any, and all local caches.\nSetlists that reference it will simply skip it.\n\nType the folder name to confirm:');
+        if (typed === null) return;
+        if (typed.trim() !== base) return alert('Name did not match — nothing deleted.');
+        const r = await fetch('/api/song/' + encodeURIComponent(base), {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: base }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) alert(j.error || 'delete failed');
+        loadLibrary();
+        loadAudioSources();
+      }
+    });
+
+    loadAudioSources();
+    setInterval(loadAudioSources, 60000);
 
     // =================================================================
     // ACTIVE TASKS — countdown cards + folder-corner timer badges.

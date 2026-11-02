@@ -31,7 +31,7 @@ INCOMING="$DATA/INCOMING_WEBLOC"
 STEMS="$DATA/STEMS"
 CATALOG_INTERVAL="${CATALOG_INTERVAL:-3600}"   # seconds between catalog passes (hourly)
 MPB_SYNC_INTERVAL="${MPB_SYNC_INTERVAL:-86400}" # seconds between MPB Sheet syncs (daily)
-SERVICES="watcher cataloger catalogwatch mpbsync portal autoupdate heartbeat"
+SERVICES="watcher audiowatch cataloger catalogwatch mpbsync portal autoupdate heartbeat"
 mkdir -p "$RUN"
 
 pidfile() { echo "$RUN/lib-$1.pid"; }
@@ -58,6 +58,12 @@ find_py() {
 start_cmd() {
   case "$1" in
     watcher)   echo "exec '$BASE/webloc_watch.sh'" ;;
+    audiowatch) # Local-file ingest (2026-08-28): audio files dropped into
+               # INCOMING_AUDIO/ become a stereo fast-start m4a in
+               # AUDIO_SOURCES/ (for Easy Performer on the iPad) plus a
+               # staged source.wav + STEM_QUEUE job so the Performer
+               # renders the six stems. Sibling of the webloc watcher.
+               echo "exec '$BASE/audio_watch.sh'" ;;
     cataloger) local py; py="$(find_py)"; [[ -n "$py" ]] || py="python3"
                # Hourly pass: sync registered playlists → SetLists FIRST (this may
                # drop weblocs the watcher then ingests), then rebuild the catalog.
