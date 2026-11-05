@@ -4536,8 +4536,8 @@ app.post('/api/enqueue', (req, res) => {
 // public/jam.html searches YouTube (yt-dlp, no API key), previews in a normal
 // YouTube player, and on "Play in simpleStem" asks this server to fetch the
 // audio only (a few seconds) into ~/.bt-cache/JAM/. The Performer plays that
-// file through strips 1–2 (SRC L / SRC R) while the same URL is queued for
-// stemming the usual way (a webloc in INCOMING_WEBLOC).
+// file as-is through strips 1–2 (SRC L / SRC R). Backing tracks are already
+// mixed to play along with, so nothing is queued for stemming (2026-11-02).
 const JAM_DIR = path.join(AUDIO_CACHE_DIR, 'JAM');
 try { fs.mkdirSync(JAM_DIR, { recursive: true }); } catch (e) {}
 const jamJobs = new Map();   // videoId → { id, url, state, file, title, channel, duration, error, inLibrary }
@@ -4596,16 +4596,6 @@ app.get('/api/jam/search', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'could not read the search results', detail: e.message }); }
 });
 
-function jamQueueStemming(url) {
-  fs.mkdirSync(INCOMING_DIR, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const id = ytVideoId(url) || 'link';
-  const file = path.join(INCOMING_DIR, `jam_${stamp}_${id}.webloc`);
-  fs.writeFileSync(file, '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
-    '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n');
-  logActivity('info', 'ingest', `jam: webloc queued for stemming: ${path.basename(file)}`, { url });
-}
 function jamJobFromDisk(id) {
   try {
     const meta = JSON.parse(fs.readFileSync(path.join(JAM_DIR, `${id}.json`), 'utf8'));
@@ -4617,13 +4607,14 @@ function jamPublic(job) {
   return { ...job, inLibrary: libraryBaseForVideo(job.id) || job.inLibrary || null };
 }
 
-// Body: { url, stem: true|false }. Responds at once; poll /api/jam/status/:id.
+// Body: { url }. Responds at once; poll /api/jam/status/:id.
 app.post('/api/jam/fetch', (req, res) => {
   const url = String((req.body && req.body.url) || '').trim();
   const id = ytVideoId(url);
   if (!id) return res.status(400).json({ error: 'need a YouTube video URL' });
-  const inLib = libraryBaseForVideo(id);
-  if (inLib) return res.json({ id, url, state: 'library', inLibrary: inLib });
+  // Backing tracks play as-is (Bill 2026-11-02): no stemming queued, and a
+  // video that happens to be stemmed in the library still plays as the
+  // stereo mix picked here.
   let job = jamJobs.get(id) || jamJobFromDisk(id);
   if (job && (job.state === 'ready' || job.state === 'downloading')) {
     jamJobs.set(id, job);
@@ -4632,9 +4623,6 @@ app.post('/api/jam/fetch', (req, res) => {
   const canonical = `https://www.youtube.com/watch?v=${id}`;
   job = { id, url: canonical, state: 'downloading', startedAt: Date.now(), file: null, title: null, channel: null, duration: null, error: null };
   jamJobs.set(id, job);
-  if (!(req.body && req.body.stem === false)) {
-    try { jamQueueStemming(canonical); job.stemQueued = true; } catch (e) { job.stemQueued = false; }
-  }
   res.json(jamPublic(job));
   // Audio only: YouTube's own m4a when offered (no transcode = fastest).
   runYtDlp(['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '--no-progress', '--no-warnings',
@@ -4678,7 +4666,7 @@ app.get('/api/jam/jammed', (req, res) => {
     if (!job) continue;
     const hay = `${job.title || ''} ${job.channel || ''}`.toLowerCase();
     if (words.length && !words.every(w => hay.includes(w))) continue;
-    out.push({ id, url: job.url || `https://www.youtube.com/watch?v=${id}`, title: job.title || id,
+    out.push({ id, file: job.file, url: job.url || `https://www.youtube.com/watch?v=${id}`, title: job.title || id,
                channel: job.channel || '', duration: job.duration || null, fetched_at: job.fetched_at || null,
                inLibrary: libraryBaseForVideo(id) });
   }

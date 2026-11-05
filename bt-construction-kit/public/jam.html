@@ -3,17 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>simpleStem · Jam</title>
+<title>simpleStem · Browse audio</title>
 <!--
-  Jam (Bill 2026-10-31) — find a YouTube backing track, preview it, then
-  hand it to the simpleStem Performer tab:
+  Browse for audio content (Bill 2026-10-31, reworked 2026-11-02) — find a
+  YouTube backing track, preview it, then hand it to the simpleStem Performer:
+    • opens on a "backing track" YouTube search with the results showing
     • search: GET /api/jam/search (yt-dlp, no API key)
     • preview: a normal YouTube player — sound comes out of the system output
     • "Play in simpleStem": POST /api/jam/fetch downloads the audio only (a few
-      seconds) and queues stemming; then this page tells the Performer tab
-      (BroadcastChannel 'simplestem-jam') to play it on strips 1–2.
+      seconds); then this page tells the Performer tab (BroadcastChannel
+      'simplestem-jam') to play it as-is, left on strip 1 and right on strip 2,
+      where the Output Routing buttons can spread it over all six amps.
+      Backing tracks are already mixed, so nothing is queued for stemming.
     • after that the video here is muted and follows the Performer's clock.
-  Songs already stemmed go straight to the Performer's stems.
+  Only the Stem Library list loads a song's stems.
 -->
 <style>
   :root { --ink:#16181d; --muted:#6b7280; --line:#e3e5ea; --card:#fff; --bg:#f5f6f8; --red:#e74c3c; --green:#2ecc71; }
@@ -62,7 +65,7 @@
 </head>
 <body>
 <header>
-  <h1>🎸 Jam</h1>
+  <h1>🎧 Browse audio</h1>
   <input id="q" type="search" placeholder="Search YouTube — e.g. Sultans of Swing" autocomplete="off">
   <label class="bt"><input type="checkbox" id="addbt" checked> + "backing track"</label>
   <button id="go" type="button">Search</button>
@@ -140,7 +143,6 @@ async function search() {
   if (mode === 'library') return searchLibrary();
   let q = $('q').value.trim();
   if (!q) return;
-  try { localStorage.setItem('simpleStem.jam.q', q); } catch (e) {}
   if ($('addbt').checked && !/backing\s*track/i.test(q)) q += ' backing track';
   $('results').innerHTML = '<div class="msg">Searching YouTube…</div>';
   $('ytlink').href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q);
@@ -200,7 +202,6 @@ function setMode(m) {
   $('q').placeholder = m === 'yt' ? 'Search YouTube — e.g. Sultans of Swing'
                      : m === 'jammed' ? 'Filter your jammed tracks (empty = all)'
                      : 'Search the Stem Library — title, artist, singer, tag (empty = all)';
-  try { localStorage.setItem('simpleStem.jam.mode', m); } catch (e) {}
   if (m !== 'yt' || $('q').value.trim()) search();
   else $('results').innerHTML = '<div class="msg">Search YouTube for a song. Click a result to preview it — the preview plays out of the system output. When you like one, press <b>Play in simpleStem</b>.</div>';
 }
@@ -237,7 +238,7 @@ function preview(v) {
   $('empty').style.display = 'none';
   $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
   $('playbtn').disabled = false;
-  $('playbtn').textContent = v.inLibrary ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  $('playbtn').textContent = v.library ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
   if (!v.id) {
     try { player && player.stopVideo(); } catch (e) {}
     $('empty').style.display = 'flex';
@@ -281,7 +282,7 @@ function playNow(v) {
   following = null;
   renderResults();
   $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
-  $('playbtn').textContent = v.inLibrary ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  $('playbtn').textContent = v.library ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
   if (v.id && window.YT && YT.Player) {
     $('empty').style.display = 'none';
     if (player && playerReady) { try { player.mute(); player.cueVideoById(v.id); } catch (e) {} }
@@ -317,12 +318,6 @@ async function playItem(v) {
       if (e instanceof OldServerError) { showOldServer($('status'), () => { setStatus('Server restarted — press Play in simpleStem again.'); }); return; }
       throw e;
     }
-    if (j.state === 'library' && j.inLibrary) {
-      try { player && player.pauseVideo(); } catch (e) {}
-      setStatus('Loading the stemmed version in simpleStem…');
-      sendToPerformer({ type: 'loadSong', base: j.inLibrary, id: v.id }, () => setStatus('Playing the stems in simpleStem.'));
-      return;
-    }
     const t0 = Date.now();
     let job = j;
     while (job.state === 'downloading') {
@@ -336,7 +331,7 @@ async function playItem(v) {
                       url: job.url, duration: job.duration }, () => {
       following = job.id;
       try { player && player.mute(); } catch (e) {}
-      setStatus(`<span class="follow">FOLLOWING SIMPLESTEM</span> Playing on strips 1–2 (SRC L / SRC R)${job.stemQueued !== false ? ' · stemming queued — the Performer\'s ingest line turns into a ▶ link when the stems are ready' : ''}. The video is muted and follows simpleStem.`);
+      setStatus(`<span class="follow">FOLLOWING SIMPLESTEM</span> Playing as-is on strips 1–2 (SRC L / SRC R) — use Output Routing (All Amps, Split…) to spread it over the amps. The video is muted and follows simpleStem.`);
     });
   } catch (e) {
     setStatus('Could not start it: ' + esc(e.message));
@@ -433,8 +428,10 @@ $('paste').addEventListener('keydown', (e) => { if (e.key === 'Enter') usePasted
 $('paste').addEventListener('paste', () => setTimeout(usePasted, 0));
 $('go').addEventListener('click', search);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-try { const last = localStorage.getItem('simpleStem.jam.q'); if (last) $('q').value = last; } catch (e) {}
-try { const m = localStorage.getItem('simpleStem.jam.mode'); if (m && m !== 'yt') setMode(m); } catch (e) {}
+// Opens on YouTube backing tracks with the results already showing
+// (Bill 2026-11-02: "Browse for audio content").
+$('q').value = 'backing track';
+search();
 $('q').focus();
 window.onYouTubeIframeAPIReady = () => {};
 </script>

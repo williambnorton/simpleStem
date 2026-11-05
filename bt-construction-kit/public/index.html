@@ -115,7 +115,7 @@
                    title="Jumps to the Library tab and filters the song list to matching rows.">
             <!-- Jam (Bill 2026-10-31): opens the YouTube backing-track finder
                  (jam.html) in its own tab. -->
-            <button type="button" id="jam-open-btn" class="jam-open-btn" title="Open the Jam tab: search YouTube for a backing track, preview it, then play it through simpleStem (strips 1–2) while it's stemmed in the background.">🎸 Jam — find a backing track</button>
+            <button type="button" id="jam-open-btn" class="jam-open-btn" title="Open a browser window showing YouTube backing tracks. Click one to preview it (Mac sound out); Play in simpleStem plays it as-is on strips 1–2, where Output Routing can send it to all six amps.">🎧 Browse for audio content</button>
             <div id="switcher-radio-grid" class="switcher-radio-grid" role="radiogroup" aria-label="Pick a setlist"></div>
             <div class="switcher-new-row">
               <input type="text" id="switcher-new-name" class="switcher-new-input"
@@ -697,25 +697,27 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               </button>
             </div>
 
-            <!-- Routing (renamed from ROUTING FX 2026-11-01): Input = what
-                 plays (SOURCE, all stems, stem combinations); Amps = live
-                 tricks on the ring of amp buttons around every fader.
-                 Logic in app.js (routingInput*, routingFx*). -->
+            <!-- Routing (2026-11-02): two rows.
+                 OUTPUT ROUTING = which amps the stems go to (live tricks on
+                 the ring of amp buttons around every fader);
+                 INSTRUMENT ROUTING = what plays (SOURCE, all stems, stem
+                 combinations — the rest are muted).
+                 Logic in app.js (routingFx*, routingInput*). -->
             <div class="routing-fx" id="routing-fx">
-              <span class="routing-fx-label">ROUTING</span>
-              <span class="routing-fx-sub">Input</span>
+              <span class="routing-fx-label">OUTPUT ROUTING</span>
+              <button class="btn-secondary routing-fx-reset" type="button" title="Every channel back to its default: each stem on its own amp (Vocals → V, Drums → D, Bass → B, Guitar → G, Piano → P, Other → O) plus L/R. Lit when anything has moved.">Reset</button>
+              <button class="btn-secondary routing-fx-all" type="button" title="Every stem to every amp plus L/R.">All Amps</button>
+              <button class="btn-secondary routing-fx-lr" type="button" title="Split left/right across every amp: left side to amps 1/3/5 (V, B, P) plus L, right side to amps 2/4/6 (D, G, O) plus R. In SOURCE or Jam mode strip 1 (left) goes left and strip 2 (right) goes right.">Split</button>
+              <button class="btn-secondary routing-fx-swirl" type="button" title="Rotate every stem's amps one position clockwise around the ring (V→P→B→D→G→O) every second for 18 seconds (three laps), then it stops back on the original amps. Press again to stop early.">Swirl</button>
+              <button class="btn-secondary routing-fx-flip" type="button" title="Mirror left and right: O↔P, G↔B, L↔R. V and D stay. Press again to flip back.">Flip</button>
+              <span class="routing-fx-break"></span>
+              <span class="routing-fx-label">INSTRUMENT ROUTING</span>
               <button class="btn-secondary routing-in" data-input="SOURCE" type="button" title="Play the song's original stereo instead of the stems (left → strip 1, right → strip 2). Pick any stem button to go back to the stems at the same place.">SOURCE</button>
-              <button class="btn-secondary routing-in" data-input="ALL" type="button" title="All six stems: unmutes everything and clears solos.">ALL STEMS</button>
+              <button class="btn-secondary routing-in" data-input="ALL" type="button" title="All six stems: unmutes everything and clears solos.">STEMS</button>
               <button class="btn-secondary routing-in" data-input="D" type="button" title="Drums only (the rest muted).">D</button>
               <button class="btn-secondary routing-in" data-input="BD" type="button" title="Bass + drums (the rest muted).">BD</button>
               <button class="btn-secondary routing-in" data-input="B" type="button" title="Bass only (the rest muted).">B</button>
               <button class="btn-secondary routing-in" data-input="BDV" type="button" title="Bass + drums + vocals (the rest muted).">BDV</button>
-              <span class="routing-fx-sub">Amps</span>
-              <button class="btn-secondary routing-fx-reset" type="button" title="Put the routing back the way it was before the first effect button was pressed.">Reset</button>
-              <button class="btn-secondary routing-fx-all" type="button" title="Every stem to every amp plus L/R: one big mono out of all six.">All</button>
-              <button class="btn-secondary routing-fx-swirl" type="button" title="Rotate every stem's amps one position clockwise around the ring (V→P→B→D→G→O) every second for 18 seconds (three laps), then it stops back on the original amps. Press again to stop early and reset.">Swirl</button>
-              <button class="btn-secondary routing-fx-flip" type="button" title="Mirror left and right: O↔P, G↔B, L↔R. V and D stay. Press again to flip back.">Flip</button>
-              <button class="btn-secondary routing-fx-lr" type="button" title="Stereo across every amp: left side to amps 1/3/5 (V, B, P) plus L, right side to amps 2/4/6 (D, G, O) plus R. In SOURCE or Jam mode strip 1 (left) goes left and strip 2 (right) goes right.">LR</button>
             </div>
 
             <div class="faders-container">
@@ -857,7 +859,10 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
       <!-- Tab bar — three full-width views below the docked player -->
       <nav class="tab-bar" role="tablist" aria-label="Workspace tabs">
         <button class="tab-btn active" data-tab="library" role="tab" aria-selected="true">
-          <i data-lucide="library"></i> Library
+          <i data-lucide="library"></i> Song Library
+        </button>
+        <button class="tab-btn" data-tab="jamtracks" role="tab" aria-selected="false">
+          <i data-lucide="headphones"></i> Jam Tracks
         </button>
         <button class="tab-btn" data-tab="setlist" role="tab" aria-selected="false">
           <i data-lucide="clipboard-list"></i> Setlist
@@ -906,6 +911,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
             <div class="lfb-actions">
               <button id="lfb-make-gig" class="lfb-action-btn lfb-action-btn-primary" title="Create a new gig from the SELECTED songs (check rows, or use the select-all box atop the Set column). Songs are split into setlists of 15-20 each. Clears the selection afterwards.">Make Gig<br>from selection</button>
               <button id="lfb-fill-lyrics" class="lfb-action-btn" title="Go through every song with no pasted lyrics, A to Z, opening the lyrics editor for each. Save moves on; Skip skips it this time; Skip for all marks it so it never comes up again; Cancel stops.">Fill missing<br>lyrics</button>
+              <button id="lfb-dupes" class="lfb-action-btn" type="button" aria-pressed="false" title="Show only songs that look like duplicates (same title and artist once tags like Official Video or Remastered are ignored, or the same YouTube video). Suspected duplicates are grouped side by side. Click again to show every song.">Duplicates<br>only</button>
               <button id="lfb-add-setlist" class="lfb-action-btn lfb-action-btn-primary" title="Append one new setlist containing the SELECTED songs to the current gig. Clears the selection afterwards.">Add setlist<br>from selection</button>
             </div>
           </div>
@@ -949,6 +955,21 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
           <div class="activity-log" id="activity-log"></div>
         </section>
         </section><!-- /tab-pane:library -->
+
+        <!-- Jam Tracks tab — YouTube backing tracks already pulled in through Jam -->
+        <section class="tab-pane" data-tab-pane="jamtracks">
+        <section class="library-section glass">
+          <div class="library-header">
+            <div class="title-area">
+              <h2>Jam Tracks Library</h2>
+              <span class="sub" id="jamtracks-count">Loading…</span>
+            </div>
+            <input id="jamtracks-filter" class="jamtracks-filter" type="search" placeholder="Filter jam tracks (title or channel)…" autocomplete="off">
+            <button id="jamtracks-browse" class="lfb-action-btn" type="button" title="Open the YouTube backing-track finder">🎧 Browse for more</button>
+          </div>
+          <div id="jamtracks-list" class="jamtracks-list"></div>
+        </section>
+        </section><!-- /tab-pane:jamtracks -->
 
         <!-- Setlist tab — was the right rail -->
         <section class="tab-pane" data-tab-pane="setlist">

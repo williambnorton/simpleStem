@@ -28,6 +28,7 @@ let filteredLibrary = []; // filtered view of mergedLibrary
 // empty set = no tag filtering. Singers: UNchecked names (all checked by
 // default). Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
 let libraryTagFilters = new Set();
+let libraryDupesOnly = false;       // "Duplicates only" button (Bill 2026-11-05)
 let libraryKnownTags = new Set();   // tags ever seen — new ones default to CHECKED
 let librarySingersOff = new Set();
 // Default CHECKED (Bill 2026-07-09): both tempo chips start on, so nothing
@@ -2755,9 +2756,75 @@ function setupTabs() {
       if (target === 'drumloops' && !drumLoopsLoaded) {
         loadDrumLoops();
       }
+      if (target === 'jamtracks') loadJamTracks();
     });
   });
 }
+
+// ── Duplicates button (Library filter bar) ────────────────────────────────
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('#lfb-dupes') : null;
+  if (!b) return;
+  e.preventDefault();
+  libraryDupesOnly = !libraryDupesOnly;
+  b.classList.toggle('on', libraryDupesOnly);
+  b.setAttribute('aria-pressed', libraryDupesOnly ? 'true' : 'false');
+  applyFilters();
+  if (libraryDupesOnly && !filteredLibrary.length) showToast('No suspected duplicates found');
+});
+
+// ── Jam Tracks tab (Bill 2026-11-05) ──────────────────────────────────────
+// Lists every YouTube backing track already pulled in through Jam
+// (/api/jam/jammed, stored on this Mac). Play sends it to strips 1–2.
+let jamTracksAll = [];
+function renderJamTracks() {
+  const list = document.getElementById('jamtracks-list');
+  const countEl = document.getElementById('jamtracks-count');
+  if (!list) return;
+  const words = ((document.getElementById('jamtracks-filter') || {}).value || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = jamTracksAll.filter(t => {
+    const hay = `${t.title || ''} ${t.channel || ''}`.toLowerCase();
+    return words.every(w => hay.includes(w));
+  });
+  if (countEl) countEl.textContent = `${rows.length} of ${jamTracksAll.length} jam tracks`;
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty-state"><p>${jamTracksAll.length ? 'No jam track matches that.' : 'Nothing jammed yet — press “Browse for more”, pick a YouTube backing track and press Play in simpleStem.'}</p></div>`;
+    return;
+  }
+  const fmt = s => (s || s === 0) ? `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}` : '';
+  list.innerHTML = rows.map(t => `
+    <div class="jamtrack-row" data-id="${escapeHtml(t.id)}">
+      <img class="jamtrack-thumb" loading="lazy" src="https://i.ytimg.com/vi/${escapeHtml(t.id)}/mqdefault.jpg" alt="" onerror="this.style.visibility='hidden'">
+      <div class="jamtrack-info">
+        <div class="jamtrack-title">${escapeHtml(t.title)}${t.inLibrary ? ' <span class="song-fresh-pill" title="Also in the Song Library">IN LIBRARY</span>' : ''}</div>
+        <div class="jamtrack-meta">${escapeHtml(t.channel || '')}${t.duration ? ' · ' + fmt(t.duration) : ''}${t.fetched_at ? ' · pulled ' + escapeHtml(String(t.fetched_at).slice(0, 10)) : ''}</div>
+      </div>
+      <button type="button" class="lfb-action-btn jamtrack-play" title="Play on strips 1–2 (SRC L / SRC R)">▶ Play</button>
+    </div>`).join('');
+}
+async function loadJamTracks() {
+  const list = document.getElementById('jamtracks-list');
+  if (list && !jamTracksAll.length) list.innerHTML = '<div class="empty-state"><p>Loading jam tracks…</p></div>';
+  try {
+    const r = await fetch('/api/jam/jammed');
+    if (!(r.headers.get('content-type') || '').includes('json')) throw new Error('server out of date — restart simpleStem');
+    jamTracksAll = (await r.json()).results || [];
+    renderJamTracks();
+  } catch (e) {
+    if (list) list.innerHTML = `<div class="empty-state"><p>Could not list jam tracks: ${escapeHtml(e.message)}</p></div>`;
+  }
+}
+document.addEventListener('input', (e) => { if (e.target && e.target.id === 'jamtracks-filter') renderJamTracks(); });
+document.addEventListener('click', (e) => {
+  if (!e.target || !e.target.closest) return;
+  if (e.target.closest('#jamtracks-browse')) { window.open('/jam.html', 'simplestem-jam', 'popup=yes,width=1280,height=860'); return; }
+  const btn = e.target.closest('.jamtrack-play');
+  if (!btn) return;
+  const row = btn.closest('.jamtrack-row');
+  const t = row && jamTracksAll.find(x => x.id === row.dataset.id);
+  if (t && t.file) engageJam(t);
+  else showToast('That jam track has no audio file on this Mac.');
+});
 
 // ── Drum Loops tab ────────────────────────────────────────────────────────
 // Library-wide grid of every song's drums-only loops (the `_DO_loopN_Nbars.m4a`
@@ -3501,13 +3568,13 @@ function loadSongByBase(base, autoplay) {
 }
 
 // ─── Jam mode (Bill 2026-10-31) ─────────────────────────────────────────
-// jam.html (the 🎸 Jam tab) fetches a YouTube backing track's audio and
-// tells this page to play it. The stereo file plays through the backing-
+// jam.html (the 🎧 Browse audio window) fetches a YouTube backing track's
+// audio and tells this page to play it. The stereo file plays through the backing-
 // track element, but instead of going straight to the master it is split:
 // LEFT feeds strip 1 (vocals, relabelled SRC L) and RIGHT feeds strip 2
 // (drums, SRC R) — so faders, mute/solo, boosts, meters and the
-// routing buttons all work on it. The same URL is queued for stemming;
-// the ingest row's ▶ link switches to the stems when they land.
+// routing buttons all work on it. Backing tracks play as-is: nothing is
+// queued for stemming (Bill 2026-11-02).
 let jamMode = null;        // { id, file, title, channel, url, duration }
 let jamNodes = null;       // { splitter, upL, upR }
 let jamLabelsSaved = null;
@@ -3570,7 +3637,7 @@ async function engageJam(j) {
   try { stopLooperIfActive(); } catch (e) {}
   if (isPlaying || Object.values(audioElements).some(audioHasSrc)) { try { stopAudio(); } catch (e) {} }
   if (!wireJamIntoStrips()) {
-    showToast('The audio engine is not running yet — click anywhere on this page, then press Play in the Jam tab again.', 6000);
+    showToast('The audio engine is not running yet — click anywhere on this page, then press Play in simpleStem again.', 6000);
     return;
   }
   // kind 'source' = a library song's original stereo (SOURCE pill); 'song'
@@ -3619,15 +3686,7 @@ async function engageJam(j) {
     showToast(`SOURCE: original stereo of "${jamMode.title}" on strips 1–2 — stems, automation and looper are off`, 5000);
     return;
   }
-  // Follow the stemming in the ingest tracker.
-  const watch = loadIngestWatch();
-  if (!watch.some(w => w.videoId === j.id)) {
-    watch.push({ url: j.url || `https://www.youtube.com/watch?v=${j.id}`, videoId: j.id, title: jamMode.title,
-                 artist: jamMode.channel, status: 'pasted', submittedAt: Date.now(), lastSeenAt: Date.now() });
-    saveIngestWatch(watch);
-  }
-  renderIngestTracker();
-  showToast(`Jam: "${jamMode.title}" on strips 1–2 (SRC L / SRC R) · stemming queued`, 5000);
+  showToast(`"${jamMode.title}" as-is on strips 1–2 (SRC L / SRC R) — Output Routing spreads it over the amps`, 5000);
 }
 function exitJam() {
   if (!jamMode) return;
@@ -3670,14 +3729,13 @@ if (jamChannel) {
   const go = async () => {
     try {
       const j = await fetch('/api/jam/status/' + id).then(r => r.json());
-      if (j && j.inLibrary) { loadSongByBase(j.inLibrary, true); return; }
       if (j && j.state === 'ready') engageJam(j);
-      else showToast('The jam track is not ready yet — try Play in the Jam tab again.');
+      else showToast('The track is not ready yet — press Play in simpleStem in the Browse audio window again.');
     } catch (e) { showToast('Could not reach the jam track.'); }
   };
   const b = document.createElement('button');
   b.className = 'jam-start-overlay';
-  b.textContent = '🎸 Start the jam track';
+  b.textContent = '🎧 Start the backing track';
   b.addEventListener('click', () => { b.remove(); go(); });
   const add = () => document.body.appendChild(b);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
@@ -3686,7 +3744,8 @@ document.addEventListener('click', (e) => {
   const b = e.target && e.target.closest ? e.target.closest('#jam-open-btn') : null;
   if (!b) return;
   e.preventDefault();
-  window.open('/jam.html', 'simplestem-jam');
+  // Its own browser window, opening on a YouTube backing-track search.
+  window.open('/jam.html', 'simplestem-jam', 'popup=yes,width=1280,height=860');
 });
 
 // Track every URL the operator submits in this session so we can show
@@ -4473,9 +4532,12 @@ function renderLibrary() {
     // 🆕 pill: song is freshly stemmed and its levels were never saved.
     // Disappears the moment SAVE writes an init event for the song.
     const isFresh = !!(stemsVarForStar && freshBases.has(stemsVarForStar.folderName));
-    const freshPillHTML = isFresh
+    const dupGroup = libraryDupesOnly ? getDupeGroups().get(merged.id) : null;
+    const freshPillHTML = (isFresh
       ? ' <span class="song-fresh-pill" title="Freshly stemmed — set levels and SAVE to clear">NEW</span>'
-      : '';
+      : '') + (dupGroup
+      ? ` <span class="song-fresh-pill" title="Suspected duplicate — rows with the same number look like the same song">DUP ${dupGroup}</span>`
+      : '');
     // Orange ring on the play circle: song has pasted lyrics.
     const hasLyrics = !!(stemsVarForStar && stemsVarForStar.lyrics && String(stemsVarForStar.lyrics).trim());
     titleCell.innerHTML = `
@@ -5540,6 +5602,62 @@ function onAddSetlistFromSelection() {
   showToast(`Added "${slTitle.trim()}" (${bases.length} songs) to "${activeGig.title}"`);
 }
 
+// ── Suspected duplicates (Bill 2026-11-05) ────────────────────────────────
+// Two library songs are suspected duplicates when their titles match after
+// dropping bracketed text and tags like "Official Video" / "Remastered",
+// AND their artists match (or one contains the other, or one is blank) —
+// or when they came from the same YouTube video. Same title by clearly
+// different artists (a cover) is not flagged.
+function _dupNormTitle(t) {
+  const s = String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\(\[][^\)\]]*[\)\]]/g, ' ')
+    .replace(/\bofficial\s+(music\s+)?(video|audio)\b|\blyrics?\b|\bremaster(ed)?(\s+\d{4})?\b|\b(hd|hq)\b/g, ' ')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/^(the|a) /, '');
+  return s;
+}
+function _dupNormArtist(a) {
+  return String(a || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/^the /, '');
+}
+function _dupArtistsCompatible(a, b) {
+  if (!a || !b || a === b) return true;
+  return (a.length >= 3 && b.includes(a)) || (b.length >= 3 && a.includes(b));
+}
+let _dupCache = { src: null, len: -1, groupOf: new Map() };
+function getDupeGroups() {
+  if (_dupCache.src === mergedLibrary && _dupCache.len === mergedLibrary.length) return _dupCache.groupOf;
+  const parent = mergedLibrary.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const union = (a, b) => { parent[find(a)] = find(b); };
+  const byTitle = new Map(), byVideo = new Map();
+  mergedLibrary.forEach((m, i) => {
+    const nt = _dupNormTitle(m.title);
+    if (nt) { if (!byTitle.has(nt)) byTitle.set(nt, []); byTitle.get(nt).push(i); }
+    for (const v of m.variants) {
+      const vid = v && v.videoId;
+      if (vid && /^[\w-]{11}$/.test(vid)) {
+        if (byVideo.has(vid)) union(i, byVideo.get(vid)); else byVideo.set(vid, i);
+      }
+    }
+  });
+  for (const idxs of byTitle.values()) {
+    for (let x = 0; x < idxs.length; x++) for (let y = x + 1; y < idxs.length; y++) {
+      if (_dupArtistsCompatible(_dupNormArtist(mergedLibrary[idxs[x]].artist), _dupNormArtist(mergedLibrary[idxs[y]].artist))) union(idxs[x], idxs[y]);
+    }
+  }
+  const members = new Map();
+  mergedLibrary.forEach((_, i) => { const r = find(i); if (!members.has(r)) members.set(r, []); members.get(r).push(i); });
+  const groupOf = new Map();   // merged.id → group number (1-based)
+  let n = 0;
+  for (const idxs of members.values()) {
+    if (idxs.length < 2) continue;
+    n++;
+    for (const i of idxs) groupOf.set(mergedLibrary[i].id, n);
+  }
+  _dupCache = { src: mergedLibrary, len: mergedLibrary.length, groupOf };
+  return groupOf;
+}
+
 function applyFilters() {
   const query = els.search.value.toLowerCase().trim();
   const format = document.querySelector('.filter-btn.active').id;
@@ -5624,12 +5742,27 @@ function applyFilters() {
                      (libraryTempoFilters.has('savory') && isSav);
     }
 
+    const matchesDupes = !libraryDupesOnly || getDupeGroups().has(song.id);
+
     return matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips &&
-           matchesTagBar && matchesSinger && matchesTempo;
+           matchesTagBar && matchesSinger && matchesTempo && matchesDupes;
   });
   
-  els.countLabel.textContent = `Found ${filteredLibrary.length} tracks matching filters`;
+  els.countLabel.textContent = libraryDupesOnly
+    ? `Found ${filteredLibrary.length} suspected duplicates`
+    : `Found ${filteredLibrary.length} tracks matching filters`;
   applyLibrarySort();
+  if (libraryDupesOnly) {
+    // Keep each suspected-duplicate group side by side, in the chosen sort order.
+    const groupOf = getDupeGroups(), seen = new Set(), regrouped = [];
+    for (const m of filteredLibrary) {
+      const g = groupOf.get(m.id);
+      if (seen.has(g)) continue;
+      seen.add(g);
+      for (const o of filteredLibrary) if (groupOf.get(o.id) === g) regrouped.push(o);
+    }
+    filteredLibrary = regrouped;
+  }
   renderLibrary();
   if (typeof syncLibrarySelectAll === 'function') syncLibrarySelectAll();
 }
@@ -6338,15 +6471,34 @@ function stopSwirl() {
   swirlStep = 0;
 }
 
+// Each stem on its own amp (V, D, B, G, P, O) plus L/R — the default
+// routing (Bill 2026-11-02: Reset = every channel back to default).
+function defaultRoutes(ch) {
+  const home = HOME_CHAN[ch];
+  return home !== undefined ? [0, 1, home] : [0, 1];
+}
+function routingIsDefault() {
+  return Object.keys(audioElements).every(ch =>
+    [...(routingMatrix[ch] || [])].sort((a, b) => a - b).join(',') === defaultRoutes(ch).join(','));
+}
+
 function routingFxReset() {
   stopSwirl();
-  if (routingFxSnapshot) {
-    const snap = routingFxSnapshot;
-    clearRoutingFxSnapshot();
-    applyRoutingMatrix(snap);
-  } else {
-    renderRoutingFxButtons();
-  }
+  clearRoutingFxSnapshot();
+  const next = {};
+  Object.keys(audioElements).forEach(ch => { next[ch] = defaultRoutes(ch); });
+  applyRoutingMatrix(next);
+}
+
+// Swirl pressed again mid-run: stop and put back the pattern it started
+// from (e.g. Split stays Split).
+let swirlStartMatrix = null;
+function stopSwirlAndRestore() {
+  stopSwirl();
+  const start = swirlStartMatrix;
+  swirlStartMatrix = null;
+  if (start) applyRoutingMatrix(start);
+  else renderRoutingFxButtons();
 }
 
 function routingFxAll() {
@@ -6386,8 +6538,9 @@ function routingFxFlip() {
 // back where it started when it ends. Pressing Swirl mid-way stops it and
 // restores the snapshot.
 function routingFxSwirl() {
-  if (swirlTimer) { routingFxReset(); return; }
+  if (swirlTimer) { stopSwirlAndRestore(); return; }
   takeRoutingFxSnapshot();
+  swirlStartMatrix = JSON.parse(JSON.stringify(routingMatrix));
   swirlStep = 0;
   swirlTimer = setInterval(() => {
     swirlStep += 1;
@@ -6464,7 +6617,7 @@ function renderRoutingInputButtons() {
   });
 }
 // Mutes and solos change from many places; keep the highlight honest.
-setInterval(() => { try { renderRoutingInputButtons(); } catch (e) {} }, 1000);
+setInterval(() => { try { renderRoutingInputButtons(); renderRoutingFxButtons(); } catch (e) {} }, 1000);
 document.addEventListener('click', (e) => {
   const b = e.target && e.target.closest ? e.target.closest('.routing-in') : null;
   if (!b) return;
@@ -6494,9 +6647,11 @@ function renderRoutingFxButtons() {
   // Amp tricks need a multi-channel device; the Input picks always work.
   document.querySelectorAll('.routing-fx button:not(.routing-in)').forEach(b => { b.disabled = !multi; });
   if (reset) {
-    reset.classList.toggle('active', !!routingFxSnapshot);
-    // Greyed out when the routing is already back to normal (2026-10-31).
-    reset.disabled = !multi || (!routingFxSnapshot && !swirlTimer);
+    // Lit when any stem is off its default amps; greyed out when every
+    // stem is already on its own amp + L/R (2026-11-02).
+    const moved = !!swirlTimer || !routingIsDefault();
+    reset.classList.toggle('active', moved);
+    reset.disabled = !multi || !moved;
   }
   if (swirl) {
     swirl.classList.toggle('active', !!swirlTimer);
