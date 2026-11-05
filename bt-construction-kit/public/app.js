@@ -5300,6 +5300,7 @@ async function openSongMenu(base, merged) {
 
       <div class="song-modal-section song-modal-danger">
         <label class="song-modal-label">Delete permanently (not reversible):</label>
+        <div class="song-delete-list" style="display:none; max-height:220px; overflow:auto; margin:6px 0; font-size:13px;"></div>
         <button class="btn-secondary song-delete-btn">Delete this song</button>
       </div>
     </div>`;
@@ -5368,20 +5369,57 @@ async function openSongMenu(base, merged) {
   // actually deletes. Avoids typing long concert titles while still being
   // deliberate (one stray click can't erase a song).
   const delBtn = overlay.querySelector('.song-delete-btn');
+  const delList = overlay.querySelector('.song-delete-list');
+  // Several songs ticked in the library, this one among them: Delete acts on
+  // all of them and the armed state lists every song (Bill 2026-11-05).
+  const multiBases = (batchSelectedBases.size > 1 && batchSelectedBases.has(base)) ? [...batchSelectedBases] : null;
+  const multiLabel = multiBases ? `Delete ${multiBases.length} selected songs` : 'Delete this song';
+  const songLabel = (b) => {
+    const m = mergedLibrary.find(x => x.variants.some(v => v.folderName === b));
+    return m ? (m.artist ? `${m.title} — ${m.artist}` : m.title) : b;
+  };
+  delBtn.textContent = multiLabel;
   let armed = false, armTimer = null;
   delBtn.addEventListener('click', async () => {
     if (!armed) {
       armed = true;
-      delBtn.textContent = 'Click again to confirm delete';
+      delBtn.textContent = multiBases ? `Click again to delete these ${multiBases.length} songs` : 'Click again to confirm delete';
       delBtn.classList.add('armed');
+      if (multiBases) {
+        delList.innerHTML = `<p><b>These ${multiBases.length} songs will be deleted for good</b> (stems, SOURCE and caches):</p><ul>` +
+          multiBases.map(b => `<li>${escapeHtml(songLabel(b))} <small style="opacity:.6">${escapeHtml(b)}</small></li>`).join('') + '</ul>';
+        delList.style.display = 'block';
+      }
       armTimer = setTimeout(() => {
         armed = false;
-        delBtn.textContent = 'Delete this song';
+        delBtn.textContent = multiLabel;
         delBtn.classList.remove('armed');
-      }, 4000);
+        delList.style.display = 'none';
+      }, multiBases ? 15000 : 4000);
       return;
     }
     clearTimeout(armTimer);
+    if (multiBases) {
+      delBtn.disabled = true;
+      delBtn.textContent = 'Deleting…';
+      const failed = [];
+      for (const b of multiBases) {
+        try {
+          const r = await fetch(`/api/song/${encodeURIComponent(b)}`, {
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: b })
+          });
+          if (r.ok) { batchSelectedBases.delete(b); }
+          else { let d = {}; try { d = await r.json(); } catch (er) {} failed.push(`${songLabel(b)}: ${d.error || 'HTTP ' + r.status}`); }
+        } catch (e) { failed.push(`${songLabel(b)}: ${e.message}`); }
+      }
+      close();
+      fetchLibrary();
+      if (typeof renderGigSidebar === 'function') renderGigSidebar();
+      if (failed.length) alert(`${failed.length} of ${multiBases.length} songs were NOT deleted:\n\n` + failed.join('\n'));
+      else showToast(`Deleted ${multiBases.length} songs`);
+      return;
+    }
     const url = `/api/song/${encodeURIComponent(base)}`;
     try {
       const r = await fetch(url, {
