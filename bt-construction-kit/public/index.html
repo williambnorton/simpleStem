@@ -705,11 +705,11 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
                  Logic in app.js (routingFx*, routingInput*). -->
             <div class="routing-fx" id="routing-fx">
               <span class="routing-fx-label">OUTPUT ROUTING</span>
-              <button class="btn-secondary routing-fx-reset" type="button" title="Every channel back to its default: each stem on its own amp (Vocals → V, Drums → D, Bass → B, Guitar → G, Piano → P, Other → O) plus L/R. Lit when anything has moved.">Reset</button>
-              <button class="btn-secondary routing-fx-all" type="button" title="Every stem to every amp plus L/R.">All Amps</button>
-              <button class="btn-secondary routing-fx-lr" type="button" title="Split left/right across every amp: left side to amps 1/3/5 (V, B, P) plus L, right side to amps 2/4/6 (D, G, O) plus R. In SOURCE or Jam mode strip 1 (left) goes left and strip 2 (right) goes right.">Split</button>
-              <button class="btn-secondary routing-fx-swirl" type="button" title="Rotate every stem's amps one position clockwise around the ring (V→P→B→D→G→O) every second for 18 seconds (three laps), then it stops back on the original amps. Press again to stop early.">Swirl</button>
-              <button class="btn-secondary routing-fx-flip" type="button" title="Mirror left and right: O↔P, G↔B, L↔R. V and D stay. Press again to flip back.">Flip</button>
+              <label class="routing-radio" title="Every channel on its default: each stem on its own amp (Vocals → V, Drums → D, Bass → B, Guitar → G, Piano → P, Other → O) plus L/R. Also clears Flip."><input type="radio" name="output-routing" value="normal" checked><span>Normal</span></label>
+              <label class="routing-radio" title="Every stem to every amp plus L/R."><input type="radio" name="output-routing" value="all"><span>All Amps</span></label>
+              <label class="routing-radio" title="Split left/right across every amp: the left signal goes to the odd amps (1/3/5) plus L, the right signal to the even amps (2/4/6) plus R. In SOURCE or Jam mode strip 1 (left) goes left and strip 2 (right) goes right."><input type="radio" name="output-routing" value="split"><span>Split</span></label>
+              <button class="btn-secondary routing-fx-flip" type="button" aria-pressed="false" title="Flip the left/right assignments: Split sends left to the even amps and right to the odd amps; Normal mirrors O↔P, G↔B, L↔R. Press again to flip back. Normal and Swirl clear it.">Flip</button>
+              <label class="routing-radio" title="Goes back to Normal, then moves every stem to the next amp around the ring (V→P→B→D→G→O) once a second for 18 seconds (three laps), then lands on Normal."><input type="radio" name="output-routing" value="swirl"><span class="routing-swirl-text">Swirl</span></label>
               <span class="routing-fx-break"></span>
               <span class="routing-fx-label">INSTRUMENT ROUTING</span>
               <button class="btn-secondary routing-in" data-input="SOURCE" type="button" title="Play the song's original stereo instead of the stems (left → strip 1, right → strip 2). Pick any stem button to go back to the stems at the same place.">SOURCE</button>
@@ -873,6 +873,20 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
         <button class="tab-btn" data-tab="cliplibrary" role="tab" aria-selected="false">
           <i data-lucide="scissors"></i> Clip Library
         </button>
+        <div id="library-tools" class="library-tools">
+          <div class="selection-controls admin-controls" role="group" aria-label="Admin">
+            <span class="selection-controls-label">Admin</span>
+            <button id="lfb-dupes" class="lfb-action-btn" type="button" aria-pressed="false" title="Show only songs that look like duplicates (same title and artist once tags like Official Video or Remastered are ignored, or the same YouTube video). Suspected duplicates are grouped side by side. Click again to show every song.">Duplicates<br>only</button>
+            <button id="lfb-fill-lyrics" class="lfb-action-btn" title="Go through every song with no pasted lyrics, A to Z, opening the lyrics editor for each. Save moves on; Skip skips it this time; Skip for all marks it so it never comes up again; Cancel stops.">Fill missing<br>lyrics</button>
+          </div>
+          <div class="selection-controls" role="group" aria-label="Selected songs">
+            <span class="selection-controls-label">Selected songs</span>
+            <button id="lfb-make-gig" class="lfb-action-btn lfb-action-btn-primary" disabled title="Create a new gig from the SELECTED songs (check rows, or use the select-all box atop the Set column). Songs are split into setlists of 15-20 each. Clears the selection afterwards.">Make Gig<br>from selection</button>
+            <button id="lfb-make-setlist" class="lfb-action-btn lfb-action-btn-primary" disabled type="button" title="Make a new named setlist from the ticked songs. Asks for the setlist name. Clears the selection afterwards.">Make setlist<br>from selection</button>
+            <button id="lfb-add-setlist" class="lfb-action-btn lfb-action-btn-primary" disabled title="Append one new setlist containing the SELECTED songs to the current gig. Clears the selection afterwards.">Add to current<br>setlist</button>
+            <button id="lfb-delete" class="lfb-action-btn lfb-danger" type="button" disabled title="Delete every ticked song for good (stems, SOURCE, caches). Greyed until songs are ticked. Press once to list them, press again to delete.">Delete<br>selected</button>
+          </div>
+        </div>
       </nav>
 
       <!-- Tabbed content area: one tab visible at a time, player stays above -->
@@ -908,14 +922,9 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
                #library-filter-bar in place. -->
           <div class="library-filter-pane">
             <div id="library-filter-bar" class="library-filter-bar"></div>
-            <div class="lfb-actions">
-              <button id="lfb-make-gig" class="lfb-action-btn lfb-action-btn-primary" title="Create a new gig from the SELECTED songs (check rows, or use the select-all box atop the Set column). Songs are split into setlists of 15-20 each. Clears the selection afterwards.">Make Gig<br>from selection</button>
-              <button id="lfb-fill-lyrics" class="lfb-action-btn" title="Go through every song with no pasted lyrics, A to Z, opening the lyrics editor for each. Save moves on; Skip skips it this time; Skip for all marks it so it never comes up again; Cancel stops.">Fill missing<br>lyrics</button>
-              <button id="lfb-dupes" class="lfb-action-btn" type="button" aria-pressed="false" title="Show only songs that look like duplicates (same title and artist once tags like Official Video or Remastered are ignored, or the same YouTube video). Suspected duplicates are grouped side by side. Click again to show every song.">Duplicates<br>only</button>
-              <button id="lfb-add-setlist" class="lfb-action-btn lfb-action-btn-primary" title="Append one new setlist containing the SELECTED songs to the current gig. Clears the selection afterwards.">Add setlist<br>from selection</button>
-            </div>
           </div>
           
+          <div id="lfb-delete-list" class="lfb-delete-list" style="display:none;"></div>
           <div class="library-wrapper list-mode" id="library-container">
             <div class="song-table-header">
               <div class="col-select" style="width: 45px;"><input type="checkbox" id="library-select-all" title="Select every song now listed in the library. If any songs are selected, this clears the selection instead."></div>

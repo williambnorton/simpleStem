@@ -930,6 +930,10 @@ function setupGigSidebar() {
   if (mkGigBtn) mkGigBtn.addEventListener('click', onMakeGigFromSelection);
   const addSetBtn = document.getElementById('lfb-add-setlist');
   if (addSetBtn) addSetBtn.addEventListener('click', onAddSetlistFromSelection);
+  const delSelBtn = document.getElementById('lfb-delete');
+  if (delSelBtn) delSelBtn.addEventListener('click', onLibraryDeleteSelected);
+  const mkSetBtn = document.getElementById('lfb-make-setlist');
+  if (mkSetBtn) mkSetBtn.addEventListener('click', onMakeSetlistFromSelection);
   setupLibrarySelectAll();
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
@@ -2757,6 +2761,8 @@ function setupTabs() {
         loadDrumLoops();
       }
       if (target === 'jamtracks') loadJamTracks();
+      const lt = document.getElementById('library-tools');
+      if (lt) lt.style.display = (target === 'library') ? '' : 'none';
     });
   });
 }
@@ -2796,10 +2802,11 @@ function renderJamTracks() {
     <div class="jamtrack-row" data-id="${escapeHtml(t.id)}">
       <img class="jamtrack-thumb" loading="lazy" src="https://i.ytimg.com/vi/${escapeHtml(t.id)}/mqdefault.jpg" alt="" onerror="this.style.visibility='hidden'">
       <div class="jamtrack-info">
-        <div class="jamtrack-title">${escapeHtml(t.title)}${t.inLibrary ? ' <span class="song-fresh-pill" title="Also in the Song Library">IN LIBRARY</span>' : ''}</div>
+        <div class="jamtrack-title">${escapeHtml(t.title)}${t.inLibrary ? ' <span class="song-fresh-pill" title="Stemmed — in the Song Library">STEMMED</span>' : (t.stemQueuedAt ? ' <span class="song-fresh-pill" title="Queued for stemming — the Stems button lights up when it lands in the Song Library">STEMMING QUEUED</span>' : '')}</div>
         <div class="jamtrack-meta">${escapeHtml(t.channel || '')}${t.duration ? ' · ' + fmt(t.duration) : ''}${t.fetched_at ? ' · pulled ' + escapeHtml(String(t.fetched_at).slice(0, 10)) : ''}</div>
       </div>
-      <button type="button" class="lfb-action-btn jamtrack-play" title="Play on strips 1–2 (SRC L / SRC R)">▶ Play</button>
+      <button type="button" class="lfb-action-btn jamtrack-play" data-kind="source" title="Play the original stereo on strips 1–2 (SRC L / SRC R)">▶ Source</button>
+      <button type="button" class="lfb-action-btn jamtrack-play" data-kind="stems" ${t.inLibrary ? '' : 'disabled'} title="${t.inLibrary ? 'Play the stemmed song, all 6 channels' : 'Not stemmed yet'}">▶ Stems</button>
     </div>`).join('');
 }
 async function loadJamTracks() {
@@ -2822,9 +2829,18 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const row = btn.closest('.jamtrack-row');
   const t = row && jamTracksAll.find(x => x.id === row.dataset.id);
-  if (t && t.file) engageJam(t);
+  if (!t) return;
+  if (btn.dataset.kind === 'stems') {
+    if (t.inLibrary) loadSongByBase(t.inLibrary, true);
+    else showToast('Not stemmed yet — it is queued; the Stems button lights up when it lands in the Song Library.');
+  } else if (t.file) engageJam(t);
   else showToast('That jam track has no audio file on this Mac.');
 });
+// Refresh the list while the tab is open so Stems lights up once stemming lands.
+setInterval(() => {
+  const pane = document.querySelector('[data-tab-pane="jamtracks"].tab-pane-active');
+  if (pane) loadJamTracks();
+}, 30000);
 
 // ── Drum Loops tab ────────────────────────────────────────────────────────
 // Library-wide grid of every song's drums-only loops (the `_DO_loopN_Nbars.m4a`
@@ -3573,8 +3589,9 @@ function loadSongByBase(base, autoplay) {
 // track element, but instead of going straight to the master it is split:
 // LEFT feeds strip 1 (vocals, relabelled SRC L) and RIGHT feeds strip 2
 // (drums, SRC R) — so faders, mute/solo, boosts, meters and the
-// routing buttons all work on it. Backing tracks play as-is: nothing is
-// queued for stemming (Bill 2026-11-02).
+// routing buttons all work on it. New backing tracks are also queued for
+// stemming in the background (Bill 2026-11-05); the Jam Tracks tab then offers
+// both ▶ Source (this stereo) and ▶ Stems.
 let jamMode = null;        // { id, file, title, channel, url, duration }
 let jamNodes = null;       // { splitter, upL, upR }
 let jamLabelsSaved = null;
@@ -4681,7 +4698,7 @@ function renderLibrary() {
     // below). Keep the ⋯ menu for song options.
     const actionCell = document.createElement('div');
     actionCell.className = 'col-action';
-    actionCell.innerHTML = `<button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;">⋯</button>`;
+    actionCell.innerHTML = `<button class="btn-secondary song-src-btn" title="Play the original stereo (SOURCE) instead of the stems" style="padding:4px 8px;">SRC</button><button class="btn-secondary song-menu-btn" title="Song options" style="padding:4px 8px;">⋯</button>`;
     // song_base = the stems folder name (canonical key for the per-song API).
     // For m4a-only rows (orphaned variants with no stems folder yet) we fall
     // back to the m4a-derived "stripped" base name -- the same name a STEMS
@@ -4701,6 +4718,9 @@ function renderLibrary() {
         songBase = stripped;
       }
     }
+    const srcBtn = actionCell.querySelector('.song-src-btn');
+    if (stemsVar && stemsVar.folderName) srcBtn.addEventListener('click', (e) => { e.stopPropagation(); engageSongSource(stemsVar); });
+    else srcBtn.style.display = 'none';
     const menuBtn = actionCell.querySelector('.song-menu-btn');
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -5581,6 +5601,96 @@ function syncLibrarySelectAll() {
   const total = filteredLibrary.reduce((n, m) => n + (m.variants.some(x => x.type === 'stems') ? 1 : 0), 0);
   cb.checked = total > 0 && batchSelectedBases.size >= total;
   cb.indeterminate = batchSelectedBases.size > 0 && !cb.checked;
+  ['lfb-make-gig', 'lfb-make-setlist', 'lfb-add-setlist'].forEach(id => {
+    const x = document.getElementById(id);
+    if (x) x.disabled = batchSelectedBases.size === 0;
+  });
+  const delB = document.getElementById('lfb-delete');
+  if (delB) {
+    delB.disabled = batchSelectedBases.size === 0;
+    if (!delB._armed) delB.innerHTML = batchSelectedBases.size ? `Delete ${batchSelectedBases.size}<br>selected` : 'Delete<br>selected';
+    else if (!batchSelectedBases.size) disarmLibraryDelete();
+  }
+}
+
+// ── Top-of-pane Delete + Make setlist (Bill 2026-11-05) ───────────────────
+// Both act on the ticked songs. Delete: first press lists every song that
+// will go, second press (within 15 s) deletes them for good.
+function disarmLibraryDelete() {
+  const b = document.getElementById('lfb-delete'), list = document.getElementById('lfb-delete-list');
+  if (b) { clearTimeout(b._armTimer); b._armed = false; b.classList.remove('armed'); }
+  if (list) { list.style.display = 'none'; list.innerHTML = ''; }
+  syncLibrarySelectAll();
+}
+function _songLabelForBase(b) {
+  const m = mergedLibrary.find(x => x.variants.some(v => v.folderName === b));
+  return m ? (m.artist ? `${m.title} — ${m.artist}` : m.title) : b;
+}
+async function onLibraryDeleteSelected() {
+  const b = document.getElementById('lfb-delete'), list = document.getElementById('lfb-delete-list');
+  const bases = selectedStemBasesInLibraryOrder();
+  if (!b || !bases.length) return;
+  if (!b._armed) {
+    b._armed = true;
+    b.classList.add('armed');
+    b.innerHTML = `Click again:<br>delete ${bases.length}`;
+    list.innerHTML = `<p><b>These ${bases.length} song${bases.length === 1 ? '' : 's'} will be deleted for good</b> (stems, SOURCE and caches):</p><ul>` +
+      bases.map(x => `<li>${escapeHtml(_songLabelForBase(x))} <small style="opacity:.6">${escapeHtml(x)}</small></li>`).join('') + '</ul>';
+    list.style.display = 'block';
+    b._armTimer = setTimeout(disarmLibraryDelete, 15000);
+    return;
+  }
+  clearTimeout(b._armTimer);
+  b.disabled = true;
+  b.innerHTML = 'Deleting…';
+  const failed = [];
+  for (const x of bases) {
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(x)}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: x })
+      });
+      if (r.ok) batchSelectedBases.delete(x);
+      else { let d = {}; try { d = await r.json(); } catch (er) {} failed.push(`${_songLabelForBase(x)}: ${d.error || 'HTTP ' + r.status}`); }
+    } catch (e) { failed.push(`${_songLabelForBase(x)}: ${e.message}`); }
+  }
+  b._armed = false;
+  b.classList.remove('armed');
+  list.style.display = 'none'; list.innerHTML = '';
+  batchSelectedBases.clear();
+  await fetchLibrary();
+  if (typeof renderGigSidebar === 'function') renderGigSidebar();
+  syncLibrarySelectAll();
+  if (failed.length) alert(`${failed.length} of ${bases.length} songs were NOT deleted:\n\n` + failed.join('\n'));
+  else showToast(`Deleted ${bases.length} song${bases.length === 1 ? '' : 's'}`);
+}
+
+// "Make setlist from selection": asks for a name, saves a standalone manual
+// setlist (shows in the setlist switcher), clears the selection.
+async function onMakeSetlistFromSelection() {
+  const bases = selectedStemBasesInLibraryOrder();
+  if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
+  const d = new Date();
+  const name = prompt(`Name the new setlist (${bases.length} song${bases.length === 1 ? '' : 's'}):`, `Setlist ${d.getMonth() + 1}/${d.getDate()}`);
+  if (!name || !name.trim()) { clearLibrarySelection(); return; }   // clicked: selection clears even when cancelled
+  const title = name.trim();
+  clearLibrarySelection();
+  try {
+    const res = await fetch('/api/setlists', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, origin: 'manual', songs: bases }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    fetch(`/api/precache/setlist/${encodeURIComponent(data.slug)}`, { method: 'POST' }).catch(() => {});
+    await refreshGigList();
+    await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG);
+    if (activeGig && Array.isArray(activeGig.setlists)) {
+      const idx = activeGig.setlists.findIndex(sl => (sl.title || '').trim() === title);
+      if (idx >= 0) { activeSetlistIdx = idx; openSetlistIdxs = new Set([idx]); renderGigSidebar(); }
+    }
+    showToast(`Setlist "${title}" made from ${bases.length} song${bases.length === 1 ? '' : 's'}`);
+  } catch (e) { alert(`Couldn't make the setlist: ${e.message}`); }
 }
 
 // "Make Gig from selection": new gig, selection split into balanced
@@ -5630,7 +5740,7 @@ function onAddSetlistFromSelection() {
   }
   const slTitle = prompt(`Name the new setlist (${bases.length} songs, added to "${activeGig.title}"):`,
     `Set ${activeGig.setlists.length + 1}`);
-  if (!slTitle || !slTitle.trim()) return;   // cancelled — selection stays
+  if (!slTitle || !slTitle.trim()) { clearLibrarySelection(); return; }   // clicked: selection clears even when cancelled
   activeGig.setlists.push({
     title: slTitle.trim(),
     songs: bases.map(b => ({ song_base: b })),
@@ -6281,7 +6391,7 @@ function applyRouting() {
       try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
     } else {
       effective.forEach((out, i) => {
-        try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
+        try { s.splitter.connect(masterMerger, (i % 2 === 0) !== routingSwapLR ? 0 : 1, out); } catch (e) {}
       });
     }
   });
@@ -6356,7 +6466,7 @@ function applyRoutingForStem(chan) {
     try { s.splitter.connect(masterMerger, 1, out); } catch (e) {}
   } else {
     effective.forEach((out, i) => {
-      try { s.splitter.connect(masterMerger, i % 2 === 0 ? 0 : 1, out); } catch (e) {}
+      try { s.splitter.connect(masterMerger, (i % 2 === 0) !== routingSwapLR ? 0 : 1, out); } catch (e) {}
     });
   }
 }
@@ -6432,46 +6542,52 @@ async function presetSpreadToSixAux() {
   renderRoutingGrids();
 }
 
-// ── Routing effects (Reset / All / Swirl / Flip) ──────────────────────────
-// Live tricks on the routing matrix. The six "amps" are the letter outputs
+// ── Output routing (Bill 2026-11-05) ──────────────────────────────────────
+// A radio group, always one selected: Normal / All Amps / Split / Swirl,
+// plus a Flip toggle beside Split. The six "amps" are the letter outputs
 // around each fader, read clockwise from the top: V(ch11) P(ch15) B(ch13)
 // D(ch12) G(ch14) O(ch16). L/R (ch1/2) sit at the sides and never rotate.
+//   Normal   each stem on its own amp + L/R (clears Flip)
+//   All Amps every stem to every amp + L/R
+//   Split    left signal → odd amps (1/3/5) + L, right signal → even amps
+//            (2/4/6) + R. With Flip: left → even, right → odd.
+//   Swirl    goes to Normal, then every stem steps to the next amp each
+//            second for 18 s (three laps), then lands on Normal.
+//   Flip     mirrors left/right: swaps the left/right signal assignment and
+//            mirrors O↔P, G↔B, L↔R. Not available during Swirl.
 // Fader levels and boosts stay with their stem; only destinations change.
-// The first effect press snapshots the matrix; Reset restores it and clears
-// the snapshot. Nothing here touches the song's saved metadata.
-// Offline behavior: pure client-side Web Audio rewiring, no network at all.
+// Nothing here touches the song's saved metadata. Pure client-side Web
+// Audio rewiring, so it works offline.
 const AMP_RING = [10, 14, 12, 11, 13, 15];
 const FLIP_LR = { 15: 14, 14: 15, 13: 12, 12: 13, 0: 1, 1: 0 };
 const ALL_AMPS_ROUTES = [0, 1, 10, 11, 12, 13, 14, 15];
-// LR (Bill 2026-11-01): left side → house-left amps 1/3/5 (ch11/13/15) + L,
-// right side → house-right amps 2/4/6 (ch12/14/16) + R.
 const LR_LEFT_ROUTES = [0, 10, 12, 14];
 const LR_RIGHT_ROUTES = [1, 11, 13, 15];
-// Swirl (Bill 2026-11-01): one amp position per second for 18 seconds —
-// three laps of the six-amp ring — ending back on the original amps.
 const SWIRL_STEP_MS = 1000;
 const SWIRL_STEPS = 18;
-const ROUTING_FX_SNAPSHOT_KEY = 'simpleStem.routingFxSnapshot.v1';
-let routingFxSnapshot = null;
+const OUTPUT_MODE_KEY = 'simpleStem.outputRouting.v1';
+let outputMode = 'normal';       // 'normal' | 'all' | 'split' | 'swirl'
+let outputFlipped = false;
+let routingSwapLR = false;       // read by applyRouting / applyRoutingForStem
 let swirlTimer = null;
 let swirlStep = 0;
 
-function loadRoutingFxSnapshot() {
+function loadOutputMode() {
   try {
-    const raw = localStorage.getItem(ROUTING_FX_SNAPSHOT_KEY);
-    routingFxSnapshot = raw ? JSON.parse(raw) : null;
-  } catch (e) { routingFxSnapshot = null; }
+    const j = JSON.parse(localStorage.getItem(OUTPUT_MODE_KEY) || 'null');
+    if (j && ['normal', 'all', 'split'].includes(j.mode)) outputMode = j.mode;
+    outputFlipped = !!(j && j.flipped);
+  } catch (e) {}
+  routingSwapLR = outputFlipped;
+}
+function saveOutputMode() {
+  try { localStorage.setItem(OUTPUT_MODE_KEY, JSON.stringify({ mode: outputMode === 'swirl' ? 'normal' : outputMode, flipped: outputFlipped })); } catch (e) {}
 }
 
-function takeRoutingFxSnapshot() {
-  if (routingFxSnapshot) return;
-  routingFxSnapshot = JSON.parse(JSON.stringify(routingMatrix));
-  try { localStorage.setItem(ROUTING_FX_SNAPSHOT_KEY, JSON.stringify(routingFxSnapshot)); } catch (e) {}
-}
-
-function clearRoutingFxSnapshot() {
-  routingFxSnapshot = null;
-  try { localStorage.removeItem(ROUTING_FX_SNAPSHOT_KEY); } catch (e) {}
+// Each stem on its own amp (V, D, B, G, P, O) plus L/R.
+function defaultRoutes(ch) {
+  const home = HOME_CHAN[ch];
+  return home !== undefined ? [0, 1, home] : [0, 1];
 }
 
 // Replace the matrix wholesale, rebuilding only the stems whose routes
@@ -6509,89 +6625,67 @@ function stopSwirl() {
   swirlStep = 0;
 }
 
-// Each stem on its own amp (V, D, B, G, P, O) plus L/R — the default
-// routing (Bill 2026-11-02: Reset = every channel back to default).
-function defaultRoutes(ch) {
-  const home = HOME_CHAN[ch];
-  return home !== undefined ? [0, 1, home] : [0, 1];
-}
-function routingIsDefault() {
-  return Object.keys(audioElements).every(ch =>
-    [...(routingMatrix[ch] || [])].sort((a, b) => a - b).join(',') === defaultRoutes(ch).join(','));
-}
-
-function routingFxReset() {
-  stopSwirl();
-  clearRoutingFxSnapshot();
-  const next = {};
-  Object.keys(audioElements).forEach(ch => { next[ch] = defaultRoutes(ch); });
-  applyRoutingMatrix(next);
-}
-
-// Swirl pressed again mid-run: stop and put back the pattern it started
-// from (e.g. Split stays Split).
-let swirlStartMatrix = null;
-function stopSwirlAndRestore() {
-  stopSwirl();
-  const start = swirlStartMatrix;
-  swirlStartMatrix = null;
-  if (start) applyRoutingMatrix(start);
-  else renderRoutingFxButtons();
-}
-
-function routingFxAll() {
-  stopSwirl();
-  takeRoutingFxSnapshot();
-  const next = {};
-  Object.keys(audioElements).forEach(ch => { next[ch] = [...ALL_AMPS_ROUTES]; });
-  applyRoutingMatrix(next);
-}
-
-// LR: a stereo source across every amp, kept left/right. In SOURCE / jam
-// mode strip 1 carries the left channel and strip 2 the right, so strip 1
-// goes to the house-left amps and strip 2 to the house-right amps. With
-// stems, every stem goes to every amp; the stem's left channel lands on the
-// odd outputs and its right on the even ones (applyRoutingForStem pairs
-// sorted outputs L,R,L,R…).
-function routingFxLR() {
-  stopSwirl();
-  takeRoutingFxSnapshot();
+// The matrix for a mode, before Flip. Split keeps a jam/SOURCE stereo pair
+// left/right: strip 1 carries the left channel, strip 2 the right.
+function baseMatrixFor(mode) {
   const next = {};
   Object.keys(audioElements).forEach(ch => {
-    if (jamMode && ch === 'vocals') next[ch] = [...LR_LEFT_ROUTES];
-    else if (jamMode && ch === 'drums') next[ch] = [...LR_RIGHT_ROUTES];
-    else next[ch] = [...LR_LEFT_ROUTES, ...LR_RIGHT_ROUTES];
+    if (mode === 'all') next[ch] = [...ALL_AMPS_ROUTES];
+    else if (mode === 'split') {
+      if (jamMode && ch === 'vocals') next[ch] = [...LR_LEFT_ROUTES];
+      else if (jamMode && ch === 'drums') next[ch] = [...LR_RIGHT_ROUTES];
+      else next[ch] = [...LR_LEFT_ROUTES, ...LR_RIGHT_ROUTES];
+    } else next[ch] = defaultRoutes(ch);
   });
-  applyRoutingMatrix(next);
+  return next;
 }
 
-function routingFxFlip() {
+// Put the current mode + Flip on the wire. Flip also swaps which output
+// takes the stem's left vs right channel (applyRouting pairs sorted outputs
+// L,R,L,R…; routingSwapLR reverses that), so Split flips even though its set
+// of amps is symmetrical.
+function applyOutputRouting() {
+  const swapChanged = routingSwapLR !== outputFlipped;
+  routingSwapLR = outputFlipped;
+  const base = baseMatrixFor(outputMode === 'swirl' ? 'normal' : outputMode);
+  applyRoutingMatrix(outputFlipped ? mapMatrixFlip(base) : base);
+  if (swapChanged) applyRouting();
+}
+function mapMatrixFlip(m) {
+  const next = {};
+  Object.keys(m).forEach(ch => { next[ch] = [...new Set(m[ch].map(o => (o in FLIP_LR ? FLIP_LR[o] : o)))]; });
+  return next;
+}
+
+function setOutputMode(mode) {
   stopSwirl();
-  takeRoutingFxSnapshot();
-  applyRoutingMatrix(mapRoutingMatrix(out => (out in FLIP_LR ? FLIP_LR[out] : out)));
+  outputMode = mode;
+  if (mode === 'normal' || mode === 'swirl') outputFlipped = false;
+  if (mode === 'swirl') {
+    applyOutputRouting();           // Normal first
+    swirlTimer = setInterval(() => {
+      swirlStep += 1;
+      if (swirlStep >= SWIRL_STEPS) {
+        stopSwirl();
+        outputMode = 'normal';       // a whole number of laps: back on Normal
+        saveOutputMode();
+        applyOutputRouting();
+        return;
+      }
+      applyRoutingMatrix(rotateRingOnce());
+    }, SWIRL_STEP_MS);
+    renderRoutingFxButtons();
+    return;
+  }
+  saveOutputMode();
+  applyOutputRouting();
 }
 
-// Hold the current pattern for a step, then shift one position around the
-// ring each step. SWIRL_STEPS is a whole number of laps, so the pattern is
-// back where it started when it ends. Pressing Swirl mid-way stops it and
-// restores the snapshot.
-function routingFxSwirl() {
-  if (swirlTimer) { stopSwirlAndRestore(); return; }
-  takeRoutingFxSnapshot();
-  swirlStartMatrix = JSON.parse(JSON.stringify(routingMatrix));
-  swirlStep = 0;
-  swirlTimer = setInterval(() => {
-    swirlStep += 1;
-    applyRoutingMatrix(rotateRingOnce());
-    if (swirlStep >= SWIRL_STEPS) {
-      stopSwirl();
-      // A clean lap ends exactly where it began; if nothing else was
-      // changed along the way, there is nothing left for Reset to undo.
-      if (JSON.stringify(routingMatrix) === JSON.stringify(routingFxSnapshot)) clearRoutingFxSnapshot();
-      renderRoutingFxButtons();
-    }
-  }, SWIRL_STEP_MS);
-  renderRoutingFxButtons();
+function toggleOutputFlip() {
+  if (outputMode === 'swirl') return;
+  outputFlipped = !outputFlipped;
+  saveOutputMode();
+  applyOutputRouting();
 }
 
 // ── Routing › Input (Bill 2026-11-01) ─────────────────────────────────────
@@ -6664,36 +6758,31 @@ document.addEventListener('click', (e) => {
 });
 
 function bindRoutingFxButtons() {
-  const bind = (sel, fn) => {
-    const b = document.querySelector(sel);
-    if (b && !b.dataset.fxBound) {
-      b.dataset.fxBound = '1';
-      b.addEventListener('click', e => { e.stopPropagation(); fn(); });
-    }
-  };
-  bind('.routing-fx-reset', routingFxReset);
-  bind('.routing-fx-all', routingFxAll);
-  bind('.routing-fx-swirl', routingFxSwirl);
-  bind('.routing-fx-flip', routingFxFlip);
-  bind('.routing-fx-lr', routingFxLR);
+  const b = document.querySelector('.routing-fx-flip');
+  if (b && !b.dataset.fxBound) {
+    b.dataset.fxBound = '1';
+    b.addEventListener('click', e => { e.stopPropagation(); toggleOutputFlip(); });
+  }
 }
+document.addEventListener('change', (e) => {
+  const r = e.target && e.target.matches && e.target.matches('input[name="output-routing"]') ? e.target : null;
+  if (r && r.checked) setOutputMode(r.value);
+});
 
 function renderRoutingFxButtons() {
-  const reset = document.querySelector('.routing-fx-reset');
-  const swirl = document.querySelector('.routing-fx-swirl');
   const multi = outputChannelCount > 2;
   // Amp tricks need a multi-channel device; the Input picks always work.
-  document.querySelectorAll('.routing-fx button:not(.routing-in)').forEach(b => { b.disabled = !multi; });
-  if (reset) {
-    // Lit when any stem is off its default amps; greyed out when every
-    // stem is already on its own amp + L/R (2026-11-02).
-    const moved = !!swirlTimer || !routingIsDefault();
-    reset.classList.toggle('active', moved);
-    reset.disabled = !multi || !moved;
-  }
-  if (swirl) {
-    swirl.classList.toggle('active', !!swirlTimer);
-    swirl.textContent = swirlTimer ? `Swirl ${swirlStep}/${SWIRL_STEPS}` : 'Swirl';
+  document.querySelectorAll('.routing-fx input[name="output-routing"]').forEach(r => {
+    r.checked = r.value === outputMode;
+    r.disabled = !multi;
+  });
+  const txt = document.querySelector('.routing-swirl-text');
+  if (txt) txt.textContent = swirlTimer ? `Swirl ${swirlStep}/${SWIRL_STEPS}` : 'Swirl';
+  const flip = document.querySelector('.routing-fx-flip');
+  if (flip) {
+    flip.classList.toggle('active', outputFlipped);
+    flip.setAttribute('aria-pressed', outputFlipped ? 'true' : 'false');
+    flip.disabled = !multi || outputMode === 'swirl';
   }
 }
 
@@ -7478,7 +7567,7 @@ function setupRoutingUI() {
   // output device supports (defaults to 2 until we know more). On the first
   // user click we revisit to sync outputChannelCount + re-render.
   loadRoutingMatrix();
-  loadRoutingFxSnapshot();
+  loadOutputMode();
   injectStripRoutingButtons();
   bindRoutingFxButtons();
   renderRoutingButtons();
