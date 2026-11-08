@@ -310,6 +310,10 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # Fill-missing-lyrics workflow: "Skip for all" (server.js
         # PUT /api/song/:base/lyrics-skip).
         'lyrics_skip':        bool(meta.get('lyrics_skip')),
+        # Jam page "Import as: Jam track" (webloc_watch.sh writes
+        # library:"jam"; server.js PUT /api/song/:base/library). 'jam' rows
+        # live in the Performer's Jam Tracks tab, not the Song Library.
+        'library':            'jam' if meta.get('library') == 'jam' else 'song',
         'stems': play_stems,
         'stemsBySet': stems_by_set,
         'stemSets': stem_sets,
@@ -441,7 +445,7 @@ def build(root, do_fill):
 
     stem_rows = []
     if stems_root.exists():
-        dirs = sorted([d for d in stems_root.iterdir() if d.is_dir()])
+        dirs = sorted([d for d in stems_root.iterdir() if d.is_dir() and not d.name.startswith('.')])  # .aifolder = Stemmer machinery
         for d in dirs:
             base = d.name
             if DRIVE_DUP_DIR_RE.search(base):

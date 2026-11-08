@@ -14,7 +14,11 @@
       seconds); then this page tells the Performer tab (BroadcastChannel
       'simplestem-jam') to play it as-is, left on strip 1 and right on strip 2,
       where the Output Routing buttons can spread it over all six amps.
-      Backing tracks are already mixed, so nothing is queued for stemming.
+      New backing tracks are also queued for stemming in the background (Bill 2026-11-05).
+    • "Import as" switch (Bill 2026-11-08): Jam track = instrumental backing
+      track → stemmed into the Jam Tracks tab, never asked for lyrics
+      (webloc jam_*.webloc → library:"jam", lyrics_skip:true). Song = a
+      normal song for the Song Library (song_*.webloc). Remembered per browser.
     • after that the video here is muted and follows the Performer's clock.
   Only the Stem Library list loads a song's stems.
 -->
@@ -58,6 +62,11 @@
   #modes .mode { font: inherit; font-weight: 700; padding: 8px 12px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
   #modes .mode + .mode { border-left: 1.5px solid var(--ink); }
   #modes .mode.on { background: var(--ink); color: #fff; }
+  #importas { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+  #importas .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  #importas .seg button { font: inherit; font-weight: 700; padding: 8px 12px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
+  #importas .seg button + button { border-left: 1.5px solid var(--ink); }
+  #importas .seg button.on { background: var(--ink); color: #fff; }
   .nothumb { width: 136px; height: 76px; border-radius: 6px; background: #2a2d35; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
   #ytlink { font-size: 0.85rem; color: var(--ink); font-weight: 700; white-space: nowrap; }
   .fixbtn { font: inherit; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 0; background: var(--red); color: #fff; cursor: pointer; margin-top: 8px; }
@@ -74,6 +83,12 @@
     <button type="button" class="mode on" data-mode="yt" title="Search YouTube itself for new backing tracks">YouTube</button>
     <button type="button" class="mode" data-mode="jammed" title="Backing tracks you've already pulled in through Jam — stored on this Mac, works offline">YT Jamn Tracks</button>
     <button type="button" class="mode" data-mode="library" title="Your stemmed songs — Play loads the stems">Stem Library</button>
+  </div>
+  <div id="importas" title="Where a pick goes when it is stemmed. Jam track = instrumental backing track: lands in the Jam Tracks tab and is never asked for lyrics. Song = a normal song for the Song Library.">Import as
+    <div class="seg" role="radiogroup" aria-label="Import as">
+      <button type="button" data-kind="jam" class="on">Jam track · instrumental</button>
+      <button type="button" data-kind="song">Song</button>
+    </div>
   </div>
   <a id="ytlink" href="https://www.youtube.com/results?search_query=backing+track" target="_blank" rel="noopener" title="Open this search on youtube.com in a new tab. Copy any video's address and paste it in the box on the left.">Search on YouTube ↗</a>
 </header>
@@ -96,6 +111,20 @@ const chan = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-j
 let mode = 'yt';
 let results = [], current = null, player = null, playerReady = false, following = null, pendingAck = null;
 let cursor = -1;   // keyboard position in the results (Bill 2026-11-01)
+// Import as: 'jam' (default — this page opens on a backing-track search) or
+// 'song'. Remembered in this browser. Sent as {kind} on /api/jam/fetch.
+let importKind = 'jam';
+try { if (localStorage.getItem('jamImportKind') === 'song') importKind = 'song'; } catch (e) {}
+function setImportKind(k) {
+  importKind = (k === 'song') ? 'song' : 'jam';
+  try { localStorage.setItem('jamImportKind', importKind); } catch (e) {}
+  document.querySelectorAll('#importas .seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === importKind));
+}
+document.querySelector('#importas .seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-kind]');
+  if (b) setImportKind(b.dataset.kind);
+});
+setImportKind(importKind);
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function fmtDur(s) { if (!s && s !== 0) return ''; s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
@@ -313,7 +342,7 @@ async function playItem(v) {
   try {
     let j;
     try {
-      j = await getJSON('/api/jam/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v.url }) });
+      j = await getJSON('/api/jam/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v.url, kind: importKind }) });
     } catch (e) {
       if (e instanceof OldServerError) { showOldServer($('status'), () => { setStatus('Server restarted — press Play in simpleStem again.'); }); return; }
       throw e;

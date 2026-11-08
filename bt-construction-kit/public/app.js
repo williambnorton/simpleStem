@@ -4131,7 +4131,7 @@ async function fetchLibrary() {
     mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
     window.mergedLibrary = mergedLibrary;   // voice control + split methods read this
 
-    filteredLibrary = [...mergedLibrary];
+    filteredLibrary = mergedLibrary.filter(song => !isJamLibraryRow(song));
     try { renderLibraryFilterBar(); } catch (e) { console.warn('[filter-bar]', e); }
 
     // Heal stale "failed to load" markers on songs that now have valid
@@ -4218,6 +4218,14 @@ async function fetchLibrary() {
 // Returns one item per unique song, with a `variants` array containing the
 // underlying raw entries. The 'primary' is the stems variant if present,
 // otherwise the first m4a. BPM/Key/Duration are inherited from primary.
+// Jam-track rows (metadata library:"jam", set by the Jam page's "Import as:
+// Jam track", Bill 2026-11-08) stay out of the Song Library view. They are
+// still in mergedLibrary so the Jam Tracks tab's "Stems" button, setlists and
+// voice control can load them by base.
+function isJamLibraryRow(song) {
+  return !!(song && song.variants && song.variants.some(v => v.library === 'jam'));
+}
+
 function mergeByTitleArtist(rawSongs) {
   const norm = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   // Task #150 (defensive): older CATALOG.json rows may still carry
@@ -5891,8 +5899,9 @@ function applyFilters() {
     }
 
     const matchesDupes = !libraryDupesOnly || getDupeGroups().has(song.id);
+    const notJam = !isJamLibraryRow(song);
 
-    return matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips &&
+    return notJam && matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips &&
            matchesTagBar && matchesSinger && matchesTempo && matchesDupes;
   });
   
@@ -6552,9 +6561,10 @@ async function presetSpreadToSixAux() {
 //   Split    left signal → odd amps (1/3/5) + L, right signal → even amps
 //            (2/4/6) + R. With Flip: left → even, right → odd.
 //   Swirl    goes to Normal, then every stem steps to the next amp each
-//            second for 18 s (three laps), then lands on Normal.
+//            second, round and round, until another button is picked.
 //   Flip     mirrors left/right: swaps the left/right signal assignment and
-//            mirrors O↔P, G↔B, L↔R. Not available during Swirl.
+//            mirrors O↔P, G↔B, L↔R. Pressing it during Swirl ends the
+//            Swirl (back to Normal) and then flips.
 // Fader levels and boosts stay with their stem; only destinations change.
 // Nothing here touches the song's saved metadata. Pure client-side Web
 // Audio rewiring, so it works offline.
@@ -6564,13 +6574,11 @@ const ALL_AMPS_ROUTES = [0, 1, 10, 11, 12, 13, 14, 15];
 const LR_LEFT_ROUTES = [0, 10, 12, 14];
 const LR_RIGHT_ROUTES = [1, 11, 13, 15];
 const SWIRL_STEP_MS = 1000;
-const SWIRL_STEPS = 18;
 const OUTPUT_MODE_KEY = 'simpleStem.outputRouting.v1';
 let outputMode = 'normal';       // 'normal' | 'all' | 'split' | 'swirl'
 let outputFlipped = false;
 let routingSwapLR = false;       // read by applyRouting / applyRoutingForStem
 let swirlTimer = null;
-let swirlStep = 0;
 
 function loadOutputMode() {
   try {
@@ -6622,7 +6630,6 @@ function rotateRingOnce() {
 function stopSwirl() {
   if (swirlTimer) clearInterval(swirlTimer);
   swirlTimer = null;
-  swirlStep = 0;
 }
 
 // The matrix for a mode, before Flip. Split keeps a jam/SOURCE stereo pair
@@ -6663,17 +6670,7 @@ function setOutputMode(mode) {
   if (mode === 'normal' || mode === 'swirl') outputFlipped = false;
   if (mode === 'swirl') {
     applyOutputRouting();           // Normal first
-    swirlTimer = setInterval(() => {
-      swirlStep += 1;
-      if (swirlStep >= SWIRL_STEPS) {
-        stopSwirl();
-        outputMode = 'normal';       // a whole number of laps: back on Normal
-        saveOutputMode();
-        applyOutputRouting();
-        return;
-      }
-      applyRoutingMatrix(rotateRingOnce());
-    }, SWIRL_STEP_MS);
+    swirlTimer = setInterval(() => applyRoutingMatrix(rotateRingOnce()), SWIRL_STEP_MS);
     renderRoutingFxButtons();
     return;
   }
@@ -6682,8 +6679,11 @@ function setOutputMode(mode) {
 }
 
 function toggleOutputFlip() {
-  if (outputMode === 'swirl') return;
-  outputFlipped = !outputFlipped;
+  if (outputMode === 'swirl') {      // Flip ends the Swirl: Normal, then flipped
+    stopSwirl();
+    outputMode = 'normal';
+    outputFlipped = true;
+  } else outputFlipped = !outputFlipped;
   saveOutputMode();
   applyOutputRouting();
 }
@@ -6776,13 +6776,11 @@ function renderRoutingFxButtons() {
     r.checked = r.value === outputMode;
     r.disabled = !multi;
   });
-  const txt = document.querySelector('.routing-swirl-text');
-  if (txt) txt.textContent = swirlTimer ? `Swirl ${swirlStep}/${SWIRL_STEPS}` : 'Swirl';
   const flip = document.querySelector('.routing-fx-flip');
   if (flip) {
     flip.classList.toggle('active', outputFlipped);
     flip.setAttribute('aria-pressed', outputFlipped ? 'true' : 'false');
-    flip.disabled = !multi || outputMode === 'swirl';
+    flip.disabled = !multi;
   }
 }
 
@@ -9973,6 +9971,14 @@ async function togglePlayPause() {
   isPlaying = true;
   els.btnPlay.innerHTML = `<i data-lucide="pause"></i>`;
 
+  // A LOOPER armed while the transport was stopped engages now.
+  if (sectionLooperActive && sectionLooperRange && !Object.keys(loopBufferSources || {}).length) {
+    setLooperLabel(sectionLooperRange);
+    setupSeamlessLoop(sectionLooperRange.startT, sectionLooperRange.endT).catch(err =>
+      console.warn('[loop] seamless setup failed (will fall back to seek):', err)
+    );
+  }
+
   startSyncLoop();
   startBeatingVisualizer(currentSong.practiceBpm || 100);
   startPlayheadSaver();
@@ -11044,6 +11050,11 @@ function stopAudio() {
   // keep blocking the UI after Stop is pressed. See abortInFlightFetches
   // for what gets cancelled.
   abortInFlightFetches();
+
+  // Stop the LOOPER's AudioBufferSources too (Bill 2026-11-06, Green-Eyed
+  // Lady): they run on the AudioContext clock, so clearing the media
+  // elements below leaves them looping forever — the tab had to be killed.
+  try { stopLooperIfActive(); } catch (e) { console.warn('[stop] looper teardown failed:', e); }
 
   Object.values(audioElements).forEach(ae => {
     try {
@@ -12366,6 +12377,41 @@ async function restartBackend() {
   }, 1000);
 }
 
+// ── Tab title + "first and only" marker (Bill 2026-11-05) ─────────────────
+// Tab reads "simpleStem V1.110"; on the Librarian "simpleStem Librarian V1.110".
+// Open simpleStem tabs of this browser (same address) find each other over a
+// BroadcastChannel: alone → "· only"; with others → "· #1 of 2" for the
+// oldest, "· #2 of 2" for the next, and so on. Tabs opened via a different
+// address (localhost vs 127.0.0.1) are separate and not seen.
+let tabTitleBase = 'simpleStem';
+const instChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-instances') : null;
+const instSelf = { id: Math.random().toString(36).slice(2), born: Date.now() };
+const instPeers = new Map();   // id → { born, seen }
+function refreshTabTitle() {
+  const now = Date.now();
+  for (const [id, p] of instPeers) if (now - p.seen > 150000) instPeers.delete(id);
+  const all = [instSelf, ...instPeers.values()].sort((a, b) => a.born - b.born || String(a.id).localeCompare(String(b.id)));
+  const n = all.length;
+  const rank = all.findIndex(x => x === instSelf) + 1;
+  document.title = n <= 1 ? `${tabTitleBase} · only` : `${tabTitleBase} · #${rank} of ${n}`;
+}
+if (instChannel) {
+  const say = (type) => { try { instChannel.postMessage({ type, id: instSelf.id, born: instSelf.born }); } catch (e) {} };
+  instChannel.onmessage = (ev) => {
+    const m = ev.data || {};
+    if (!m.id || m.id === instSelf.id) return;
+    if (m.type === 'bye') instPeers.delete(m.id);
+    else {
+      instPeers.set(m.id, { born: m.born, seen: Date.now() });
+      if (m.type === 'hello') say('here');
+    }
+    refreshTabTitle();
+  };
+  say('hello');
+  setInterval(() => { say('here'); refreshTabTitle(); }, 20000);
+  window.addEventListener('pagehide', () => say('bye'));
+}
+
 async function checkVersion() {
   if (!els.versionRunning) return;
   try {
@@ -12379,8 +12425,8 @@ async function checkVersion() {
     els.versionRunning.textContent = stamp;
     const brandV = document.getElementById('brand-version');
     if (brandV) brandV.textContent = stamp;
-    // Identity-aware title: "simpleStem Performer V1.MMDDHHMM" so a tab
-    // switcher can tell at a glance which machine each tab is talking to.
+    // Identity-aware title: "simpleStem V1.MMDDHHMM" (the Librarian says so)
+    // so a tab switcher can tell at a glance which machine each tab is talking to.
     // We learn the machine from /api/identity (set on the server by
     // hostname detection); fall back to "Performer" since this page is
     // index.html, which is the Performer's default view.
@@ -12388,10 +12434,11 @@ async function checkVersion() {
       const r = await fetch('/api/identity', { cache: 'no-store' });
       const j = r.ok ? await r.json() : { machine: 'performer' };
       const role = (j.machine === 'librarian') ? 'Librarian' : 'Performer';
-      document.title = `simpleStem ${role} ${stamp}`;
+      tabTitleBase = role === 'Librarian' ? `simpleStem Librarian ${stamp}` : `simpleStem ${stamp}`;
     } catch (e) {
-      document.title = `simpleStem Performer ${stamp}`;
+      tabTitleBase = `simpleStem ${stamp}`;
     }
+    refreshTabTitle();
     if (els.btnUpdate) {
       if (v.updateAvailable) {
         els.btnUpdate.style.display = 'inline-flex';
@@ -14168,6 +14215,13 @@ function toggleSectionLooper() {
     sectionLooperRange.origEndT = rawRange.endT;
     sectionLooperRange.origStartT = rawRange.startT;
     showSeamPanel(true);
+    // Transport stopped (Bill 2026-11-06): only ARM the loop. Starting the
+    // BufferSources here played the section on its own with isPlaying
+    // false, so the transport had no way to stop it. Play engages it.
+    if (!isPlaying) {
+      if (label) label.textContent = label.textContent + ' — armed, press Play';
+      return;
+    }
     setupSeamlessLoop(range.startT, range.endT).catch(err =>
       console.warn('[loop] seamless setup failed (will fall back to seek):', err)
     );

@@ -615,6 +615,7 @@ async function songStemM4as(folder, names) {
 const recentStemSetPicks = new Map();   // folderName → 'demucs' | 'logic'
 // Same idea for "Skip for all" in the fill-missing-lyrics workflow.
 const recentLyricsSkips = new Map();    // folderName → true | false
+const recentLibraryMoves = new Map();   // folderName → 'jam' | 'song' (PUT /api/song/:base/library)
 
 async function scanStems() {
   if (!fs.existsSync(STEMS_DIR)) {
@@ -628,7 +629,7 @@ async function scanStems() {
   // other handlers interleave between filesystem calls.
   const dirents = await fsp.readdir(STEMS_DIR, { withFileTypes: true });
   const folders = dirents
-    .filter(d => d.isDirectory() && !/ \(\d+\)$/.test(d.name))
+    .filter(d => d.isDirectory() && !d.name.startsWith('.') && !/ \(\d+\)$/.test(d.name))   // '.aifolder' is the Stemmer's machinery, not a song
     .map(d => d.name);
 
   for (const folder of folders) {
@@ -768,6 +769,10 @@ async function scanStems() {
         var drum_machine_default_meta = !!mj.drum_machine_default;
         var stem_set_meta = STEM_SET_NAMES.includes(mj.stem_set) ? mj.stem_set : null;
         var lyrics_skip_meta = !!mj.lyrics_skip;
+        // Jam page "Import as: Jam track" (Bill 2026-11-08): webloc_watch.sh
+        // writes library:"jam" + lyrics_skip:true; such rows live in the Jam
+        // Tracks tab, not the Song Library.
+        var library_meta = (mj.library === 'jam') ? 'jam' : 'song';
         // Task #129 — last playback mode used ('stems'|'drum'|'backing').
         // Falls back to 'drum' when the legacy flag is set (for songs
         // saved before this field existed).
@@ -889,6 +894,7 @@ async function scanStems() {
       // Fill-missing-lyrics workflow: true = "Skip for all" (instrumental
       // etc.), set via PUT /api/song/:base/lyrics-skip.
       lyrics_skip: (typeof lyrics_skip_meta !== 'undefined') ? lyrics_skip_meta : false,
+      library: (typeof library_meta !== 'undefined') ? library_meta : 'song',
       stems: stemSel.stems,
       stemsBySet: stemSel.stemsBySet,
       stemSets: stemSel.stemSets,
@@ -1116,6 +1122,18 @@ function refreshLibraryCache(reason, force) {
                 }
               }
             } catch (e) { console.warn('[lib] tombstone filter failed:', e.message); }
+            // Hidden folders (2026-11-06): '.aifolder' inside STEMS/ is the
+            // Stemmer's machinery, not a song. A Librarian running an older
+            // catalog.py still lists it, so drop dot-folder rows here too.
+            try {
+              if (fromCatalog.data && Array.isArray(fromCatalog.data.songs)) {
+                const before = fromCatalog.data.songs.length;
+                fromCatalog.data.songs = fromCatalog.data.songs.filter(
+                  x => !String(x.folderName || x.base || '').startsWith('.'));
+                const dropped = before - fromCatalog.data.songs.length;
+                if (dropped) console.log(`[lib] hid ${dropped} dot-folder row(s) from the catalog`);
+              }
+            } catch (e) { console.warn('[lib] dot-folder filter failed:', e.message); }
             libraryCache = {
               scannedAt: fromCatalog.scannedAt || new Date().toISOString(),
               checkedAt: new Date().toISOString(),
@@ -1417,6 +1435,7 @@ function overlayCachedState(data) {
   for (const s of data.songs) {
     if (s.type === 'stems' && s.folderName) {
       if (recentLyricsSkips.has(s.folderName)) s.lyrics_skip = recentLyricsSkips.get(s.folderName);
+      if (recentLibraryMoves.has(s.folderName)) s.library = recentLibraryMoves.get(s.folderName);
       const pick = recentStemSetPicks.get(s.folderName);
       if (pick && s.stemsBySet && s.stemsBySet[pick]) {
         s.stemSet = pick;
@@ -2787,7 +2806,7 @@ async function precacheAllStemsM4a(opts) {
   const t0 = Date.now();
   try {
     const songFolders = (await fsp.readdir(STEMS_DIR, { withFileTypes: true }))
-      .filter(d => d.isDirectory())
+      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
       .map(d => d.name);
     cacheJobState.total = songFolders.length;
     console.log(`[stem precache] starting (${trigger}${force ? ', FORCE' : ''}) — ${songFolders.length} song folders (4 in parallel)`);
@@ -2992,7 +3011,7 @@ async function refreshDriveSnap() {
   try {
     const dirents = await snapB(fsp.readdir(STEMS_DIR, { withFileTypes: true })).catch(() => []);
     const stats = [];
-    for (const d of dirents.filter(d => d.isDirectory())) {
+    for (const d of dirents.filter(d => d.isDirectory() && !d.name.startsWith('.'))) {
       try {
         const st = await snapB(fsp.stat(path.join(STEMS_DIR, d.name)));
         stats.push({ name: d.name, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs });
@@ -4607,14 +4626,35 @@ function jamPublic(job) {
   return { ...job, inLibrary: libraryBaseForVideo(job.id) || job.inLibrary || null };
 }
 
-// Body: { url }. Responds at once; poll /api/jam/status/:id.
+// Newly fetched jam tracks are also queued for stemming (Bill 2026-11-05):
+// a .webloc in INCOMING_WEBLOC/ feeds the normal ingest pipeline. Skipped
+// when that video is already stemmed in the library.
+// kind: 'song' (default — a song with lyrics, goes to the Song Library) or
+// 'jam' (instrumental backing track — webloc_watch.sh reads the jam_ prefix
+// and tags it library:"jam" + lyrics_skip:true so it lands in the Jam Tracks
+// tab and never asks for lyrics). Bill 2026-11-08.
+function queueJamStemming(id, canonical, kind) {
+  if (libraryBaseForVideo(id)) return null;
+  fs.mkdirSync(INCOMING_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const prefix = (kind === 'jam') ? 'jam' : 'song';
+  const file = path.join(INCOMING_DIR, `${prefix}_${stamp}_${id}.webloc`);
+  fs.writeFileSync(file, '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+    '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(canonical) + '</string>\n</dict>\n</plist>\n');
+  logActivity('info', 'ingest', `jam: queued ${id} for stemming as ${prefix}`, { url: canonical });
+  return new Date().toISOString();
+}
+
+// Body: { url, kind }. kind = 'song' | 'jam' (see queueJamStemming).
+// Responds at once; poll /api/jam/status/:id.
 app.post('/api/jam/fetch', (req, res) => {
   const url = String((req.body && req.body.url) || '').trim();
+  const kind = ((req.body && req.body.kind) === 'jam') ? 'jam' : 'song';
   const id = ytVideoId(url);
   if (!id) return res.status(400).json({ error: 'need a YouTube video URL' });
-  // Backing tracks play as-is (Bill 2026-11-02): no stemming queued, and a
-  // video that happens to be stemmed in the library still plays as the
-  // stereo mix picked here.
+  // The pick plays as-is at once; a new one is also queued for stemming
+  // (Bill 2026-11-05). A video already stemmed in the library is not re-queued.
   let job = jamJobs.get(id) || jamJobFromDisk(id);
   if (job && (job.state === 'ready' || job.state === 'downloading')) {
     jamJobs.set(id, job);
@@ -4643,10 +4683,15 @@ app.post('/api/jam/fetch', (req, res) => {
       job.duration = Number(dur) || null;
       job.state = 'ready';
       job.readyMs = Date.now() - job.startedAt;
+      let stemQueuedAt = null;
+      try { stemQueuedAt = queueJamStemming(id, canonical, kind); } catch (e) {
+        logActivity('error', 'ingest', `jam: could not queue ${id} for stemming: ${e.message}`, { url: canonical });
+      }
+      job.stem_queued_at = stemQueuedAt;
       try {
         fs.writeFileSync(path.join(JAM_DIR, `${id}.json`), JSON.stringify({
           file: job.file, title: job.title, channel: job.channel, duration: job.duration, url: canonical,
-          fetched_at: new Date().toISOString() }, null, 2));
+          fetched_at: new Date().toISOString(), stem_queued_at: stemQueuedAt, kind }, null, 2));
       } catch (e) {}
       logActivity('info', 'ingest', `jam: audio ready for "${job.title}" in ${Math.round(job.readyMs / 1000)}s`, { url: canonical });
     });
@@ -4667,7 +4712,7 @@ app.get('/api/jam/jammed', (req, res) => {
     const hay = `${job.title || ''} ${job.channel || ''}`.toLowerCase();
     if (words.length && !words.every(w => hay.includes(w))) continue;
     out.push({ id, file: job.file, url: job.url || `https://www.youtube.com/watch?v=${id}`, title: job.title || id,
-               channel: job.channel || '', duration: job.duration || null, fetched_at: job.fetched_at || null,
+               channel: job.channel || '', duration: job.duration || null, fetched_at: job.fetched_at || null, stemQueuedAt: job.stem_queued_at || null,
                inLibrary: libraryBaseForVideo(id) });
   }
   out.sort((a, b) => String(b.fetched_at || '').localeCompare(String(a.fetched_at || '')));
@@ -6477,6 +6522,32 @@ app.put('/api/song/:base/lyrics-skip', express.json(), (req, res) => {
       if (row) row.lyrics_skip = skip;
     } catch (e) {}
     res.json({ ok: true, lyrics_skip: skip });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Move a stemmed song between the Song Library and the Jam Tracks tab
+// (Bill 2026-11-08). Body: { library: 'jam' | 'song' }. 'jam' also sets
+// lyrics_skip (an instrumental is never asked for lyrics); 'song' clears
+// the library flag only. Used to backfill jam tracks stemmed before the
+// Jam page's Import-as switch existed.
+app.put('/api/song/:base/library', express.json(), (req, res) => {
+  const s = safeSongDir(req.params.base);
+  if (!s) return res.status(400).json({ error: 'bad song id' });
+  const mp = path.join(s.dir, 'metadata.json');
+  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
+  const lib = ((req.body && req.body.library) === 'jam') ? 'jam' : 'song';
+  try {
+    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    if (lib === 'jam') { meta.library = 'jam'; meta.lyrics_skip = true; } else delete meta.library;
+    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    recentLibraryMoves.set(s.b, lib);
+    if (lib === 'jam') recentLyricsSkips.set(s.b, true);
+    try {
+      const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
+      const row = Array.isArray(songs) ? songs.find(x => x.type === 'stems' && x.folderName === s.b) : null;
+      if (row) { row.library = lib; if (lib === 'jam') row.lyrics_skip = true; }
+    } catch (e) {}
+    res.json({ ok: true, library: lib });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

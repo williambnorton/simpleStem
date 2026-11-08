@@ -124,6 +124,24 @@ open(path, 'a').write('\n')
 PY
 }
 
+# Inject the jam-track flags into a metadata.json (Bill 2026-11-08). A
+# .webloc named jam_*.webloc (the Jam page's "Import as: Jam track") is an
+# instrumental backing track: it lives in the Jam Tracks tab, not the Song
+# Library, and the fill-missing-lyrics pass must never ask for its lyrics.
+inject_jam_fields() {
+  "$VENV_PY" - "$1" <<'PY'
+import json, sys
+path = sys.argv[1]
+d = json.load(open(path))
+d['library'] = 'jam'
+d['lyrics_skip'] = True
+json.dump(d, open(path, 'w'), indent=2, ensure_ascii=False)
+open(path, 'a').write('\n')
+PY
+}
+# Set per .webloc by process_webloc from the filename prefix: "jam" or "song".
+WEBLOC_KIND="song"
+
 # slug: lowercase, spaces→_, drop anything but [a-z0-9_-]
 slug() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd 'a-z0-9_-'; }
 
@@ -234,6 +252,10 @@ _emit_metadata() {
   if (( seq > 0 )); then
     inject_playlist_fields "$adir/metadata.json" "$seq" "$ptitle"
     name="$(printf '%02d_%s.json' "$seq" "$base")"
+  fi
+  if [[ "$WEBLOC_KIND" == "jam" ]]; then
+    inject_jam_fields "$adir/metadata.json"
+    echo ">> [$idtag] jam track: library=jam, lyrics_skip=true"
   fi
   # Cache the fetched audio + metadata under STEMS/<base>/ so the song is
   # downloaded ONCE here on the Librarian; stem.sh reuses source.wav and skips
@@ -374,6 +396,10 @@ process_webloc() {
     mv -f "$f" "$f.failed"; return 0
   fi
   echo "== $(basename "$f"): $url"
+  case "$(basename "$f")" in
+    jam_*) WEBLOC_KIND="jam" ;;
+    *)     WEBLOC_KIND="song" ;;
+  esac
 
   # One flat dump tells us single vs playlist and gives ids + playlist title.
   # Write to a temp file (don't interpolate JSON into the shell — titles may
