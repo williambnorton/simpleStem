@@ -4585,6 +4585,14 @@ function runYtDlp(args, timeoutMs) {
     child.on('close', code => { done = true; clearTimeout(timer); resolve({ code, stdout: out, stderr: err }); });
   });
 }
+// 'jam' | 'song' for a stemmed base, honouring moves made since the last
+// CATALOG.json rebuild (PUT /api/song/:base/library).
+function libraryRowLibrary(base) {
+  if (recentLibraryMoves.has(base)) return recentLibraryMoves.get(base);
+  const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+  const row = songs.find(s => s.type === 'stems' && s.folderName === base);
+  return (row && row.library === 'jam') ? 'jam' : 'song';
+}
 // Library rows (Performer's in-memory catalog) that came from this video.
 function libraryBaseForVideo(id) {
   const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
@@ -4629,6 +4637,16 @@ function jamPublic(job) {
 // Newly fetched jam tracks are also queued for stemming (Bill 2026-11-05):
 // a .webloc in INCOMING_WEBLOC/ feeds the normal ingest pipeline. Skipped
 // when that video is already stemmed in the library.
+// Guess whether a YouTube pick is an instrumental backing track ('jam') or
+// a song with lyrics ('song') from its title + channel (Bill 2026-11-08:
+// "I will make the mistake of not selecting correctly"). Conservative: only
+// clear backing-track wording says jam; anything else is a song, and a wrong
+// guess is one click to fix (Move to Song Library / Move to Jam Tracks).
+const JAM_WORDS = /backing[\s-]*tra(?:ck|x)|jam[\s-]*track|instrumental|karaoke|play[\s-]*along|minus[\s-]*one|guitar[\s-]*jam|no[\s-]*vocals?|vocal[\s-]*less|drum[\s-]*less|bass[\s-]*less|\bbacking\b|\bjam\s+in\s+[A-G]\b|\bin\s+[A-G](?:#|b)?\s*(?:major|minor|m|maj|min|mixolydian|dorian|blues)\b/i;
+function guessJamKind(title, channel) {
+  return JAM_WORDS.test(`${title || ''} ${channel || ''}`) ? 'jam' : 'song';
+}
+
 // kind: 'song' (default — a song with lyrics, goes to the Song Library) or
 // 'jam' (instrumental backing track — webloc_watch.sh reads the jam_ prefix
 // and tags it library:"jam" + lyrics_skip:true so it lands in the Jam Tracks
@@ -4646,11 +4664,14 @@ function queueJamStemming(id, canonical, kind) {
   return new Date().toISOString();
 }
 
-// Body: { url, kind }. kind = 'song' | 'jam' (see queueJamStemming).
-// Responds at once; poll /api/jam/status/:id.
+// Body: { url, kind }. kind = 'song' | 'jam' | 'auto' (default; guessed
+// from yt-dlp's title + channel once the audio is in — see guessJamKind).
+// Responds at once; poll /api/jam/status/:id. The job carries the resolved
+// `kind` and `kind_guessed`.
 app.post('/api/jam/fetch', (req, res) => {
   const url = String((req.body && req.body.url) || '').trim();
-  const kind = ((req.body && req.body.kind) === 'jam') ? 'jam' : 'song';
+  const askedKind = (req.body && req.body.kind);
+  const kindMode = (askedKind === 'jam' || askedKind === 'song') ? askedKind : 'auto';
   const id = ytVideoId(url);
   if (!id) return res.status(400).json({ error: 'need a YouTube video URL' });
   // The pick plays as-is at once; a new one is also queued for stemming
@@ -4683,6 +4704,9 @@ app.post('/api/jam/fetch', (req, res) => {
       job.duration = Number(dur) || null;
       job.state = 'ready';
       job.readyMs = Date.now() - job.startedAt;
+      const kind = (kindMode === 'auto') ? guessJamKind(job.title, job.channel) : kindMode;
+      job.kind = kind;
+      job.kind_guessed = (kindMode === 'auto');
       let stemQueuedAt = null;
       try { stemQueuedAt = queueJamStemming(id, canonical, kind); } catch (e) {
         logActivity('error', 'ingest', `jam: could not queue ${id} for stemming: ${e.message}`, { url: canonical });
@@ -4691,7 +4715,7 @@ app.post('/api/jam/fetch', (req, res) => {
       try {
         fs.writeFileSync(path.join(JAM_DIR, `${id}.json`), JSON.stringify({
           file: job.file, title: job.title, channel: job.channel, duration: job.duration, url: canonical,
-          fetched_at: new Date().toISOString(), stem_queued_at: stemQueuedAt, kind }, null, 2));
+          fetched_at: new Date().toISOString(), stem_queued_at: stemQueuedAt, kind, kind_guessed: job.kind_guessed }, null, 2));
       } catch (e) {}
       logActivity('info', 'ingest', `jam: audio ready for "${job.title}" in ${Math.round(job.readyMs / 1000)}s`, { url: canonical });
     });
@@ -4711,12 +4735,73 @@ app.get('/api/jam/jammed', (req, res) => {
     if (!job) continue;
     const hay = `${job.title || ''} ${job.channel || ''}`.toLowerCase();
     if (words.length && !words.every(w => hay.includes(w))) continue;
+    const inLibrary = libraryBaseForVideo(id);
+    // Once stemmed, the Song Library / Jam Tracks split is decided by the
+    // song's `library` flag (Bill 2026-11-08): a fetched track that was
+    // stemmed as a song has graduated to the Song Library and leaves this
+    // list; one flagged jam stays.
+    if (inLibrary && libraryRowLibrary(inLibrary) !== 'jam') continue;
     out.push({ id, file: job.file, url: job.url || `https://www.youtube.com/watch?v=${id}`, title: job.title || id,
                channel: job.channel || '', duration: job.duration || null, fetched_at: job.fetched_at || null, stemQueuedAt: job.stem_queued_at || null,
-               inLibrary: libraryBaseForVideo(id) });
+               kind: job.kind || null, kind_guessed: !!job.kind_guessed, inLibrary });
+  }
+  // Songs flagged library:"jam" that never came through the Jam page (moved
+  // from the Song Library): list them too, keyed by video id when known.
+  const seen = new Set(out.map(t => t.id));
+  const songs = (libraryCache && libraryCache.data && libraryCache.data.songs) || [];
+  for (const srow of songs) {
+    if (srow.type !== 'stems' || libraryRowLibrary(srow.folderName) !== 'jam') continue;
+    const vid = srow.videoId || ytVideoId(srow.source_url) || null;
+    const key = vid || srow.folderName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hay = `${srow.title || ''} ${srow.artist || ''}`.toLowerCase();
+    if (words.length && !words.every(w => hay.includes(w))) continue;
+    out.push({ id: key, file: null, url: srow.source_url || (vid ? `https://www.youtube.com/watch?v=${vid}` : null), title: srow.title || srow.folderName,
+               channel: srow.artist || '', duration: srow.duration || null, fetched_at: srow.stemmed_at || null, stemQueuedAt: null,
+               kind: 'jam', kind_guessed: false, inLibrary: srow.folderName, fromLibrary: true });
   }
   out.sort((a, b) => String(b.fetched_at || '').localeCompare(String(a.fetched_at || '')));
   res.json({ ok: true, results: out });
+});
+
+// Delete a jam track for good (Bill 2026-11-08: Jam Tracks tab batch
+// delete). Removes ~/.bt-cache/JAM/<id>.{json,audio}, any jam_/song_
+// .webloc for it still waiting in INCOMING_WEBLOC, and — when the video was
+// stemmed — its song folder + caches, the same way DELETE /api/song/:base
+// does. Body: { confirm: "<id>" }. NOT reversible.
+app.delete('/api/jam/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  const isVideoId = /^[\w-]{11}$/.test(id);
+  if (!isVideoId && !safeSongDir(id)) return res.status(400).json({ error: 'bad id' });
+  if (!req.body || req.body.confirm !== id) {
+    return res.status(428).json({ error: 'confirm required: resend with body {"confirm":"' + id + '"}' });
+  }
+  // A library-only jam row (moved over from the Song Library, no JAM/<id>
+  // audio) is keyed by its song base instead of a video id.
+  const base = isVideoId ? libraryBaseForVideo(id) : id;
+  if (base) {
+    const s = safeSongDir(base);
+    if (!s) return res.status(500).json({ error: 'stemmed song has an unsafe folder name: ' + base });
+    try { await hardDeleteSong(s); }
+    catch (e) { return res.status(503).json({ error: 'Drive did not answer — the stemmed song was NOT deleted; jam track left in place. Try again when Drive is up.' }); }
+    setImmediate(() => { recomputeStemsHealth().catch(() => {}); });
+  }
+  const job = jamJobs.get(id) || jamJobFromDisk(id) || {};
+  const removed = [];
+  for (const f of [job.file, `${id}.json`]) {
+    if (!f) continue;
+    try { fs.rmSync(path.join(JAM_DIR, path.basename(f)), { force: true }); removed.push(f); } catch (e) {}
+  }
+  try {
+    for (const f of fs.readdirSync(JAM_DIR)) if (f.startsWith(id + '.')) { try { fs.rmSync(path.join(JAM_DIR, f), { force: true }); removed.push(f); } catch (e) {} }
+  } catch (e) {}
+  try {
+    for (const f of fs.readdirSync(INCOMING_DIR)) if (f.endsWith(`_${id}.webloc`)) { try { fs.rmSync(path.join(INCOMING_DIR, f), { force: true }); removed.push(f); } catch (e) {} }
+  } catch (e) {}
+  jamJobs.delete(id);
+  logActivity('warn', 'library', `jam track deleted: ${id}${base ? ' (+ stemmed song ' + base + ')' : ''}`);
+  res.json({ ok: true, deleted: id, song: base || null, removed });
 });
 
 app.get('/api/jam/status/:id', (req, res) => {
@@ -6538,14 +6623,14 @@ app.put('/api/song/:base/library', express.json(), (req, res) => {
   const lib = ((req.body && req.body.library) === 'jam') ? 'jam' : 'song';
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
-    if (lib === 'jam') { meta.library = 'jam'; meta.lyrics_skip = true; } else delete meta.library;
+    if (lib === 'jam') { meta.library = 'jam'; meta.lyrics_skip = true; } else { delete meta.library; delete meta.lyrics_skip; }
     fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
     recentLibraryMoves.set(s.b, lib);
-    if (lib === 'jam') recentLyricsSkips.set(s.b, true);
+    recentLyricsSkips.set(s.b, lib === 'jam');
     try {
       const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
       const row = Array.isArray(songs) ? songs.find(x => x.type === 'stems' && x.folderName === s.b) : null;
-      if (row) { row.library = lib; if (lib === 'jam') row.lyrics_skip = true; }
+      if (row) { row.library = lib; row.lyrics_skip = (lib === 'jam'); }
     } catch (e) {}
     res.json({ ok: true, library: lib });
   } catch (e) { res.status(500).json({ error: e.message }); }

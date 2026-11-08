@@ -2783,34 +2783,153 @@ document.addEventListener('click', (e) => {
 // Lists every YouTube backing track already pulled in through Jam
 // (/api/jam/jammed, stored on this Mac). Play sends it to strips 1–2.
 let jamTracksAll = [];
+const jamSelectedIds = new Set();   // ticked rows (Bill 2026-11-08: select → setlist / batch delete)
+function jamVisibleRows() {
+  const words = ((document.getElementById('jamtracks-filter') || {}).value || '').toLowerCase().split(/\s+/).filter(Boolean);
+  return jamTracksAll.filter(t => {
+    const hay = `${t.title || ''} ${t.channel || ''}`.toLowerCase();
+    return words.every(w => hay.includes(w));
+  });
+}
+// Selected jam tracks in list order; stemmed ones carry their song base.
+function jamSelectedRows() {
+  const rows = jamVisibleRows().filter(t => jamSelectedIds.has(t.id));
+  for (const t of jamTracksAll) if (jamSelectedIds.has(t.id) && !rows.includes(t)) rows.push(t);
+  return rows;
+}
+function syncJamSelection() {
+  const rows = jamSelectedRows();
+  const stemmed = rows.filter(t => t.inLibrary).map(t => t.inLibrary);
+  const cb = document.getElementById('jamtracks-select-all');
+  if (cb) {
+    const vis = jamVisibleRows().length;
+    cb.checked = vis > 0 && jamSelectedIds.size >= vis;
+    cb.indeterminate = jamSelectedIds.size > 0 && !cb.checked;
+  }
+  for (const id of ['jt-make-setlist', 'jt-add-setlist', 'jt-to-song']) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = stemmed.length === 0;
+  }
+  const delB = document.getElementById('jt-delete');
+  if (delB) {
+    delB.disabled = rows.length === 0;
+    if (!delB._armed) delB.innerHTML = rows.length ? `Delete ${rows.length}<br>selected` : 'Delete<br>selected';
+    else if (!rows.length) disarmJamDelete();
+  }
+  const countEl = document.getElementById('jamtracks-count');
+  if (countEl) countEl.textContent = (countEl.dataset.base || '') + (rows.length ? ` · ${rows.length} ticked (${stemmed.length} stemmed)` : '');
+}
+function clearJamSelection() { jamSelectedIds.clear(); renderJamTracks(); }
+function disarmJamDelete() {
+  const b = document.getElementById('jt-delete'), list = document.getElementById('jt-delete-list');
+  if (b) { clearTimeout(b._armTimer); b._armed = false; b.classList.remove('armed'); }
+  if (list) { list.style.display = 'none'; list.innerHTML = ''; }
+  syncJamSelection();
+}
+async function onJamDeleteSelected() {
+  const b = document.getElementById('jt-delete'), list = document.getElementById('jt-delete-list');
+  const rows = jamSelectedRows();
+  if (!b || !rows.length) return;
+  if (!b._armed) {
+    b._armed = true;
+    b.classList.add('armed');
+    b.innerHTML = `Click again:<br>delete ${rows.length}`;
+    list.innerHTML = `<p><b>These ${rows.length} jam track${rows.length === 1 ? '' : 's'} will be deleted for good</b> (audio on this Mac${rows.some(t => t.inLibrary) ? ', and the stemmed song folder + caches where one exists' : ''}):</p><ul>` +
+      rows.map(t => `<li>${escapeHtml(t.title)} <small style="opacity:.6">${escapeHtml(t.id)}${t.inLibrary ? ' · stemmed: ' + escapeHtml(t.inLibrary) : ''}</small></li>`).join('') + '</ul>';
+    list.style.display = 'block';
+    b._armTimer = setTimeout(disarmJamDelete, 15000);
+    return;
+  }
+  clearTimeout(b._armTimer);
+  b.disabled = true;
+  b.innerHTML = 'Deleting…';
+  const failed = [];
+  for (const t of rows) {
+    try {
+      const r = await fetch(`/api/jam/${encodeURIComponent(t.id)}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: t.id })
+      });
+      if (r.ok) jamSelectedIds.delete(t.id);
+      else { let d = {}; try { d = await r.json(); } catch (er) {} failed.push(`${t.title}: ${d.error || 'HTTP ' + r.status}`); }
+    } catch (e) { failed.push(`${t.title}: ${e.message}`); }
+  }
+  b._armed = false;
+  b.classList.remove('armed');
+  list.style.display = 'none'; list.innerHTML = '';
+  jamSelectedIds.clear();
+  await loadJamTracks(true);
+  if (rows.some(t => t.inLibrary)) { try { await fetchLibrary(); if (typeof renderGigSidebar === 'function') renderGigSidebar(); } catch (e) {} }
+  if (failed.length) alert(`${failed.length} of ${rows.length} jam tracks were NOT deleted:\n\n` + failed.join('\n'));
+  else showToast(`Deleted ${rows.length} jam track${rows.length === 1 ? '' : 's'}`);
+}
+// Move stemmed songs between the Song Library and the Jam Tracks tab
+// (Bill 2026-11-08). PUT /api/song/:base/library flips metadata.json's
+// library flag (+ lyrics_skip) and the server's in-memory row at once.
+async function moveSongsBetweenLibraries(bases, lib) {
+  const failed = [];
+  for (const b of bases) {
+    try {
+      const r = await fetch(`/api/song/${encodeURIComponent(b)}/library`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library: lib }) });
+      if (!r.ok) { let d = {}; try { d = await r.json(); } catch (er) {} failed.push(`${b}: ${d.error || 'HTTP ' + r.status}`); }
+    } catch (e) { failed.push(`${b}: ${e.message}`); }
+  }
+  try { await fetchLibrary(); } catch (e) {}
+  try { await loadJamTracks(true); } catch (e) {}
+  if (typeof renderGigSidebar === 'function') renderGigSidebar();
+  const n = bases.length - failed.length;
+  if (failed.length) alert(`${failed.length} of ${bases.length} were NOT moved:\n\n` + failed.join('\n'));
+  if (n) showToast(`Moved ${n} to ${lib === 'jam' ? 'Jam Tracks' : 'the Song Library'}`);
+}
+async function onLibraryMoveToJam() {
+  const bases = selectedStemBasesInLibraryOrder();
+  if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
+  clearLibrarySelection();
+  await moveSongsBetweenLibraries(bases, 'jam');
+}
+async function onJamMoveToSong() {
+  const bases = jamStemmedSelectionBases();
+  if (!bases.length) return;
+  clearJamSelection();
+  await moveSongsBetweenLibraries(bases, 'song');
+}
+function jamStemmedSelectionBases() {
+  const bases = jamSelectedRows().filter(t => t.inLibrary).map(t => t.inLibrary);
+  if (!bases.length) showToast('None of the ticked jam tracks is stemmed yet — a setlist holds songs');
+  return bases;
+}
 function renderJamTracks() {
   const list = document.getElementById('jamtracks-list');
   const countEl = document.getElementById('jamtracks-count');
   if (!list) return;
-  const words = ((document.getElementById('jamtracks-filter') || {}).value || '').toLowerCase().split(/\s+/).filter(Boolean);
-  const rows = jamTracksAll.filter(t => {
-    const hay = `${t.title || ''} ${t.channel || ''}`.toLowerCase();
-    return words.every(w => hay.includes(w));
-  });
-  if (countEl) countEl.textContent = `${rows.length} of ${jamTracksAll.length} jam tracks`;
+  const rows = jamVisibleRows();
+  if (countEl) { countEl.dataset.base = `${rows.length} of ${jamTracksAll.length} jam tracks`; countEl.textContent = countEl.dataset.base; }
   if (!rows.length) {
     list.innerHTML = `<div class="empty-state"><p>${jamTracksAll.length ? 'No jam track matches that.' : 'Nothing jammed yet — press “Browse for more”, pick a YouTube backing track and press Play in simpleStem.'}</p></div>`;
+    syncJamSelection();
     return;
   }
   const fmt = s => (s || s === 0) ? `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}` : '';
   list.innerHTML = rows.map(t => `
-    <div class="jamtrack-row" data-id="${escapeHtml(t.id)}">
-      <img class="jamtrack-thumb" loading="lazy" src="https://i.ytimg.com/vi/${escapeHtml(t.id)}/mqdefault.jpg" alt="" onerror="this.style.visibility='hidden'">
+    <div class="jamtrack-row${jamSelectedIds.has(t.id) ? ' selected' : ''}" data-id="${escapeHtml(t.id)}">
+      <input type="checkbox" class="jamtrack-check" ${jamSelectedIds.has(t.id) ? 'checked' : ''} title="Tick to select for a setlist or batch delete">
+      <img class="jamtrack-thumb" loading="lazy" src="${/^[\w-]{11}$/.test(t.id) ? `https://i.ytimg.com/vi/${escapeHtml(t.id)}/mqdefault.jpg` : ''}" alt="" onerror="this.style.visibility='hidden'">
       <div class="jamtrack-info">
         <div class="jamtrack-title">${escapeHtml(t.title)}${t.inLibrary ? ' <span class="song-fresh-pill" title="Stemmed — in the Song Library">STEMMED</span>' : (t.stemQueuedAt ? ' <span class="song-fresh-pill" title="Queued for stemming — the Stems button lights up when it lands in the Song Library">STEMMING QUEUED</span>' : '')}</div>
         <div class="jamtrack-meta">${escapeHtml(t.channel || '')}${t.duration ? ' · ' + fmt(t.duration) : ''}${t.fetched_at ? ' · pulled ' + escapeHtml(String(t.fetched_at).slice(0, 10)) : ''}</div>
       </div>
-      <button type="button" class="lfb-action-btn jamtrack-play" data-kind="source" title="Play the original stereo on strips 1–2 (SRC L / SRC R)">▶ Source</button>
+      <button type="button" class="lfb-action-btn jamtrack-play" data-kind="source" ${t.file ? '' : 'disabled'} title="${t.file ? 'Play the original stereo on strips 1–2 (SRC L / SRC R)' : 'No Jam audio on this Mac — moved over from the Song Library; use Stems'}">▶ Source</button>
       <button type="button" class="lfb-action-btn jamtrack-play" data-kind="stems" ${t.inLibrary ? '' : 'disabled'} title="${t.inLibrary ? 'Play the stemmed song, all 6 channels' : 'Not stemmed yet'}">▶ Stems</button>
     </div>`).join('');
+  syncJamSelection();
 }
-async function loadJamTracks() {
+async function loadJamTracks(force) {
   const list = document.getElementById('jamtracks-list');
+  // Leave the list alone while a delete is armed (the 30 s refresh would
+  // otherwise redraw under the confirmation).
+  const delB = document.getElementById('jt-delete');
+  if (!force && delB && delB._armed) return;
   if (list && !jamTracksAll.length) list.innerHTML = '<div class="empty-state"><p>Loading jam tracks…</p></div>';
   try {
     const r = await fetch('/api/jam/jammed');
@@ -2825,6 +2944,23 @@ document.addEventListener('input', (e) => { if (e.target && e.target.id === 'jam
 document.addEventListener('click', (e) => {
   if (!e.target || !e.target.closest) return;
   if (e.target.closest('#jamtracks-browse')) { window.open('/jam.html', 'simplestem-jam', 'popup=yes,width=1280,height=860'); return; }
+  if (e.target.closest('#jt-make-setlist')) { const b = jamStemmedSelectionBases(); if (b.length) { clearJamSelection(); onMakeSetlistFromSelection(b); } return; }
+  if (e.target.closest('#jt-add-setlist'))  { const b = jamStemmedSelectionBases(); if (b.length) { clearJamSelection(); onAddSetlistFromSelection(b); } return; }
+  if (e.target.closest('#jt-delete')) { onJamDeleteSelected(); return; }
+  if (e.target.closest('#jt-to-song')) { onJamMoveToSong(); return; }
+  if (e.target.closest('#lfb-to-jam')) { onLibraryMoveToJam(); return; }
+  if (e.target.id === 'jamtracks-select-all') {
+    if (jamSelectedIds.size) jamSelectedIds.clear();
+    else for (const t of jamVisibleRows()) jamSelectedIds.add(t.id);
+    renderJamTracks();
+    return;
+  }
+  const chk = e.target.closest('.jamtrack-check');
+  if (chk) {
+    const row = chk.closest('.jamtrack-row');
+    if (row) { if (chk.checked) jamSelectedIds.add(row.dataset.id); else jamSelectedIds.delete(row.dataset.id); row.classList.toggle('selected', chk.checked); syncJamSelection(); }
+    return;
+  }
   const btn = e.target.closest('.jamtrack-play');
   if (!btn) return;
   const row = btn.closest('.jamtrack-row');
@@ -5609,7 +5745,7 @@ function syncLibrarySelectAll() {
   const total = filteredLibrary.reduce((n, m) => n + (m.variants.some(x => x.type === 'stems') ? 1 : 0), 0);
   cb.checked = total > 0 && batchSelectedBases.size >= total;
   cb.indeterminate = batchSelectedBases.size > 0 && !cb.checked;
-  ['lfb-make-gig', 'lfb-make-setlist', 'lfb-add-setlist'].forEach(id => {
+  ['lfb-make-gig', 'lfb-make-setlist', 'lfb-add-setlist', 'lfb-to-jam'].forEach(id => {
     const x = document.getElementById(id);
     if (x) x.disabled = batchSelectedBases.size === 0;
   });
@@ -5675,8 +5811,10 @@ async function onLibraryDeleteSelected() {
 
 // "Make setlist from selection": asks for a name, saves a standalone manual
 // setlist (shows in the setlist switcher), clears the selection.
-async function onMakeSetlistFromSelection() {
-  const bases = selectedStemBasesInLibraryOrder();
+async function onMakeSetlistFromSelection(presetBases) {
+  // presetBases: the Jam Tracks tab passes its own stemmed selection
+  // (Bill 2026-11-08); as a click handler the argument is an Event.
+  const bases = Array.isArray(presetBases) ? presetBases : selectedStemBasesInLibraryOrder();
   if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
   const d = new Date();
   const name = prompt(`Name the new setlist (${bases.length} song${bases.length === 1 ? '' : 's'}):`, `Setlist ${d.getMonth() + 1}/${d.getDate()}`);
@@ -5739,8 +5877,8 @@ async function onMakeGigFromSelection() {
 
 // "Add setlist from selection": appends one setlist with the selection to
 // the CURRENT gig. Clears the selection.
-function onAddSetlistFromSelection() {
-  const bases = selectedStemBasesInLibraryOrder();
+function onAddSetlistFromSelection(presetBases) {
+  const bases = Array.isArray(presetBases) ? presetBases : selectedStemBasesInLibraryOrder();
   if (!bases.length) { showToast('No songs selected — check rows or the box atop the Set column'); return; }
   if (!activeGig || !activeGig.slug || activeGig.synthetic || activeGig.readOnly) {
     showToast('Pick a real gig first — built-in lists are read-only');

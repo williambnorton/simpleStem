@@ -9266,6 +9266,9 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .selection-controls { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 2px solid var(--color-purple, #7c4dff); border-radius: 12px; position: relative; }
 .selection-controls-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--color-purple, #7c4dff); margin-right: 2px; }
 .jamtrack-row .jamtrack-play[disabled] { opacity: .4; cursor: not-allowed; }
+.jamtracks-selectall { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; opacity: .8; white-space: nowrap; }
+.jamtrack-check { width: 18px; height: 18px; flex: none; cursor: pointer; }
+.jamtrack-row.selected { background: rgba(64,120,255,0.12); border-color: rgba(64,120,255,0.45); }
 .song-src-btn { margin-right: 4px; }
 
 /* Admin box + greyed selection buttons + output-routing radios (Bill 2026-11-05) */

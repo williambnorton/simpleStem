@@ -708,8 +708,8 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <label class="routing-radio" title="Every channel on its default: each stem on its own amp (Vocals → V, Drums → D, Bass → B, Guitar → G, Piano → P, Other → O) plus L/R. Also clears Flip."><input type="radio" name="output-routing" value="normal" checked><span>Normal</span></label>
               <label class="routing-radio" title="Every stem to every amp plus L/R."><input type="radio" name="output-routing" value="all"><span>All Amps</span></label>
               <label class="routing-radio" title="Split left/right across every amp: the left signal goes to the odd amps (1/3/5) plus L, the right signal to the even amps (2/4/6) plus R. In SOURCE or Jam mode strip 1 (left) goes left and strip 2 (right) goes right."><input type="radio" name="output-routing" value="split"><span>Split</span></label>
-              <button class="btn-secondary routing-fx-flip" type="button" aria-pressed="false" title="Flip the left/right assignments: Split sends left to the even amps and right to the odd amps; Normal mirrors O↔P, G↔B, L↔R. Press again to flip back. Normal and Swirl clear it.">Flip</button>
-              <label class="routing-radio" title="Goes back to Normal, then moves every stem to the next amp around the ring (V→P→B→D→G→O) once a second for 18 seconds (three laps), then lands on Normal."><input type="radio" name="output-routing" value="swirl"><span class="routing-swirl-text">Swirl</span></label>
+              <button class="btn-secondary routing-fx-flip" type="button" aria-pressed="false" title="Flip the left/right assignments: Split sends left to the even amps and right to the odd amps; Normal mirrors O↔P, G↔B, L↔R. Press again to flip back. Normal clears it. Pressing it during Swirl ends the Swirl first.">Flip</button>
+              <label class="routing-radio" title="Goes back to Normal, then moves every stem to the next amp around the ring (V→P→B→D→G→O) once a second, round and round, until you pick Normal, All Amps, Split or Flip."><input type="radio" name="output-routing" value="swirl"><span>Swirl</span></label>
               <span class="routing-fx-break"></span>
               <span class="routing-fx-label">INSTRUMENT ROUTING</span>
               <button class="btn-secondary routing-in" data-input="SOURCE" type="button" title="Play the song's original stereo instead of the stems (left → strip 1, right → strip 2). Pick any stem button to go back to the stems at the same place.">SOURCE</button>
@@ -878,6 +878,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
             <span class="selection-controls-label">Admin</span>
             <button id="lfb-dupes" class="lfb-action-btn" type="button" aria-pressed="false" title="Show only songs that look like duplicates (same title and artist once tags like Official Video or Remastered are ignored, or the same YouTube video). Suspected duplicates are grouped side by side. Click again to show every song.">Duplicates<br>only</button>
             <button id="lfb-fill-lyrics" class="lfb-action-btn" title="Go through every song with no pasted lyrics, A to Z, opening the lyrics editor for each. Save moves on; Skip skips it this time; Skip for all marks it so it never comes up again; Cancel stops.">Fill missing<br>lyrics</button>
+            <button id="lfb-to-jam" class="lfb-action-btn" type="button" disabled title="Move the ticked songs to the Jam Tracks tab (instrumental backing tracks — never asked for lyrics). Greyed until songs are ticked. Clears the selection afterwards.">Move to<br>Jam Tracks</button>
           </div>
           <div class="selection-controls" role="group" aria-label="Selected songs">
             <span class="selection-controls-label">Selected songs</span>
@@ -975,7 +976,13 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
             </div>
             <input id="jamtracks-filter" class="jamtracks-filter" type="search" placeholder="Filter jam tracks (title or channel)…" autocomplete="off">
             <button id="jamtracks-browse" class="lfb-action-btn" type="button" title="Open the YouTube backing-track finder">🎧 Browse for more</button>
+            <label class="jamtracks-selectall" title="Tick every jam track now listed. If any are ticked, this clears the selection instead."><input type="checkbox" id="jamtracks-select-all"> all</label>
+            <button id="jt-make-setlist" class="lfb-action-btn lfb-action-btn-primary" disabled type="button" title="Make a new named setlist from the ticked jam tracks (stemmed ones only — a setlist holds songs). Clears the selection afterwards.">Make setlist<br>from selection</button>
+            <button id="jt-add-setlist" class="lfb-action-btn lfb-action-btn-primary" disabled type="button" title="Append one new setlist containing the ticked (stemmed) jam tracks to the current gig. Clears the selection afterwards.">Add to current<br>setlist</button>
+            <button id="jt-to-song" class="lfb-action-btn" disabled type="button" title="Move the ticked (stemmed) jam tracks to the Song Library — they will be asked for lyrics like any song. Clears the selection afterwards.">Move to<br>Song Library</button>
+            <button id="jt-delete" class="lfb-action-btn lfb-danger" disabled type="button" title="Delete every ticked jam track for good (audio, and its stemmed song if it has one). Press once to list them, press again to delete.">Delete<br>selected</button>
           </div>
+          <div id="jt-delete-list" class="lfb-delete-list" style="display:none;"></div>
           <div id="jamtracks-list" class="jamtracks-list"></div>
         </section>
         </section><!-- /tab-pane:jamtracks -->

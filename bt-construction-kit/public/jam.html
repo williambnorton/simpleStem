@@ -15,10 +15,13 @@
       'simplestem-jam') to play it as-is, left on strip 1 and right on strip 2,
       where the Output Routing buttons can spread it over all six amps.
       New backing tracks are also queued for stemming in the background (Bill 2026-11-05).
-    • "Import as" switch (Bill 2026-11-08): Jam track = instrumental backing
-      track → stemmed into the Jam Tracks tab, never asked for lyrics
-      (webloc jam_*.webloc → library:"jam", lyrics_skip:true). Song = a
-      normal song for the Song Library (song_*.webloc). Remembered per browser.
+    • "Import as" switch (Bill 2026-11-08): Auto (default) lets the server
+      guess from the video's title/channel — backing-track wording → Jam
+      track, else Song. Jam track = instrumental → stemmed into the Jam
+      Tracks tab, never asked for lyrics (webloc jam_*.webloc →
+      library:"jam", lyrics_skip:true). Song = Song Library (song_*.webloc).
+      Remembered per browser; a wrong guess is fixed with the Move buttons
+      in the Performer's Song Library / Jam Tracks tabs.
     • after that the video here is muted and follows the Performer's clock.
   Only the Stem Library list loads a song's stems.
 -->
@@ -30,7 +33,6 @@
   header h1 { margin: 0; font-size: 1.05rem; }
   #q { flex: 1; min-width: 220px; font: inherit; font-size: 1rem; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px; }
   #go { font: inherit; font-weight: 700; padding: 9px 16px; border-radius: 10px; border: 0; background: var(--ink); color: #fff; cursor: pointer; }
-  label.bt { font-size: 0.85rem; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
   main { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.25fr); gap: 16px; padding: 16px 18px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   #results { display: flex; flex-direction: column; gap: 8px; }
@@ -76,7 +78,6 @@
 <header>
   <h1>🎧 Browse audio</h1>
   <input id="q" type="search" placeholder="Search YouTube — e.g. Sultans of Swing" autocomplete="off">
-  <label class="bt"><input type="checkbox" id="addbt" checked> + "backing track"</label>
   <button id="go" type="button">Search</button>
   <input id="paste" type="url" placeholder="…or paste a YouTube link" autocomplete="off">
   <div id="modes" role="tablist" aria-label="What to search">
@@ -84,9 +85,10 @@
     <button type="button" class="mode" data-mode="jammed" title="Backing tracks you've already pulled in through Jam — stored on this Mac, works offline">YT Jamn Tracks</button>
     <button type="button" class="mode" data-mode="library" title="Your stemmed songs — Play loads the stems">Stem Library</button>
   </div>
-  <div id="importas" title="Where a pick goes when it is stemmed. Jam track = instrumental backing track: lands in the Jam Tracks tab and is never asked for lyrics. Song = a normal song for the Song Library.">Import as
+  <div id="importas" title="Where a pick goes when it is stemmed. Auto guesses from the title (backing track / instrumental / karaoke… = Jam track, otherwise Song). Jam track = instrumental: lands in the Jam Tracks tab and is never asked for lyrics. Song = the Song Library. Wrong guess? Move it from the Performer's tab.">Import as
     <div class="seg" role="radiogroup" aria-label="Import as">
-      <button type="button" data-kind="jam" class="on">Jam track · instrumental</button>
+      <button type="button" data-kind="auto" class="on">Auto</button>
+      <button type="button" data-kind="jam">Jam track</button>
       <button type="button" data-kind="song">Song</button>
     </div>
   </div>
@@ -111,12 +113,12 @@ const chan = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-j
 let mode = 'yt';
 let results = [], current = null, player = null, playerReady = false, following = null, pendingAck = null;
 let cursor = -1;   // keyboard position in the results (Bill 2026-11-01)
-// Import as: 'jam' (default — this page opens on a backing-track search) or
-// 'song'. Remembered in this browser. Sent as {kind} on /api/jam/fetch.
-let importKind = 'jam';
-try { if (localStorage.getItem('jamImportKind') === 'song') importKind = 'song'; } catch (e) {}
+// Import as: 'auto' (default — the server guesses from title/channel),
+// 'jam' or 'song'. Remembered in this browser. Sent as {kind} on /api/jam/fetch.
+let importKind = 'auto';
+try { const k0 = localStorage.getItem('jamImportKind'); if (k0 === 'song' || k0 === 'jam') importKind = k0; } catch (e) {}
 function setImportKind(k) {
-  importKind = (k === 'song') ? 'song' : 'jam';
+  importKind = (k === 'song' || k === 'jam') ? k : 'auto';
   try { localStorage.setItem('jamImportKind', importKind); } catch (e) {}
   document.querySelectorAll('#importas .seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === importKind));
 }
@@ -172,7 +174,6 @@ async function search() {
   if (mode === 'library') return searchLibrary();
   let q = $('q').value.trim();
   if (!q) return;
-  if ($('addbt').checked && !/backing\s*track/i.test(q)) q += ' backing track';
   $('results').innerHTML = '<div class="msg">Searching YouTube…</div>';
   $('ytlink').href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q);
   try {
@@ -227,7 +228,6 @@ async function searchLibrary() {
 function setMode(m) {
   mode = m;
   document.querySelectorAll('#modes .mode').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
-  document.querySelector('label.bt').style.display = (m === 'yt') ? '' : 'none';
   $('q').placeholder = m === 'yt' ? 'Search YouTube — e.g. Sultans of Swing'
                      : m === 'jammed' ? 'Filter your jammed tracks (empty = all)'
                      : 'Search the Stem Library — title, artist, singer, tag (empty = all)';
@@ -360,7 +360,8 @@ async function playItem(v) {
                       url: job.url, duration: job.duration }, () => {
       following = job.id;
       try { player && player.mute(); } catch (e) {}
-      setStatus(`<span class="follow">FOLLOWING SIMPLESTEM</span> Playing as-is on strips 1–2 (SRC L / SRC R) — use Output Routing (All Amps, Split…) to spread it over the amps. The video is muted and follows simpleStem.`);
+      const kindNote = job.kind ? ` Imported as <b>${job.kind === 'jam' ? 'Jam track' : 'Song'}</b>${job.kind_guessed ? ' (guessed from the title — wrong? move it from the Performer\'s ' + (job.kind === 'jam' ? 'Jam Tracks' : 'Song Library') + ' tab)' : ''}.` : '';
+      setStatus(`<span class="follow">FOLLOWING SIMPLESTEM</span> Playing as-is on strips 1–2 (SRC L / SRC R) — use Output Routing (All Amps, Split…) to spread it over the amps. The video is muted and follows simpleStem.${kindNote}`);
     });
   } catch (e) {
     setStatus('Could not start it: ' + esc(e.message));
