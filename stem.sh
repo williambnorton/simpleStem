@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stem.sh — Fetch a song from YouTube and stem-split it with Demucs.
+# stem.sh — Fetch a song and queue it for Logic Pro stemming.
 #
 # Usage:
 #   ./stem.sh "Song Title" "Artist Name"                       # smart search
@@ -14,29 +14,19 @@
 #      and skip any result whose title contains
 #      live | concert | cover | tribute | karaoke (case-insensitive).
 #
-# Output (all WAVs are 48 kHz):
+# Output:
 #   ~/ClaudeDrive/simpleStem/STEMS/${Title}_${Artist}/
-#     source.wav                        (downloaded audio, 48 kHz)
-#     vocals.wav  drums.wav  bass.wav  other.wav  piano.wav  guitar.wav
-#                                       (htdemucs_6s 6-stem split, resampled to 48 kHz)
-#     bass+drums.wav                    (full-length rhythm-section mix)
-#     drums_loop{1..4}_<N>bars.wav      (tiled, song-length jam loops)
-#     bass_loop{1..4}_<N>bars.wav
-#     drumsbass_loop{1..4}_<N>bars.wav  (combined rhythm-section loops)
-#     piano_loop{1..4}_<N>bars.wav
-#     guitar_loop{1..4}_<N>bars.wav
-#   ~/ClaudeDrive/simpleStem/M4A/
-#     ${Title}_${Artist}_DO.m4a         (drums only)
-#     ${Title}_${Artist}_-V-G.m4a       (source minus vocals, guitar)
-#     ${Title}_${Artist}_-V-G-B.m4a     (source minus vocals, guitar, bass)
+#     ${Title}_${Artist}_SOURCE.m4a     (stereo original, AAC 256k)
+#     metadata.json  source.info.json   (BPM, key, source URL, …)
+#   ~/ClaudeDrive/simpleStem/LOGIC_QUEUE/${Title}_${Artist}.json
+#
+# The six stems, the six kit pieces and the MPL files are written later by
+# the Logic Pro Stem Splitter run (the "Logic stemming queue" panel in the
+# Performer), not by this script.
 #
 # Prereqs (macOS):
-#   brew install ffmpeg yt-dlp pipx
-#   pipx ensurepath
-#   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-#   export PATH="$HOME/.local/bin:$PATH"
-#   pipx install demucs
-#   pipx inject demucs torchcodec librosa soundfile
+#   brew install ffmpeg yt-dlp
+#   a python3 with librosa + soundfile (metadata.py: BPM and key)
 
 set -euo pipefail
 
@@ -52,11 +42,10 @@ Source selection (highest precedence first):
   (neither)        smart search: ytsearch5:<Artist> <Title> official audio,
                    filtering live|concert|cover|tribute|karaoke titles.
 
-Outputs (all in ~/ClaudeDrive/simpleStem/STEMS/\${Title}_\${Artist}/):
-  source.wav                          downloaded/imported audio (48 kHz reference)
-  vocals.m4a  drums.m4a  bass.m4a
-  other.m4a   piano.m4a  guitar.m4a   htdemucs_6s 6-stem split, 256k AAC
-  metadata.json                       BPM/key/version/sectionCandidates/…
+Outputs (under ~/ClaudeDrive/simpleStem/):
+  STEMS/<Title>_<Artist>/<Title>_<Artist>_SOURCE.m4a   stereo original, 256k AAC
+  STEMS/<Title>_<Artist>/metadata.json                 BPM/key/version/…
+  LOGIC_QUEUE/<Title>_<Artist>.json                    queued for Logic Pro stemming
 EOF
 }
 
@@ -105,12 +94,8 @@ slugify() {
 }
 # Ensure a WAV file is at 48 kHz. No-op if already 48 kHz; otherwise
 # resamples in place via ffmpeg (writes to a tmp file then renames).
-# Required because:
-#   - yt-dlp preserves YouTube's native rate (usually 48 kHz, sometimes not).
-#   - Demucs's output rate varies by version (htdemucs is a 44.1 kHz model;
-#     some versions resample stems back to input rate, others don't).
-# Applying this defensively after download and after Demucs makes the
-# whole pipeline produce uniform 48 kHz output regardless of versions.
+# Required because yt-dlp preserves YouTube's native rate (usually 48 kHz,
+# sometimes not).
 ensure_48k() {
   local f="$1"
   [[ -f "$f" ]] || return 0
@@ -152,7 +137,7 @@ mkdir -p "$OUT_DIR"
 
 # Prereq check
 missing=0
-for cmd in ffmpeg yt-dlp demucs; do
+for cmd in ffmpeg yt-dlp; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing: $cmd" >&2
     missing=1
@@ -161,48 +146,24 @@ done
 if [[ $missing -eq 1 ]]; then
   cat >&2 <<'EOF'
 Install with:
-  brew install ffmpeg yt-dlp pipx
-  pipx ensurepath
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-  export PATH="$HOME/.local/bin:$PATH"
-  pipx install demucs
-  pipx inject demucs torchcodec librosa soundfile
+  brew install ffmpeg yt-dlp
 EOF
   exit 1
 fi
 
-# Locate the demucs venv's python (we'll reuse it for loop detection,
-# since pipx injects librosa/soundfile alongside demucs).
-# `command -v demucs` is a pipx symlink in ~/.local/bin — follow it
-# into the actual venv. macOS readlink has no -f, so loop manually.
-DEMUCS_BIN="$(command -v demucs)"
-while [[ -L "$DEMUCS_BIN" ]]; do
-  target="$(readlink "$DEMUCS_BIN")"
-  case "$target" in
-    /*) DEMUCS_BIN="$target" ;;
-    *)  DEMUCS_BIN="$(cd -- "$(dirname -- "$DEMUCS_BIN")" && pwd)/$target" ;;
-  esac
+# Python with librosa + soundfile, for metadata.py (BPM and key). These
+# libraries live in a pipx environment on the Performer (same candidates as
+# performer.sh); python3 on PATH is the fallback.
+VENV_PY=""
+for _py in "$HOME/.local/pipx/venvs/demucs/bin/python3" \
+           "$HOME/.local/pipx/venvs/demucs/bin/python" \
+           "$(command -v python3 || true)"; do
+  [[ -n "$_py" && -x "$_py" ]] || continue
+  if "$_py" -c 'import librosa, soundfile' 2>/dev/null; then VENV_PY="$_py"; break; fi
 done
-VENV_PY="$(dirname "$DEMUCS_BIN")/python3"
-[[ -x "$VENV_PY" ]] || VENV_PY="$(dirname "$DEMUCS_BIN")/python"
-# Fallback for pip-installed demucs (not pipx): python lives elsewhere
-# in PATH. In the Docker image (pip install) demucs is at /usr/local/bin
-# next to python3, so the first branch hits; this branch only fires for
-# bare `pip install --user demucs` setups.
-if [[ ! -x "$VENV_PY" ]]; then
-  VENV_PY="$(command -v python3 || true)"
-fi
-if [[ ! -x "$VENV_PY" ]]; then
-  echo "Could not locate a python interpreter (demucs venv)." >&2
+if [[ -z "$VENV_PY" ]]; then
+  echo "No python with librosa + soundfile found (needed for BPM and key)." >&2
   exit 1
-fi
-if ! "$VENV_PY" -c 'import librosa, soundfile' 2>/dev/null; then
-  echo ">> librosa/soundfile missing in demucs env; injecting…" >&2
-  pipx inject demucs librosa soundfile
-  if ! "$VENV_PY" -c 'import librosa, soundfile' 2>/dev/null; then
-    echo "Auto-inject failed. Run manually: pipx inject demucs librosa soundfile" >&2
-    exit 1
-  fi
 fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -307,8 +268,7 @@ fi
 ensure_48k "$SRC"
 
 # 1b) Write metadata.json (BPM, key, version, lyrics+chords search URLs,
-#     yt-dlp's true title/uploader/upload date). Runs before Demucs so the
-#     metadata is captured even if separation fails. Idempotent —
+#     yt-dlp's true title/uploader/upload date). Idempotent —
 #     metadata.py skips if metadata.json already exists.
 META_SCRIPT="$SCRIPT_DIR/metadata.py"
 if [[ -f "$META_SCRIPT" ]]; then
@@ -318,146 +278,43 @@ if [[ -f "$META_SCRIPT" ]]; then
   [[ -n "$URL_OVERRIDE" ]] && META_ARGS+=( --url "$URL_OVERRIDE" )
   echo ">> Building metadata.json…"
   "$VENV_PY" "$META_SCRIPT" "${META_ARGS[@]}" || \
-    echo "   metadata.py failed (continuing; demucs still runs)" >&2
+    echo "   metadata.py failed (continuing)" >&2
 fi
 
-# 2) Stem-split with Demucs htdemucs_6s (skip if all 6 stems already exist)
-if [[ -f "$OUT_DIR/vocals.wav" && -f "$OUT_DIR/drums.wav" \
-   && -f "$OUT_DIR/bass.wav"   && -f "$OUT_DIR/other.wav" \
-   && -f "$OUT_DIR/piano.wav"  && -f "$OUT_DIR/guitar.wav" ]]; then
-  echo ">> Stems already present, skipping Demucs."
-else
-  echo ">> Running Demucs htdemucs_6s (6-stem; ~10–25 min on CPU)…"
-  # LOCAL SCRATCH (2026-07-04, Werewolves postmortem): Demucs used to write
-  # its intermediate wavs straight into the Drive CloudStorage mount, and
-  # Drive can yank/rename the output dir mid-write — torchcodec then dies
-  # with "avio_open failed … No such file or directory" and the job lands
-  # in _failed even though nothing is wrong with the audio. Separate onto
-  # LOCAL disk, then move the finished stems into the Drive folder in one
-  # pass. (Same class of fix as the source.wav download race.)
-  DEMUCS_WORK="${TMPDIR:-/tmp}/simplestem_demucs_$$"
-  mkdir -p "$DEMUCS_WORK"
-  demucs -n htdemucs_6s --out "$DEMUCS_WORK" "$SRC"
-  mv -f "$DEMUCS_WORK/htdemucs_6s/source/"*.wav "$OUT_DIR/" 2>/dev/null || true
-  rm -rf "$DEMUCS_WORK"
-  # Legacy fallback: tolerate older partial runs that separated directly
-  # into the Drive folder (pre-2026-07-04 layout).
-  mv -f "$OUT_DIR/htdemucs_6s/source/"*.wav "$OUT_DIR/" 2>/dev/null || true
-  for _stem in vocals drums bass other piano guitar; do
-    if [[ ! -f "$OUT_DIR/${_stem}.wav" ]]; then
-      echo ">> ERROR: ${_stem}.wav missing after Demucs — checked" >&2
-      echo "     $OUT_DIR/${_stem}.wav" >&2
-      echo "     (local scratch was $DEMUCS_WORK)" >&2
-      exit 1
-    fi
-  done
-  rmdir "$OUT_DIR/htdemucs_6s/source" 2>/dev/null || true
-  rmdir "$OUT_DIR/htdemucs_6s"        2>/dev/null || true
-fi
-
-# Ensure every stem is 48 kHz before downstream m4a transcoding.
-# Demucs's output rate varies by version; this normalizes it.
-for stem in vocals drums bass other piano guitar; do
-  ensure_48k "$OUT_DIR/${stem}.wav"
-done
-
-# NOTE: As of 2026-06-27 we no longer emit the -V / -V-G / -V-G-B / DO
-# mixdowns or per-song loop files. The portal mixes the six stems
-# client-side (Web Audio); pre-baked mixdowns and audio loops are dead
-# code paths. A future "loop construction kit" feature will be designed
-# from scratch when needed. — Bill (CLAUDE.md / Conventions)
-
-# 3) Encode each stem to m4a so the browser-side mixer can stream them
-#     directly (a stem WAV is ~30-50 MB; the same content at 256k AAC is
-#     ~5-8 MB — major cache + Drive sync win).
-#
-#     Per CLAUDE.md "File format policy: m4a only" — we now DELETE the
-#     stem .wav files after the m4a transcode completes by default.
-#     If you need the wavs for a post-processing pass (post_process.py /
-#     re-running loop_detect.py), set KEEP_STEM_WAVS=1 in the env.
-for stem in vocals drums bass other piano guitar; do
-  stem_wav="$OUT_DIR/${stem}.wav"
-  stem_m4a="$OUT_DIR/${stem}.m4a"
-  [[ -f "$stem_wav" ]] || continue
-  if [[ -f "$stem_m4a" ]]; then
-    echo ">> ${stem}.m4a present, skipping."
-    continue
-  fi
-  echo ">> Encoding ${stem}.m4a (AAC 256k + faststart + brand mp42 from ${stem}.wav)"
-  # -movflags +faststart writes the moov atom at the FRONT of the file so
-  # Chrome's <audio> decoder can start playback after the first ~64 KB
-  # instead of waiting for the entire 7-8 MB file to download.
-  #
-  # -brand mp42 sets the ftyp major brand. Chrome's <audio> decoder
-  # REJECTS audio/mp4 files whose ftyp has major brand M4A and
-  # compatible brands "M4A isom iso2" (the ffmpeg default for AAC-in-MP4
-  # output) — loadstart fires, then 'stalled' at 3s, no metadata, no
-  # canplay. Same bytes with major brand mp42 decode normally. The
-  # drum-machine m4a files happened to be encoded by a different
-  # toolchain that emitted mp42; that's how we caught it (2026-06-29).
-  #
-  # Without BOTH of these flags, every gig is at risk of the same
-  # 3-second stem stall that wedged 2026-06-28.
-  ffmpeg -y -loglevel error -i "$stem_wav" -c:a aac -b:a 256k \
-         -movflags +faststart -brand mp42 "$stem_m4a"
-done
-
-# 3b) The stereo original beside the stems (Bill 2026-11-01):
-#     STEMS/<folder>/<folder>_SOURCE.m4a — same AAC 256k + faststart +
-#     brand mp42 rules as the stems (CONTRACTS F-9). Written once; an
-#     existing file is left alone. backfill_source_m4a.sh does old songs.
+# 2) Queue for Logic Pro stemming. The song folder gets its stereo original
+#    as <folder>_SOURCE.m4a and an entry in LOGIC_QUEUE/<folder>.json. Claude
+#    runs Logic Pro's Stem Splitter over the queued folders once Bill hands
+#    the Mac over from the Performer (the "Logic stemming queue" panel). The
+#    six stems, the kit pieces and the MPL files are written by that run.
 if [[ -f "$SOURCE_M4A" ]]; then
   echo ">> $(basename "$SOURCE_M4A") present, skipping."
-elif [[ -f "$SRC" ]]; then
+else
   echo ">> Encoding $(basename "$SOURCE_M4A") (stereo original, AAC 256k + faststart + brand mp42)"
   if ffmpeg -y -loglevel error -i "$SRC" -vn -ac 2 -c:a aac -b:a 256k \
             -movflags +faststart -brand mp42 "${SOURCE_M4A%.m4a}.tmp.m4a" </dev/null; then
     mv -f "${SOURCE_M4A%.m4a}.tmp.m4a" "$SOURCE_M4A"
   else
     rm -f "${SOURCE_M4A%.m4a}.tmp.m4a"
-    echo "!! could not encode $(basename "$SOURCE_M4A") — stems are unaffected" >&2
+    echo "!! could not encode $(basename "$SOURCE_M4A") — not queued for Logic stemming" >&2
+    exit 1
   fi
 fi
-
-# Default: delete stem .wav files after m4a transcode. Opt-out via
-# KEEP_STEM_WAVS=1 for post-process workflows.
-if [[ "${KEEP_STEM_WAVS:-0}" != "1" ]]; then
-  for stem in vocals drums bass other piano guitar; do
-    if [[ -f "$OUT_DIR/${stem}.m4a" && -f "$OUT_DIR/${stem}.wav" ]]; then
-      rm -f "$OUT_DIR/${stem}.wav"
-    fi
-  done
-  echo ">> Deleted stem WAVs (m4a-only policy; set KEEP_STEM_WAVS=1 to keep)."
-fi
-# Legacy cleanup: bass+drums.wav and *_loop*_*bars.* artefacts came from the
-# retired loop_detect path. Sweep them out of older songs on every render
-# so we don't keep paying Drive sync cost for dead files.
-rm -f "$OUT_DIR/bass+drums.wav" "$OUT_DIR"/*_loop*_*bars.wav "$OUT_DIR"/*_loop*_*bars.m4a 2>/dev/null || true
-
-# Section-boundary detection — runs the multi-stem novelty function over
-# the freshly-rendered stems and writes a `sectionCandidates` array into
-# metadata.json. The portal uses these to snap user-placed section
-# boundaries to actual moments where many stems change together (verse
-# entries, chorus boosts, bridges). ~3 sec on CPU; best-effort: a failure
-# here doesn't fail the stem render.
-SECTION_SCRIPT="$SCRIPT_DIR/section_detect.py"
-if [[ -f "$SECTION_SCRIPT" ]]; then
-  echo ">> Detecting section candidates (multi-stem novelty)..."
-  if [[ -n "${PYTHON_BIN:-}" ]]; then
-    "$PYTHON_BIN" "$SECTION_SCRIPT" "$OUT_DIR" || echo "  WARN: section_detect failed (non-fatal)"
-  else
-    python3 "$SECTION_SCRIPT" "$OUT_DIR" || echo "  WARN: section_detect failed (non-fatal)"
-  fi
-fi
-
-# m4a-only at rest (Bill 2026-11-01): once the stereo original is safely
-# in <folder>_SOURCE.m4a, drop the working source.wav and any Drive-sync
-# duplicates of it. KEEP_SOURCE_WAV=1 keeps them.
-if [[ "${KEEP_SOURCE_WAV:-0}" != "1" && -f "$SOURCE_M4A" ]]; then
+LOGIC_QUEUE_DIR="$DATA_ROOT/LOGIC_QUEUE"
+LQ_FOLDER="$(basename "$OUT_DIR")"
+mkdir -p "$LOGIC_QUEUE_DIR"
+python3 - "$LOGIC_QUEUE_DIR/$LQ_FOLDER.json" "$LQ_FOLDER" "$OUT_DIR/metadata.json" <<'PYQ'
+import json, sys, time
+out, folder, meta = sys.argv[1:4]
+m = {}
+try:
+  m = json.load(open(meta))
+except Exception:
+  pass
+json.dump({'folder': folder, 'title': m.get('title'), 'artist': m.get('artist'), 'source_url': m.get('source_url'),
+         'queued_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'queued_by': 'stem.sh'}, open(out, 'w'), indent=1)
+PYQ
+if [[ "${KEEP_SOURCE_WAV:-0}" != "1" ]]; then
   rm -f "$SRC" "$OUT_DIR"/source\ *.wav 2>/dev/null || true
-  echo ">> Deleted source.wav (kept $(basename "$SOURCE_M4A"); set KEEP_SOURCE_WAV=1 to keep)."
 fi
-
-echo ">> Done. Files:"
-ls -1 "$OUT_DIR/"
+echo ">> Queued for Logic Pro stemming: LOGIC_QUEUE/$LQ_FOLDER.json"
 echo ">> Folder: $OUT_DIR"

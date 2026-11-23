@@ -158,7 +158,7 @@
     <rect x="380" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>
     <text x="520" y="765" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">metadata.json.sections</text>
     <text x="520" y="785" text-anchor="middle" font-size="11" fill="#065f46">section dividers · clickIn + countIn</text>
-    <text x="520" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">snaps to sectionCandidates</text>
+    <text x="520" y="803" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">snaps to downbeats</text>
   </g>
   <g filter="url(#shadow2)">
     <rect x="700" y="740" width="280" height="80" rx="10" fill="url(#storage2)" stroke="#059669" stroke-width="2"/>

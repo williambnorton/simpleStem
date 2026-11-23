@@ -270,7 +270,7 @@
   }
   .ql-row .sz { opacity: .7; }
   .ql-row.fresh { color: #aef7cd; text-shadow: 0 0 8px rgba(0,230,118,.8); }
-  /* stem states: spinning disk + bright brown while Demucs works on it,
+  /* stem states: spinning disk + bright brown while it is being stemmed,
      bold bright green + check + size when complete */
   .ql-row.working { color: #e8954a; font-weight: 700; }
   .ql-row.done { color: #00e676; font-weight: 800; }
@@ -536,7 +536,7 @@ qtray.el.querySelector('.art').insertAdjacentHTML('beforeend', '<span class="bad
 //                (band songlist / mpb_sync) · CATALOG (catalog.py) ·
 //                QUEUE tray (INCOMING_WEBLOC + STEM_QUEUE)
 //   boundary:    DRIVE cloud (Google Drive sync between machines)
-//   laptop zone: STEMCUTTER (queue_runner + Demucs) · TAGGER
+//   laptop zone: STEMCUTTER (queue_runner + Logic Pro) · TAGGER
 //                (metadata.py) · GIG BINDER (GIGS/SETLISTS) · CACHE
 //                (~/.bt-cache offline contract) · LIBRARY (STEMS/) ·
 //                AMP (portal player) · XR18 (18-ch USB out)
@@ -575,7 +575,7 @@ const CFG = {
     format: { def: 'aac/m4a 256k faststart', ro: true, label: 'stem format (pipeline-owned)',
       test: () => { stemcutter.el.classList.add('bounce'); S.saw(true); setTimeout(() => { stemcutter.el.classList.remove('bounce'); S.saw(false); }, 900); hint('⚗ format is enforced by stem.sh — every producer emits fast-start m4a.'); } },
     samplerate: { def: '48 kHz', ro: true, label: 'sample rate (pipeline-owned)',
-      test: () => hint('⚗ 48 kHz end to end: source.wav → Demucs → stems → XR18 USB. One clock, no resampling.') } } },
+      test: () => hint('⚗ 48 kHz end to end: source → Logic Pro Stem Splitter → stems → XR18 USB. One clock, no resampling.') } } },
   helix: { label: 'HELIX STADIUM', parent: 'stage', props: {
     channel: { def: 5, min: 1, max: 16, label: 'desk MIDI channel',
       test: (v) => sendCC('chain', +v, 64, 127, 'Stadium tap-tempo probe on ch ' + v + ' — watch the tap light + wire log') } } },
@@ -647,7 +647,7 @@ const MODEL_TREE = { id: 'system', label: '🌐 simpleStem SYSTEM', kids: [
     { id: 'sidecar', label: '🛰 midi_sidecar :5555 — CoreMIDI + OSC', kids: [
       { id: 'clock', label: '⏱ MIDI clock (24 ppqn)' } ] },
     { id: 'pipeline', label: '⚙ render pipeline', kids: [
-      { id: 'stemcutter', label: '🖨 STEMCUTTER — Demucs 6-stem' },
+      { id: 'stemcutter', label: '🖨 STEMCUTTER — Logic Pro 6-stem + kit' },
       { id: 'tagger', label: '🗳 TAGGER — metadata' },
       { id: 'library', label: '🗄 LIBRARY — CATALOG.json' } ] },
     { id: 'stage', label: '🎸 stage rig', kids: [
@@ -677,7 +677,7 @@ function cfgArt(id) {
       ${['vocals','drums','bass','guitar','piano','other'].map((n, i) =>
         `<text x="${102 + i * 26}" y="212" text-anchor="middle" fill="#9fb3c8" font-size="7" font-family="Menlo">${n}</text>`).join('')}
       <text x="165" y="248" text-anchor="middle" fill="#7fd6a4" font-size="11" font-family="-apple-system">one song in · six stems out · L/R to the room</text>
-      <text x="165" y="268" text-anchor="middle" fill="#9fb3c8" font-size="9" font-family="Menlo">48 kHz · Demucs htdemucs_6s · fast-start m4a</text>
+      <text x="165" y="268" text-anchor="middle" fill="#9fb3c8" font-size="9" font-family="Menlo">48 kHz · Logic Pro Stem Splitter · fast-start m4a</text>
     </svg>`;
   }
   const arts = { helix: '🏟️', xr18: '🎚️', clock: '⏱', wirelog: '📡' };
@@ -1108,7 +1108,7 @@ function center(el) { const r = el.getBoundingClientRect(); return { x: r.x + r.
 /* ── THE STEMCUT SHOW ─────────────────────────────────────────────────────
    1. a folder named after the song pops out beside the machine
    2. file chips FLY from the machine into the folder, one by one
-   3. the folder is sliced apart and reassembled while Demucs "works"
+   3. the folder is sliced apart and reassembled while the stemmer "works"
    4. done: the folder stands tall and dances with a smile for 5 s
    5. only then does it become draggable                                  */
 function stemcutShow(machine, name, done) {
@@ -2163,7 +2163,7 @@ async function showMacbookCard() {
 <span class="meta-k">library</span>: ${realLib.length} songs
 <span class="meta-k">offline cache</span>: ${cs.done != null ? cs.done + '/' + cs.total + ' songs' : '?'}
 <span class="meta-k">render queue</span>: ${Array.isArray(q.queued) ? q.queued.length + ' queued · ' + (q.incoming || []).length + ' incoming' : 'idle'}
-<span class="meta-k">runs</span>: portal :3000 · MIDI sidecar :5555 · Demucs queue
+<span class="meta-k">runs</span>: portal :3000 · MIDI sidecar :5555 · Logic stemming queue
 <span class="meta-k">drives</span>: Helix Stadium + Ditto X4 + XR18 over MIDI/OSC</div>`;
   } catch (e) {}
 }
@@ -2317,18 +2317,18 @@ function renderDock() {
       <div class="dl">:5555 ${midiState && midiState.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'} · ${midiState && midiState.ok ? (midiState.ports || []).length + ' out / ' + (midiState.inputs || []).length + ' in' : 'down'}</div>
       <div class="dl">clock ${midiState && midiState.ok && midiState.clock && midiState.clock.running ? '<span class="ok">RUN ' + midiState.clock.bpm + '</span>' : 'stopped'} · click → MIDI CONSOLE</div>
       <div class="dl">Logic IAC ${V3(/iac/i, false)} · chain loop ${chainLoop ? (chainLoop.loop === 'intact' ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '—'}</div></div>
-    <div class="dock-p on" data-open="macbook" title="The Performer laptop — runs the portal (:3000), the MIDI sidecar (:5555), the Demucs render queue, and the Web Audio six-stem mix. Everything on this desk is driven from here."><h5>💻 MACBOOK · PERFORMER</h5>
+    <div class="dock-p on" data-open="macbook" title="The Performer laptop — runs the portal (:3000), the MIDI sidecar (:5555), the Logic stemming queue, and the Web Audio six-stem mix. Everything on this desk is driven from here."><h5>💻 MACBOOK · PERFORMER</h5>
       <div class="dl">portal :3000 <span class="ok">✓</span> · ${realLib.length} songs</div>
       <div class="dl">cache ${cacheState && (cacheState.done != null) ? cacheState.done + '/' + cacheState.total : '—'} · queue ${qDepth != null ? qDepth : '—'}</div>
-      <div class="dl">Demucs · Web Audio mix · automation</div></div>
+      <div class="dl">Logic stemming · Web Audio mix · automation</div></div>
     <div class="dock-p ${libState ? (watcherUp ? 'on' : 'off') : ''}" data-open="robot" title="The Mac mini — background curator. Ingests YouTube links, analyzes BPM/key, keeps CATALOG.json and the band songlist in sync. Green pid = its watcher daemon heartbeat."><h5>🤖 LIBRARIAN · MINI</h5>
       <div class="dl">watcher ${libState && libState.librarianDaemons && libState.librarianDaemons['lib-watcher'] ? (libState.librarianDaemons['lib-watcher'].running ? '<span class="ok">✓ pid ' + libState.librarianDaemons['lib-watcher'].pid + '</span>' : '<span class="bad">DOWN</span>') : '—'}</div>
       <div class="dl">daemons ${libState && libState.librarianDaemons ? Object.values(libState.librarianDaemons).filter(d => d.running).length + '/' + Object.keys(libState.librarianDaemons).length + ' up' : '—'}</div>
       <div class="dl">ingest · metadata · catalog · sheet sync</div></div>
-    <div class="dock-p" data-open="queue" title="Render pipeline — .webloc files land in INCOMING_WEBLOC, become jobs in STEM_QUEUE, and Demucs on this laptop separates each song into six stems (~10-25 min each)."><h5>📥 QUEUE</h5>
+    <div class="dock-p" data-open="queue" title="Render pipeline — .webloc files land in INCOMING_WEBLOC, become jobs in STEM_QUEUE, and Logic Pro on this laptop separates each queued song into six stems and six kit pieces."><h5>📥 QUEUE</h5>
       <div class="dl">depth ${qDepth != null ? (qDepth ? '<span class="ok">' + qDepth + '</span>' : '0 · idle') : '—'}</div>
       <div class="dl">INCOMING_WEBLOC → STEM_QUEUE</div>
-      <div class="dl">Demucs ~10-25 min/song</div></div>
+      <div class="dl">Logic Pro ~3 min/song</div></div>
     <div class="dock-p" data-open="library" title="The song library — STEMS/ folders with six m4a stems + metadata each, indexed hourly into CATALOG.json, synced between machines by Google Drive, cached locally for offline gigs."><h5>🗄️ LIBRARY + CATALOG</h5>
       <div class="dl">${realLib.length} songs · CATALOG.json hourly</div>
       <div class="dl">gigs ${Array.isArray(gigList) ? gigList.length : '—'} on file</div>
@@ -2409,7 +2409,7 @@ function obSongNodes(kidsEl, songs) {
           type: 'action', label: `⚡ ${fmtT(ev.t || 0)} ${ev.device || ''} ${ev.type || ''}${ev.label ? ' · ' + ev.label : ''}`,
           data: ev,
         }));
-        if (!secs.length && !evs.length) obNode(kk, { type: 'note', label: `· no sections or actions yet (${(a.sectionCandidates||[]).length} auto-detected candidates)`, data: { base } });
+        if (!secs.length && !evs.length) obNode(kk, { type: 'note', label: '· no sections or actions yet', data: { base } });
       },
     });
   }
@@ -2600,7 +2600,7 @@ addEventListener('drop', async (e) => {
     else if (target.work === 'aggregate') runMachine(target, place('tmpurl', '', -999, -999, 'url'));
     else stemcutShow(target, name);
     // Real renders: watch the actual folder and sparkle files in as they
-    // are created (source.wav first, stems as Demucs finishes each).
+    // are created (source.wav first, stems as each one arrives).
     pollRealFolder(folderTitle || name.replace(/_/g, ' '));
   } catch (err) { hint(`✗ enqueue failed: ${err.message}`); S.thunk(); }
 });
@@ -2742,7 +2742,7 @@ research, the test plan, the desk contract.
 Click to read in place; double-click also
 opens the folder in Finder.</div>`;
   if (o.id === 'macbook') return `<h4>💻 MACBOOK PRO — the Performer</h4><div class="pk">Runs the portal (:3000), the MIDI sidecar
-(:5555), the Demucs render queue, and the
+(:5555), the Logic stemming queue, and the
 Web Audio 6-stem mix. Drives every device
 on this desk. Click for host status.</div>`;
   if (o.id === 'mics') return `<h4>🎤 MICS</h4><div class="pk">Vocal mics (Bill · Matt · Dan · JD) into
@@ -3077,5 +3077,6 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape') { ctx.style.display
 window.__desk = { makeAggregate, disassemble, voiceCommand, machines: () => machines, aggregates: () => aggregates, peekContent, userActions, resetLayout };
 </script>
 <script src="help.js"></script>
+<script src="/views-keys.js"></script>
 </body>
 </html>

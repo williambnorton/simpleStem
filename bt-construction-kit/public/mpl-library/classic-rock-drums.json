@@ -1,0 +1,166 @@
+{
+  "format": "simplestem-mpl-patterns",
+  "version": 1,
+  "about": "Classic rock drum grooves, fills, count-in and ending on ch 10 (GM drums), played through the D amp. Styles, not copies of specific records.",
+  "patterns": [
+    {
+      "id": "cr-straight",
+      "group": "Classic rock · Drums",
+      "label": "Straight 8ths — kick 1 & 3, snare 2 & 4",
+      "main": "crstraight",
+      "bpm": 120,
+      "parts": {
+        "crstraight": "m10,p0,@crhat8&,Cq,Dq,Cq,Dq",
+        "crhat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "cr-drive",
+      "group": "Classic rock · Drums",
+      "label": "Driving rock — kick on the &s",
+      "main": "crdrive",
+      "bpm": 130,
+      "parts": {
+        "crdrive": "m10,p0,@crhat8&,Ce,Ce,Dq,Re,Ce,Dq",
+        "crhat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "cr-glam",
+      "group": "Classic rock · Drums",
+      "label": "Glam stomp — four on the floor, snare 2 & 4",
+      "main": "crglam",
+      "bpm": 124,
+      "parts": {
+        "crglam": "m10,p0,@crhat8&,@crsnare24&,4(Cq)",
+        "crhat8": "m10,p0,8(F#e)",
+        "crsnare24": "m10,p0,Rq,Dq,Rq,Dq"
+      }
+    },
+    {
+      "id": "cr-heavy",
+      "group": "Classic rock · Drums",
+      "label": "Heavy half-time — big snare on 3",
+      "main": "crheavy",
+      "bpm": 80,
+      "parts": {
+        "crheavy": "m10,p0,@crhat8&,Cq,Re,Ce,Dq,Re,Ce",
+        "crhat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "cr-shuffle",
+      "group": "Classic rock · Drums",
+      "label": "Texas shuffle — triplet hats",
+      "main": "crshuffle",
+      "bpm": 120,
+      "parts": {
+        "crshuffle": "m10,p0,@crshufhat&,Cq,Dq,Cq,Dq",
+        "crshufhat": "m10,p0,4(F#e,F#e\\\\\\\\)"
+      }
+    },
+    {
+      "id": "cr-boogie",
+      "group": "Classic rock · Drums",
+      "label": "Boogie shuffle — ride, kick pickup into 4",
+      "main": "crboogie",
+      "bpm": 140,
+      "parts": {
+        "crboogie": "m10,p0,@crshufride&,Cq,Dq,Ce,Ce\\\\\\\\,Dq",
+        "crshufride": "m10,p0,4(D#+e,D#+e\\\\\\\\)"
+      }
+    },
+    {
+      "id": "cr-train",
+      "group": "Classic rock · Drums",
+      "label": "Train beat — 16th snare over kick 1 & 3",
+      "main": "crtrain",
+      "bpm": 110,
+      "parts": {
+        "crtrain": "m10,p0,@crtrainkick&,16(Ds)",
+        "crtrainkick": "m10,p0,Cq,Rq,Cq,Rq"
+      }
+    },
+    {
+      "id": "cr-hambone",
+      "group": "Classic rock · Drums",
+      "label": "Hambone / Bo Diddley-style beat — 3-2 clave on floor tom",
+      "main": "crhambone",
+      "bpm": 110,
+      "parts": {
+        "crhambone": "m10,p0,@crhat16&,@crclave&,Cq,Rq,Cq,Rq",
+        "crhat16": "m10,p0,16(F#s)",
+        "crclave": "m10,p0,Ge,Rs,Ge,Rs,Gq,Ge,Gq"
+      }
+    },
+    {
+      "id": "cr-stomp",
+      "group": "Classic rock · Drums",
+      "label": "Stadium stomp — boom-boom-clap",
+      "main": "crstomp",
+      "bpm": 82,
+      "parts": {
+        "crstomp": "m10,p0,Ce,Ce,D#q,Ce,Ce,D#q"
+      }
+    },
+    {
+      "id": "cr-surf",
+      "group": "Classic rock · Drums",
+      "label": "Surf tom groove",
+      "main": "crsurf",
+      "bpm": 160,
+      "parts": {
+        "crsurf": "m10,p0,@crhat8&,Ge,Ge,De,Ge,Ge,Ge,De,Ge",
+        "crhat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "cr-bell",
+      "group": "Classic rock · Drums",
+      "label": "Ride-bell rock — 70s heavy",
+      "main": "crbell",
+      "bpm": 112,
+      "parts": {
+        "crbell": "m10,p0,@crbellq&,Cq,Dq,Ce,Ce,Dq",
+        "crbellq": "m10,p0,4(F+q)"
+      }
+    },
+    {
+      "id": "cr-countin",
+      "group": "Classic rock · Drums",
+      "label": "Count-in — four stick clicks",
+      "main": "crcount",
+      "parts": {
+        "crcount": "m10,p0,4(G-q)"
+      }
+    },
+    {
+      "id": "cr-filltoms",
+      "group": "Classic rock · Drums",
+      "label": "Fill — snare into toms, 16ths",
+      "main": "crfilltoms",
+      "parts": {
+        "crfilltoms": "m10,p0,4(Ds),4(D+s),2(Bs),2(Gs),Fe,Fe"
+      }
+    },
+    {
+      "id": "cr-fillroll",
+      "group": "Classic rock · Drums",
+      "label": "Fill — snare roll build (8ths into 16ths)",
+      "main": "crfillroll",
+      "parts": {
+        "crfillroll": "m10,p0,4(De),8(Ds)"
+      }
+    },
+    {
+      "id": "cr-ending",
+      "group": "Classic rock · Drums",
+      "label": "Big ending — crash + kick, let it ring",
+      "main": "crending",
+      "parts": {
+        "crending": "m10,p0,@crendkick&,C#+w",
+        "crendkick": "m10,p0,Cw"
+      }
+    }
+  ]
+}

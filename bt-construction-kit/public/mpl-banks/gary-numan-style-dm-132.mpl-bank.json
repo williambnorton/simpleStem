@@ -1,0 +1,215 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Gary Numan (style) — D minor 132",
+  "description": "Modelled on the late-70s Gary Numan sound (The Pleasure Principle era) — original parts, not any of his songs. Tone stand-ins on the MacBook's GM synth (DLSMusicDevice): Minimoog bass → Synth Bass 1 p38 (p39 for a squelchier one); Polymoog \"Vox Humana\" ensemble → SynthStrings 1 p50, its brassy edge → SynthBrass 1 p62 an octave up; string machine → SynthStrings 2 p51; Minimoog lead → Saw Lead p81 (Square Lead p80 is the rounder option); a dry, tight real kit p0 with closed/open hats and syndrum-style tom fills. D minor at 132 bpm: pedal bass with octave jumps under Dm Bb C (A in the chorus). Rows 1-5 drums (ch 10), 6-9 bass SUBROUTINES and A-C bass (ch 13), D-E riff SUBROUTINES, F riff on strings (ch 15), G riff on brass and H pad (ch 16), I-K lead (ch 11), L-P sections, Q jam, R tone lab. Every row carries its level as \"velocity\". Row 0 plays the song.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "Make a Gary Numan key bank. Approximate the tones in the original song with the synths and drums on the MacBook Pro. Show me train of thought",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 132,
+  "key": "Dm",
+  "song": "Numan Style",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "numanSong",
+      "src": "@intro,@verse,@chorus,@verse,@chorus,@synthBreak,@chorus,@outro",
+      "velocity": 100,
+      "note": "MAIN: riff intro, verse, chorus, verse, chorus, synth break, chorus, outro — 58 bars"
+    },
+    {
+      "key": "1",
+      "name": "nmHat",
+      "src": "m10,p0,4(F#e,A#e)",
+      "velocity": 70,
+      "note": "Hats: closed on the beat, open on the off-beat — the steady disco-tinged pulse"
+    },
+    {
+      "key": "2",
+      "name": "nmBeat",
+      "src": "m10,p0,@nmHat&,C,D,C,D",
+      "velocity": 100,
+      "note": "Dry, tight kit: kick 1 and 3, snare 2 and 4; launches the hats"
+    },
+    {
+      "key": "3",
+      "name": "nmDrive",
+      "src": "m10,p0,@nmHat&,Ce,Ce,D,Ce,Ce,D",
+      "velocity": 105,
+      "note": "Driving chorus beat, doubled kicks"
+    },
+    {
+      "key": "4",
+      "name": "nmFill",
+      "src": "m10,p0,D+s,D+s,C+s,C+s,Bs,Bs,As,As,Ge,Ge,Fe,Fe",
+      "velocity": 100,
+      "note": "Syndrum-style tom fill down the kit"
+    },
+    {
+      "key": "5",
+      "name": "nmStop",
+      "src": "m10,p0,C#+,R,R,R",
+      "velocity": 105,
+      "note": "Crash and a dead stop"
+    },
+    {
+      "key": "6",
+      "name": "bPedal",
+      "src": "D+e,D+e,D++e,D+e,D+e,D+e,D++e,D+e",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of Minimoog-style pedal bass on D with octave jumps"
+    },
+    {
+      "key": "7",
+      "name": "bBb",
+      "src": "Bbe,Bbe,Bb+e,Bbe,Bbe,Bbe,Bb+e,Bbe",
+      "velocity": 100,
+      "note": "SUBROUTINE: pedal bass on Bb"
+    },
+    {
+      "key": "8",
+      "name": "bC",
+      "src": "C+e,C+e,C++e,C+e,C+e,C+e,C++e,C+e",
+      "velocity": 100,
+      "note": "SUBROUTINE: pedal bass on C"
+    },
+    {
+      "key": "9",
+      "name": "bA",
+      "src": "Ae,Ae,A+e,Ae,Ae,Ae,A+e,Ae",
+      "velocity": 100,
+      "note": "SUBROUTINE: pedal bass on A"
+    },
+    {
+      "key": "A",
+      "name": "bassVerse",
+      "src": "m13,p38,2(@bPedal,@bPedal,@bBb,@bC)",
+      "velocity": 100,
+      "note": "8 bars, Dm Dm Bb C — Synth Bass 1 (p38) stands in for the Minimoog"
+    },
+    {
+      "key": "B",
+      "name": "bassChorus",
+      "src": "m13,p38,2(@bPedal,@bBb,@bC,@bA)",
+      "velocity": 100,
+      "note": "8 bars, Dm Bb C A"
+    },
+    {
+      "key": "C",
+      "name": "bassEnd",
+      "src": "m13,p38,D+,D+,D++,D+,Dw",
+      "velocity": 100,
+      "note": "Ending bass"
+    },
+    {
+      "key": "D",
+      "name": "riffA",
+      "src": "D++,D++e,F++e,A++,G++e,F++e,E++,C++e,D++e,R,A+",
+      "velocity": 100,
+      "note": "SUBROUTINE: 2 bars of the main riff (original), over Dm"
+    },
+    {
+      "key": "E",
+      "name": "riffB",
+      "src": "D++,D++e,F++e,Bb++,A++e,G++e,G++,E++e,F++e,E++,C++",
+      "velocity": 100,
+      "note": "SUBROUTINE: 2 bars of the riff, over Bb and C"
+    },
+    {
+      "key": "F",
+      "name": "polyRiff",
+      "src": "m15,p50,2(@riffA,@riffB)",
+      "velocity": 88,
+      "note": "The riff on SynthStrings 1 (p50) — the nearest GM sound to the Polymoog \"Vox Humana\" ensemble"
+    },
+    {
+      "key": "G",
+      "name": "polyBrass",
+      "src": "m16,p62,+(2(@riffA,@riffB))",
+      "velocity": 78,
+      "note": "The riff an octave up on SynthBrass 1 (p62) — the brassy edge of the Polymoog, layered in the chorus"
+    },
+    {
+      "key": "H",
+      "name": "padVerse",
+      "src": "m16,p51,2(D++m!w,D++m!w,Bb+!w,C++!w)",
+      "velocity": 68,
+      "note": "Verse chords on SynthStrings 2 (p51), a softer string-machine pad"
+    },
+    {
+      "key": "I",
+      "name": "leadA",
+      "src": "A++,A++,A++e,G++e,F++,E++w,F++,F++,F++e,E++e,D++,C#++w",
+      "velocity": 100,
+      "note": "SUBROUTINE: 4-bar chorus melody (original)"
+    },
+    {
+      "key": "J",
+      "name": "leadLine",
+      "src": "m11,p81,2@leadA",
+      "velocity": 95,
+      "note": "Chorus melody on Saw Lead (p81) — a monophonic Minimoog lead"
+    },
+    {
+      "key": "K",
+      "name": "breakLead",
+      "src": "m11,p81,2(D+++e,C#+++e,C+++e,B++e,Bb++,A++),2(F+++e,E+++e,Eb+++e,D+++e,C#+++,A++),D+++w,Bb++w,C+++w,A++w",
+      "velocity": 95,
+      "note": "8-bar synth break: chromatic falls, then long held notes"
+    },
+    {
+      "key": "L",
+      "name": "intro",
+      "src": "@polyRiff&,4(@nmHat),3(@nmBeat),@nmFill",
+      "velocity": 100,
+      "note": "SECTION: the riff over hats, then the kit enters (8 bars)"
+    },
+    {
+      "key": "M",
+      "name": "verse",
+      "src": "@bassVerse&,@padVerse&,8(@nmBeat)",
+      "velocity": 100,
+      "note": "SECTION: verse — pedal bass, string pad, beat"
+    },
+    {
+      "key": "N",
+      "name": "chorus",
+      "src": "@bassChorus&,@polyRiff&,@polyBrass&,@leadLine&,7(@nmDrive),@nmFill",
+      "velocity": 100,
+      "note": "SECTION: chorus — riff on strings and brass, lead melody"
+    },
+    {
+      "key": "O",
+      "name": "synthBreak",
+      "src": "@bassVerse&,@breakLead&,@padVerse&,8(@nmDrive)",
+      "velocity": 100,
+      "note": "SECTION: instrumental synth break"
+    },
+    {
+      "key": "P",
+      "name": "outro",
+      "src": "@bassEnd&,@nmDrive,@nmStop",
+      "velocity": 100,
+      "note": "SECTION: 2-bar ending on a dead stop"
+    },
+    {
+      "key": "Q",
+      "name": "jam",
+      "src": "@bassChorus&,@polyRiff&,8(@nmDrive)",
+      "velocity": 100,
+      "note": "JAM: loops the riff groove"
+    },
+    {
+      "key": "R",
+      "name": "toneLab",
+      "src": "m13,p38,4(De,D+e),m13,p39,4(De,D+e),m15,p50,D++m!w,m16,p51,D++m!w,m16,p62,D++m!w,m11,p81,A++,F++,D++,A+,m11,p80,A++,F++,D++,A+",
+      "velocity": 90,
+      "note": "TONE LAB: hear each stand-in one bar at a time — bass p38 then p39, Polymoog strings p50, string machine p51, synth brass p62, saw lead p81, square lead p80"
+    }
+  ]
+}

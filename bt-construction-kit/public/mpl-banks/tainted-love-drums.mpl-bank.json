@@ -1,0 +1,207 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Tainted Love — drums — Soft Cell",
+ "description": "Drums only (m10) of Tainted Love by Soft Cell, as measured from the drum stem by songscribe: row 0 is the song, then its sections, phrases and drum parts. Phrase rows that had no drums are rests so the structure still times out. Compared to the original drum stem: 95% of the hits land on a real onset (±30 ms), drum-likeness 86% with a GM kit stand-in; plays 10 ms early against the recording; offset_ms = +10 sets the console SYNC slider to correct it. Layer your own bass/synth rows over it.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "drum accuracy round 1: put the drum MPL into bank JSON files",
+ "created_at": "2026-11-19T00:00:00.000Z",
+ "bpm": 144,
+ "key": "G minor",
+ "offset_ms": 10,
+ "song": "Tainted Love",
+ "artist": "Soft Cell",
+ "main": "0",
+ "slots": [
+  {
+   "name": "Tainted_Love_Official_Music_Video",
+   "src": "2@verse,@verse2,@chorus,@chorus2,@verse,@verse3,@chorus,@chorus3,4@verse,@outro,@outro2",
+   "velocity": 100,
+   "key": "0"
+  },
+  {
+   "name": "verse",
+   "src": "2@verseA",
+   "velocity": 100,
+   "key": "1"
+  },
+  {
+   "name": "verseA",
+   "src": "@verseADrums&,4Rw",
+   "velocity": 100,
+   "key": "2"
+  },
+  {
+   "name": "verseADrums",
+   "src": "m10,4e(|C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "3"
+  },
+  {
+   "name": "verse2",
+   "src": "@verseA,@verse2A",
+   "velocity": 100,
+   "key": "4"
+  },
+  {
+   "name": "verse2A",
+   "src": "@verse2ADrums&,Rw",
+   "velocity": 100,
+   "key": "5"
+  },
+  {
+   "name": "verse2ADrums",
+   "src": "m10,s(|C,D|,3R,D,C,2R,|C,D|,3R,D,R,F#,R)",
+   "velocity": 100,
+   "key": "6"
+  },
+  {
+   "name": "chorus",
+   "src": "@chorusA,@chorusB",
+   "velocity": 100,
+   "key": "7"
+  },
+  {
+   "name": "chorusA",
+   "src": "@chorusADrums&,4Rw",
+   "velocity": 100,
+   "key": "8"
+  },
+  {
+   "name": "chorusADrums",
+   "src": "m10,4e(|C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "9"
+  },
+  {
+   "name": "chorusB",
+   "src": "@chorusBDrums&,4Rw",
+   "velocity": 100,
+   "key": "A"
+  },
+  {
+   "name": "chorusBDrums",
+   "src": "m10,4e(|C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "B"
+  },
+  {
+   "name": "chorus2",
+   "src": "@chorus2A,@chorus2B",
+   "velocity": 100,
+   "key": "C"
+  },
+  {
+   "name": "chorus2A",
+   "src": "@chorus2ADrums&,4Rw",
+   "velocity": 100,
+   "key": "D"
+  },
+  {
+   "name": "chorus2ADrums",
+   "src": "m10,4s(D,C,2R,|C,D|,R,F#,R,|C,D|,3R,|C,D|,3R)",
+   "velocity": 100,
+   "key": "E"
+  },
+  {
+   "name": "chorus2B",
+   "src": "@chorus2BDrums&,2Rw",
+   "velocity": 100,
+   "key": "F"
+  },
+  {
+   "name": "chorus2BDrums",
+   "src": "m10,2e(|C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "G"
+  },
+  {
+   "name": "verse3",
+   "src": "@verse3A,@verse3B",
+   "velocity": 100,
+   "key": "H"
+  },
+  {
+   "name": "verse3A",
+   "src": "@verse3ADrums&,4Rw",
+   "velocity": 100,
+   "key": "I"
+  },
+  {
+   "name": "verse3ADrums",
+   "src": "m10,4e(|C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "J"
+  },
+  {
+   "name": "verse3B",
+   "src": "@verse3BDrums&,3Rw",
+   "velocity": 100,
+   "key": "K"
+  },
+  {
+   "name": "verse3BDrums",
+   "src": "m10,3e(D,R,D,F#,D,R,D,F#)",
+   "velocity": 100,
+   "key": "L"
+  },
+  {
+   "name": "chorus3",
+   "src": "@chorus2A",
+   "velocity": 100,
+   "key": "M"
+  },
+  {
+   "name": "outro",
+   "src": "@outroA,@outroB",
+   "velocity": 100,
+   "key": "N"
+  },
+  {
+   "name": "outroA",
+   "src": "@outroADrums&,4Rw",
+   "velocity": 100,
+   "key": "O"
+  },
+  {
+   "name": "outroADrums",
+   "src": "m10,4e(|C,D|,R,|C,D|,F#,D,R,|C,D|,F#)",
+   "velocity": 100,
+   "key": "P"
+  },
+  {
+   "name": "outroB",
+   "src": "@outroBDrums&,4Rw",
+   "velocity": 100,
+   "key": "Q"
+  },
+  {
+   "name": "outroBDrums",
+   "src": "m10,4(Dvv,D,R,Dvv)",
+   "velocity": 100,
+   "key": "R"
+  },
+  {
+   "name": "outro2",
+   "src": "@outro2A,@outro2B",
+   "velocity": 100,
+   "key": "S"
+  },
+  {
+   "name": "outro2A",
+   "src": "4Rw",
+   "velocity": 100,
+   "key": "T"
+  },
+  {
+   "name": "outro2B",
+   "src": "Rw",
+   "velocity": 100,
+   "key": "U"
+  }
+ ]
+}

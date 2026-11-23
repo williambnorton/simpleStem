@@ -430,10 +430,7 @@ async function _fetchSongStems(songBase) {
     const folder = encodeURIComponent(songBase);
     const stems = {};
     const blobs = {};
-    // Stem sets (2026-10-20): fetch whichever set the song plays —
-    // row.stems holds 'vocals.m4a' (Demucs) or 'logic/vocals.m4a'.
     const row = stemsRowFor(songBase);
-    const set = (row && row.stemSet) || 'demucs';
     // Fetch all six in parallel — each request is independent; if any one
     // 503s we mark the whole song failed (we need all six to play).
     const results = await Promise.all(CHANNELS.map(async (ch) => {
@@ -456,7 +453,6 @@ async function _fetchSongStems(songBase) {
     }
     entry.stems = stems;
     entry.blobs = blobs;
-    entry.set = set;
     entry.state = STEM_CACHE_READY;
     entry.error = null;
   } catch (e) {
@@ -467,20 +463,13 @@ async function _fetchSongStems(songBase) {
   _stemCacheNotify(songBase);
   return entry;
 }
-// The library row for a stems song folder (carries stemSet / stemsBySet).
+// The library row for a stems song folder.
 function stemsRowFor(songBase) {
   return (songLibrary || []).find(s => s && s.type === 'stems' && s.folderName === songBase) || null;
 }
 function ensureSongStemsCached(songBase, priority) {
   if (!songBase) return null;
   let entry = stemCache.get(songBase);
-  // Holding the other stem set (the song was switched D ↔ L)? Drop it.
-  const row = stemsRowFor(songBase);
-  if (entry && entry.set && row && row.stemSet && entry.set !== row.stemSet
-      && entry.state !== STEM_CACHE_FETCHING) {
-    evictSongStems(songBase);
-    entry = null;
-  }
   if (!entry) {
     entry = { state: STEM_CACHE_PENDING, stems: {}, blobs: {}, error: null };
     stemCache.set(songBase, entry);
@@ -3787,6 +3776,7 @@ async function engageJam(j) {
   if (audioCtx && audioCtx.state === 'suspended') { try { await audioCtx.resume(); } catch (e) {} }
   if (drumMachineActive) { try { disengageDrumMachine(); } catch (e) {} }
   if (backingTrackActive) { try { disengageBackingTrack(); } catch (e) {} }
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) { try { disengageMplDrums(); } catch (e) {} }
   try { stopLooperIfActive(); } catch (e) {}
   if (isPlaying || Object.values(audioElements).some(audioHasSrc)) { try { stopAudio(); } catch (e) {} }
   if (!wireJamIntoStrips()) {
@@ -4116,12 +4106,12 @@ function renderQueue(q) {
       `✕ ${failedWeblocs} webloc failed</span>`
     );
   }
-  // Render-stage failures (demucs crashed / OOM / source.wav corrupt).
+  // Ingest-stage failures (download failed / source.wav corrupt).
   const failedRenders = q.failedRenders || 0;
   if (failedRenders) {
     chips.push(
       `<span class="queue-chip queue-err" ` +
-      `title="${failedRenders} song(s) crashed during Demucs render. The job files are quarantined in STEM_QUEUE/_failed/. Most often a memory error or a malformed source.wav. To retry: move the JSON files back up one level (out of _failed/) — the queue runner will pick them up. To dismiss: delete them.">` +
+      `title="${failedRenders} song(s) failed during ingest. The job files are quarantined in STEM_QUEUE/_failed/. Most often a failed download or a malformed source.wav. To retry: move the JSON files back up one level (out of _failed/) — the queue runner will pick them up. To dismiss: delete them.">` +
       `✕ ${failedRenders} render(s) failed</span>`
     );
   }
@@ -5453,15 +5443,6 @@ async function openSongMenu(base, merged) {
         </details>
       </div>
 
-      <div class="song-modal-section">
-        <label class="song-modal-label">Re-stem in Logic Pro (triggers Keyboard Maestro macro "simpleStem"):</label>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button class="btn-secondary song-logic-btn">↻ Re-stem in Logic</button>
-          <button class="btn-secondary song-logic-unlock-btn" title="Clear the KBM simpleStem_Running lock if a previous macro run got stuck">🔓 Unlock (macro stuck)</button>
-        </div>
-        <div class="song-modal-logic-note"></div>
-      </div>
-
       <div class="song-modal-section song-modal-danger">
         <label class="song-modal-label">Delete permanently (not reversible):</label>
         <div class="song-delete-list" style="display:none; max-height:220px; overflow:auto; margin:6px 0; font-size:13px;"></div>
@@ -5498,35 +5479,6 @@ async function openSongMenu(base, merged) {
       note.textContent = d.note || 'Queued. The Librarian (mini) will download; then it re-stems.';
       fetchLibrary();
     } catch (e) { note.textContent = `Error: ${e.message}`; }
-  });
-
-  // Re-stem in Logic Pro — POST to the server, which sets KBM variables and
-  // triggers the "simpleStem" macro. The macro owns the rest (open Logic,
-  // run Stem Splitter, bounce m4as into M4A_DIR with the same filenames).
-  const logicBtn = overlay.querySelector('.song-logic-btn');
-  const logicNote = overlay.querySelector('.song-modal-logic-note');
-  logicBtn.addEventListener('click', async () => {
-    logicNote.textContent = 'Triggering Keyboard Maestro…';
-    try {
-      const r = await fetch(`/api/song/${encodeURIComponent(base)}/logic-restem`, { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'failed');
-      logicNote.textContent = `Macro "${d.macro}" triggered — Logic Pro should open shortly.`;
-    } catch (e) { logicNote.textContent = `Error: ${e.message}`; }
-  });
-
-  // Unlock — clears the KBM simpleStem_Running variable when a previous
-  // macro run got stuck (crashed macro, user aborted from KBM Editor,
-  // Logic hung, etc.). Idempotent; safe to click at any time.
-  const logicUnlockBtn = overlay.querySelector('.song-logic-unlock-btn');
-  logicUnlockBtn.addEventListener('click', async () => {
-    logicNote.textContent = 'Clearing KBM lock…';
-    try {
-      const r = await fetch('/api/logic-restem/unlock', { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'failed');
-      logicNote.textContent = d.note || 'Lock cleared. You can retry Re-stem now.';
-    } catch (e) { logicNote.textContent = `Unlock failed: ${e.message}`; }
   });
 
   // Delete — two-click confirm: first click arms it, second click within 4s
@@ -6985,6 +6937,8 @@ function applySidebarWidth(px) {
 // control its level and destination (Bill: "this click track audio uses
 // the Other track volume/mute/solo/output selector"). The sync source is
 // whatever is actually playing — stems, backing track, or drum machine.
+// 2026-11-17: the click now plays through the DRUMS strip (clickOutputNode),
+// and the clock button has a twin on the Drum fader (#drums-click-btn).
 let midiSyncOn = false;               // MIDI SYNC button state
 let clickLastScheduledBeat = -1;
 let clickLastSongTime = 0;
@@ -7049,12 +7003,14 @@ function getBeatOffsetSec() {
   return first;
 }
 
-// The Other strip's gain node is the click's output — fader, mute, solo
-// and output routing all apply. Falls back to master gain until the strips
-// have been built (first stems init).
+// The Drum strip's fader is the click's output (Bill 2026-11-17; it was the
+// Other strip) — the Drum fader, mute, solo and output routing all apply. It
+// joins at the fader itself, after the point where the MPL button silences
+// the drum stem, so the click still sounds with the MPL as the drum track.
+// Falls back to master gain until the strips have been built (first stems init).
 function clickOutputNode() {
-  const st = (typeof stripNodes === 'object' && stripNodes) ? stripNodes.other : null;
-  return (st && st.stripGain) ? (st.preFader || st.stripGain) : masterGainNode;
+  const st = (typeof stripNodes === 'object' && stripNodes) ? stripNodes.drums : null;
+  return (st && st.stripGain) ? st.stripGain : masterGainNode;
 }
 
 // Click timing trim. The automatic outputLatency compensation tried here
@@ -7241,6 +7197,8 @@ function updateClickButton() {
   const onNow = !!currentSong && clickStateAt(clickPlayheadPos());
   btn.classList.toggle('click-live', onNow);
   btn.classList.toggle('click-ready', !!currentSong && !onNow);
+  const twin = document.getElementById('drums-click-btn');     // the same button on the Drum fader
+  if (twin) { twin.classList.toggle('click-live', onNow); twin.classList.toggle('click-ready', !!currentSong && !onNow); }
 }
 
 // Timeline time readout: elapsed (left, mm:ss), total (right), and a
@@ -7303,6 +7261,8 @@ function clickBeatFlash(st) {
     }
   }
   btn.classList.toggle('beat-flash', flash);
+  const twin = document.getElementById('drums-click-btn');
+  if (twin) twin.classList.toggle('beat-flash', flash);
 }
 
 // ── MIDI clock sync ──────────────────────────────────────────────────────
@@ -8608,6 +8568,46 @@ async function reprobeAudioDevice() {
   if (ok) location.reload();
 }
 
+const FADER_PRESETS = [100, 75, 50, 10, 5];
+function addFaderPresets(chan, fader) {
+  const track = fader && fader.closest('.fader-track');
+  if (!track || track.querySelector('.fader-presets')) return;
+  const col = document.createElement('div');
+  col.className = 'fader-presets';
+  FADER_PRESETS.forEach(pct => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fader-preset';
+    b.dataset.pct = pct;
+    b.textContent = pct;
+    b.title = `Set ${chan} to ${pct}%`;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      fader.value = pct / 100;
+      fader.dispatchEvent(new Event('input', { bubbles: true }));
+      fader.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    col.appendChild(b);
+  });
+  track.classList.add('has-presets');
+  track.appendChild(col);
+  fader.addEventListener('input', () => syncFaderPresets(chan));
+  syncFaderPresets(chan);
+}
+function syncFaderPresets(chan) {
+  const fader = document.getElementById(`fader-${chan}`);
+  const track = fader && fader.closest('.fader-track');
+  if (!track) return;
+  const pct = Math.round(parseFloat(fader.value) * 100);
+  track.querySelectorAll('.fader-preset').forEach(b => b.classList.toggle('active', +b.dataset.pct === pct));
+}
+// Faders also move without an input event (saved-state restore, fade
+// automation); re-check the lit preset twice a second while the mixer shows.
+setInterval(() => {
+  const mx = document.getElementById('mixer-container');
+  if (mx && mx.offsetParent) CHANNELS.forEach(syncFaderPresets);
+}, 500);
+
 function injectStripRoutingButtons() {
   // Positional routing layout: each named output channel sits at the position
   // around the fader-container that mirrors its location in the band's
@@ -8719,7 +8719,18 @@ function injectStripRoutingButtons() {
     };
     bottomRow.appendChild(makeBoost(5));
     bottomRow.appendChild(makeBoost(10));
-    bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
+    // D on the other five strips (Bill 2026-11-17) is no longer an audio route to the Drums amp:
+    // it sends the song's drum sequence to this strip's MIDI channel as notes of the song's key.
+    // mpl-drums.js binds the click and paints it; with no data-ch it is not a routing button.
+    if (chan === 'drums') bottomRow.appendChild(makeBtn(chan, BOTTOM_BUTTON.ch, BOTTOM_BUTTON.pos, BOTTOM_BUTTON.label));
+    else {
+      const d = document.createElement('button');
+      d.className = 'pos-btn pos-D mpl-send-btn disabled';
+      d.dataset.mplSend = chan;
+      d.textContent = 'D';
+      d.title = 'D: send the drum sequence to this strip as notes';
+      bottomRow.appendChild(d);
+    }
     bottomRow.appendChild(makeBoost(20));
     bottomRow.appendChild(makeBoost(50));
 
@@ -9363,8 +9374,7 @@ function loadSong(song, opts) {
       let src = '';
       let srcKind = 'none';
       if (fileName) {
-        if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]
-            && (cached.set || 'demucs') === (song.stemSet || 'demucs')) {
+        if (cached && cached.state === STEM_CACHE_READY && cached.stems[chan]) {
           // Best case: pure in-memory Blob URL. Zero server touch.
           src = cached.stems[chan];
           srcKind = 'blob';
@@ -10234,6 +10244,7 @@ function updateDrumChipLabel(label, fallback) {
 
 function engageDrumMachine() {
   if (drumMachineActive || !drumMachineUrl) return;
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) disengageMplDrums();
   initAudioCtx();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   const el = ensureDrumMachineEl();
@@ -10359,17 +10370,19 @@ function updateTransportIcon() {
   }
 }
 function updateModePills() {
-  const mode = drumMachineActive ? 'drum'
+  const mode = (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) ? 'mpl'
+             : drumMachineActive ? 'drum'
              : (jamMode && jamMode.kind === 'source') ? 'source'
              : backingTrackActive ? 'backing' : 'stems';
   const playing = {
     stems:   isPlaying,
+    mpl:     isPlaying,     // MPL DRUMS: the silent stems are the clock, so "playing" is theirs
     drum:    !!(drumMachineEl && !drumMachineEl.paused),
     backing: !!(backingTrackEl && !backingTrackEl.paused),
     source:  !!(backingTrackEl && !backingTrackEl.paused),
   };
   const map = { stems: 'active-meta-stems', drum: 'active-meta-drum', backing: 'active-meta-backing',
-                source: 'active-meta-source' };
+                source: 'active-meta-source', mpl: 'active-meta-mpl' };
   for (const [m, id] of Object.entries(map)) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -10388,6 +10401,8 @@ document.addEventListener('click', (e) => {
   if (!pill) return;
   e.preventDefault(); e.stopPropagation();
   if (jamMode && jamMode.kind === 'source') { leaveSongSource(); return; }
+  // MPL DRUMS (2026-11-17): the stems are loaded and silent — just bring them back.
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) { disengageMplDrums(); return; }
   try {
     if (drumMachineActive) disengageDrumMachine();
     if (backingTrackActive) disengageBackingTrack();
@@ -10425,6 +10440,7 @@ setInterval(() => { try { updateSourcePill(); } catch (e) {} }, 1000);
 async function engageSongSource(song) {
   const base = song && song.folderName;
   if (!base) return;
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) disengageMplDrums();
   const url = `/api/audio/song-source/${encodeURIComponent(base)}`;
   try {
     const r = await fetch(url, { method: 'HEAD' });
@@ -10462,50 +10478,6 @@ document.addEventListener('click', (e) => {
   if (jamMode && jamMode.kind === 'source') { leaveSongSource(); return; }
   if (pill.classList.contains('disabled')) return;
   engageSongSource(currentSong);
-});
-
-// Stem-set pill (Bill 2026-10-20): D = Demucs stems, L = Logic Pro stems
-// (STEMS/<song>/logic/). Shown only when the loaded song has both sets.
-// Click switches, saves the pick per song, and reloads the song at the
-// same playhead (and keeps playing if it was).
-function updateStemSetPill() {
-  const pill = document.getElementById('active-meta-stemset');
-  if (!pill) return;
-  const sets = (currentSong && currentSong.type === 'stems' && currentSong.stemSets) || [];
-  const show = sets.length > 1;
-  pill.style.display = show ? '' : 'none';
-  if (!show) return;
-  const logic = currentSong.stemSet === 'logic';
-  document.getElementById('active-stemset-value').textContent = logic ? 'L' : 'D';
-  document.getElementById('active-stemset-label').textContent = logic ? 'Logic' : 'Demucs';
-}
-setInterval(() => { try { updateStemSetPill(); } catch (e) {} }, 1000);
-document.addEventListener('click', (e) => {
-  const pill = e.target && e.target.closest ? e.target.closest('#active-meta-stemset') : null;
-  if (!pill) return;
-  e.preventDefault(); e.stopPropagation();
-  const song = currentSong;
-  if (!song || !song.stemsBySet) return;
-  const base = song.folderName;
-  const next = song.stemSet === 'logic' ? 'demucs' : 'logic';
-  if (!song.stemsBySet[next]) return;
-  fetch(`/api/song/${encodeURIComponent(base)}/stem-set`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ set: next }),
-  }).then(r => r.json()).then(j => {
-    if (!j || !j.ok) { showToast(`Couldn't switch stems: ${(j && j.error) || 'server error'}`); return; }
-    for (const row of songLibrary) {
-      if (row && row.type === 'stems' && row.folderName === base && row.stemsBySet) {
-        row.stemSet = next;
-        row.stems = row.stemsBySet[next];
-      }
-    }
-    song.stemSet = next;
-    song.stems = song.stemsBySet[next];
-    updateStemSetPill();
-    if (currentSong === song) loadSong(song, { keepPosition: true });
-  }).catch(err => { console.warn('[stem-set]', err); showToast("Couldn't switch stems — server not answering"); });
 });
 
 function toggleDrumMachine() {
@@ -10619,6 +10591,7 @@ async function refreshBackingTrackPick(songBase) {
 }
 function engageBackingTrack() {
   if (backingTrackActive || !backingTrackUrl) return;
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) disengageMplDrums();
   // Mutually exclusive with the drum machine.
   if (drumMachineActive) disengageDrumMachine();
   initAudioCtx();
@@ -13407,6 +13380,13 @@ function setupEventListeners() {
       recordFadeEvent(chan, lvl);
     });
 
+    // Preset buttons beside the fader (Bill 2026-11-13): 100 / 75 / 50 /
+    // 10 / 5 % in a column on the track's right edge, top to bottom like
+    // the fader itself. A click sets the fader exactly as a drag would
+    // (input → audible + saved, change → one automation event); the button
+    // matching the current level lights up.
+    addFaderPresets(chan, fader);
+
     const muteBtn = document.getElementById(`mute-${chan}`);
     muteBtn.addEventListener('click', () => {
       mixerState.muted[chan] = !mixerState.muted[chan];
@@ -13684,41 +13664,21 @@ async function loadAutomationForSong(songBase) {
       markAutomationDirty();
     }
     automationSections = Array.isArray(d.sections) ? d.sections.slice() : [];
-    automationSectionCandidates = Array.isArray(d.sectionCandidates) ? d.sectionCandidates.slice() : [];
     automationCountIn = !!d.countIn;
     setCachedBeatGrid(songBase, d.beat_grid);
     automationLastSavedJSON = JSON.stringify({ a: events, s: automationSections, c: automationCountIn });
-    // Auto-accept candidates: if this song has zero saved sections AND the
-    // backfill produced candidate timestamps, materialize them as draft
-    // sections so the user can immediately try them as loops. Colors rotate
-    // 1..9 (Intro/Verse/Chorus/Bridge/…) so adjacent bands look distinct
-    // out of the gate. The dirty flag is set below so SAVE persists them
-    // and the toolbar indicator shows the unsaved-changes dot.
-    var _autoAccepted = false;
-    if (automationSections.length === 0 && automationSectionCandidates.length > 0) {
-      let colorIdx = 1;
-      for (const t of automationSectionCandidates) {
-        automationSections.push({ t, color: colorIdx });
-        colorIdx = (colorIdx % 9) + 1;
-      }
-      automationSections.sort((a, b) => a.t - b.t);
-      _autoAccepted = true;
-    }
     // Pitch is no longer per-song — it's a session-only effect. Don't
     // reset the knobs on song change; the user's current pitch carries
     // over until they hit RESET.
   } catch (e) {
     automationEvents = [];
     automationSections = [];
-    automationSectionCandidates = [];
     automationCountIn = false;
     automationLastSavedJSON = '[]';
-    var _autoAccepted = false;
   }
   refreshCountInButton();
-  // Dirty iff auto-accept populated sections that aren't on the server yet.
-  // Otherwise the freshly-loaded state matches the saved snapshot.
-  automationDirty = !!_autoAccepted;
+  // The freshly-loaded state matches the saved snapshot.
+  automationDirty = false;
   renderAutomationLane();
   refreshAutomationToolbar();
   // Init-block semantics: fire every t === 0 action right now, before the
@@ -13913,7 +13873,7 @@ function eventSummary(e) {
   if (e.type === 'unmute')  return `UNMUTE ${e.stem}`;
   if (e.type === 'fade')    return `FADE ${e.stem} ${e.from}→${e.to} over ${e.duration}s`;
   if (e.type === 'skip-section') return 'SKIP to next section';
-  if (e.type === 'click-on')  return 'CLICK TRACK ON from here (audible on the Other strip)';
+  if (e.type === 'click-on')  return 'CLICK TRACK ON from here (audible on the Drums strip)';
   if (e.type === 'click-off') return 'CLICK TRACK OFF from here';
   if (e.type === 'lyric-line') return `${e.mode === 'append' ? 'APPEND' : 'REPLACE'} lyric: ${(e.text || '').slice(0, 40)}`;
   if (e.type === 'amp-program') {
@@ -13969,7 +13929,6 @@ function renderAutomationLane() {
   // Markers stack at the lane's bottom anchor.
   if (bands) {
     renderSectionBands(bands, dur);
-    renderSectionCandidateHints(bands, dur);
   }
 
   // Pass 1 — compute each event's x position (px) so we can detect
@@ -14099,24 +14058,6 @@ function renderSectionBands(container, dur) {
   }
 }
 
-// Render faint vertical tick marks for each sectionCandidate timestamp.
-// They show where section_detect.py thinks the boundaries are — so the
-// user can SEE the candidates before placing their own sections, and
-// drop a 1-9 key right on top of one.
-function renderSectionCandidateHints(container, dur) {
-  if (!Array.isArray(automationSectionCandidates) || !automationSectionCandidates.length) return;
-  const { s: vs, e: ve, span } = getViewWindow(dur);
-  for (const t of automationSectionCandidates) {
-    if (t < vs || t > ve) continue;       // outside the zoom window
-    const pct = ((t - vs) / span) * 100;
-    const hint = document.createElement('div');
-    hint.className = 'automation-section-hint';
-    hint.style.left = pct + '%';
-    hint.title = `Candidate boundary @ ${t.toFixed(2)}s — multi-stem energy change detected`;
-    container.appendChild(hint);
-  }
-}
-
 // Removes the divider at `i` so the PREVIOUS section absorbs what was
 // the following section (per user spec). End-of-list divider: just drop.
 function deleteSectionDividerAt(i) {
@@ -14135,7 +14076,7 @@ function deleteSectionDividerAt(i) {
 // Drag a section's end-position divider horizontally to retime it.
 // Behavior per user spec:
 //   - Click selects the divider (sticky orange highlight)
-//   - Drag moves it (snaps to nearest sectionCandidate within ±2 s)
+//   - Drag moves it (snaps to the nearest downbeat)
 //   - Delete / Backspace removes the selected divider; previous section
 //     extends through what was the following one
 //   - Right-click also deletes for muscle memory from earlier rounds
@@ -14203,7 +14144,7 @@ function attachSectionDividerHandlers(node, idx) {
         const zoomFactor = (dur > 0 && span > 0) ? (dur / span) : 1;
         const dynWindow = Math.max(0.05, Math.min(2.0, span * 0.04));
         const allowBeatSnap = zoomFactor < 10;
-        const snappedT = snapSectionToCandidate(
+        const snappedT = snapSectionTime(
           automationSections[idx].t,
           { maxWindow: dynWindow, allowBeatFallback: allowBeatSnap }
         );
@@ -14289,13 +14230,6 @@ function setupSectionDividerKeyboard() {
     hoveredSectionDividerIdx = null;
   });
 }
-
-// Read-only array of timestamps where section_detect.py found multi-stem
-// energy changes (likely real musical section boundaries). Used to snap
-// user-placed section markers and rendered as faint vertical hint ticks
-// on the lane so the user can see where the algorithm thinks boundaries
-// are before they place their own.
-let automationSectionCandidates = [];
 
 // Per-song count-in flag. When true, pressing Play first plays 4 clicks at
 // the song's BPM, then starts audio (and turns off the click track if it
@@ -14860,7 +14794,7 @@ function addSectionDividerAt(rawT) {
   // zoomed in for fine placement.
   const { span } = getViewWindow(dur);
   const zoomFactor = span > 0 ? dur / span : 1;
-  const t = snapSectionToCandidate(rawT, {
+  const t = snapSectionTime(rawT, {
     maxWindow: Math.max(0.05, Math.min(2.0, span * 0.04)),
     allowBeatFallback: zoomFactor < 10,
   });
@@ -14890,6 +14824,9 @@ const allLoopBufferSources = new Set();
 
 async function setupSeamlessLoop(startT, endT) {
   if (!audioCtx) return;
+  // MPL DRUMS (2026-11-17): the stems are silent clocks, so there is no audio to loop from
+  // buffers. The sync loop's rewind at the section end does the looping; the drums follow it.
+  if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) return;
   const myGen = ++loopGeneration;
   // Decode all 6 stems IN PARALLEL. The old code awaited each one
   // sequentially — for ~300 ms decode × 6 stems that was the "2 second
@@ -15054,7 +14991,7 @@ function tearDownSeamlessLoop() {
   for (const chan of Object.keys(audioElements)) {
     const nodes = stripNodes && stripNodes[chan];
     if (nodes && nodes.mediaMute) {
-      try { nodes.mediaMute.gain.value = 1; } catch (e) {}
+      try { nodes.mediaMute.gain.value = (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) ? 0 : 1; } catch (e) {}   // MPL DRUMS keeps the stems silent
     }
   }
 
@@ -16218,19 +16155,11 @@ function snapTimeToBeat(t) {
   return Math.max(0, Math.round(gridT * 100) / 100);
 }
 
-// Section-specific snap. First tries to land on a sectionCandidate
-// (multi-stem novelty peak from section_detect.py) within ±2 s of the
-// user's target; if none is in range, falls back to the regular
-// snapTimeToBeat (BPM-grid + onset refine). This gives section
-// boundaries musical accuracy even when the user clicks fuzzy.
-function snapSectionToCandidate(t, opts) {
-  // opts.maxWindow lets the section-drag handler tighten the magnet
-  // radius when zoomed in for fine loop-boundary tuning. Defaults to
-  // 2.0 s for the keyboard-drop path (key 1-9), which still wants a
-  // generous snap because the user is tapping in roughly.
-  // opts.allowBeatFallback=false skips the BPM-grid snap entirely so
-  // a fine-tune drag at high zoom doesn't get re-quantized to a beat.
-  const CANDIDATE_WINDOW = (opts && opts.maxWindow != null) ? opts.maxWindow : 2.0;
+// Section-specific snap: the nearest downbeat when the song has a beat
+// grid, otherwise the regular snapTimeToBeat (BPM-grid + onset refine).
+function snapSectionTime(t, opts) {
+  // opts.allowBeatFallback=false skips the snap entirely so a fine-tune
+  // drag at high zoom doesn't get re-quantized to a beat.
   const allowBeatFallback = !(opts && opts.allowBeatFallback === false);
   // Downbeat lock (Bill 2026-10-28): with a beat grid, a marker lands on
   // the nearest 1 so every section is whole bars and loops line up. Fine
@@ -16238,20 +16167,6 @@ function snapSectionToCandidate(t, opts) {
   if (allowBeatFallback) {
     const db = songDownbeats();
     if (db) return Math.max(0, Math.round(nearestIn(db, t) * 1000) / 1000);
-  }
-  if (Array.isArray(automationSectionCandidates) && automationSectionCandidates.length) {
-    let best = null, bestDist = CANDIDATE_WINDOW;
-    for (const ct of automationSectionCandidates) {
-      const d = Math.abs(ct - t);
-      if (d < bestDist) { bestDist = d; best = ct; }
-      else if (ct - t > CANDIDATE_WINDOW) break;
-    }
-    if (best !== null) {
-      // Keep millisecond precision when fine-tuning; only round to
-      // centiseconds for the generous default window.
-      const precision = (CANDIDATE_WINDOW < 0.5) ? 1000 : 100;
-      return Math.max(0, Math.round(best * precision) / precision);
-    }
   }
   if (!allowBeatFallback) {
     return Math.max(0, Math.round(t * 1000) / 1000);
@@ -16267,7 +16182,7 @@ function recordSectionAtPlayhead(color) {
   if (!automationCurrentBase) return;
   if (!SECTION_COLORS[color]) return;
   const rawT = currentPlayheadSec();
-  const t = snapSectionToCandidate(rawT);
+  const t = snapSectionTime(rawT);
   const NEAR = 0.3;
   const existing = automationSections.find(s => Math.abs(s.t - t) < NEAR);
   if (existing) {

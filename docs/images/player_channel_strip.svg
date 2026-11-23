@@ -73,7 +73,7 @@
   <path class="lead" d="M195,398 C240,394 262,386 280,383"/>
 
   <text class="callout" x="510" y="390">+20 / +50 dB DIAGNOSTIC boost</text>
-  <text class="callout" x="510" y="405">(~10× / ~316×) — hear Demucs bleed;</text>
+  <text class="callout" x="510" y="405">(~10× / ~316×) — hear stem bleed;</text>
   <text class="callout" x="510" y="420">will clip real signal</text>
   <path class="lead" d="M505,388 C490,386 478,384 464,383"/>
 

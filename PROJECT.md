@@ -4,11 +4,11 @@
 
 **Who**: Bill (project owner, guitar+vocals) and his band (Matt, Dan, Mark on drums, occasionally JD and Joyce). Rehearses weekly; plays gigs monthly. The performer laptop travels to venues that often have no wifi.
 
-**Why not just Spotify / SoundCloud**: The band needs per-stem control (mute vocals to sing along, kill guitar to solo over, keep drums+bass as a rhythm section). Off-the-shelf backing tracks don't offer that. Demucs's `htdemucs_6s` model gives clean separations that are good enough for live use.
+**Why not just Spotify / SoundCloud**: The band needs per-stem control (mute vocals to sing along, kill guitar to solo over, keep drums+bass as a rhythm section). Off-the-shelf backing tracks don't offer that. Logic Pro's Stem Splitter gives clean separations (six stems plus six drum-kit pieces) that are good enough for live use.
 
 ## Architecture in one paragraph
 
-Two Macs share a Google Drive folder for data. The Mac mini ("Librarian", 24/7) watches for pasted YouTube URLs, downloads audio, extracts metadata, keeps `CATALOG.json` current, and pulls a shared Google Sheet ("MPB Songlist") that the band uses as its canonical song list. The MacBook Pro ("Performer", 36 GB, travels) runs Demucs (which needs the RAM), serves the portal at `localhost:3000`, and drives an XR18 mixer + optional MIDI hardware (Helix guitar amp, Logic Pro) at gigs. Code is in GitHub, cloned to `~/simpleStem-code/` on each machine. All data (`STEMS/`, `M4A/`, `CATALOG.json`, `GIGS/`, `SETLISTS/`, `BACKING_TRACKS/`, `DRUM_MACHINE/`, `CUSTOM_LOOPS/`) lives at `~/ClaudeDrive/simpleStem/`, which the Performer mirrors to `~/.bt-cache/` for offline gig operation.
+Two Macs share a Google Drive folder for data. The Mac mini ("Librarian", 24/7) watches for pasted YouTube URLs, downloads audio, extracts metadata, keeps `CATALOG.json` current, and pulls a shared Google Sheet ("MPB Songlist") that the band uses as its canonical song list. The MacBook Pro ("Performer", 36 GB, travels) runs the Logic Pro stemming, serves the portal at `localhost:3000`, and drives an XR18 mixer + optional MIDI hardware (Helix guitar amp, Logic Pro) at gigs. Code is in GitHub, cloned to `~/simpleStem-code/` on each machine. All data (`STEMS/`, `M4A/`, `CATALOG.json`, `GIGS/`, `SETLISTS/`, `BACKING_TRACKS/`, `DRUM_MACHINE/`, `CUSTOM_LOOPS/`) lives at `~/ClaudeDrive/simpleStem/`, which the Performer mirrors to `~/.bt-cache/` for offline gig operation.
 
 ## What the portal does
 
@@ -48,8 +48,8 @@ bt-construction-kit portal :3000 → Chrome → XR18 → speakers
 
 1. **Offline-safe by default** — every playback path serves from a local mirror; Drive is only touched in background precache loops.
 2. **Data is content-addressed** — song folder name is the primary key. Renaming a folder breaks references; deleting a folder frees the space.
-3. **Two producers, one consumer** — the file format (m4a, moov-first, brand mp42) is enforced by both the Demucs pipeline and any manual re-stem hand-off through Logic Pro.
-4. **Ingest is slow (Demucs takes 10–25 min per song); playback must be instant.** The whole architecture bends around that asymmetry.
+3. **Two producers, one consumer** — the file format (m4a, moov-first, brand mp42) is enforced by the Logic Pro stemming run and any manual re-stem hand-off through Logic Pro.
+4. **Ingest is slow (fetch, then about 3 minutes of Logic Pro stemming per song, run by hand-over); playback must be instant.** The whole architecture bends around that asymmetry.
 5. **Fail loud on gig-critical paths.** Missing stems, drift between CATALOG.json shape and the live scanner, cache misses — all surface as banners, not silent fallbacks.
 
 ## Where to go next

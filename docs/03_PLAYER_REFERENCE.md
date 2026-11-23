@@ -290,7 +290,7 @@ positions on stage:
   - **+20 / +50** — diagnostic probes, styled as "extreme". *"Boost this
     strip by +20 dB (~10x gain). DIAGNOSTIC — will clip real signal. Use
     to hear faint bleed."* Use them to answer "what's actually in this
-    stem?" — e.g. hearing Demucs leakage buried in the noise floor.
+    stem?" — e.g. hearing stem leakage buried in the noise floor.
 
   All four are one mutually exclusive latch per strip: off → +N → off, and
   selecting any one releases the others. Boost never moves the fader and
@@ -320,3 +320,34 @@ proportionally — strip gain is always `fader × master × boost`.
   in prose, query chatbots, save the result as a manual setlist); the Loop
   Library and Clip Library tabs manage per-instrument loops and ad-hoc
   clips for the sampler.
+
+## Drum kit (2026-11-21)
+
+A song that has Logic Pro 13 kit-piece stems (`kick.m4a`, `snare.m4a`, `hihat.m4a`, `toms.m4a`,
+`cymbals.m4a`, `percussion.m4a` in the song folder, beside the six stems) shows a **DRUM KIT** panel under the six strips. Songs without them
+show nothing new.
+
+- **KIT** — off: the whole drum stem plays, as always. On: the six pieces play in its place, each on
+  its own fader. The choice is remembered.
+- **The Drums strip is the kit's master.** Its fader, M, S and boost scale all six pieces.
+- **Each piece has a strip built like a stem's**, in the order Kick, Snare, Toms, Hi-Hat, Cymbals, Perc: the
+  ring of buttons (L and R are the mains, V D B G P O the six amps; a lit button sends the piece there, and
+  an amp gets the piece's left and right mixed to one signal), a fader with the 100/75/50/10/5 buttons,
+  M and S, and a level fill. A fader rests at 80 %, which is the level the piece has in the drum stem.
+  S solos among the six pieces only.
+- **Spread** puts one piece on each amp round the circle — kick D, snare V, toms G, hi-hat P, cymbals O,
+  percussion B — and every piece on L and R. **Drum amp** puts all six back on D.
+- Output Routing (All Amps, Split, Flip, Swirl) moves the six stems, not the kit pieces.
+- Where the app silences the drum stem — the LOOPER, MPL as the drum track — the pieces are silent
+  too; the LOOPER loops the whole drum stem.
+- If a piece cannot play (still loading, missing), the whole drum stem plays instead, so the drums
+  never drop out. Pieces are cached for gigs with the rest of the song's stems.
+
+Code: `public/kit-drums.js`; the pieces come from `/api/audio/stems/<song>/<name>.m4a`, the route that serves the six stems.
+
+### Logic 13 stems are the song's stems (2026-11-23)
+
+The Logic Pro 13 stems (vocals, drums, bass, guitar, piano, other) replaced the earlier stems in the song
+folder on 2026-11-22. Since 2026-11-23 the six kit pieces and the per-stem MPL files sit in the song folder too;
+there is no `logic13/` folder. The bulk stem cache and the
+cache-on-play both stop when less than 4 GB is free on the Performer (`PRECACHE_MIN_FREE_GB` in `server.js`).

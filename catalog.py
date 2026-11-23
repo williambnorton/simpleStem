@@ -217,56 +217,9 @@ def fill_gaps(base, stem_dir, meta):
     return meta, changed
 
 
-# Stem sets (2026-10-20) — keep in lockstep with server.js
-# logicStemSetFrom / resolveStemSet. Demucs stems sit at the top of the song
-# folder; an optional Logic Pro set sits in logic/. metadata.json
-# `stem_set` picks which one plays; with nothing saved, Logic wins when it
-# exists.
-LOGIC_STEM_SUBDIR = 'logic'
-STEM_SET_NAMES = ('demucs', 'logic')
-SIX_STEM_NAMES = ('vocals', 'drums', 'bass', 'guitar', 'piano', 'other')
-
-
-def pick_logic_stems(stem_dir, files_in_folder):
-    """The logic/ set, only when all six m4a stems are present."""
-    if LOGIC_STEM_SUBDIR not in files_in_folder:
-        return None
-    try:
-        have = set(os.listdir(os.path.join(stem_dir, LOGIC_STEM_SUBDIR)))
-    except OSError:
-        return None
-    if not all(f'{n}.m4a' in have for n in SIX_STEM_NAMES):
-        return None
-    return {n: f'{LOGIC_STEM_SUBDIR}/{n}.m4a' for n in SIX_STEM_NAMES}
-
-
-def resolve_stem_set(demucs, logic, saved):
-    by_set = {'demucs': demucs}
-    if logic:
-        by_set['logic'] = logic
-    chosen = saved if saved in by_set else ('logic' if logic else 'demucs')
-    return by_set[chosen], by_set, list(by_set), chosen
-
-
-def _stemmed_at_iso(stem_dir, stems):
-    """Birth date of the render: mtime of the vocals stem (written once at
-    render time, never touched again — metadata.json's mtime moves on every
-    favorite/singer/automation save so it can't act as a birth date)."""
-    name = stems.get('vocals') or 'metadata.json'
-    try:
-        ts = os.path.getmtime(os.path.join(stem_dir, name))
-        return datetime.fromtimestamp(ts, tz=timezone.utc) \
-            .strftime('%Y-%m-%dT%H:%M:%SZ')
-    except OSError:
-        return None
-
-
 def build_stems_row(base, stem_dir, files_in_folder, meta):
     """Match scanStems output in bt-construction-kit/server.js byte-for-byte."""
     stems = pick_stem_files(files_in_folder)
-    saved_set = meta.get('stem_set') if meta.get('stem_set') in STEM_SET_NAMES else None
-    play_stems, stems_by_set, stem_sets, stem_set = resolve_stem_set(
-        stems, pick_logic_stems(stem_dir, files_in_folder), saved_set)
     loops, raw_loop_count = scan_per_folder_loops(files_in_folder)
     practice_bpm = round(meta['bpm']) if isinstance(meta.get('bpm'), (int, float)) else None
     duration = meta.get('duration_sec') if isinstance(meta.get('duration_sec'), (int, float)) else None
@@ -314,10 +267,7 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # library:"jam"; server.js PUT /api/song/:base/library). 'jam' rows
         # live in the Performer's Jam Tracks tab, not the Song Library.
         'library':            'jam' if meta.get('library') == 'jam' else 'song',
-        'stems': play_stems,
-        'stemsBySet': stems_by_set,
-        'stemSets': stem_sets,
-        'stemSet': stem_set,
+        'stems': stems,
         'cached': False,
         'logicProjectName': find_logicx(files_in_folder),
         'loops': loops,

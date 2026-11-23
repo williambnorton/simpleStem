@@ -152,7 +152,7 @@ meta = {
   "duration_sec": float(d["D"]) if d.get("D") else None,
   "version": "studio",
   "processing": {"download": "local file import (audio_watch.sh)",
-                 "separation": "demucs htdemucs_6s planned"},
+                 "separation": "queued for Logic Pro stemming"},
 }
 json.dump(meta, open(sys.argv[1], "w"), indent=2)
 PY

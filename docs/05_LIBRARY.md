@@ -36,16 +36,11 @@ The options modal for one song, top to bottom:
 - **All metadata** — an expandable table of everything known about the
   song (BPM, key, singer fields, durations, file inventory, source.wav
   size). URLs are clickable.
-- **Re-stem in Logic Pro** — hands the song to the Keyboard Maestro
-  macro "simpleStem", which drives Logic Pro's Stem Splitter as an
-  alternative to the Demucs render. Advanced/optional; the macro takes
-  about 3 minutes. The **🔓 Unlock (macro stuck)** button clears the
-  macro lock if a previous run died mid-flight.
 - **Delete permanently (not reversible)** — removes the song's stems,
   metadata, and cached files. Two clicks (button + confirmation).
 
 ![Action menu](images/library_action_menu.png)
-*SCREENSHOT: the per-song options modal with the Source URL row and Re-stem section visible*
+*SCREENSHOT: the per-song options modal with the Source URL row visible*
 
 ## Search
 

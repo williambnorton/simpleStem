@@ -1,0 +1,268 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Sequencer grooves, measured from the stems",
+ "description": "One 4-bar loop per song, taken from the song files songscribe made from the six stems: the best-graded section that has drums and bass, with its guitar / piano / other sketches (voice left out). Start a song row (its name is the short id) and its tempo token sets the bank tempo. Drums are measured (the grade is how well the row reproduces the hits found in the drum stem); bass and chords are sketches. iran = I Ran (So Far Away) (Video) — A Flock Of Seagulls · dywm = Don't You Want Me (Official Music Video) — The Human League · rule = Everybody Wants To Rule The World — Tears For Fears · ifeel = I Feel Love 1977 (Remastered) — Donna Summer · cars = Cars (Remastered 2009) — Gary Numan · pjesus = Personal Jesus (Official Video) — Depeche Mode · whipit = Whip It — Devo · relax = Relax — Frankie Goes To Hollywood · callme = Blondie - Call me — BlondieMusicOfficial",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "banks of sequencer songs in MPL",
+ "created_at": "2026-11-20T00:00:00.000Z",
+ "bpm": 120,
+ "song": "Sequencer grooves",
+ "main": "0",
+ "slots": [
+  {
+   "name": "iran",
+   "src": "144T,@iranDrums&,@iranBass&,@iranGuitar&,@iranOther&,4Rw",
+   "velocity": 100,
+   "note": "I Ran (So Far Away) (Video) — A Flock Of Seagulls · 144 bpm · key G major · the \"chorus2\" section (drum grade 100%, used 1×) as one 4-bar loop",
+   "key": "0"
+  },
+  {
+   "name": "iranDrums",
+   "src": "m10,4e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+   "velocity": 100,
+   "key": "1"
+  },
+  {
+   "name": "iranBass",
+   "src": "m13,4e+(Gq,5R,D)",
+   "velocity": 100,
+   "key": "2"
+  },
+  {
+   "name": "iranGuitar",
+   "src": "m14,(2F!w,E!,3D!,2C!,G!,Em!)",
+   "velocity": 100,
+   "key": "3"
+  },
+  {
+   "name": "iranOther",
+   "src": "m16,+(2R,2F!,F!w,Em!,3G!,G!w)",
+   "velocity": 100,
+   "key": "4"
+  },
+  {
+   "name": "dywm",
+   "src": "118T,@dywmDrums&,@dywmBass&,@dywmOther&,4Rw",
+   "velocity": 100,
+   "note": "Don't You Want Me (Official Music Video) — The Human League · 118 bpm · key G major · the \"verse\" section (drum grade 90%, used 5×) as one 4-bar loop",
+   "key": "5"
+  },
+  {
+   "name": "dywmDrums",
+   "src": "m10,4s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#)",
+   "velocity": 100,
+   "key": "6"
+  },
+  {
+   "name": "dywmBass",
+   "src": "m13,4s(B,F,Fe,R,Ge,Gq,5R)",
+   "velocity": 100,
+   "key": "7"
+  },
+  {
+   "name": "dywmOther",
+   "src": "m16,2+(F!,2C!,Em!,G!w)",
+   "velocity": 100,
+   "key": "8"
+  },
+  {
+   "name": "rule",
+   "src": "112T,@ruleDrums&,@ruleBass&,@ruleGuitar&,@rulePiano&,4Rw",
+   "velocity": 100,
+   "note": "Everybody Wants To Rule The World — Tears For Fears · 112 bpm · key G minor · the \"verse3\" section (drum grade 91%, used 1×) as one 4-bar loop",
+   "key": "9"
+  },
+  {
+   "name": "ruleDrums",
+   "src": "m10,2(Ds,F#s\\\\,|C,F#|e\\\\\\\\,Ds,F#s\\\\,|C,F#|e\\\\\\\\,Ds,F#s\\\\,Re,Ds,F#s\\\\,|C,F#|e\\\\\\\\,|C,F#|s,F#s\\\\,|C,F#|e\\\\\\\\,|D,F#|s,F#s\\\\,F#e\\\\\\\\,|D,F#|s,F#s\\\\,|C,F#|e\\\\\\\\,Ds,F#s\\\\,|C,F#|e\\\\\\\\)",
+   "velocity": 100,
+   "key": "A"
+  },
+  {
+   "name": "ruleBass",
+   "src": "m13,4(R,Re,D#e\\\\\\\\,R,Re,D#e\\\\\\\\)",
+   "velocity": 100,
+   "key": "B"
+  },
+  {
+   "name": "ruleGuitar",
+   "src": "m14,(4R,A!,Bm!,2D!,2D!w)",
+   "velocity": 100,
+   "key": "C"
+  },
+  {
+   "name": "rulePiano",
+   "src": "m15,2+(G#!w,2D!,2G#m!)",
+   "velocity": 100,
+   "key": "D"
+  },
+  {
+   "name": "ifeel",
+   "src": "126T,@ifeelDrums&,@ifeelBass&,@ifeelGuitar&,@ifeelOther&,4Rw",
+   "velocity": 100,
+   "note": "I Feel Love 1977 (Remastered) — Donna Summer · 126 bpm · key A minor · the \"outro\" section (drum grade 100%, used 1×) as one 4-bar loop",
+   "key": "E"
+  },
+  {
+   "name": "ifeelDrums",
+   "src": "m10,4(4|C,D|)",
+   "velocity": 100,
+   "key": "F"
+  },
+  {
+   "name": "ifeelBass",
+   "src": "m13,2s(C+e,C+q,R,A#+,2C+e,Ae,G#+e,2C+e,R,G,A+e,C+q,2R,G#+e)",
+   "velocity": 100,
+   "key": "G"
+  },
+  {
+   "name": "ifeelGuitar",
+   "src": "m14,4(Gm!,F!,Gm!,F!)",
+   "velocity": 100,
+   "key": "H"
+  },
+  {
+   "name": "ifeelOther",
+   "src": "m16,+(R,4A#!,R,A#!,R,A#!,R,A#!,5R)",
+   "velocity": 100,
+   "key": "I"
+  },
+  {
+   "name": "cars",
+   "src": "129T,@carsDrums&,@carsBass&,@carsGuitar&,@carsOther&,4Rw",
+   "velocity": 100,
+   "note": "Cars (Remastered 2009) — Gary Numan · 129 bpm · key D major · the \"verse\" section (drum grade 78%, used 7×) as one 4-bar loop",
+   "key": "J"
+  },
+  {
+   "name": "carsDrums",
+   "src": "m10,4s(|C,F#|,R,F#,R,D,R,C,R,F#,R,2C,D,R,F#,R)",
+   "velocity": 100,
+   "key": "K"
+  },
+  {
+   "name": "carsBass",
+   "src": "m13,s(D+e,C#+e,Ge,A+,Aq,3R,F#e,G,G+e,R,Be,R,G+e,5R,F#e,Gq,Be,Ge,G+,7R,D+e,C#+e,A#,G,Aq,6R)",
+   "velocity": 100,
+   "key": "L"
+  },
+  {
+   "name": "carsGuitar",
+   "src": "m14,(D!,G!,Am!,Bm!,4R,G!,3R,G!,Dm!,2A!)",
+   "velocity": 100,
+   "key": "M"
+  },
+  {
+   "name": "carsOther",
+   "src": "m16,+(3A!,2Am!,F!,C!,Cm!,G!,3Em!,A!w)",
+   "velocity": 100,
+   "key": "N"
+  },
+  {
+   "name": "pjesus",
+   "src": "129T,@pjesusDrums&,@pjesusBass&,@pjesusGuitar&,4Rw",
+   "velocity": 100,
+   "note": "Personal Jesus (Official Video) — Depeche Mode · 129 bpm · key F# major · the \"bridge\" section (drum grade 94%, used 1×) as one 4-bar loop",
+   "key": "O"
+  },
+  {
+   "name": "pjesusDrums",
+   "src": "m10,4(|C,D|,De,De\\\\\\\\,2D)",
+   "velocity": 100,
+   "key": "P"
+  },
+  {
+   "name": "pjesusBass",
+   "src": "m13,4(F#,2R,Rs,A+s\\\\,Re)",
+   "velocity": 100,
+   "key": "Q"
+  },
+  {
+   "name": "pjesusGuitar",
+   "src": "m14,(F#m!,F#!,F#m!,F#!,F#m!,5F#!,2F#m!,3B!,Bm!)",
+   "velocity": 100,
+   "key": "R"
+  },
+  {
+   "name": "whipit",
+   "src": "157T,@whipitDrums&,@whipitBass&,@whipitGuitar&,4Rw",
+   "velocity": 100,
+   "note": "Whip It — Devo · 157 bpm · key D major · the \"verse\" section (drum grade 80%, used 6×) as one 4-bar loop",
+   "key": "S"
+  },
+  {
+   "name": "whipitDrums",
+   "src": "m10,4s(C,2R,F#,|C,D|,R,2F#,C,2R,F#,|C,D|,R,2F#)",
+   "velocity": 100,
+   "key": "T"
+  },
+  {
+   "name": "whipitBass",
+   "src": "m13,2s(4R,F#,A,Be,D+q,12R,Aq,R,Ge,R)",
+   "velocity": 100,
+   "key": "U"
+  },
+  {
+   "name": "whipitGuitar",
+   "src": "m14,4(D!w)",
+   "velocity": 100,
+   "key": "V"
+  },
+  {
+   "name": "relax",
+   "src": "115T,@relaxDrums&,@relaxBass&,@relaxOther&,4Rw",
+   "velocity": 100,
+   "note": "Relax — Frankie Goes To Hollywood · 115 bpm · key E major · the \"verse2\" section (drum grade 99%, used 1×) as one 4-bar loop",
+   "key": "W"
+  },
+  {
+   "name": "relaxDrums",
+   "src": "m10,4e(|C,F#|,F#,|C,F#|,F#,|C,F#|,F#,|C,F#|,F#)",
+   "velocity": 100,
+   "key": "X"
+  },
+  {
+   "name": "relaxBass",
+   "src": "m13,4(3R,E)",
+   "velocity": 100,
+   "key": "Y"
+  },
+  {
+   "name": "relaxOther",
+   "src": "m16,4+(G!w)",
+   "velocity": 100,
+   "key": "Z"
+  },
+  {
+   "name": "callme",
+   "src": "144T,@callmeDrums&,@callmeBass&,@callmeGuitar&,@callmeOther&,4Rw",
+   "velocity": 100,
+   "note": "Blondie - Call me — BlondieMusicOfficial · 144 bpm · key D minor · the \"chorus3\" section (drum grade 83%, used 1×) as one 4-bar loop"
+  },
+  {
+   "name": "callmeDrums",
+   "src": "m10,2(|D,F#|e,F#e\\\\\\\\,|D,F#|e,F#e\\\\\\\\,|D,F#|e,F#e\\\\\\\\,De,De\\\\\\\\,|D,F|s,F#s\\\\,F#e\\\\\\\\,|D,F#|s,F#s\\\\,F#e\\\\\\\\,Fe,F#e\\\\\\\\,|C,D|e,F#e\\\\\\\\)",
+   "velocity": 100
+  },
+  {
+   "name": "callmeBass",
+   "src": "m13,+(3R,F,6R,Rs,Es\\\\,Re,Rs,Es\\\\,Re,Rs,Es\\\\,Re,Ee,D#e\\\\\\\\,2B-)",
+   "velocity": 100
+  },
+  {
+   "name": "callmeGuitar",
+   "src": "m14,2(E!w,2E!,Em!,E!)",
+   "velocity": 100
+  },
+  {
+   "name": "callmeOther",
+   "src": "m16,+(E!w,2Em!,10R)",
+   "velocity": 100
+  }
+ ]
+}

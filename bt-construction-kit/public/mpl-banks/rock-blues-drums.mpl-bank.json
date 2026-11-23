@@ -1,0 +1,201 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Rock & Blues Drum Patterns",
+  "description": "The most common rock and blues drum grooves, one per row (1-9, A-E). Every groove row holds three one-bar patterns in the 10-bar form A-B-A-B-C-A-B-A-B-B: A the main groove, B a variation, C a fill, with a crash launched on the bar after the fill. Rows F-P are shared layers (hats, ride, kick, crash) the grooves launch with @name&. Row 0 tours all fourteen. Written to show MPL features: calls, counted calls, launches, nested loops, bare repeats, rests, durations, feel marks (sticky and per note), exclusive # groups. Drums are GM notes on ch 10 with absolute octave digits so the default-octave setting cannot move them.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "a MPL bank of the most common rock and blues drum patterns, 3 patterns per slot in the form A-B-A-B-C-A-B-A-B-B, as an exercise to demonstrate the features of MPL",
+  "created_at": "2026-11-14T00:00:00.000Z",
+  "bpm": 130,
+  "key": "",
+  "song": "Bm Blues",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "drumTour",
+      "src": "m11,#,@rock8,@fourFloor,@halfTime,@drive8,@ballad16,@tomGroove,@boDiddley,@train,@chiShuffle,@texShuffle,@slowBlues,|,@halfShuffle,@rhumba,@boogie",
+      "velocity": 81,
+      "note": "MAIN: every groove once, 10 bars each (140 bars). MPL: @name CALLS inline a slot and return; # makes this exclusive, so starting any single groove stops the tour; the | after slowBlues sets the feel back to dead straight."
+    },
+    {
+      "key": "1",
+      "name": "rock8",
+      "src": "#,m10,p0,@h8&,2((C,D,Ce,Ce,D),(Ce,Ce,D,Re,Ce,D)),(C,D,4Ds,2D+s,2As),@crash&,2((C,D,Ce,Ce,D),(Ce,Ce,D,Re,Ce,D)),(Ce,Ce,D,Re,Ce,D)",
+      "velocity": 99,
+      "note": "ROCK straight 8ths. A kick 1, 3, &3 · B kick 1, &1, &3 · C snare-to-tom fill. MPL: the form 2((A),(B)),(C),@crash&,2((A),(B)),(B) = A-B-A-B-C-A-B-A-B-B; N( ) loops nest; 4D2s = bare note repeat."
+    },
+    {
+      "key": "2",
+      "name": "fourFloor",
+      "src": "#,m10,p0,@backHat&,2((4C),(C,C,C,Ce,Ce)),(C,C,2D+e,2Ae),@crash&,2((4C),(C,C,C,Ce,Ce)),(C,C,C,Ce,Ce)",
+      "velocity": 71,
+      "note": "ROCK four on the floor: this row is only the kick; snare on 2 and 4 with open-hat offbeats is the launched layer backHat. MPL: @name& LAUNCHES a part as its own voice — the only way two drums sound at once."
+    },
+    {
+      "key": "3",
+      "name": "halfTime",
+      "src": "#,m10,p0,@h8&,2((C,R,D,R),(C,Re,Ce,D,Re,Ce)),(C,R,De,De,2D+s,2As),@crash&,2((C,R,D,R),(C,Re,Ce,D,Re,Ce)),(C,Re,Ce,D,Re,Ce)",
+      "velocity": 96,
+      "note": "ROCK half-time: snare only on 3. MPL: R rests with durations (Rq, Re)."
+    },
+    {
+      "key": "4",
+      "name": "drive8",
+      "src": "#,m10,p0,@h8&,2((Ce,Ce,D,Ce,Ce,D),(Ce,Ce,De,Ce,Ce,Ce,D)),(Ce,Ce,D,8Ds),@crash&,2((Ce,Ce,D,Ce,Ce,D),(Ce,Ce,De,Ce,Ce,Ce,D)),(Ce,Ce,De,Ce,Ce,Ce,D)",
+      "velocity": 61,
+      "note": "ROCK driving 8ths: kick on 1 & and 3 &. MPL: e = eighth, q = quarter, s = sixteenth."
+    },
+    {
+      "key": "5",
+      "name": "ballad16",
+      "src": "#,m10,p0,@h16&,2((C,De,Rs,Cs,Ce,Ce,D),(Ce,Rs,Cs,D,Re,Ce,D)),(C,D,2D+e,Ae,Fe),@crash&,2((C,De,Rs,Cs,Ce,Ce,D),(Ce,Rs,Cs,D,Re,Ce,D)),(Ce,Rs,Cs,D,Re,Ce,D)",
+      "velocity": 47,
+      "note": "ROCK ballad with 16th hats and a syncopated kick. MPL: the hat layer is 10@h16bar — a counted CALL of a one-bar subroutine."
+    },
+    {
+      "key": "6",
+      "name": "tomGroove",
+      "src": "#,m10,p0,@kick4&,2((Fe,Fe,De,Fe,Fe,Fe,De,Ge),(Fe,Fe,De,Ge,Fe,Ge,De,Ae)),(4D+s,4As,4Gs,4Fs),@crash&,2((Fe,Fe,De,Fe,Fe,Fe,De,Ge),(Fe,Fe,De,Ge,Fe,Ge,De,Ae)),(Fe,Fe,De,Ge,Fe,Ge,De,Ae)",
+      "velocity": 45,
+      "note": "ROCK floor-tom groove, snare on 2 and 4, kick on every beat from the launched kick4."
+    },
+    {
+      "key": "7",
+      "name": "boDiddley",
+      "src": "#,m10,p0,@kick4&,2((Fe,Rs,Fe,Rs,F,Fe,F),(De,Rs,De,Rs,G,Ge,F)),(Fe,Rs,Fe,Rs,F,4Ds,De),@crash&,2((Fe,Rs,Fe,Rs,F,Fe,F),(De,Rs,De,Rs,G,Ge,F)),(De,Rs,De,Rs,G,Ge,F)",
+      "velocity": 111,
+      "note": "ROCK Bo Diddley beat (3-2 clave on the toms: 1, a-of-1, &-of-2, &-of-3, 4). MPL: Rs sixteenth rests place hits between the eighths."
+    },
+    {
+      "key": "8",
+      "name": "train",
+      "src": "#,m10,p0,@pedal24&,2((2(Cs,3Ds,4Ds)),(Cs,3Ds,4Ds,Cs,3Ds,De,De)),(4(Cs,Ds,De)),@crash&,2((2(Cs,3Ds,4Ds)),(Cs,3Ds,4Ds,Cs,3Ds,De,De)),(Cs,3Ds,4Ds,Cs,3Ds,De,De)",
+      "velocity": 116,
+      "note": "ROCK / rockabilly train beat: snare 16ths, kick on 1 and 3, pedal hat on 2 and 4 from pedal24. MPL: a loop inside a pattern inside the form — three levels of nesting."
+    },
+    {
+      "key": "9",
+      "name": "chiShuffle",
+      "src": "#,m10,p0,@hShuf&,2((C,D,C,D),(C,D,Ce,Ce\\\\\\\\,D)),(C,D,Ds,Ds\\\\,De\\\\\\\\,D+s,As\\\\,Fe\\\\\\\\),@crash&,2((C,D,C,D),(C,D,Ce,Ce\\\\\\\\,D)),(C,D,Ce,Ce\\\\\\\\,D)",
+      "velocity": 52,
+      "note": "BLUES Chicago shuffle. MPL: FEEL marks — a backslash lays a note 1/24 beat behind; four on an off-beat eighth land it on the last triplet. The fill is real triplets: s, s + 2 marks, e + 4 marks."
+    },
+    {
+      "key": "A",
+      "name": "texShuffle",
+      "src": "#,m10,p0,@kick4&,@rideShuf&,2((4(De,De\\\\\\\\)),(3(De,De\\\\\\\\),Ds,Ds\\\\,De\\\\\\\\)),(2(Ds,Ds\\\\,De\\\\\\\\),D+s,D+s\\\\,Ae\\\\\\\\,Fs,Fs\\\\,Fe\\\\\\\\),@crash&,2((4(De,De\\\\\\\\)),(3(De,De\\\\\\\\),Ds,Ds\\\\,De\\\\\\\\)),(3(De,De\\\\\\\\),Ds,Ds\\\\,De\\\\\\\\)",
+      "velocity": 100,
+      "note": "BLUES Texas (double) shuffle: the snare plays the shuffle itself. MPL: TWO launches (@kick4&@rideShuf&) run beside this row — three voices from one key."
+    },
+    {
+      "key": "B",
+      "name": "slowBlues",
+      "src": "#,m10,p0,\\,@h12&,2((C,D,Cs,Rs,Ce\\\\\\\\,D),(C,D,C,Ds,Rs,De\\\\\\\\)),(C,Ds,Ds\\\\,De\\\\\\\\,D+s,D+s\\\\,Ae\\\\\\\\,Fs,Fs\\\\,Fe\\\\\\\\),@crash&,2((C,D,Cs,Rs,Ce\\\\\\\\,D),(C,D,C,Ds,Rs,De\\\\\\\\)),(C,D,C,Ds,Rs,De\\\\\\\\)",
+      "velocity": 100,
+      "note": "BLUES slow 12/8: three hat triplets per beat from h12, kick pickup on the last triplet of 3. MPL: the lone backslash near the start is a STICKY feel mark — every note of this row sits 1 tick behind the hats (a laid-back pocket); notes with their own marks override it."
+    },
+    {
+      "key": "C",
+      "name": "halfShuffle",
+      "src": "#,m10,p0,@hShuf&,2((C,R,D,Re,Ce\\\\\\\\),(Ce,Ce\\\\\\\\,R,D,R)),(C,R,Ds,Ds\\\\,De\\\\\\\\,As,As\\\\,Fe\\\\\\\\),@crash&,2((C,R,D,Re,Ce\\\\\\\\),(Ce,Ce\\\\\\\\,R,D,R)),(Ce,Ce\\\\\\\\,R,D,R)",
+      "velocity": 100,
+      "note": "BLUES-ROCK half-time shuffle: shuffled hats, snare on 3."
+    },
+    {
+      "key": "D",
+      "name": "rhumba",
+      "src": "#,m10,p0,@h8&,2((C,C#e,Ce,Ae,Ae,C),(C,C#e,Ce,Ae,Fe,Ce,De)),(C,C#e,Ce,2D+s,2As,2Gs,2Fs),@crash&,2((C,C#e,Ce,Ae,Ae,C),(C,C#e,Ce,Ae,Fe,Ce,De)),(C,C#e,Ce,Ae,Fe,Ce,De)",
+      "velocity": 100,
+      "note": "BLUES rhumba: kick on 1, &-of-2 and 4, side stick on 2, tom answer on 3. Straight 8ths."
+    },
+    {
+      "key": "E",
+      "name": "boogie",
+      "src": "#,m10,p0,@rideShuf&,2((C,D,C,De,Ce\\\\\\\\),(C,De,De\\\\\\\\,C,D)),(C,D,2(De,De\\\\\\\\)),@crash&,2((C,D,C,De,Ce\\\\\\\\),(C,De,De\\\\\\\\,C,D)),(C,De,De\\\\\\\\,C,D)",
+      "velocity": 100,
+      "note": "BLUES boogie / jump two-beat under a shuffled ride."
+    },
+    {
+      "key": "F",
+      "name": "h8bar",
+      "src": "m10,8F#e",
+      "velocity": 80,
+      "note": "LAYER subroutine: one bar of closed-hat 8ths. MPL: 8F#2e = bare repeat count on one note."
+    },
+    {
+      "key": "G",
+      "name": "h8",
+      "src": "10@h8bar",
+      "velocity": 69,
+      "note": "LAYER: ten bars of 8th hats. MPL: N@name = counted call (subroutine of a subroutine)."
+    },
+    {
+      "key": "H",
+      "name": "h16bar",
+      "src": "m10,16F#s",
+      "velocity": 100,
+      "note": "LAYER subroutine: one bar of 16th hats."
+    },
+    {
+      "key": "I",
+      "name": "h16",
+      "src": "10@h16bar",
+      "velocity": 100,
+      "note": "LAYER: ten bars of 16th hats."
+    },
+    {
+      "key": "J",
+      "name": "hShuf",
+      "src": "m10,40(F#e,F#e\\\\\\\\)",
+      "velocity": 100,
+      "note": "LAYER: ten bars of shuffled hats — each off-beat eighth carries 4 feel marks, so it lands on the last triplet."
+    },
+    {
+      "key": "K",
+      "name": "h12",
+      "src": "m10,40(F#s,F#s\\\\,F#e\\\\\\\\)",
+      "velocity": 100,
+      "note": "LAYER: ten bars of hat triplets (12/8). MPL: per-note feel marks, 2 and 4 ticks behind."
+    },
+    {
+      "key": "L",
+      "name": "rideShuf",
+      "src": "m10,40(D#+e,D#+e\\\\\\\\)",
+      "velocity": 92,
+      "note": "LAYER: ten bars of shuffled ride."
+    },
+    {
+      "key": "M",
+      "name": "kick4",
+      "src": "m10,40C",
+      "velocity": 85,
+      "note": "LAYER: kick on every beat for ten bars."
+    },
+    {
+      "key": "N",
+      "name": "backHat",
+      "src": "m10,20(Re,A#e,De,A#e)",
+      "velocity": 85,
+      "note": "LAYER: snare on 2 and 4 with open-hat offbeats, ten bars."
+    },
+    {
+      "key": "O",
+      "name": "pedal24",
+      "src": "m10,20(R,G#)",
+      "velocity": 100,
+      "note": "LAYER: pedal hi-hat on 2 and 4, ten bars."
+    },
+    {
+      "key": "P",
+      "name": "crash",
+      "src": "m10,C#+w",
+      "velocity": 100,
+      "note": "ONE-SHOT: crash cymbal, launched (@crash&) on the bar after each fill."
+    }
+  ]
+}

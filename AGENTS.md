@@ -4,7 +4,7 @@
 
 ## What this project is
 
-A band backing-track system. YouTube URLs → 6-stem Demucs separations served through a web portal that mixes them client-side. Live band uses it at rehearsals and gigs.
+A band backing-track system. YouTube URLs → 6-stem Logic Pro separations served through a web portal that mixes them client-side. Live band uses it at rehearsals and gigs.
 
 - **Front-end**: Express server + vanilla JS at `bt-construction-kit/` (no build step, no framework)
 - **Ingest pipeline**: bash + Python scripts at the root (`webloc_watch.sh`, `stem.sh`, `metadata.py`, `catalog.py`, `mpb_sync.py`, `queue_runner.sh`)

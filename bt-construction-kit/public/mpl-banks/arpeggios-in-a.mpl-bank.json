@@ -1,0 +1,91 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Arpeggios in A",
+ "description": "Twelve arpeggio variations in the key of A on the piano channel (m15, p0), every row one bar of 4/4 (the last row is four bars: A - D - E - A) so any two rows layer in time. 0-2 A minor triad up / down / up-and-back, 3-4 A major triad, 5-6 A minor 7th and A major 7th, 7 Alberti pattern, 8 sixteenth-note run, 9 dotted-eighth + sixteenth shuffle arpeggio, A tresillo 3+3+1+1 with dotted quarters, B I-IV-V-I in A major. Notes sit between E3 (MIDI 52) and E5 (76). Try two rows together: AmUp + the drums from another bank, or change the channel with the m# at the start of a row.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "Fill a MPL Bank full of variations of Arpeggios in the key of A",
+ "created_at": "2026-11-19T00:00:00.000Z",
+ "bpm": 110,
+ "key": "A",
+ "song": "Arpeggios in A",
+ "main": "0",
+ "slots": [
+  {
+   "key": "0",
+   "name": "arpAmUp",
+   "src": "m15,p0,e(A+,C++,E++,A++,A+,C++,E++,A++)",
+   "velocity": 100
+  },
+  {
+   "key": "1",
+   "name": "arpAmDown",
+   "src": "m15,p0,e(A++,E++,C++,A+,A++,E++,C++,A+)",
+   "velocity": 100
+  },
+  {
+   "key": "2",
+   "name": "arpAmUpDown",
+   "src": "m15,p0,e(A+,C++,E++,A++,E++,C++,A+,E+)",
+   "velocity": 100
+  },
+  {
+   "key": "3",
+   "name": "arpAMajUp",
+   "src": "m15,p0,e(A+,C#++,E++,A++,A+,C#++,E++,A++)",
+   "velocity": 100
+  },
+  {
+   "key": "4",
+   "name": "arpAMajUpDown",
+   "src": "m15,p0,e(A+,C#++,E++,A++,E++,C#++,A+,E+)",
+   "velocity": 100
+  },
+  {
+   "key": "5",
+   "name": "arpAm7",
+   "src": "m15,p0,e(A+,C++,E++,G++,A++,G++,E++,C++)",
+   "velocity": 100
+  },
+  {
+   "key": "6",
+   "name": "arpAmaj7",
+   "src": "m15,p0,e(A+,C#++,E++,G#++,A++,G#++,E++,C#++)",
+   "velocity": 100
+  },
+  {
+   "key": "7",
+   "name": "arpAlberti",
+   "src": "m15,p0,e(A+,E++,C++,E++,A+,E++,C++,E++)",
+   "velocity": 100
+  },
+  {
+   "key": "8",
+   "name": "arpSixteenths",
+   "src": "m15,p0,s(A+,C++,E++,A++,E++,C++,A+,C++,E++,A++,E++,C++,A+,C++,E++,A++)",
+   "velocity": 100
+  },
+  {
+   "key": "9",
+   "name": "arpDotted",
+   "src": "m15,p0,A+e.,C++s,E++e.,A++s,E++e.,C++s,A+e.,E+s",
+   "velocity": 100
+  },
+  {
+   "key": "A",
+   "name": "arpTresillo",
+   "src": "m15,p0,A+q.,C++q.,E++e,A++e",
+   "velocity": 100
+  },
+  {
+   "key": "B",
+   "name": "arpProgIVV",
+   "src": "m15,p0,e(A+,C#++,E++,A++,E++,C#++,A+,C#++),e(D++,F#++,A++,D+++,A++,F#++,D++,F#++),e(E++,G#++,B++,E+++,B++,G#++,E++,G#++),e(A+,C#++,E++,A++,E++,C#++,A+,E+)",
+   "velocity": 100
+  }
+ ]
+}

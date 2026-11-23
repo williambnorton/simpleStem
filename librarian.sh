@@ -2,7 +2,7 @@
 # librarian.sh — the Mac mini's switch (the Librarian role).
 #
 # The mini is always-on, mirrors the full library to its external disk, and does
-# the light, I/O-bound work. It does NOT run Demucs (that's the laptop —
+# the light, I/O-bound work. It does NOT stem (that's the laptop —
 # performer.sh). See ARCHITECTURE.md.
 #
 # Long-running services:

@@ -6,7 +6,7 @@
 # Why: avoid the trip to the simpleStem portal just to paste a URL. Right-click
 # a YouTube link → Services → "Send to simpleStem" → done. End result is
 # bit-identical to a portal paste — same INCOMING_WEBLOC drop, same downstream
-# watcher → queue → demucs path.
+# watcher → queue → Logic stemming path.
 #
 # Non-obvious gotchas baked into this installer:
 #   * Info.plist must NOT carry NSRequiredContext. A previous attempt set

@@ -30,7 +30,7 @@ flowchart TB
     subgraph LAPTOP["MacBook Pro · PERFORMER · 36 GB · travels to gigs"]
       direction TB
       LC["~/simpleStem-code/<br/><i>git clone</i>"]
-      QR["queue_runner.sh<br/>+ stem.sh · Demucs"]
+      QR["queue_runner.sh<br/>+ stem.sh → Logic queue"]
       PORTAL["bt-construction-kit<br/>portal :3000"]
       LC -.runs.-> QR
       LC -.runs.-> PORTAL
@@ -77,7 +77,7 @@ Two things to internalize from this diagram:
    disk. This is intentional: a previous setup had `.git` inside Drive
    and Drive's sync would race the git index and corrupt the repo.
 2. **The two machines have non-interchangeable roles.** The Librarian
-   never runs Demucs; the Performer never runs the ingest watcher. They
+   never stems; the Performer never runs the ingest watcher. They
    share only the Drive data folder.
 
 The rest of this doc unpacks each part.
@@ -88,13 +88,13 @@ The rest of this doc unpacks each part.
 
 | Machine | Role | RAM | Uptime | Drive mode | Runs | Never runs |
 |---|---|---|---|---|---|---|
-| **Mac mini** | **Librarian** | 8 GB | 24/7 | mirrors Drive to external SSD | `librarian.sh` → `webloc_watch.sh` + daily `catalog.py` | Demucs |
-| **MacBook Pro** | **Performer** | 36 GB | travels to gigs | streams Drive, pins active jobs | `performer.sh` → `queue_runner.sh` (Demucs) + portal | heavy ingest |
+| **Mac mini** | **Librarian** | 8 GB | 24/7 | mirrors Drive to external SSD | `librarian.sh` → `webloc_watch.sh` + daily `catalog.py` | stemming |
+| **MacBook Pro** | **Performer** | 36 GB | travels to gigs | streams Drive, pins active jobs | `performer.sh` → `queue_runner.sh` (ingest → Logic stemming queue) + portal | heavy ingest |
 
 The split was reversed in May 2026 (commit `327ff83`). The original
-arrangement had the mini running Demucs while the laptop served the
-portal; Demucs ran the mini out of memory ("out of application memory"
-crash). Moving Demucs to the 36 GB laptop fixed that, and let the mini
+arrangement had the mini doing the stem separation while the laptop served
+the portal; separation ran the mini out of memory ("out of application
+memory" crash). Moving it to the 36 GB laptop fixed that, and let the mini
 specialize in the lightweight 24/7 ingest work it was always better at.
 
 **One implication:** the audio that backs every song crosses the network
@@ -177,7 +177,7 @@ flowchart TD
 
     DL["yt-dlp 48 kHz<br/>→ source.wav (cached)"]
     MP["metadata.py<br/>→ metadata.json"]
-    DM["demucs htdemucs_6s<br/>→ 6 stems"]
+    DM["Logic Pro Stem Splitter<br/>→ 6 stems + 6 kit pieces"]
     MX["ffmpeg amix<br/>→ m4a minus-mixes"]
     LO["loop_detect.py<br/>→ jam loops"]
 
@@ -219,12 +219,13 @@ nodes live in Drive and are visible to both.)
    deleted). For album chapters, the whole album video is downloaded
    once and sliced per chapter.
 3. **Metadata** — `metadata.py` writes `metadata.json` next to
-   `source.wav` *before* Demucs runs, so BPM/key/release-date capture
-   isn't lost if separation later fails. Idempotent.
+   `source.wav`, so BPM/key/release-date are captured at ingest.
+   Idempotent.
 4. **Render** — `queue_runner.sh` (on the Performer) picks up the job,
-   sees `source.wav` already cached, and runs Demucs `htdemucs_6s` to
-   produce `vocals.wav drums.wav bass.wav other.wav piano.wav
-   guitar.wav`.
+   sees `source.wav` already cached, writes `<slug>_SOURCE.m4a` and an
+   entry in `LOGIC_QUEUE/`. The Logic Pro Stem Splitter run over that
+   queue (started from the Performer's "Logic stemming queue" panel)
+   produces the six stems and six kit pieces as m4a.
 5. **Minus-mixes** — `ffmpeg amix` phase-inverts the unwanted stems
    and sums them onto the source, producing `<slug>_-V.m4a`,
    `<slug>_-V-G.m4a`, `<slug>_-V-G-B.m4a`, and drums-only
@@ -252,9 +253,9 @@ bandwidth.)
 
 Since 2026-11-01 nothing is kept as WAV (CONTRACTS F-1). When `stem.sh`
 finishes, the stereo original is in `STEMS/<slug>/<slug>_SOURCE.m4a`
-(F-9) and `source.wav` is deleted. A re-stem rebuilds the working
-`source.wav` from that m4a instead of downloading again; the Logic re-stem
-macro and the catalog's BPM/key fill read the m4a. Older songs were
+(F-9) and `source.wav` is deleted. A re-ingest rebuilds the working
+`source.wav` from that m4a instead of downloading again; the Logic stemming
+run and the catalog's BPM/key fill read the m4a. Older songs were
 converted by `backfill_source_m4a.sh` (YouTube fetches paced 1–3 min apart).
 
 The benefit: at a gig, the laptop tether never hits YouTube. All audio
@@ -450,7 +451,7 @@ Producer: `metadata.py`. Consumer: `bt-construction-kit/server.js`.
   "chords_search_url": "https://www.ultimate-guitar.com/search.php?...",
   "processing": {
     "download":   { "sample_rate_hz": 48000, ... },
-    "separation": { "model": "htdemucs_6s", ... },
+    "separation": { "tool": "Logic Pro 13 Stem Splitter", "see": "logic13.json" },
     "mixdowns":   [ "-V", "-V-G", "-V-G-B", "DO" ]
   },
   "playlist_title":    "(setlist members only)",
@@ -502,7 +503,7 @@ already edits it. The flow:
    ambiguity (multiple songs sharing a title) the artist string is fuzzy-
    compared. Below a 0.88 ratio threshold we don't claim a match.
 4. For each matched row, overwrite the seven MPB fields in that song's
-   `metadata.json`. Other fields (bpm, key, sectionCandidates, automation)
+   `metadata.json`. Other fields (bpm, key, automation)
    are not touched.
 5. For each gig tab in the config (`May Day 26`, `EDR 4/24`, `MV 3/31`,
    `NK3 March 28`), split songs into setlists at Seq=N00 boundaries, name
@@ -605,6 +606,17 @@ opens the MIDI port via `mido` and sends the message. The sidecar
 matches port names by case-insensitive substring (so "helix" hits
 "Helix Native"/"HX Stomp"/etc.).
 
+**Send-ahead (2026-11-11).** The sidecar serves requests on threads, so a
+slow request (chain test up to 2 s, XR18 OSC queries) no longer holds up
+`/send`. The MIDI console's sequencer posts every message ~180 ms early
+with `at` (epoch ms) and `tag` (slot + generation); the sidecar's scheduler
+thread sends it on time. `POST /api/midi/cancel {tag, flush}` drops a tag's
+pending note_ons and sends its pending note_offs now (`tag:"*"` = all, used
+by KILL); `GET /api/midi/timing` reports how late scheduled messages left
+in the last 10 s — the console's ⏱ pill shows it with the page's own
+wake-up and round-trip times. With an older sidecar (no `/timing`) the
+console falls back to sending on time.
+
 Device → port mapping the portal sends today:
 
 | Device | Port-name substring | Typical connection |
@@ -615,48 +627,6 @@ Device → port mapping the portal sends today:
 
 Sidecar lifecycle is managed by `performer.sh` (`SERVICES="runner midi server"`).
 Install deps with `pipx inject demucs mido python-rtmidi`.
-
-### Section auto-detection (multi-stem novelty)
-
-`section_detect.py` analyzes a freshly-rendered song folder and writes a
-read-only `sectionCandidates: [t1, t2, ...]` array into its `metadata.json`.
-The array holds timestamps (in seconds) where multiple stems change
-energy simultaneously — typically the boundaries between intro / verse /
-chorus / bridge / outro.
-
-The algorithm is a basic multi-stem novelty function:
-
-```
-for each stem in {vocals, drums, bass, guitar, piano, other}:
-    envelope[stem] = RMS(stem audio, hop=100ms)
-    deriv[stem]    = |Δenvelope[stem]|
-
-combined[t] = sum over stems of deriv[stem][t]
-peaks       = local maxima of combined[t] above 35% of max, ≥6s spacing
-```
-
-The script costs ~3 s of CPU per song. It runs:
-- Automatically at the end of `stem.sh` (new renders get candidates).
-- Optionally as a one-time backfill via `backfill_section_detect.sh --go`.
-
-**Storage:** `STEMS/<song>/metadata.json` gains a `sectionCandidates`
-array. The field is read-only — the portal never writes it.
-
-**Server:** `GET /api/song/:base/automation` returns
-`{automation, sections, sectionCandidates, countIn}`. The candidates
-ride alongside the user-editable section markers.
-
-**Client:** `snapSectionToCandidate(t)` searches for a candidate within
-±2 s of the user's target and snaps to it; falls back to the BPM-grid
-snap (`snapTimeToBeat`) if none is in range. Used by 1-9 key placement
-and section-divider drag.
-
-**Visual:** the lane renders a thin vertical hint tick at every
-candidate timestamp (`.automation-section-hint` CSS), so the user can
-see where the algorithm thinks boundaries are before placing their own.
-
-Install dep: `pipx inject demucs librosa numpy` (numpy comes with
-librosa; explicit for clarity).
 
 ---
 
@@ -669,13 +639,11 @@ librosa; explicit for clarity).
 | `webloc_watch.sh` | fswatch loop on `INCOMING_WEBLOC/`. Classifies single video vs playlist vs chaptered album; writes job JSON to `STEM_QUEUE/` and `source.wav` to `STEMS/<slug>/`. Librarian only. |
 | `metadata.py` | Per-song BPM (librosa beat tracking), key (Krumhansl-Schmuckler), version detection (live/studio/cover/karaoke from YouTube title), lyric/chord search URLs, clip windows for album chapters. Idempotent. (MusicBrainz release-date lookup retired 2026-06-28.) |
 | `queue_runner.sh` | Consumes `STEM_QUEUE/`. One at a time; holds `STEM_QUEUE/.runner.lock`. For album chapters: downloads the full video, slices the clip window, then stems. Publishes current job + phase to `STEM_QUEUE/.current` for the portal. Moves finished → `_done/`, failed → `_failed/`. Performer only. |
-| `stem.sh` | The heavy worker. Source acquisition → 48 kHz `source.wav` → Demucs `htdemucs_6s` → ffmpeg m4a mixdowns → loop detection. Idempotent at every step. |
+| `stem.sh` | Source acquisition → 48 kHz `source.wav` → `metadata.json` → `<slug>_SOURCE.m4a` → `LOGIC_QUEUE/<slug>.json`. Idempotent at every step. The stems come from the Logic Pro Stem Splitter run over that queue. |
 | `loop_detect.py` | Beat-synced agglomerative segmentation of `source.wav`; tiles the most-repeated sections of each rhythm stem to song length at bar boundaries. |
-| `post_process.py` | Optional LSQ gain match between stems and source. Not auto-invoked; run by hand for stem rebalancing. |
 | `catalog.py` | Daily Librarian pass: rebuild `CATALOG.json` from `STEMS/`; compute missing BPM/key locally (librosa); flag (don't overwrite) drift between dirs and `metadata.json` files. (M4A/ scan + MusicBrainz fill-gaps both retired 2026-06-27/28.) |
-| `section_detect.py` | Multi-stem novelty function: detects section boundaries in each song and writes `sectionCandidates` into `metadata.json`. Called at end of `stem.sh`; backfilled across the library via `backfill_section_detect.sh`. |
 | `mpb_sync.py` | Mitchell Park Band Google Sheet sync. Pulls the master songlist + per-gig tabs daily; writes singer/band/drum-pattern/readiness fields into matched `STEMS/<slug>/metadata.json` and produces `GIGS/<gig>.json` files. Replaces the retired `mpbbatch.bash` path. |
-| `backfill_section_detect.sh`, `backfill_m4a_stems.sh`, `migrate_per_folder_loops.sh` | One-shot Librarian maintenance scripts: backfill section candidates, encode m4a siblings for the WAV-only legacy library, and consolidate legacy per-folder loops into the canonical flat `LOOPS/` layout. All idempotent; default dry-run with `--go` to commit. |
+| `backfill_m4a_stems.sh`, `migrate_per_folder_loops.sh` | One-shot Librarian maintenance scripts: encode m4a siblings for the WAV-only legacy library, and consolidate legacy per-folder loops into the canonical flat `LOOPS/` layout. All idempotent; default dry-run with `--go` to commit. |
 
 ### Control scripts
 
@@ -684,8 +652,7 @@ librosa; explicit for clarity).
 | `librarian.sh` | `start \| stop \| restart \| status \| logs \| catalog`. Runs `webloc_watch.sh` and the daily `catalog.py`. Librarian only. |
 | `performer.sh` | `start \| stop \| restart \| status \| logs`. Runs `queue_runner.sh` and the portal. Performer only. |
 | `studio.sh` | Legacy single-machine control (pre-split). Still works for "ingest + render + serve on one Mac"; prefer the split scripts. |
-| `rebuild.sh` | Staged full rebuild (dry-run by default; `--go` to execute). |
-| `install.sh` | One-shot prereq installer (Homebrew → pipx → demucs + injects). |
+| `install.sh` | One-shot prereq installer (Homebrew → pipx → the Python environment with librosa, soundfile, mido; it is still installed under the name `demucs`). |
 
 ### Portal (Performer only)
 
@@ -693,7 +660,7 @@ librosa; explicit for clarity).
 |---|---|
 | `bt-construction-kit/server.js` | Express 5 server on `:3000`. Endpoints below. |
 | `bt-construction-kit/public/index.html` | Single-page UI shell. |
-| `bt-construction-kit/public/app.js` | Library rendering, player wiring, stem mixer, setlist planner, song-options modal, KBM trigger. |
+| `bt-construction-kit/public/app.js` | Library rendering, player wiring, stem mixer, setlist planner, song-options modal. |
 | `bt-construction-kit/public/styles.css` | Light-theme high-contrast styling for stage use. |
 | `bt-construction-kit/public/visualizer.js` | Waveform / spectrum display. |
 
@@ -714,86 +681,14 @@ librosa; explicit for clarity).
 | `GET` | `/api/version`, `POST /api/update` | Self-update: file-mtime versioning, restart on drift. |
 | `GET` | `/api/song/:base/metadata` | Per-song metadata + artifact summary. |
 | `POST` | `/api/song/:base/refetch` | Wipe artifacts; re-ingest from a new URL. |
-| `POST` | `/api/song/:base/logic-restem` | Trigger the optional Logic Pro re-stem macro (see below). |
-| `PUT` | `/api/song/:base/stem-set` | Pick which stem set plays: `{ "set": "demucs" \| "logic" }`. Saved as `metadata.json` `stem_set`. |
-| `GET` | `/api/audio/stems/:song/logic/:file` | Stream one Logic-set stem; same cache. |
 | `GET` | `/api/audio/song-source/:folder` | The song's stereo original for the SOURCE pill: `STEMS/<folder>/<folder>_SOURCE.m4a`, else `AUDIO_SOURCES/<folder>.m4a`; cached on first play in `~/.bt-cache/SONG_SOURCES/`. |
 | `GET` | `/api/prune/candidates` | Prune page (`/prune.html`): duplicate-version groups with a suggested keeper, live tracks, songs with ≤ 1 play, and the gigs/setlists that use each. |
 | `POST` | `/api/prune/apply` | Merge each duplicate group into its keeper (plays, favorite, tags, lyrics; same-video timed data; setlist/gig entries re-pointed), then hard-delete the rest. Needs `confirm: <count>`. |
-| `POST` | `/api/logic-restem/unlock` | Manual escape hatch for a stuck Logic re-stem lock. |
+| `GET` | `/api/mpl/library` | MPL library: summaries of every set in `MPL_LIBRARY/`, newest first. |
+| `GET` | `/api/mpl/library/:id` | One MPL set (full JSON). |
+| `POST` | `/api/mpl/library` | Save an MPL set (new id from name + time) or update one (`id` given); stamps times, host and user. |
+| `DELETE` | `/api/mpl/library/:id` | Move an MPL set to `MPL_LIBRARY/_trash/`. |
 | `DELETE` | `/api/song/:base` | Two-click deletion of a song's stems + m4as + metadata. |
-
----
-
-## Optional: Logic Pro re-stem via Keyboard Maestro
-
-A per-song escape hatch for when Demucs's separation isn't good enough.
-The portal's `⋯` menu has a "Re-stem in Logic" button that hands the
-song off to a Keyboard Maestro macro on the Performer, which drives
-Logic Pro's Stem Splitter and bounces six m4a stems into the song's
-`logic/` subfolder (`STEMS/<slug>/logic/vocals.m4a` …), beside the
-Demucs stems rather than over them. The demucs path is unchanged; Logic
-is purely an opt-in second set per song. When a song has both sets the
-Performer's player shows a **D / L** pill to switch between them; the
-pick is saved per song (`metadata.json` `stem_set`), and with no pick
-saved the Logic set plays. See CONTRACTS.md F-8.
-
-### Trigger flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as Portal (browser)
-    participant SRV as server.js
-    participant KBM as KBM Engine
-    participant LOGIC as Logic Pro
-    participant FS as STEMS/<slug>/logic/
-
-    UI->>SRV: POST /api/song/:base/logic-restem
-    SRV->>KBM: osascript (atomic check + set 17 vars + Running=base)
-    KBM-->>SRV: "" (lock acquired)
-    SRV->>KBM: spawn(open kmtrigger://macro=simpleStem) — detached
-    SRV-->>UI: 200 OK (returns in <1s)
-    KBM->>LOGIC: open source.wav, run Stem Splitter
-    LOGIC->>KBM: 6 stems available
-    KBM->>FS: bounce vocals, drums, bass, guitar, piano, other (.m4a)
-    KBM->>KBM: set simpleStem_Running = "" (release lock)
-    Note over UI,FS: Macro takes ~3 min; UI is responsive throughout
-```
-
-### Why it's non-blocking
-
-The earlier version used `execFileSync('osascript', ['-e',
-'tell app "Keyboard Maestro Engine" to do script "simpleStem"'])`.
-`do script` blocks until the macro finishes; AppleScript's default
-per-event timeout is 120s; the macro takes ~180s. Result was a
-guaranteed `-1712 AppleEvent timed out`. The current shape uses
-KBM's `kmtrigger://` URL scheme via detached `spawn('open', ...)`,
-which returns in ~50ms regardless of macro length.
-
-### The KBM-side lock
-
-`simpleStem_Running` is a KBM Engine variable used as the only source
-of truth for "Logic is busy." Server sets it atomically along with the
-song's variables; macro clears it at exit. Concurrent triggers see
-`Running != ""` and get back 409 Conflict.
-
-Escape hatches when the macro fails to clear the lock: `POST
-/api/logic-restem/unlock` or restart KBM Engine (resets all engine
-variables).
-
-### Variables passed to the macro
-
-All prefixed `simpleStem_`. Paths: `SourceDir`, `SourceWav`, `StemDir`
-(the song's `logic/` folder), the six `VocalsFile` … `OtherFile` bounce
-targets inside it, and the legacy `M4ADir` (same folder), `M4ABase`. Identity: `Title`, `Artist`, `Version`, `SourceUrl`.
-Musical metadata: `BPM`, `Key`, `KeySignature`, `Duration`, `Bars`
-(ceil of BPM × Duration / 240, 4/4 assumed), `ClipStartSec`,
-`ClipEndSec`. References: `LyricsUrl`, `ChordsUrl`. Lock: `Running`.
-
-The macro **must** clear `simpleStem_Running` at exit (success and
-error paths). Full contract is documented in the comment block above
-the endpoint in `server.js`.
 
 ---
 
@@ -817,7 +712,7 @@ On the **Performer** (laptop):
 ```
 cd ~/simpleStem-code
 (cd bt-construction-kit && npm install)   # once
-./performer.sh start      # queue runner (Demucs) + portal
+./performer.sh start      # queue runner (ingest) + portal
 ./performer.sh status     # queue depth + current render + phase
 ./performer.sh logs runner
 ./performer.sh restart    # picks up new git pulls
@@ -830,11 +725,11 @@ clear the runner lock.
 ### Render phases (visible in `status` and the portal)
 
 ```
-downloading source → analyzing (BPM/key) → separating stems · demucs → mixing m4a
+downloading source → analyzing (BPM/key) → encoding SOURCE m4a → queued for Logic Pro stemming
 ```
 
-Demucs is ~10–25 min/song on CPU. A new request just queues behind the
-current song.
+The song plays once the Logic stemming queue has been run (about 3 minutes
+per song).
 
 ### Drive sync friction
 
@@ -864,15 +759,15 @@ If username/mount differs from this fallback, set the env var.
 
 ## Constraints and gotchas
 
-- **Demucs RAM:** several GB. The 8 GB mini crashes; the 36 GB laptop
-  is fine. This is why the role split exists.
+- **Stemming:** Logic Pro on the 36 GB laptop only. The 8 GB mini never
+  stems. This is why the role split exists.
 - **One `queue_runner.sh` at a time:** it holds
   `STEM_QUEUE/.runner.lock`. Run it on the Performer only.
 - **Drive streaming latency:** first play of an uncached file on the
   Performer streams from Drive and can take a few seconds; the
   `~/.bt-cache` mirror covers subsequent plays.
-- **4/4 assumed throughout:** `loop_detect.py` and the Logic re-stem
-  `Bars` computation both assume four beats per bar. Songs in 3/4 or
+- **4/4 assumed throughout:** `loop_detect.py` and the beat grid
+  both assume four beats per bar. Songs in 3/4 or
   6/8 will have wrong bar counts (audio is still correct).
 - **YouTube TOS:** downloading is technically against TOS. This is for
   personal band-practice use.
@@ -923,9 +818,8 @@ bandwidth:**
   propagates updates without requiring a `git pull`. See the
   "CATALOG.json — the shared index" section above.
 
-- **Time-signature detection in `metadata.py`** so the `Bars`
-  computation that feeds the Logic re-stem macro can drop the
-  hard-coded 4/4 assumption.
+- **Time-signature detection in `metadata.py`** so the bar
+  computation can drop the hard-coded 4/4 assumption.
 
 - **Per-song "open in Logic" macros beyond re-stem** — transpose,
   time-stretch to a practice tempo, click-track generation. Each is

@@ -34,11 +34,10 @@ rsync -a --files-from="$TRACKED" "$DIR/" "$DRIVE/"
 for f in webloc_watch.sh stem.sh queue_runner.sh studio.sh \
          performer.sh librarian.sh webloc_drop.sh \
          install_chrome_quick_action.sh sync_to_drive.sh \
-         catalog.py metadata.py mpb_sync.py post_process.py \
-         section_detect.py cleanup_stems_wav.py \
-         backfill_section_detect.sh \
+         catalog.py metadata.py mpb_sync.py \
+         cleanup_stems_wav.py \
          build_drum_machine.py loop_regenerate.py make_stems_offline.sh \
-         rename_loops_with_key.py rebuild.sh install.sh; do
+         rename_loops_with_key.py install.sh; do
   if [[ -e "$DRIVE/$f" ]]; then chmod +x "$DRIVE/$f"; fi
 done
 

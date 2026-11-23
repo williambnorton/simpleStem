@@ -1,0 +1,1550 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 2,
+ "name": "Don't You Want Me (Official Music Video) — The Human League · kit pieces",
+ "description": "This song as MPL with the drums split into kit pieces. The song, section and phrase rows and the voice, bass, guitar, piano and other rows are the ones in the song's own MPL file (songscribe.py); each phrase's single drum row is replaced by a row per piece — Kick (C), Snare (D), Hat (F#, closed), Toms (F, B, D+), Cym (C#+ crash, or D#+ ride where it plays more than once a beat) and Perc (E++, low conga) — all on m10. Each piece is measured from its own Logic Pro 13 kit-piece stem (logic13/): hits found in that stem, placed on the song's sixteenth-note grid, and written as the phrase's most common 1, 2 or 4 bar loop. A piece with no hits in a phrase has no row there. Grades (A 90%+, B 80-90, C 70-80, D 60-70, F below) say how closely a row reproduces the hits found in its stem everywhere the phrase is played. \"text\" is the same rows as name=MPL; lines.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "kitscribe.py"
+ },
+ "prompt": "Add the MPL for each of the Logic 13 kit-piece tracks.",
+ "created_at": "2026-11-21T03:35:03.000Z",
+ "bpm": 118,
+ "key": "G major",
+ "song": "Don't You Want Me (Official Music Video)",
+ "artist": "The Human League",
+ "main": "0",
+ "analysis": {
+  "bpm": 117.5,
+  "meta_bpm": 117.2,
+  "tempo_note": [],
+  "beats_per_bar": 4,
+  "steps_per_beat": 4,
+  "bars": 101,
+  "beats": 404,
+  "grid_fit": 0.988,
+  "first_bar_t": 0.06,
+  "duration": 206.2,
+  "section_source": "sectionCandidates",
+  "beat_t": [0.058, 0.569, 1.08, 1.591, 2.101, 2.612, 3.123, 3.622, 4.133, 4.644, 5.155, 5.666, 6.177, 6.687, 7.198, 7.709, 8.22, 8.731, 9.242, 9.741, 10.252, 10.762, 11.273, 11.784, 12.295, 12.806, 13.317, 13.827, 14.338, 14.838, 15.348, 15.859, 16.37, 16.881, 17.392, 17.903, 18.413, 18.924, 19.435, 19.946, 20.445, 20.956, 21.467, 21.978, 22.489, 22.999, 23.51, 24.021, 24.52, 25.031, 25.542, 26.053, 26.564, 27.074, 27.585, 28.096, 28.607, 29.118, 29.629, 30.128, 30.639, 31.15, 31.66, 32.171, 32.682, 33.193, 33.704, 34.203, 34.714, 35.225, 35.736, 36.246, 36.757, 37.268, 37.779, 38.29, 38.801, 39.3, 39.811, 40.321, 40.832, 41.343, 41.854, 42.365, 42.876, 43.386, 43.897, 44.408, 44.919, 45.418, 45.929, 46.44, 46.951, 47.462, 47.972, 48.483, 48.994, 49.493, 50.004, 50.515, 51.026, 51.537, 52.048, 52.558, 53.069, 53.58, 54.091, 54.59, 55.101, 55.612, 56.123, 56.633, 57.144, 57.655, 58.166, 58.665, 59.176, 59.687, 60.198, 60.709, 61.219, 61.73, 62.241, 62.74, 63.251, 63.762, 64.273, 64.784, 65.295, 65.805, 66.316, 66.827, 67.326, 67.837, 68.348, 68.859, 69.37, 69.88, 70.391, 70.902, 71.413, 71.912, 72.423, 72.934, 73.445, 73.956, 74.466, 74.977, 75.488, 75.999, 76.51, 77.009, 77.52, 78.031, 78.541, 79.052, 79.563, 80.074, 80.573, 81.084, 81.595, 82.106, 82.617, 83.127, 83.638, 84.149, 84.66, 85.171, 85.67, 86.181, 86.692, 87.203, 87.713, 88.224, 88.735, 89.246, 89.745, 90.256, 90.767, 91.278, 91.788, 92.299, 92.81, 93.321, 93.82, 94.331, 94.842, 95.353, 95.864, 96.374, 96.885, 97.396, 97.907, 98.418, 98.929, 99.428, 99.939, 100.45, 100.96, 101.471, 101.982, 102.493, 102.992, 103.503, 104.014, 104.525, 105.035, 105.546, 106.046, 106.556, 107.067, 107.578, 108.089, 108.6, 109.111, 109.621, 110.132, 110.631, 111.142, 111.653, 112.164, 112.675, 113.186, 113.697, 114.207, 114.707, 115.217, 115.728, 116.239, 116.75, 117.261, 117.772, 118.282, 118.793, 119.293, 119.803, 120.314, 120.825, 121.336, 121.847, 122.358, 122.857, 123.368, 123.878, 124.389, 124.9, 125.411, 125.922, 126.433, 126.943, 127.454, 127.954, 128.464, 128.975, 129.486, 129.997, 130.496, 131.007, 131.518, 132.029, 132.54, 133.05, 133.561, 134.072, 134.583, 135.082, 135.593, 136.104, 136.615, 137.125, 137.636, 138.147, 138.646, 139.157, 139.668, 140.179, 140.69, 141.201, 141.711, 142.222, 142.733, 143.244, 143.743, 144.254, 144.765, 145.276, 145.786, 146.297, 146.808, 147.307, 147.818, 148.329, 148.84, 149.351, 149.862, 150.372, 150.883, 151.382, 151.893, 152.404, 152.915, 153.426, 153.937, 154.448, 154.958, 155.458, 155.968, 156.479, 156.99, 157.501, 158.012, 158.523, 159.033, 159.544, 160.044, 160.554, 161.065, 161.576, 162.087, 162.598, 163.109, 163.608, 164.119, 164.629, 165.14, 165.651, 166.162, 166.673, 167.172, 167.683, 168.194, 168.705, 169.215, 169.726, 170.237, 170.736, 171.247, 171.758, 172.269, 172.78, 173.291, 173.79, 174.301, 174.811, 175.322, 175.833, 176.344, 176.855, 177.354, 177.865, 178.376, 178.887, 179.397, 179.908, 180.419, 180.918, 181.429, 181.94, 182.451, 182.962, 183.472, 183.983, 184.494, 185.005, 185.504, 186.015, 186.526, 187.037, 187.548, 188.058, 188.569, 189.068, 189.579, 190.09, 190.601, 191.112, 191.623, 192.134, 192.644, 193.155, 193.666, 194.177, 194.688, 195.199, 195.698, 196.209, 196.719, 197.23, 197.741, 198.252, 198.763, 199.262, 199.784, 200.284, 200.795, 201.305, 201.816, 202.327, 202.838, 203.349, 203.848, 204.359, 204.87, 205.38, 205.891],
+  "midi": {
+   "lead_beats": 0,
+   "offset_s": 0.058
+  }
+ },
+ "stems": {
+  "vocals": {
+   "channel": 11,
+   "program": 53,
+   "program_name": "Voice Oohs",
+   "suggested": true
+  },
+  "drums": {
+   "channel": 10,
+   "program": 0,
+   "program_name": "Standard kit",
+   "suggested": true
+  },
+  "bass": {
+   "channel": 13,
+   "program": 33,
+   "program_name": "Electric Bass (finger)",
+   "suggested": true
+  },
+  "guitar": {
+   "channel": 14,
+   "program": 29,
+   "program_name": "Overdriven Guitar",
+   "suggested": true
+  },
+  "piano": {
+   "channel": 15,
+   "program": 0,
+   "program_name": "Acoustic Grand Piano",
+   "suggested": true
+  },
+  "other": {
+   "channel": 16,
+   "program": 48,
+   "program_name": "String Ensemble 1",
+   "suggested": true
+  }
+ },
+ "sections": [
+  {
+   "section": 1,
+   "row": "intro",
+   "kind": "Intro",
+   "confidence": "high",
+   "phrases": [
+    "introA",
+    "introB"
+   ],
+   "t0": 0.1,
+   "t1": 12.3,
+   "bars": 6,
+   "extra_beats": 0,
+   "beats": 24,
+   "grade": {
+    "pct": 98,
+    "hits": 107,
+    "matched": 105,
+    "extra": 3,
+    "missed": 2,
+    "kick": 94,
+    "snare": 92,
+    "hat": 99,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 2,
+   "row": "verse",
+   "kind": "Verse",
+   "confidence": "low",
+   "phrases": [
+    "introA",
+    "verseA"
+   ],
+   "t0": 12.3,
+   "t1": 28.6,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 93,
+    "hits": 132,
+    "matched": 128,
+    "extra": 16,
+    "missed": 4,
+    "kick": 96,
+    "snare": 91,
+    "hat": 92,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 3,
+   "row": "verse",
+   "kind": "Verse",
+   "confidence": "low",
+   "phrases": [
+    "introA",
+    "verseA"
+   ],
+   "t0": 28.6,
+   "t1": 44.9,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 87,
+    "hits": 133,
+    "matched": 121,
+    "extra": 23,
+    "missed": 12,
+    "kick": 91,
+    "snare": 82,
+    "hat": 88,
+    "crash": 0,
+    "letter": "B"
+   }
+  },
+  {
+   "section": 4,
+   "row": "verse2",
+   "kind": "Verse",
+   "confidence": "medium",
+   "phrases": [
+    "verseA",
+    "verse2A"
+   ],
+   "t0": 44.9,
+   "t1": 55.1,
+   "bars": 5,
+   "extra_beats": 0,
+   "beats": 20,
+   "grade": {
+    "pct": 90,
+    "hits": 86,
+    "matched": 79,
+    "extra": 11,
+    "missed": 7,
+    "kick": 93,
+    "snare": 80,
+    "hat": 91,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 5,
+   "row": "chorus",
+   "kind": "Chorus",
+   "confidence": "medium",
+   "phrases": [
+    "chorusA",
+    "chorusA"
+   ],
+   "t0": 55.1,
+   "t1": 71.4,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 90,
+    "hits": 120,
+    "matched": 111,
+    "extra": 17,
+    "missed": 9,
+    "kick": 83,
+    "snare": 97,
+    "hat": 90,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 6,
+   "row": "chorus2",
+   "kind": "Chorus",
+   "confidence": "medium",
+   "phrases": [
+    "chorusA"
+   ],
+   "t0": 71.4,
+   "t1": 79.6,
+   "bars": 4,
+   "extra_beats": 0,
+   "beats": 16,
+   "grade": {
+    "pct": 70,
+    "hits": 67,
+    "matched": 46,
+    "extra": 18,
+    "missed": 21,
+    "kick": 50,
+    "snare": 78,
+    "hat": 76,
+    "crash": 0,
+    "letter": "C"
+   }
+  },
+  {
+   "section": 7,
+   "row": "verse",
+   "kind": "Verse",
+   "confidence": "low",
+   "phrases": [
+    "introA",
+    "verseA"
+   ],
+   "t0": 79.6,
+   "t1": 95.9,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 89,
+    "hits": 139,
+    "matched": 126,
+    "extra": 18,
+    "missed": 13,
+    "kick": 81,
+    "snare": 86,
+    "hat": 92,
+    "crash": 0,
+    "letter": "B"
+   }
+  },
+  {
+   "section": 8,
+   "row": "verse",
+   "kind": "Verse",
+   "confidence": "low",
+   "phrases": [
+    "introA",
+    "verseA"
+   ],
+   "t0": 95.9,
+   "t1": 112.2,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 92,
+    "hits": 135,
+    "matched": 128,
+    "extra": 16,
+    "missed": 7,
+    "kick": 88,
+    "snare": 86,
+    "hat": 93,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 9,
+   "row": "verse3",
+   "kind": "Verse",
+   "confidence": "medium",
+   "phrases": [
+    "chorusA",
+    "verse3A"
+   ],
+   "t0": 112.2,
+   "t1": 124.4,
+   "bars": 6,
+   "extra_beats": 0,
+   "beats": 24,
+   "grade": {
+    "pct": 86,
+    "hits": 97,
+    "matched": 85,
+    "extra": 15,
+    "missed": 12,
+    "kick": 90,
+    "snare": 82,
+    "hat": 86,
+    "letter": "B"
+   }
+  },
+  {
+   "section": 10,
+   "row": "chorus",
+   "kind": "Chorus",
+   "confidence": "medium",
+   "phrases": [
+    "chorusA",
+    "chorusA"
+   ],
+   "t0": 124.4,
+   "t1": 140.7,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 91,
+    "hits": 134,
+    "matched": 119,
+    "extra": 9,
+    "missed": 15,
+    "kick": 88,
+    "snare": 94,
+    "hat": 91,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 11,
+   "row": "chorus",
+   "kind": "Chorus",
+   "confidence": "medium",
+   "phrases": [
+    "chorusA",
+    "chorusA"
+   ],
+   "t0": 140.7,
+   "t1": 157.0,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 74,
+    "hits": 126,
+    "matched": 94,
+    "extra": 34,
+    "missed": 32,
+    "kick": 59,
+    "snare": 81,
+    "hat": 77,
+    "letter": "C"
+   }
+  },
+  {
+   "section": 12,
+   "row": "interlude",
+   "kind": "Interlude",
+   "confidence": "medium",
+   "phrases": [
+    "verseA",
+    "interludeA"
+   ],
+   "t0": 157.0,
+   "t1": 167.2,
+   "bars": 5,
+   "extra_beats": 0,
+   "beats": 20,
+   "grade": {
+    "pct": 92,
+    "hits": 82,
+    "matched": 78,
+    "extra": 9,
+    "missed": 4,
+    "kick": 97,
+    "snare": 92,
+    "hat": 92,
+    "crash": 0,
+    "letter": "A"
+   }
+  },
+  {
+   "section": 13,
+   "row": "verse",
+   "kind": "Verse",
+   "confidence": "low",
+   "phrases": [
+    "introA",
+    "verseA"
+   ],
+   "t0": 167.2,
+   "t1": 183.5,
+   "bars": 8,
+   "extra_beats": 0,
+   "beats": 32,
+   "grade": {
+    "pct": 89,
+    "hits": 140,
+    "matched": 127,
+    "extra": 17,
+    "missed": 13,
+    "kick": 86,
+    "snare": 76,
+    "hat": 93,
+    "letter": "B"
+   }
+  },
+  {
+   "section": 14,
+   "row": "verse4",
+   "kind": "Verse",
+   "confidence": "medium",
+   "phrases": [
+    "introA",
+    "verseA",
+    "verse4A"
+   ],
+   "t0": 183.5,
+   "t1": 205.9,
+   "bars": 11,
+   "extra_beats": 0,
+   "beats": 44,
+   "grade": {
+    "pct": 89,
+    "hits": 160,
+    "matched": 149,
+    "extra": 24,
+    "missed": 11,
+    "kick": 91,
+    "snare": 86,
+    "hat": 90,
+    "crash": 0,
+    "letter": "B"
+   }
+  }
+ ],
+ "grade": {
+  "pct": 91,
+  "hits": 1686,
+  "matched": 1589,
+  "extra": 229,
+  "missed": 97,
+  "letter": "A"
+ },
+ "kit": {
+  "stems": "logic13",
+  "grid_shift_ms": -0.0,
+  "percussion_note": "E++",
+  "pieces": {
+   "kick": {
+    "onsets": 523,
+    "on_grid": 523,
+    "grade": {
+     "pct": 95,
+     "hits": 521,
+     "matched": 488,
+     "extra": 14,
+     "missed": 33,
+     "letter": "A"
+    }
+   },
+   "snare": {
+    "onsets": 252,
+    "on_grid": 252,
+    "grade": {
+     "pct": 90,
+     "hits": 252,
+     "matched": 220,
+     "extra": 18,
+     "missed": 32,
+     "letter": "A"
+    }
+   },
+   "hihat": {
+    "onsets": 886,
+    "on_grid": 886,
+    "grade": {
+     "pct": 90,
+     "hits": 886,
+     "matched": 880,
+     "extra": 197,
+     "missed": 6,
+     "letter": "A"
+    }
+   },
+   "toms": {
+    "onsets": 28,
+    "on_grid": 28,
+    "grade": {
+     "pct": 7,
+     "hits": 27,
+     "matched": 1,
+     "extra": 0,
+     "missed": 26,
+     "letter": "F"
+    }
+   },
+   "cymbals": {
+    "onsets": 0,
+    "on_grid": 0,
+    "grade": null
+   },
+   "percussion": {
+    "onsets": 0,
+    "on_grid": 0,
+    "grade": null
+   }
+  }
+ },
+ "slots": [
+  {
+   "name": "Don_t_You_Want_Me_Official_Music_Video",
+   "src": "@intro,2@verse,@verse2,@chorus,@chorus2,2@verse,@verse3,2@chorus,@interlude,@verse,@verse4",
+   "velocity": 100,
+   "role": "song",
+   "grade": {
+    "pct": 91,
+    "hits": 1686,
+    "matched": 1589,
+    "extra": 229,
+    "missed": 97,
+    "letter": "A"
+   },
+   "note": "Don't You Want Me (Official Music Video) · drums as kit pieces from the Logic 13 stems · grade A 91% · 1589 of 1686 hits matched, 229 extra",
+   "auto_name": true,
+   "key": "0"
+  },
+  {
+   "name": "intro",
+   "src": "@introA,@introB",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Intro",
+   "beats": 24,
+   "uses": 1,
+   "note": "Intro · 6 bars · played 1 time, first at 0:00",
+   "auto_name": true,
+   "key": "1"
+  },
+  {
+   "name": "introA",
+   "src": "@introAKick&,@introASnare&,@introAHat&,@introABass&,@introAOther&,4Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 16,
+   "uses": 7,
+   "note": "A phrase of 16 beats · its parts start together · used 7 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": "2"
+  },
+  {
+   "name": "introAKick",
+   "src": "m10,4s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "introA",
+   "grade": {
+    "pct": 100,
+    "hits": 140,
+    "matched": 140,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of introA, measured from the Logic 13 kick stem · grade A 100% · 140 of 140 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "3"
+  },
+  {
+   "name": "introASnare",
+   "src": "m10,4(R,D,R,D)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "introA",
+   "grade": {
+    "pct": 91,
+    "hits": 67,
+    "matched": 56,
+    "extra": 0,
+    "missed": 11,
+    "letter": "A"
+   },
+   "note": "Snare of introA, measured from the Logic 13 snare stem · grade A 91% · 56 of 67 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "4"
+  },
+  {
+   "name": "introAHat",
+   "src": "m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "introA",
+   "grade": {
+    "pct": 93,
+    "hits": 267,
+    "matched": 267,
+    "extra": 41,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Closed hi-hat of introA, measured from the Logic 13 hihat stem · grade A 93% · 267 of 267 hits matched, 41 extra",
+   "auto_name": true,
+   "key": "5"
+  },
+  {
+   "name": "introABass",
+   "src": "m13,s(32R,Aq,Ae,R,E,Ge,Aq,2R,Ae,Ee,Ge,C+q,6R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "introA",
+   "note": "Bass of introA, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "6"
+  },
+  {
+   "name": "introAOther",
+   "src": "m16,+(C!w,3C!,R,Am!w,F!w)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "introA",
+   "note": "Other of introA, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "7"
+  },
+  {
+   "name": "introB",
+   "src": "@introBKick&,@introBSnare&,@introBHat&,@introBBass&,@introBOther&,2Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 8,
+   "uses": 1,
+   "note": "A phrase of 8 beats · its parts start together · used 1 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": "8"
+  },
+  {
+   "name": "introBKick",
+   "src": "m10,2s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "introB",
+   "grade": {
+    "pct": 100,
+    "hits": 10,
+    "matched": 10,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of introB, measured from the Logic 13 kick stem · grade A 100% · 10 of 10 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "9"
+  },
+  {
+   "name": "introBSnare",
+   "src": "m10,2(R,D,R,D)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "introB",
+   "grade": {
+    "pct": 100,
+    "hits": 4,
+    "matched": 4,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Snare of introB, measured from the Logic 13 snare stem · grade A 100% · 4 of 4 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "A"
+  },
+  {
+   "name": "introBHat",
+   "src": "m10,2s(R,3F#,R,2F#,2R,3F#,R,3F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "introB",
+   "grade": {
+    "pct": 100,
+    "hits": 22,
+    "matched": 22,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Closed hi-hat of introB, measured from the Logic 13 hihat stem · grade A 100% · 22 of 22 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "B"
+  },
+  {
+   "name": "introBBass",
+   "src": "m13,2(Aw)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "introB",
+   "note": "Bass of introB, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "C"
+  },
+  {
+   "name": "introBOther",
+   "src": "m16,+(Am!w,Am!,3Em!)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "introB",
+   "note": "Other of introB, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "D"
+  },
+  {
+   "name": "verse",
+   "src": "@introA,@verseA",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Verse",
+   "beats": 32,
+   "uses": 5,
+   "note": "Verse (a guess) · 8 bars · played 5 times, first at 0:12",
+   "auto_name": true,
+   "key": "E"
+  },
+  {
+   "name": "verseA",
+   "src": "@verseAKick&,@verseASnare&,@verseAHat&,@verseABass&,@verseAVoice&,@verseAOther&,4Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 16,
+   "uses": 8,
+   "note": "A phrase of 16 beats · its parts start together · used 8 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": "F"
+  },
+  {
+   "name": "verseAKick",
+   "src": "m10,4s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "verseA",
+   "grade": {
+    "pct": 100,
+    "hits": 160,
+    "matched": 160,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of verseA, measured from the Logic 13 kick stem · grade A 100% · 160 of 160 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "G"
+  },
+  {
+   "name": "verseASnare",
+   "src": "m10,4s(4R,D,7R,2D,2R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "verseA",
+   "grade": {
+    "pct": 89,
+    "hits": 89,
+    "matched": 82,
+    "extra": 14,
+    "missed": 7,
+    "letter": "B"
+   },
+   "note": "Snare of verseA, measured from the Logic 13 snare stem · grade B 89% · 82 of 89 hits matched, 14 extra",
+   "auto_name": true,
+   "key": "H"
+  },
+  {
+   "name": "verseAHat",
+   "src": "m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "verseA",
+   "grade": {
+    "pct": 87,
+    "hits": 270,
+    "matched": 270,
+    "extra": 82,
+    "missed": 0,
+    "letter": "B"
+   },
+   "note": "Closed hi-hat of verseA, measured from the Logic 13 hihat stem · grade B 87% · 270 of 270 hits matched, 82 extra",
+   "auto_name": true,
+   "key": "I"
+  },
+  {
+   "name": "verseABass",
+   "src": "m13,4s(B,F,Fe,R,Ge,Gq,5R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "verseA",
+   "note": "Bass of verseA, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "J"
+  },
+  {
+   "name": "verseAVoice",
+   "src": "m11,s++(C#e,R,A#-,Ce,R,A#-,Ce,A#-,R,Ce,A-e,Ee,F#,F,E+,E,Dq,Ee,10R,G#-,A-,Ce,A-e,2R,B-,G-e,R,A-e,R,A#-,8R,A-,D#+)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "vocals",
+   "channel": 11,
+   "phrase": "verseA",
+   "note": "Voice of verseA, followed one note at a time from the vocals stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "K"
+  },
+  {
+   "name": "verseAOther",
+   "src": "m16,2+(F!,2C!,Em!,G!w)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "verseA",
+   "note": "Other of verseA, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "L"
+  },
+  {
+   "name": "verse2",
+   "src": "@verseA,@verse2A",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Verse",
+   "beats": 20,
+   "uses": 1,
+   "note": "Verse · 5 bars · played 1 time, first at 0:44",
+   "auto_name": true,
+   "key": "M"
+  },
+  {
+   "name": "verse2A",
+   "src": "@verse2AKick&,@verse2ASnare&,@verse2AHat&,@verse2ABass&,@verse2AVoice&,@verse2AOther&,Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 4,
+   "uses": 1,
+   "note": "A phrase of 4 beats · its parts start together · used 1 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": "N"
+  },
+  {
+   "name": "verse2AKick",
+   "src": "m10,s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "verse2A",
+   "grade": {
+    "pct": 100,
+    "hits": 5,
+    "matched": 5,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of verse2A, measured from the Logic 13 kick stem · grade A 100% · 5 of 5 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "O"
+  },
+  {
+   "name": "verse2ASnare",
+   "src": "m10,(R,D,R,D)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "verse2A",
+   "grade": {
+    "pct": 100,
+    "hits": 2,
+    "matched": 2,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Snare of verse2A, measured from the Logic 13 snare stem · grade A 100% · 2 of 2 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "P"
+  },
+  {
+   "name": "verse2AHat",
+   "src": "m10,s(R,3F#,R,2F#,2R,3F#,R,F#,R,F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "verse2A",
+   "grade": {
+    "pct": 100,
+    "hits": 10,
+    "matched": 10,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Closed hi-hat of verse2A, measured from the Logic 13 hihat stem · grade A 100% · 10 of 10 hits matched, 0 extra",
+   "auto_name": true,
+   "key": "Q"
+  },
+  {
+   "name": "verse2ABass",
+   "src": "m13,s(Ae,Aq,R,Aq,5R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "verse2A",
+   "note": "Bass of verse2A, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "R"
+  },
+  {
+   "name": "verse2AVoice",
+   "src": "m11,s++(A-e,10R,A-e,R,G-)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "vocals",
+   "channel": 11,
+   "phrase": "verse2A",
+   "note": "Voice of verse2A, followed one note at a time from the vocals stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "S"
+  },
+  {
+   "name": "verse2AOther",
+   "src": "m16,+(3Am!,C!)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "verse2A",
+   "note": "Other of verse2A, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "T"
+  },
+  {
+   "name": "chorus",
+   "src": "2@chorusA",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Chorus",
+   "beats": 32,
+   "uses": 3,
+   "note": "Chorus · 8 bars · played 3 times, first at 0:55",
+   "auto_name": true,
+   "key": "U"
+  },
+  {
+   "name": "chorusA",
+   "src": "@chorusAKick&,@chorusASnare&,@chorusAHat&,@chorusABass&,@chorusAVoice&,@chorusAOther&,4Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 16,
+   "uses": 8,
+   "note": "A phrase of 16 beats · its parts start together · used 8 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": "V"
+  },
+  {
+   "name": "chorusAKick",
+   "src": "m10,4s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "chorusA",
+   "grade": {
+    "pct": 88,
+    "hits": 183,
+    "matched": 151,
+    "extra": 9,
+    "missed": 32,
+    "letter": "B"
+   },
+   "note": "Kick of chorusA, measured from the Logic 13 kick stem · grade B 88% · 151 of 183 hits matched, 9 extra",
+   "auto_name": true,
+   "key": "W"
+  },
+  {
+   "name": "chorusASnare",
+   "src": "m10,4(R,D,R,D)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "chorusA",
+   "grade": {
+    "pct": 89,
+    "hits": 76,
+    "matched": 62,
+    "extra": 2,
+    "missed": 14,
+    "letter": "B"
+   },
+   "note": "Snare of chorusA, measured from the Logic 13 snare stem · grade B 89% · 62 of 76 hits matched, 2 extra",
+   "auto_name": true,
+   "key": "X"
+  },
+  {
+   "name": "chorusAHat",
+   "src": "m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "chorusA",
+   "grade": {
+    "pct": 88,
+    "hits": 288,
+    "matched": 282,
+    "extra": 70,
+    "missed": 6,
+    "letter": "B"
+   },
+   "note": "Closed hi-hat of chorusA, measured from the Logic 13 hihat stem · grade B 88% · 282 of 288 hits matched, 70 extra",
+   "auto_name": true,
+   "key": "Y"
+  },
+  {
+   "name": "chorusABass",
+   "src": "m13,s(E+,E,Ee,R,A#,E,Be,Ee,5R,2Fe,C+,B,F,C+,F+,Fe,5R,D+e,D+q,R,A,Ge,4R,E+,G+,D+,A,Ae,A,Ae,Aq,5R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "chorusA",
+   "note": "Bass of chorusA, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": "Z"
+  },
+  {
+   "name": "chorusAVoice",
+   "src": "m11,s++(A-e,G-,E-e,9R,C,E-,A-,G-,G#-,B-,2A-e,R,G#-q,3R,A-e,G#-,R,A#-,B-e,2R,B-,Ce,R,B-e,R,A-e,R,A#-,8R,A#-,A-,R,G#-)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "vocals",
+   "channel": 11,
+   "phrase": "chorusA",
+   "note": "Voice of chorusA, followed one note at a time from the vocals stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "chorusAOther",
+   "src": "m16,+(3Em!,C!,3F!,3Dm!,2G!,Am!w)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "chorusA",
+   "note": "Other of chorusA, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "chorus2",
+   "src": "@chorusA",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Chorus",
+   "beats": 16,
+   "uses": 1,
+   "note": "Chorus · 4 bars · played 1 time, first at 1:11",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3",
+   "src": "@chorusA,@verse3A",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Verse",
+   "beats": 24,
+   "uses": 1,
+   "note": "Verse · 6 bars · played 1 time, first at 1:52",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3A",
+   "src": "@verse3AKick&,@verse3ASnare&,@verse3AHat&,@verse3ABass&,@verse3AVoice&,@verse3AOther&,2Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 8,
+   "uses": 1,
+   "note": "A phrase of 8 beats · its parts start together · used 1 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3AKick",
+   "src": "m10,2s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "verse3A",
+   "grade": {
+    "pct": 95,
+    "hits": 9,
+    "matched": 9,
+    "extra": 1,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of verse3A, measured from the Logic 13 kick stem · grade A 95% · 9 of 9 hits matched, 1 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3ASnare",
+   "src": "m10,2s(4R,D,7R,2D,2R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "verse3A",
+   "grade": {
+    "pct": 100,
+    "hits": 6,
+    "matched": 6,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Snare of verse3A, measured from the Logic 13 snare stem · grade A 100% · 6 of 6 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3AHat",
+   "src": "m10,2s(2R,F#,2R,3F#,R,3F#,2R,2F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "verse3A",
+   "grade": {
+    "pct": 88,
+    "hits": 14,
+    "matched": 14,
+    "extra": 4,
+    "missed": 0,
+    "letter": "B"
+   },
+   "note": "Closed hi-hat of verse3A, measured from the Logic 13 hihat stem · grade B 88% · 14 of 14 hits matched, 4 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3ABass",
+   "src": "m13,2s(2Fe,R,Ge,Fq,5R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "verse3A",
+   "note": "Bass of verse3A, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3AVoice",
+   "src": "m11,s++(Ee,G,Fe,Ee,R,Dq,2R,A-,R,C,R,A-,R,C,R,A-e,C#,Ce,R,D,Ee,R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "vocals",
+   "channel": 11,
+   "phrase": "verse3A",
+   "note": "Voice of verse3A, followed one note at a time from the vocals stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse3AOther",
+   "src": "m16,+(Am!,2G!,3F!,Am!,G!)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "verse3A",
+   "note": "Other of verse3A, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interlude",
+   "src": "@verseA,@interludeA",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Interlude",
+   "beats": 20,
+   "uses": 1,
+   "note": "Interlude · 5 bars · played 1 time, first at 2:36",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeA",
+   "src": "@interludeAKick&,@interludeASnare&,@interludeAHat&,@interludeAToms&,@interludeABass&,@interludeAOther&,Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 4,
+   "uses": 1,
+   "note": "A phrase of 4 beats · its parts start together · used 1 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeAKick",
+   "src": "m10,s(C,3R,C,2R,2C,3R,C,3R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "interludeA",
+   "grade": {
+    "pct": 100,
+    "hits": 5,
+    "matched": 5,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Kick of interludeA, measured from the Logic 13 kick stem · grade A 100% · 5 of 5 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeASnare",
+   "src": "m10,s(4R,D,5R,D,R,2D,2R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "interludeA",
+   "grade": {
+    "pct": 100,
+    "hits": 4,
+    "matched": 4,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Snare of interludeA, measured from the Logic 13 snare stem · grade A 100% · 4 of 4 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeAHat",
+   "src": "m10,s(R,3F#,R,2F#,2R,F#,R,F#,3R,F#)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "interludeA",
+   "grade": {
+    "pct": 100,
+    "hits": 8,
+    "matched": 8,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Closed hi-hat of interludeA, measured from the Logic 13 hihat stem · grade A 100% · 8 of 8 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeAToms",
+   "src": "m10,e(7R,B)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "toms",
+   "channel": 10,
+   "phrase": "interludeA",
+   "grade": {
+    "pct": 100,
+    "hits": 1,
+    "matched": 1,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Toms (floor F, mid B, high D+) of interludeA, measured from the Logic 13 toms stem · grade A 100% · 1 of 1 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeABass",
+   "src": "m13,s(D+e,R,C+,Be,Aq,3R,A+e,R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "interludeA",
+   "note": "Bass of interludeA, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "interludeAOther",
+   "src": "m16,+(Em!w)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "interludeA",
+   "note": "Other of interludeA, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4",
+   "src": "@introA,@verseA,@verse4A",
+   "velocity": 100,
+   "role": "section",
+   "kind": "Verse",
+   "beats": 44,
+   "uses": 1,
+   "note": "Verse · 11 bars · played 1 time, first at 3:03",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4A",
+   "src": "@verse4AKick&,@verse4ASnare&,@verse4AHat&,@verse4ABass&,@verse4AOther&,3Rw",
+   "velocity": 100,
+   "role": "phrase",
+   "beats": 12,
+   "uses": 1,
+   "note": "A phrase of 12 beats · its parts start together · used 1 times · drums are one row per kit piece",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4AKick",
+   "src": "m10,3(4C)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "kick",
+   "channel": 10,
+   "phrase": "verse4A",
+   "grade": {
+    "pct": 76,
+    "hits": 9,
+    "matched": 8,
+    "extra": 4,
+    "missed": 1,
+    "letter": "C"
+   },
+   "note": "Kick of verse4A, measured from the Logic 13 kick stem · grade C 76% · 8 of 9 hits matched, 4 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4ASnare",
+   "src": "m10,3(R,D,R,D)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "snare",
+   "channel": 10,
+   "phrase": "verse4A",
+   "grade": {
+    "pct": 80,
+    "hits": 4,
+    "matched": 4,
+    "extra": 2,
+    "missed": 0,
+    "letter": "B"
+   },
+   "note": "Snare of verse4A, measured from the Logic 13 snare stem · grade B 80% · 4 of 4 hits matched, 2 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4AHat",
+   "src": "m10,s(R,3F#,R,2F#,2R,F#,3R,F#,2R),2(4R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "drums",
+   "piece": "hihat",
+   "channel": 10,
+   "phrase": "verse4A",
+   "grade": {
+    "pct": 100,
+    "hits": 7,
+    "matched": 7,
+    "extra": 0,
+    "missed": 0,
+    "letter": "A"
+   },
+   "note": "Closed hi-hat of verse4A, measured from the Logic 13 hihat stem · grade A 100% · 7 of 7 hits matched, 0 extra",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4ABass",
+   "src": "m13,s(Aq,Ae,R,E,Ge,Aq,2R,Ae,Ee,Ge,C+e,8R,A,15R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "bass",
+   "channel": 13,
+   "phrase": "verse4A",
+   "note": "Bass of verse4A, followed one note at a time from the bass stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  },
+  {
+   "name": "verse4AOther",
+   "src": "m16,+(A!,4Am!,C!,2F!,4R)",
+   "velocity": 100,
+   "role": "part",
+   "stem": "other",
+   "channel": 16,
+   "phrase": "verse4A",
+   "note": "Other of verse4A, one chord per beat from the other stem — a sketch, not graded",
+   "auto_name": true,
+   "key": null
+  }
+ ],
+ "text": [
+  "Don_t_You_Want_Me_Official_Music_Video=@intro,2@verse,@verse2,@chorus,@chorus2,2@verse,@verse3,2@chorus,@interlude,@verse,@verse4;",
+  "intro=@introA,@introB;",
+  "introA=@introAKick&,@introASnare&,@introAHat&,@introABass&,@introAOther&,4Rw;",
+  "introAKick=m10,4s(C,3R,C,2R,2C,3R,C,3R);",
+  "introASnare=m10,4(R,D,R,D);",
+  "introAHat=m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#);",
+  "introABass=m13,s(32R,Aq,Ae,R,E,Ge,Aq,2R,Ae,Ee,Ge,C+q,6R);",
+  "introAOther=m16,+(C!w,3C!,R,Am!w,F!w);",
+  "introB=@introBKick&,@introBSnare&,@introBHat&,@introBBass&,@introBOther&,2Rw;",
+  "introBKick=m10,2s(C,3R,C,2R,2C,3R,C,3R);",
+  "introBSnare=m10,2(R,D,R,D);",
+  "introBHat=m10,2s(R,3F#,R,2F#,2R,3F#,R,3F#);",
+  "introBBass=m13,2(Aw);",
+  "introBOther=m16,+(Am!w,Am!,3Em!);",
+  "verse=@introA,@verseA;",
+  "verseA=@verseAKick&,@verseASnare&,@verseAHat&,@verseABass&,@verseAVoice&,@verseAOther&,4Rw;",
+  "verseAKick=m10,4s(C,3R,C,2R,2C,3R,C,3R);",
+  "verseASnare=m10,4s(4R,D,7R,2D,2R);",
+  "verseAHat=m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#);",
+  "verseABass=m13,4s(B,F,Fe,R,Ge,Gq,5R);",
+  "verseAVoice=m11,s++(C#e,R,A#-,Ce,R,A#-,Ce,A#-,R,Ce,A-e,Ee,F#,F,E+,E,Dq,Ee,10R,G#-,A-,Ce,A-e,2R,B-,G-e,R,A-e,R,A#-,8R,A-,D#+);",
+  "verseAOther=m16,2+(F!,2C!,Em!,G!w);",
+  "verse2=@verseA,@verse2A;",
+  "verse2A=@verse2AKick&,@verse2ASnare&,@verse2AHat&,@verse2ABass&,@verse2AVoice&,@verse2AOther&,Rw;",
+  "verse2AKick=m10,s(C,3R,C,2R,2C,3R,C,3R);",
+  "verse2ASnare=m10,(R,D,R,D);",
+  "verse2AHat=m10,s(R,3F#,R,2F#,2R,3F#,R,F#,R,F#);",
+  "verse2ABass=m13,s(Ae,Aq,R,Aq,5R);",
+  "verse2AVoice=m11,s++(A-e,10R,A-e,R,G-);",
+  "verse2AOther=m16,+(3Am!,C!);",
+  "chorus=2@chorusA;",
+  "chorusA=@chorusAKick&,@chorusASnare&,@chorusAHat&,@chorusABass&,@chorusAVoice&,@chorusAOther&,4Rw;",
+  "chorusAKick=m10,4s(C,3R,C,2R,2C,3R,C,3R);",
+  "chorusASnare=m10,4(R,D,R,D);",
+  "chorusAHat=m10,4s(R,3F#,R,2F#,2R,3F#,R,3F#);",
+  "chorusABass=m13,s(E+,E,Ee,R,A#,E,Be,Ee,5R,2Fe,C+,B,F,C+,F+,Fe,5R,D+e,D+q,R,A,Ge,4R,E+,G+,D+,A,Ae,A,Ae,Aq,5R);",
+  "chorusAVoice=m11,s++(A-e,G-,E-e,9R,C,E-,A-,G-,G#-,B-,2A-e,R,G#-q,3R,A-e,G#-,R,A#-,B-e,2R,B-,Ce,R,B-e,R,A-e,R,A#-,8R,A#-,A-,R,G#-);",
+  "chorusAOther=m16,+(3Em!,C!,3F!,3Dm!,2G!,Am!w);",
+  "chorus2=@chorusA;",
+  "verse3=@chorusA,@verse3A;",
+  "verse3A=@verse3AKick&,@verse3ASnare&,@verse3AHat&,@verse3ABass&,@verse3AVoice&,@verse3AOther&,2Rw;",
+  "verse3AKick=m10,2s(C,3R,C,2R,2C,3R,C,3R);",
+  "verse3ASnare=m10,2s(4R,D,7R,2D,2R);",
+  "verse3AHat=m10,2s(2R,F#,2R,3F#,R,3F#,2R,2F#);",
+  "verse3ABass=m13,2s(2Fe,R,Ge,Fq,5R);",
+  "verse3AVoice=m11,s++(Ee,G,Fe,Ee,R,Dq,2R,A-,R,C,R,A-,R,C,R,A-e,C#,Ce,R,D,Ee,R);",
+  "verse3AOther=m16,+(Am!,2G!,3F!,Am!,G!);",
+  "interlude=@verseA,@interludeA;",
+  "interludeA=@interludeAKick&,@interludeASnare&,@interludeAHat&,@interludeAToms&,@interludeABass&,@interludeAOther&,Rw;",
+  "interludeAKick=m10,s(C,3R,C,2R,2C,3R,C,3R);",
+  "interludeASnare=m10,s(4R,D,5R,D,R,2D,2R);",
+  "interludeAHat=m10,s(R,3F#,R,2F#,2R,F#,R,F#,3R,F#);",
+  "interludeAToms=m10,e(7R,B);",
+  "interludeABass=m13,s(D+e,R,C+,Be,Aq,3R,A+e,R);",
+  "interludeAOther=m16,+(Em!w);",
+  "verse4=@introA,@verseA,@verse4A;",
+  "verse4A=@verse4AKick&,@verse4ASnare&,@verse4AHat&,@verse4ABass&,@verse4AOther&,3Rw;",
+  "verse4AKick=m10,3(4C);",
+  "verse4ASnare=m10,3(R,D,R,D);",
+  "verse4AHat=m10,s(R,3F#,R,2F#,2R,F#,3R,F#,2R),2(4R);",
+  "verse4ABass=m13,s(Aq,Ae,R,E,Ge,Aq,2R,Ae,Ee,Ge,C+e,8R,A,15R);",
+  "verse4AOther=m16,+(A!,4Am!,C!,2F!,4R);"
+ ]
+}

@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "GM Drum Sounds — every drum, one row each",
+  "description": "One row per General MIDI drum sound on channel 10 (mDrum), labelled \"midiName NotePlayed DrumName=MPL\" in each row's tooltip, e.g. \"mDrumBass C Bass Drum=m10,4(C)\". Each row plays its drum four times. Row 0 plays all 47 GM drums (B- to A+++) in order. A bank holds 36 rows, so the 12 rarer sounds (Cabasa, Maracas, Short Whistle, Long Whistle, Short Guiro, Long Guiro, Hi Wood Block, Low Wood Block, Mute Cuica, Open Cuica, Mute Triangle, Open Triangle) are only in row 0. Notes are relative to the bass drum: C is the kick (MIDI 36), D the snare, F# the closed hat, C#+ the crash. The drum each note plays depends on the kit: these are the GM names, which DLSMusicDevice and Drum Kit Designer follow.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "Create a new MPL file that has a sequence that exercises each drum sound, and label the sequences by format: midiName NotePlayed NoteNameInDrums=MPL,Sequence",
+  "created_at": "2026-11-14T00:00:00.000Z",
+  "bpm": 120,
+  "key": "",
+  "song": "GM Drum Sounds",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "mDrumAll",
+      "src": "m10,B-,C,...,A+++,R",
+      "velocity": 100,
+      "note": "mDrumAll B- … A+++ every GM drum 35-81 in order, one beat each (12 bars)=m10,B-,C,...,A+++,R"
+    },
+    {
+      "key": "1",
+      "name": "mDrumAcBass",
+      "src": "m10,4(B-)",
+      "velocity": 100,
+      "note": "mDrumAcBass B- Acoustic Bass Drum=m10,4(B-)"
+    },
+    {
+      "key": "2",
+      "name": "mDrumBass",
+      "src": "m10,4(C)",
+      "velocity": 100,
+      "note": "mDrumBass C Bass Drum=m10,4(C)"
+    },
+    {
+      "key": "3",
+      "name": "mDrumSideStick",
+      "src": "m10,4(C#)",
+      "velocity": 100,
+      "note": "mDrumSideStick C# Side Stick=m10,4(C#)"
+    },
+    {
+      "key": "4",
+      "name": "mDrumSnare",
+      "src": "m10,4(D)",
+      "velocity": 100,
+      "note": "mDrumSnare D Acoustic Snare=m10,4(D)"
+    },
+    {
+      "key": "5",
+      "name": "mDrumClap",
+      "src": "m10,4(D#)",
+      "velocity": 100,
+      "note": "mDrumClap D# Hand Clap=m10,4(D#)"
+    },
+    {
+      "key": "6",
+      "name": "mDrumElSnare",
+      "src": "m10,4(E)",
+      "velocity": 100,
+      "note": "mDrumElSnare E Electric Snare=m10,4(E)"
+    },
+    {
+      "key": "7",
+      "name": "mDrumLoFlTom",
+      "src": "m10,4(F)",
+      "velocity": 100,
+      "note": "mDrumLoFlTom F Low Floor Tom=m10,4(F)"
+    },
+    {
+      "key": "8",
+      "name": "mDrumClHat",
+      "src": "m10,4(F#)",
+      "velocity": 100,
+      "note": "mDrumClHat F# Closed Hi-Hat=m10,4(F#)"
+    },
+    {
+      "key": "9",
+      "name": "mDrumHiFlTom",
+      "src": "m10,4(G)",
+      "velocity": 100,
+      "note": "mDrumHiFlTom G High Floor Tom=m10,4(G)"
+    },
+    {
+      "key": "A",
+      "name": "mDrumPedalHat",
+      "src": "m10,4(G#)",
+      "velocity": 100,
+      "note": "mDrumPedalHat G# Pedal Hi-Hat=m10,4(G#)"
+    },
+    {
+      "key": "B",
+      "name": "mDrumLoTom",
+      "src": "m10,4(A)",
+      "velocity": 100,
+      "note": "mDrumLoTom A Low Tom=m10,4(A)"
+    },
+    {
+      "key": "C",
+      "name": "mDrumOpenHat",
+      "src": "m10,4(A#)",
+      "velocity": 100,
+      "note": "mDrumOpenHat A# Open Hi-Hat=m10,4(A#)"
+    },
+    {
+      "key": "D",
+      "name": "mDrumLoMidTom",
+      "src": "m10,4(B)",
+      "velocity": 100,
+      "note": "mDrumLoMidTom B Low-Mid Tom=m10,4(B)"
+    },
+    {
+      "key": "E",
+      "name": "mDrumHiMidTom",
+      "src": "m10,4(C+)",
+      "velocity": 100,
+      "note": "mDrumHiMidTom C+ Hi-Mid Tom=m10,4(C+)"
+    },
+    {
+      "key": "F",
+      "name": "mDrumCrash1",
+      "src": "m10,4(C#+)",
+      "velocity": 100,
+      "note": "mDrumCrash1 C#+ Crash Cymbal 1=m10,4(C#+)"
+    },
+    {
+      "key": "G",
+      "name": "mDrumHiTom",
+      "src": "m10,4(D+)",
+      "velocity": 100,
+      "note": "mDrumHiTom D+ High Tom=m10,4(D+)"
+    },
+    {
+      "key": "H",
+      "name": "mDrumRide1",
+      "src": "m10,4(D#+)",
+      "velocity": 100,
+      "note": "mDrumRide1 D#+ Ride Cymbal 1=m10,4(D#+)"
+    },
+    {
+      "key": "I",
+      "name": "mDrumChina",
+      "src": "m10,4(E+)",
+      "velocity": 100,
+      "note": "mDrumChina E+ Chinese Cymbal=m10,4(E+)"
+    },
+    {
+      "key": "J",
+      "name": "mDrumRideBell",
+      "src": "m10,4(F+)",
+      "velocity": 100,
+      "note": "mDrumRideBell F+ Ride Bell=m10,4(F+)"
+    },
+    {
+      "key": "K",
+      "name": "mDrumTamb",
+      "src": "m10,4(F#+)",
+      "velocity": 100,
+      "note": "mDrumTamb F#+ Tambourine=m10,4(F#+)"
+    },
+    {
+      "key": "L",
+      "name": "mDrumSplash",
+      "src": "m10,4(G+)",
+      "velocity": 100,
+      "note": "mDrumSplash G+ Splash Cymbal=m10,4(G+)"
+    },
+    {
+      "key": "M",
+      "name": "mDrumCowbell",
+      "src": "m10,4(G#+)",
+      "velocity": 100,
+      "note": "mDrumCowbell G#+ Cowbell=m10,4(G#+)"
+    },
+    {
+      "key": "N",
+      "name": "mDrumCrash2",
+      "src": "m10,4(A+)",
+      "velocity": 100,
+      "note": "mDrumCrash2 A+ Crash Cymbal 2=m10,4(A+)"
+    },
+    {
+      "key": "O",
+      "name": "mDrumVibraslap",
+      "src": "m10,4(A#+)",
+      "velocity": 100,
+      "note": "mDrumVibraslap A#+ Vibraslap=m10,4(A#+)"
+    },
+    {
+      "key": "P",
+      "name": "mDrumRide2",
+      "src": "m10,4(B+)",
+      "velocity": 100,
+      "note": "mDrumRide2 B+ Ride Cymbal 2=m10,4(B+)"
+    },
+    {
+      "key": "Q",
+      "name": "mDrumHiBongo",
+      "src": "m10,4(C++)",
+      "velocity": 100,
+      "note": "mDrumHiBongo C++ Hi Bongo=m10,4(C++)"
+    },
+    {
+      "key": "R",
+      "name": "mDrumLoBongo",
+      "src": "m10,4(C#++)",
+      "velocity": 100,
+      "note": "mDrumLoBongo C#++ Low Bongo=m10,4(C#++)"
+    },
+    {
+      "key": "S",
+      "name": "mDrumMuHiConga",
+      "src": "m10,4(D++)",
+      "velocity": 100,
+      "note": "mDrumMuHiConga D++ Mute Hi Conga=m10,4(D++)"
+    },
+    {
+      "key": "T",
+      "name": "mDrumOpHiConga",
+      "src": "m10,4(D#++)",
+      "velocity": 100,
+      "note": "mDrumOpHiConga D#++ Open Hi Conga=m10,4(D#++)"
+    },
+    {
+      "key": "U",
+      "name": "mDrumLoConga",
+      "src": "m10,4(E++)",
+      "velocity": 100,
+      "note": "mDrumLoConga E++ Low Conga=m10,4(E++)"
+    },
+    {
+      "key": "V",
+      "name": "mDrumHiTimbale",
+      "src": "m10,4(F++)",
+      "velocity": 100,
+      "note": "mDrumHiTimbale F++ High Timbale=m10,4(F++)"
+    },
+    {
+      "key": "W",
+      "name": "mDrumLoTimbale",
+      "src": "m10,4(F#++)",
+      "velocity": 100,
+      "note": "mDrumLoTimbale F#++ Low Timbale=m10,4(F#++)"
+    },
+    {
+      "key": "X",
+      "name": "mDrumHiAgogo",
+      "src": "m10,4(G++)",
+      "velocity": 100,
+      "note": "mDrumHiAgogo G++ High Agogo=m10,4(G++)"
+    },
+    {
+      "key": "Y",
+      "name": "mDrumLoAgogo",
+      "src": "m10,4(G#++)",
+      "velocity": 100,
+      "note": "mDrumLoAgogo G#++ Low Agogo=m10,4(G#++)"
+    },
+    {
+      "key": "Z",
+      "name": "mDrumClaves",
+      "src": "m10,4(D#+++)",
+      "velocity": 100,
+      "note": "mDrumClaves D#+++ Claves=m10,4(D#+++)"
+    }
+  ]
+}

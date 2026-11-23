@@ -1,0 +1,205 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Groove Lab — A minor",
+  "description": "A mix-and-match playground: every part is in A minor over Am–F–C–G and lasts 4 bars (drum bars are 1 bar, built to repeat), so ANY combination layers in time. Rows 1-9 drums (ch 10), A-E bass (ch 13), F-I pads/keys (ch 15), J-O leads (ch 11), P-U sections that combine them, and slot 0 the song that plays the sections in order. Try: start a drum row + a bass row + a pad row together; swap one part for another; ◀ on a lead; ⬇/⬆ on a bass; 📸 Capture what you like. lOct shows octave groups, lFlats uses flats (Bb), lSwing uses feel marks.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "give me a library of sequences to experiment with",
+  "created_at": "2026-11-11T00:00:00.000Z",
+  "bpm": 130,
+  "key": "Am",
+  "song": "Bm Blues",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "song",
+      "src": "m11,@secIntro,2@secGroove,@secLift,@secFunk,@secDisco,@secOutro",
+      "velocity": 108
+    },
+    {
+      "key": "1",
+      "name": "dRock",
+      "src": "m10,p0,@hh8&,C,D,Ce,Ce,D",
+      "velocity": 43
+    },
+    {
+      "key": "2",
+      "name": "dHalf",
+      "src": "m10,p0,@hh8&,C,Re,Ce,D,R",
+      "velocity": 71
+    },
+    {
+      "key": "3",
+      "name": "dFunk",
+      "src": "m10,p0,@hh16&,Ce,Rs,Cs,D,Re,Ce,D",
+      "velocity": 41
+    },
+    {
+      "key": "4",
+      "name": "dDisco",
+      "src": "m10,p0,@hhOpen&,4(C)",
+      "velocity": 61
+    },
+    {
+      "key": "5",
+      "name": "hh8",
+      "src": "m10,p0,8(F#e)",
+      "velocity": 109
+    },
+    {
+      "key": "6",
+      "name": "hh16",
+      "src": "m10,p0,16(F#s)",
+      "velocity": 45
+    },
+    {
+      "key": "7",
+      "name": "hhOpen",
+      "src": "m10,p0,Re,A#e,De,A#e,Re,A#e,De,A#e",
+      "velocity": 64
+    },
+    {
+      "key": "8",
+      "name": "dFill",
+      "src": "m10,p0,4(Ds),4(D+s),2(Bs),2(Gs),Fe,Fe",
+      "velocity": 68
+    },
+    {
+      "key": "9",
+      "name": "crash",
+      "src": "m10,p0,C#+w",
+      "velocity": 52
+    },
+    {
+      "key": "A",
+      "name": "bPump",
+      "src": "m13,p38,8(Ae),8(Fe),8(C+e),8(Ge)",
+      "velocity": 100
+    },
+    {
+      "key": "B",
+      "name": "bOct",
+      "src": "m13,p38,4(A+e,A++e),4(F+e,F++e),4(C++e,C+++e),4(G+e,G++e)",
+      "velocity": 100
+    },
+    {
+      "key": "C",
+      "name": "bSlap",
+      "src": "m13,p36,2(Ae,Rs,A+s,Re,As,Gs),2(Fe,Rs,F+s,Re,Fs,Es),2(C+e,Rs,C++s,Re,C+s,Bs),2(Ge,Rs,G+s,Re,Gs,As)",
+      "velocity": 100
+    },
+    {
+      "key": "D",
+      "name": "bWalk",
+      "src": "m13,p33,A,C+,E+,G+,F,A,C+,E+,C+,E+,G+,B+,G,B,D+,E+",
+      "velocity": 100
+    },
+    {
+      "key": "E",
+      "name": "bDrone",
+      "src": "m13,p38,Aw,Fw,C+w,Gw",
+      "velocity": 100
+    },
+    {
+      "key": "F",
+      "name": "pWhole",
+      "src": "m15,p89,A+m!w,F+!w,C++!w,G+!w",
+      "velocity": 80
+    },
+    {
+      "key": "G",
+      "name": "pStab",
+      "src": "m15,p90,2(Re,A+m!e,R),2(Re,F+!e,R),2(Re,C++!e,R),2(Re,G+!e,R)",
+      "velocity": 69
+    },
+    {
+      "key": "H",
+      "name": "pPulse",
+      "src": "m15,p90,8(A+m!e),8(F+!e),8(C++!e),8(G+!e)",
+      "velocity": 100
+    },
+    {
+      "key": "I",
+      "name": "pOrgan",
+      "src": "m15,p16,4(A+m!),4(F+!),4(C++!),4(G+!)",
+      "velocity": 100
+    },
+    {
+      "key": "J",
+      "name": "lHook",
+      "src": "m11,p80,E+++,E+++e,D+++e,C+++,A++,F++w,G++,G++e,A++e,C+++,E+++,D+++w",
+      "velocity": 100
+    },
+    {
+      "key": "K",
+      "name": "lArp",
+      "src": "m11,p81,4(A++s,C+++s,E+++s,A+++s),4(F++s,A++s,C+++s,F+++s),4(C+++s,E+++s,G+++s,C++++s),4(G++s,B++s,D+++s,G+++s)",
+      "velocity": 100
+    },
+    {
+      "key": "L",
+      "name": "lSparse",
+      "src": "m11,p81,R,E+++e,Re,R,C+++,Rw,R,G+++e,Re,R,E+++,Rw",
+      "velocity": 92
+    },
+    {
+      "key": "M",
+      "name": "lOct",
+      "src": "m11,p80,-(E+++,E+++e,D+++e,C+++,A++),F++w,+(G++,G++e,A++e),C+++,E+++,D+++w",
+      "velocity": 85
+    },
+    {
+      "key": "N",
+      "name": "lFlats",
+      "src": "m11,p81,4(A++e,Bb++e),4(A++e,G++e),4(C+++e,Bb++e),4(B++e,A++e)",
+      "velocity": 85
+    },
+    {
+      "key": "O",
+      "name": "lSwing",
+      "src": "m11,p80,4(A++e,C+++e\\\\\\\\),4(A++e,F++e\\\\\\\\),4(G++e,C+++e\\\\\\\\),4(B++e,G++e\\\\\\\\)",
+      "velocity": 100
+    },
+    {
+      "key": "P",
+      "name": "secIntro",
+      "src": "@pWhole&,4(@dHalf)",
+      "velocity": 100
+    },
+    {
+      "key": "Q",
+      "name": "secGroove",
+      "src": "@bPump&,@pStab&,4(@dRock)",
+      "velocity": 100
+    },
+    {
+      "key": "R",
+      "name": "secLift",
+      "src": "@bOct&,@pPulse&,@lHook&,3(@dRock),@dFill",
+      "velocity": 100
+    },
+    {
+      "key": "S",
+      "name": "secFunk",
+      "src": "@bSlap&,@pOrgan&,4(@dFunk)",
+      "velocity": 100
+    },
+    {
+      "key": "T",
+      "name": "secDisco",
+      "src": "@bOct&,@pPulse&,@lArp&,4(@dDisco)",
+      "velocity": 100
+    },
+    {
+      "key": "U",
+      "name": "secOutro",
+      "src": "@bDrone&,@pWhole&,3(@dHalf),@crash",
+      "velocity": 100
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "format": "simplestem-mpl-patterns",
+  "version": 1,
+  "about": "MPL pattern library for the simpleStem MIDI console. Each pattern loads its parts into bank slots named after them; main is the part Space plays. Import with 📂 in the patterns row.",
+  "patterns": [
+    {
+      "id": "rock",
+      "group": "Drums",
+      "label": "Rock — straight 8ths",
+      "main": "rock",
+      "parts": {
+        "rock": "m10,p0,@hat8&,Cq,Dq,Ce,Ce,Dq",
+        "hat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "halftime",
+      "group": "Drums",
+      "label": "Half-time — snare on 3",
+      "main": "halftime",
+      "parts": {
+        "halftime": "m10,p0,@hat8&,Cq,Re,Ce,Dq,Rq",
+        "hat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "disco",
+      "group": "Drums",
+      "label": "Disco — four on the floor, open hats",
+      "main": "disco",
+      "parts": {
+        "disco": "m10,p0,@discotop&,4(Cq)",
+        "discotop": "m10,p0,Re,A#e,De,A#e,Re,A#e,De,A#e"
+      }
+    },
+    {
+      "id": "funk",
+      "group": "Drums",
+      "label": "Funk — 16th hats, syncopated kick",
+      "main": "funk",
+      "parts": {
+        "funk": "m10,p0,@hat16&,Ce,Rs,Cs,Dq,Re,Ce,Dq",
+        "hat16": "m10,p0,16(F#s)"
+      }
+    },
+    {
+      "id": "shuffle",
+      "group": "Drums",
+      "label": "Shuffle — triplet swing (\\\\\\\\ = 4 ticks late)",
+      "main": "shuffle",
+      "parts": {
+        "shuffle": "m10,p0,@shufhat&,Cq,Dq,Ce,Ce\\\\\\\\,Dq",
+        "shufhat": "m10,p0,4(F#e,F#e\\\\\\\\)"
+      }
+    },
+    {
+      "id": "onedrop",
+      "group": "Drums",
+      "label": "One drop — reggae, kick + side stick on 3",
+      "main": "onedrop",
+      "parts": {
+        "onedrop": "m10,p0,@onedroptop&,Rq,Rq,Cq,Rq",
+        "onedroptop": "m10,p0,Re,F#e,Re,F#e,C#q,Re,F#e"
+      }
+    },
+    {
+      "id": "motown",
+      "group": "Drums",
+      "label": "Motown — busy kick, tambourine on 2 & 4",
+      "main": "motown",
+      "parts": {
+        "motown": "m10,p0,@tamb&,Ce,Ce,Dq,Ce,Ce,Dq",
+        "tamb": "m10,p0,Rq,F#+q,Rq,F#+q"
+      }
+    },
+    {
+      "id": "fill",
+      "group": "Drums",
+      "label": "Fill — one bar of 16ths down the toms",
+      "main": "fill",
+      "parts": {
+        "fill": "m10,p0,4(D+s),4(Bs),4(Gs),4(Fs)"
+      }
+    },
+    {
+      "id": "song",
+      "group": "Drums",
+      "label": "Song — 2(@intro,@verse,@chorus)",
+      "main": "song",
+      "parts": {
+        "song": "2(@intro,@verse,@chorus)",
+        "intro": "m10,p0,2(@hat8&,Cq,Rq,Cq,Rq)",
+        "verse": "m10,p0,4(@hat8&,Cq,Dq,Ce,Ce,Dq)",
+        "chorus": "m10,p0,3(@ride&,Cq,Dq,Ce,Ce,Dq),D+s,D+s,Bs,Bs,Gs,Gs,Fs,Fs,Cq,Dq",
+        "hat8": "m10,p0,8(F#e)",
+        "ride": "m10,p0,C#+q,D#+q,D#+q,D#+q"
+      }
+    },
+    {
+      "id": "synthbass",
+      "group": "Synths",
+      "label": "Synth bass — 80s octave pump (ch 13, p38)",
+      "main": "synthbass",
+      "parts": {
+        "synthbass": "m13,p38,4(A-e,Ae),4(F-e,Fe),4(Ce,C+e),4(G-e,Ge)"
+      }
+    },
+    {
+      "id": "seinfeld",
+      "group": "Synths",
+      "label": "Seinfeld-style slap bass — original 2-bar riff in E (ch 13, p36)",
+      "main": "seinfeld",
+      "parts": {
+        "seinfeld": "m13,p36,E-s,Rs,Es,Rs,Rs,E-s,G-s,A-s,Re,Es,Ds,Rs,B-s,Re,E-s,Rs,Es,Rs,Rs,E-s,G-s,A-s,Re,A-s,Rs,B-s,Ds,Ee"
+      }
+    },
+    {
+      "id": "pad80",
+      "group": "Synths",
+      "label": "80s poly pad — whole-note chords (ch 15, p90)",
+      "main": "pad80",
+      "parts": {
+        "pad80": "m15,p90,A+m!w,F+!w,C++!w,G+!w"
+      }
+    },
+    {
+      "id": "brass80",
+      "group": "Synths",
+      "label": "80s synth brass stabs on the off-beats (ch 15, p62)",
+      "main": "brass80",
+      "parts": {
+        "brass80": "m15,p62,2(Re,A+m!e,Rq),2(Re,F+!e,Rq),2(Re,C++!e,Rq),2(Re,G+!e,Rq)"
+      }
+    },
+    {
+      "id": "arp80",
+      "group": "Synths",
+      "label": "80s saw arpeggio — 16ths (ch 11, p81)",
+      "main": "arp80",
+      "parts": {
+        "arp80": "m11,p81,4(A++s,C+++s,E+++s,A+++s),4(F++s,A++s,C+++s,F+++s),4(C+++s,E+++s,G+++s,C++++s),4(G++s,B++s,D+++s,G+++s)"
+      }
+    },
+    {
+      "id": "lead80",
+      "group": "Synths",
+      "label": "80s square lead — 4-bar hook (ch 11, p80)",
+      "main": "lead80",
+      "parts": {
+        "lead80": "m11,p80,E+++q,E+++e,D+++e,C+++q,A++q,F++w,G++q,G++e,A++e,C+++q,E+++q,D+++w"
+      }
+    },
+    {
+      "id": "jam80",
+      "group": "Sets — synths + drums",
+      "label": "80s jam — synth bass + poly pad + arp over rock",
+      "main": "jam80",
+      "parts": {
+        "jam80": "@synthbass&,@pad80&,@arp80&,4(@rock)",
+        "synthbass": "m13,p38,4(A-e,Ae),4(F-e,Fe),4(Ce,C+e),4(G-e,Ge)",
+        "pad80": "m15,p90,A+m!w,F+!w,C++!w,G+!w",
+        "arp80": "m11,p81,4(A++s,C+++s,E+++s,A+++s),4(F++s,A++s,C+++s,F+++s),4(C+++s,E+++s,G+++s,C++++s),4(G++s,B++s,D+++s,G+++s)",
+        "rock": "m10,p0,@hat8&,Cq,Dq,Ce,Ce,Dq",
+        "hat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "stabs80",
+      "group": "Sets — synths + drums",
+      "label": "80s stabs — synth bass + brass + square lead over rock",
+      "main": "stabs80",
+      "parts": {
+        "stabs80": "@synthbass&,@brass80&,@lead80&,4(@rock)",
+        "synthbass": "m13,p38,4(A-e,Ae),4(F-e,Fe),4(Ce,C+e),4(G-e,Ge)",
+        "brass80": "m15,p62,2(Re,A+m!e,Rq),2(Re,F+!e,Rq),2(Re,C++!e,Rq),2(Re,G+!e,Rq)",
+        "lead80": "m11,p80,E+++q,E+++e,D+++e,C+++q,A++q,F++w,G++q,G++e,A++e,C+++q,E+++q,D+++w",
+        "rock": "m10,p0,@hat8&,Cq,Dq,Ce,Ce,Dq",
+        "hat8": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "funkjam",
+      "group": "Sets — synths + drums",
+      "label": "Sitcom funk — Seinfeld-style slap bass over funk drums",
+      "main": "funkjam",
+      "parts": {
+        "funkjam": "@seinfeld&,2(@funk)",
+        "seinfeld": "m13,p36,E-s,Rs,Es,Rs,Rs,E-s,G-s,A-s,Re,Es,Ds,Rs,B-s,Re,E-s,Rs,Es,Rs,Rs,E-s,G-s,A-s,Re,A-s,Rs,B-s,Ds,Ee",
+        "funk": "m10,p0,@hat16&,Ce,Rs,Cs,Dq,Re,Ce,Dq",
+        "hat16": "m10,p0,16(F#s)"
+      }
+    }
+  ]
+}

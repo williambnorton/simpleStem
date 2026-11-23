@@ -1,0 +1,252 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "I Feel Love — drums — Donna Summer",
+ "description": "Drums only (m10) of I Feel Love by Donna Summer, as measured from the drum stem by songscribe: row 0 is the song, then its sections, phrases and drum parts. Phrase rows that had no drums are rests so the structure still times out. Compared to the original drum stem: 98% of the hits land on a real onset (±30 ms), drum-likeness 86% with a GM kit stand-in; plays 10 ms early against the recording; offset_ms = +10 sets the console SYNC slider to correct it. Layer your own bass/synth rows over it.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "drum accuracy round 1: put the drum MPL into bank JSON files",
+ "created_at": "2026-11-19T00:00:00.000Z",
+ "bpm": 126,
+ "key": "A minor",
+ "offset_ms": 10,
+ "song": "I Feel Love",
+ "artist": "Donna Summer",
+ "main": "0",
+ "slots": [
+  {
+   "name": "I_Feel_Love_1977_Remastered",
+   "src": "@intro,@intro2,2@verse,@verse2,@chorus,4@verse,2@chorus2,@chorus3,@outro,@outro2",
+   "velocity": 100,
+   "key": "0"
+  },
+  {
+   "name": "intro",
+   "src": "2@introA",
+   "velocity": 100,
+   "key": "1"
+  },
+  {
+   "name": "introA",
+   "src": "@introADrums&,4Rw",
+   "velocity": 100,
+   "key": "2"
+  },
+  {
+   "name": "introADrums",
+   "src": "m10,4s(|C,D,F#|,D,2F#,|C,D,F#|,F#,|D,F#|,D,|C,D,F#|,D,2F#,|C,D,F#|,F#,|D,F#|,D)",
+   "velocity": 100,
+   "key": "3"
+  },
+  {
+   "name": "intro2",
+   "src": "2@intro2A,@intro2B",
+   "velocity": 100,
+   "key": "4"
+  },
+  {
+   "name": "intro2A",
+   "src": "@intro2ADrums&,4Rw",
+   "velocity": 100,
+   "key": "5"
+  },
+  {
+   "name": "intro2ADrums",
+   "src": "m10,4s(|C,D|,3D,|C,D|,3D,|C,D|,3D,|C,D|,3D)",
+   "velocity": 100,
+   "key": "6"
+  },
+  {
+   "name": "intro2B",
+   "src": "@intro2BDrums&,Rw",
+   "velocity": 100,
+   "key": "7"
+  },
+  {
+   "name": "intro2BDrums",
+   "src": "m10,s(|C,D|,3D,|C,D|,F#,D,|D,F#|,|C,D|,F#,D,|D,F#|,|C,D|,2F#,D)",
+   "velocity": 100,
+   "key": "8"
+  },
+  {
+   "name": "verse",
+   "src": "2@verseA",
+   "velocity": 100,
+   "key": "9"
+  },
+  {
+   "name": "verseA",
+   "src": "@verseADrums&,4Rw",
+   "velocity": 100,
+   "key": "A"
+  },
+  {
+   "name": "verseADrums",
+   "src": "m10,4s(|C,D|,3D,|C,D|,F#,2D,|C,D|,3D,|C,D|,F#,2D)",
+   "velocity": 100,
+   "key": "B"
+  },
+  {
+   "name": "verse2",
+   "src": "2@verse2A,@verse2B",
+   "velocity": 100,
+   "key": "C"
+  },
+  {
+   "name": "verse2A",
+   "src": "@verse2ADrums&,4Rw",
+   "velocity": 100,
+   "key": "D"
+  },
+  {
+   "name": "verse2ADrums",
+   "src": "m10,4s(|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,F#,|D,F#|,F#)",
+   "velocity": 100,
+   "key": "E"
+  },
+  {
+   "name": "verse2B",
+   "src": "@verse2BDrums&,2Rw",
+   "velocity": 100,
+   "key": "F"
+  },
+  {
+   "name": "verse2BDrums",
+   "src": "m10,2s(|C,D,F#|,|D,F#|,F#,|D,F#|,|C,D,F#|,F#,2|D,F#|,|C,D,F#|,|D,F#|,2F#,|C,D,F#|,F#,2|D,F#|)",
+   "velocity": 100,
+   "key": "G"
+  },
+  {
+   "name": "chorus",
+   "src": "@chorusA,@chorusB",
+   "velocity": 100,
+   "key": "H"
+  },
+  {
+   "name": "chorusA",
+   "src": "@chorusADrums&,4Rw",
+   "velocity": 100,
+   "key": "I"
+  },
+  {
+   "name": "chorusADrums",
+   "src": "m10,4s(|C,D|,2|D,F#|,F#,|C,D,F#|,F#,2|D,F#|,|C,D|,D,|D,F#|,D,|C,D|,F#,|D,F#|,F#)",
+   "velocity": 100,
+   "key": "J"
+  },
+  {
+   "name": "chorusB",
+   "src": "@chorusBDrums&,3Rw",
+   "velocity": 100,
+   "key": "K"
+  },
+  {
+   "name": "chorusBDrums",
+   "src": "m10,3s(|C,D,F#|,3F#,|C,D,F#|,F#,2D,|C,D|,D,2F#,|C,D,F#|,F#,|D,F#|,F#)",
+   "velocity": 100,
+   "key": "L"
+  },
+  {
+   "name": "chorus2",
+   "src": "@chorus2A,@chorus2B",
+   "velocity": 100,
+   "key": "M"
+  },
+  {
+   "name": "chorus2A",
+   "src": "@chorus2ADrums&,4Rw",
+   "velocity": 100,
+   "key": "N"
+  },
+  {
+   "name": "chorus2ADrums",
+   "src": "m10,4s(|C,D|,3D,|C,D|,D,2|D,F#|,|C,D|,3D,|C,D|,3D)",
+   "velocity": 100,
+   "key": "O"
+  },
+  {
+   "name": "chorus2B",
+   "src": "@chorus2BDrums&,4Rw",
+   "velocity": 100,
+   "key": "P"
+  },
+  {
+   "name": "chorus2BDrums",
+   "src": "m10,4(4|C,D|)",
+   "velocity": 100,
+   "key": "Q"
+  },
+  {
+   "name": "chorus3",
+   "src": "@chorus2B,@chorus3A",
+   "velocity": 100,
+   "key": "R"
+  },
+  {
+   "name": "chorus3A",
+   "src": "@chorus3ADrums&,Rw",
+   "velocity": 100,
+   "key": "S"
+  },
+  {
+   "name": "chorus3ADrums",
+   "src": "m10,(4|C,D|)",
+   "velocity": 100,
+   "key": "T"
+  },
+  {
+   "name": "outro",
+   "src": "@outroA,@outroB",
+   "velocity": 100,
+   "key": "U"
+  },
+  {
+   "name": "outroA",
+   "src": "@outroADrums&,4Rw",
+   "velocity": 100,
+   "key": "V"
+  },
+  {
+   "name": "outroADrums",
+   "src": "m10,4(4|C,D|)",
+   "velocity": 100,
+   "key": "W"
+  },
+  {
+   "name": "outroB",
+   "src": "@outroBDrums&,4Rw",
+   "velocity": 100,
+   "key": "X"
+  },
+  {
+   "name": "outroBDrums",
+   "src": "m10,4s(|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#)",
+   "velocity": 100,
+   "key": "Y"
+  },
+  {
+   "name": "outro2",
+   "src": "@outro2A,@outro2B",
+   "velocity": 100,
+   "key": "Z"
+  },
+  {
+   "name": "outro2A",
+   "src": "@outro2ADrums&,4Rw",
+   "velocity": 100
+  },
+  {
+   "name": "outro2ADrums",
+   "src": "m10,s(|C,D,F#|,2|D,F#|,D,|C,D,F#|,|Dvv,F#|,F#,|D,F#|,|C,D,F#|,F#,|D,F#|,D,|C,D,F#|,R,F#,D,|C,D,F#|,D,F#,D,|C,D|,F#,2D,|C,D|,3D,|C,D|,2F#,Dvv),s(|C,D,F#|,2|D,F#|,D,|C,D,F#|,|Dvv,F#|,F#,|D,F#|,|C,D,F#|,F#,|D,F#|,D,|C,D,F#|,R,F#,D),e(R,F#,D,3R,D,R)",
+   "velocity": 100
+  },
+  {
+   "name": "outro2B",
+   "src": "Rw,R",
+   "velocity": 100
+  }
+ ]
+}

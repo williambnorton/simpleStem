@@ -1,0 +1,63 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Synth-pop in D minor (original)",
+  "description": "Early-80s synth-pop sketch: TR-808 drum machine, pulsing synth bass, poly pad and a square-lead hook over Dm–B♭–C–Dm. An original riff in the style, not a transcription of any song. Every part is 4 bars (or loops to 4).",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "create an MPL sequence for the main riff in the 80's song \"tainted love\" (answered with an original riff in that style)",
+  "created_at": "2026-11-11T00:00:00.000Z",
+  "bpm": 118,
+  "key": "Dm",
+  "song": "Synth-pop Sketch",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "sp_song",
+      "src": "@sp_bass&,@sp_pad&,@sp_riff&,4(@sp_drums)",
+      "velocity": 100
+    },
+    {
+      "key": "1",
+      "name": "sp_drums",
+      "src": "m10,p25,@sp_clap&,@sp_hat&,4(C)",
+      "velocity": 100
+    },
+    {
+      "key": "2",
+      "name": "sp_clap",
+      "src": "m10,p25,R,D#,R,D#",
+      "velocity": 100
+    },
+    {
+      "key": "3",
+      "name": "sp_hat",
+      "src": "m10,p25,8(F#e)",
+      "velocity": 80,
+      "vol": 60
+    },
+    {
+      "key": "4",
+      "name": "sp_bass",
+      "src": "m13,p38,8(D+e),8(A#e),8(C+e),8(D+e)",
+      "velocity": 100
+    },
+    {
+      "key": "5",
+      "name": "sp_pad",
+      "src": "m15,p90,D++m!w,A#+!w,C++!w,D++m!w",
+      "velocity": 69,
+      "vol": 52
+    },
+    {
+      "key": "6",
+      "name": "sp_riff",
+      "src": "m11,p80,D+++e,Re,F+++e,A+++e,R,G+++e,F+++e,F+++e,Re,D+++e,F+++e,R,E+++e,D+++e,E+++e,Re,G+++e,C++++e,R,A#+++e,A+++e,A+++,F+++e,E+++e,D+++,R",
+      "velocity": 92
+    }
+  ]
+}

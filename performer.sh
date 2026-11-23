@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # performer.sh — the MacBook Pro's switch (the Performer role).
 #
-# The laptop has the RAM (36 GB), so it does the heavy Demucs work and serves
+# The laptop runs Logic Pro's Stem Splitter (the stemming) and serves
 # the portal for rehearsal/live use. It streams Drive and pins only the jobs it's
 # actively rendering. See ARCHITECTURE.md.
 #
 # Long-running services:
 #   runner   queue_runner.sh — drains STEM_QUEUE; reuses the Librarian's cached
-#                              source.wav and runs Demucs (the slow part)
+#                              source.wav and queues the song for Logic stemming
 #   server   bt-construction-kit portal (http://localhost:3000)
 #
 # Usage:
@@ -233,7 +233,6 @@ preflight() {
   else
     echo "  ! no Python with 'mido' found — run:  pipx inject demucs mido python-rtmidi" >&2
   fi
-  command -v demucs >/dev/null 2>&1 || echo "  ! demucs not found — 'pipx install demucs' (the laptop does the rendering)" >&2
   command -v yt-dlp >/dev/null 2>&1 || echo "  ! yt-dlp not found — needed when a song isn't cached yet" >&2
   command -v ffmpeg >/dev/null 2>&1 || echo "  ! ffmpeg not found — 'brew install ffmpeg'" >&2
   [[ -d "$BASE/bt-construction-kit/node_modules/express" ]] || \
@@ -661,7 +660,7 @@ case "${1:-}" in
     # instead of letting the first Drive-backed operation block silently.
     # Never a refusal to start: the portal must run from ~/.bt-cache alone.
     wait_for_drive "${DRIVE_WAIT:-60}" || true
-    # Runner: a live Demucs render is 10-25 min of work — never kill it. Start it
+    # Runner: never kill a job that is in flight. Start it
     # only if it isn't already running.
     if is_running runner; then
       echo "  runner already running (pid $(cat "$(pidfile runner)")) — leaving the active render alone"
@@ -776,8 +775,6 @@ case "${1:-}" in
   resume)
     rm -f "$QUEUE/.paused"
     echo "rendering resumed — runner will pick up the queue again." ;;
-  backfill)
-    shift; "$BASE/backfill.sh" "$@" ;;
   logs)
     name="${2:-}"
     if [[ -n "$name" ]]; then tail -n 60 -f "$(logfile "$name")"
@@ -824,7 +821,7 @@ case "${1:-}" in
     # power cycle leaves it (mkdir'd dir, owner stamp naming a dead pid),
     # then a plain start. The portal must answer on :$PORT and the runner
     # must reclaim the lock, all with Wi-Fi off. Skipped if a render is in
-    # flight — a live Demucs job is 25 minutes of work we never kill.
+    # flight — a live job is never killed.
     if [[ -f "$QUEUE/.current" ]]; then
       echo "  SKIP  a render is in flight (.current present) — not stopping the runner mid-song."
       echo "        Re-run the drill when the queue is idle to exercise the cold boot."
@@ -888,7 +885,7 @@ case "${1:-}" in
       exit 1
     fi ;;
   *)
-    echo "usage: $0 {start|stop|restart|reset|status|test|drill|logs [runner|server]|open|version|pause|resume|backfill [--go]}" >&2
+    echo "usage: $0 {start|stop|restart|reset|status|test|drill|logs [runner|server]|open|version|pause|resume}" >&2
     echo "  reset = recovery: clear stale locks/ports, wait for Drive, restart everything, verify" >&2
     exit 1 ;;
 esac

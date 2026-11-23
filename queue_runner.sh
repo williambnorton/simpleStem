@@ -4,8 +4,8 @@
 # This is the worker that closes the loop: webloc_watch.sh turns dropped
 # .webloc URLs into metadata jobs in STEM_QUEUE/ (single .json files and
 # <setlist>/ folders); this script picks them up one at a time and runs the
-# existing stem.sh pipeline, so finished songs land in STEMS/ + M4A/ where the
-# bt-construction-kit portal can see them.
+# stem.sh, which leaves the song's SOURCE in STEMS/ and an entry in LOGIC_QUEUE/
+# for the Logic Pro Stem Splitter run.
 #
 # Per job it reads metadata.json for title/artist/source_url and, for songs
 # carved out of a chaptered album, the clip window (clip_start_sec/clip_end_sec)
@@ -15,7 +15,7 @@
 # STEM_QUEUE/.current (read by GET /api/queue). Finished jobs move to
 # STEM_QUEUE/_done/, failures to STEM_QUEUE/_failed/ (so they don't loop).
 #
-# Requires: stem.sh (next to this script) + its deps (yt-dlp, ffmpeg, demucs),
+# Requires: stem.sh (next to this script) + its deps (yt-dlp, ffmpeg),
 # and python3. Single worker — a lock prevents concurrent runners.
 #
 # Usage:
@@ -37,8 +37,7 @@ POLL="${POLL:-5}"
 command -v python3 >/dev/null 2>&1 || { echo "Missing python3" >&2; exit 1; }
 
 # ── Performer-only guard ────────────────────────────────────────────────────
-# Demucs must NEVER run on the 8 GB Librarian mini (CLAUDE.md: memory crash),
-# and a second runner on another machine defeats the Drive-synced lock (each
+# The runner belongs on the Performer (Logic Pro is there), and a second runner on another machine defeats the Drive-synced lock (each
 # machine's mkdir succeeds locally before sync — both "hold" the lock). A
 # foreign runner racing the Performer is how phantom empty markers land in
 # _failed/ (observed 2026-07-02: successful render, failedRenders went up).
@@ -49,7 +48,7 @@ if [[ "${SIMPLE_STEM_FORCE_RUNNER:-0}" != "1" ]]; then
   case "$_hn" in
     *librarian*|*mini*)
       echo "!! queue_runner refusing to start on '$_hn' — this looks like the Librarian." >&2
-      echo "   Demucs renders belong on the Performer. Set SIMPLE_STEM_FORCE_RUNNER=1 to override." >&2
+      echo "   The runner belongs on the Performer. Set SIMPLE_STEM_FORCE_RUNNER=1 to override." >&2
       exit 1 ;;
   esac
 fi
@@ -95,8 +94,8 @@ run_stem() {
     case "$line" in
       *Downloading*|*"Importing local"*)        set_phase "downloading source" ;;
       *"Detecting BPM"*|*"Building metadata"*)   set_phase "analyzing (BPM/key)" ;;
-      *"Running Demucs"*|*Demucs*)               set_phase "separating stems · demucs (~10-25 min)" ;;
-      *Encoding*)                                set_phase "mixing m4a tracks" ;;
+      *Encoding*)                                set_phase "encoding SOURCE m4a" ;;
+      *"Queued for Logic"*)                      set_phase "queued for Logic Pro stemming" ;;
     esac
   done
   rc=${PIPESTATUS[0]}
@@ -192,7 +191,7 @@ process_job() {
   fi
   # ─── Outcome-based verification (bug #124 fix) ────────────────────
   # stem.sh's exit code is unreliable in a couple of edge cases:
-  #   • Drive sync moves Demucs output before stem.sh's mv can, then
+  #   • Drive sync moves a file before stem.sh's mv can, then
   #     the mv exits non-zero even though the goal state is achieved.
   #   • The while-read/tee subshell plumbing occasionally propagates
   #     a stray non-zero from set_phase's python3 heredoc.

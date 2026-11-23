@@ -193,11 +193,11 @@ Three roles share one Google Drive folder:
 
 | Role | Machine | Job |
 |---|---|---|
-| **Performer** | MacBook Pro (36 GB) | Runs the portal and the Demucs renders. The gig machine. |
+| **Performer** | MacBook Pro (36 GB) | Runs the portal and the Logic Pro stemming. The gig machine. |
 | **Song Librarian** | Mac mini (8 GB, always on) | Ingests YouTube URLs, analyzes audio, keeps the catalog, pulls the band sheet daily. |
 | **Clip Librarian** | Any Mac with Logic | Curates sample clips into the library. |
 
-The mini never runs Demucs (it crashed on 8 GB). The laptop never runs
+The mini never stems (it crashed on 8 GB). The laptop never runs
 the ingest watcher. Commands for each machine are labeled; do not cross
 them.
 
@@ -300,7 +300,7 @@ purge confirmation at the end.
 A **✕ webloc failed** chip means yt-dlp could not fetch a URL. The
 `.failed` file sits in `INCOMING_WEBLOC/` on Drive. Update yt-dlp on
 the mini, then rename the file back to `.webloc` to retry, or delete it
-to dismiss. A **failed render** means Demucs crashed on a job; the job
+to dismiss. A **failed render** means the fetch or the source file failed; the job
 waits in `STEM_QUEUE/_failed` and never retries on its own.
 
 ## The band sheet

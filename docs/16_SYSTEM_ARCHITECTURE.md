@@ -26,7 +26,7 @@ flowchart LR
     PORTAL[bt-construction-kit<br/>Express :3000 + Web Audio mix]
     DESK[Sound Desktop UI<br/>desktop-proto.html]
     CONSOLE[MIDI Console<br/>midi-console.html]
-    RUNNER[queue_runner.sh<br/>Demucs 6-stem separation]
+    RUNNER[queue_runner.sh<br/>ingest → Logic stemming queue]
     SIDECAR[midi_sidecar.py :5555<br/>CoreMIDI + OSC + clock + RX monitor]
     CACHE[(~/.bt-cache<br/>offline stems)]
     LOGIC[Logic Pro<br/>automated sound engineer]
@@ -64,8 +64,8 @@ flowchart LR
   XR18 --> PA
 ```
 
-Interactions that DON'T exist matter too: the Librarian never runs
-Demucs (8 GB RAM), the portal never reads Drive in the audio hot path
+Interactions that DON'T exist matter too: the Librarian never stems
+(8 GB RAM), the portal never reads Drive in the audio hot path
 (offline-gig contract — everything plays from `~/.bt-cache`), and the
 browser never touches MIDI or OSC directly — every message goes through
 the sidecar.
@@ -120,8 +120,8 @@ the *only* control path to the board, over a static Ethernet link
 169.254 addresses). **X-AIR-Edit** is Behringer's own editor app,
 speaking the same OSC; the desk opens it on double-click.
 
-The remaining tools: **Demucs** (the ML source-separation model that
-saws a song into six stems), **yt-dlp** (fetches the source audio),
+The remaining tools: **Logic Pro's Stem Splitter** (saws a song into six stems
+and six drum-kit pieces), **yt-dlp** (fetches the source audio),
 **ffmpeg** (transcodes to fast-start m4a), **Express/Node** (the portal
 server), **Web Audio API** (the browser mixes six stems live),
 **AppleScript/osascript** (types Logic's own key commands — Record,

@@ -15,7 +15,7 @@ The order is deliberate. Four principles:
 2. **Environment before features.** The July 2–4 wedges proved that a hung
    coreaudiod makes EVERY feature test fail with misleading symptoms. Phase
    1 must pass — especially P7 — before any playback result is meaningful.
-3. **Overlap the slow path.** A Demucs render takes minutes. Kick ingest off
+3. **Overlap the slow path.** An ingest takes minutes. Kick ingest off
    in Phase 2, test everything else while it cooks, verify the result at
    the end (I4–I6).
 4. **Mutating and system-level tests last, with restoration.** Anything that

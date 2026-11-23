@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPL Demo — subroutines, parallel, sequential",
+  "description": "A tour of MPL in 36 rows, all in D minor over Dm–B♭–F–C at 110 bpm so parts layer. Row 0 plays the whole demo song (sections in SEQUENCE). Rows 1-9 drums, A-D bass (C+D = a SUBROUTINE and its body), E-G pads, H-L leads (trajectory, incrementing and range loops), M-P SEQUENTIAL calls, Q-S PARALLEL launches and nesting, T-Y the sections, Z timing feel. Each row's name says what it is; hover a key for its channel.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "create a whole bank of 36 demonstration sequences: drum and synth patterns, subroutines @, parallel and sequential sequences",
+  "created_at": "2026-11-11T00:00:00.000Z",
+  "bpm": 130,
+  "key": "Dm",
+  "song": "Bm Blues",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "demo",
+      "src": "m11,@introD,2@verseD,@chorusD,@bridgeD,@chorusD,@outroD",
+      "velocity": 24,
+      "note": "SEQUENTIAL: the main program plays six sections one after another (2@ = twice)"
+    },
+    {
+      "key": "1",
+      "name": "kick4",
+      "src": "m10,p0,4(C)",
+      "velocity": 43,
+      "note": "drums: four-on-the-floor kick, 1 bar"
+    },
+    {
+      "key": "2",
+      "name": "backbeat",
+      "src": "m10,p0,R,D,R,D",
+      "velocity": 71,
+      "note": "drums: snare on 2 and 4, 1 bar"
+    },
+    {
+      "key": "3",
+      "name": "hats8",
+      "src": "m10,p0,8(F#e)",
+      "velocity": 41,
+      "note": "drums: eighth-note hats, 1 bar"
+    },
+    {
+      "key": "4",
+      "name": "hats16",
+      "src": "m10,p0,16(F#s)",
+      "velocity": 61,
+      "note": "drums: sixteenth hats, 1 bar"
+    },
+    {
+      "key": "5",
+      "name": "rockBar",
+      "src": "m10,p0,@hats8&,C,D,Ce,Ce,D",
+      "velocity": 47,
+      "note": "PARALLEL inside a bar: kick/snare line launches the hats line (@hats8&)"
+    },
+    {
+      "key": "6",
+      "name": "funkBar",
+      "src": "m10,p0,@hats16&,Ce,Rs,Cs,D,Re,Ce,D",
+      "velocity": 45,
+      "note": "drums: syncopated funk bar + 16th hats in parallel"
+    },
+    {
+      "key": "7",
+      "name": "fillToms",
+      "src": "m10,p0,4(Ds),4(D+s),2(Bs),2(Gs),Fe,Fe",
+      "velocity": 64,
+      "note": "drums: one-bar fill, snare into toms"
+    },
+    {
+      "key": "8",
+      "name": "beatParallel",
+      "src": "m11,@kick4&,@backbeat&,@hats8&",
+      "velocity": 68,
+      "note": "PARALLEL: three one-voice drum lines started together (a launch-only row loops)"
+    },
+    {
+      "key": "9",
+      "name": "beat808",
+      "src": "m10,p25,@hats8&,C,D#,Re,Ce,D#",
+      "velocity": 52,
+      "note": "drums: TR-808 kit (p25) with clap on 2 and 4"
+    },
+    {
+      "key": "A",
+      "name": "bassRoot",
+      "src": "m13,p38,8(D++e),8(Bb+e),8(F+e),8(C++e)",
+      "velocity": 100,
+      "note": "synth bass: eighth-note roots, Dm–B♭–F–C (flats: Bb1)"
+    },
+    {
+      "key": "B",
+      "name": "bassOct",
+      "src": "m13,p38,4(D+e,D++e),4(Bbe,Bb+e),4(Fe,F+e),4(C+e,C++e)",
+      "velocity": 100,
+      "note": "synth bass: octave pump over the same chords"
+    },
+    {
+      "key": "C",
+      "name": "bassCall",
+      "src": "m13,p39,2@bassFig,-(@bassFig),@bassFig",
+      "velocity": 100,
+      "note": "SUBROUTINE: calls bassFig 4×, the 3rd an octave down with -( )"
+    },
+    {
+      "key": "D",
+      "name": "bassFig",
+      "src": "m13,p39,D+e,F+e,A+e,F+e,D+e,C+e,Ae,C+e",
+      "velocity": 100,
+      "note": "the SUBROUTINE body bassCall uses (1 bar; no m#/p#, the caller sets them)"
+    },
+    {
+      "key": "E",
+      "name": "padChords",
+      "src": "m15,p89,D++m!w,Bb+!w,F+!w,C++!w",
+      "velocity": 100,
+      "note": "pad: whole-note chords (m! minor, ! major)"
+    },
+    {
+      "key": "F",
+      "name": "padStabs",
+      "src": "m15,p90,2(Re,D++m!e,R),2(Re,Bb+!e,R),2(Re,F+!e,R),2(Re,C++!e,R)",
+      "velocity": 80,
+      "note": "pad: off-beat chord stabs"
+    },
+    {
+      "key": "G",
+      "name": "padPulse",
+      "src": "m15,p90,8(D++m!e),8(Bb+!e),8(F+!e),8(C++!e)",
+      "velocity": 69,
+      "note": "pad: eighth-note chord pulse"
+    },
+    {
+      "key": "H",
+      "name": "leadHook",
+      "src": "m11,p80,A++,A++e,G++e,F++,D++,Bb+,D++,F++,D++,C+++,A++e,G++e,F++,A++,G++w",
+      "velocity": 100,
+      "note": "lead: a 4-bar hook (square lead p80)"
+    },
+    {
+      "key": "I",
+      "name": "leadArp",
+      "src": "m11,p81,4(D++s,F++s,A++s,D+++s),4(Bb+s,D++s,F++s,Bb++s),4(F+s,A+s,C++s,F++s),4(C++s,E++s,G++s,C+++s)",
+      "velocity": 100,
+      "note": "lead: 16th arpeggios (saw lead p81)"
+    },
+    {
+      "key": "J",
+      "name": "trajectory",
+      "src": "m11,p81,D++q...D+++,Rw,Rw",
+      "velocity": 100,
+      "note": "TRAJECTORY: ... walks the white keys D4 up to D5"
+    },
+    {
+      "key": "K",
+      "name": "incLoop",
+      "src": "m15,p1...4(A++,C+++,E+++,A+++)",
+      "velocity": 100,
+      "note": "INCREMENTING LOOP: the same bar under programs 1, 2, 3, 4 (p1...4)"
+    },
+    {
+      "key": "L",
+      "name": "rangeLoop",
+      "src": "m11,p80,A++q..76(Re),Rw",
+      "velocity": 92,
+      "note": "RANGE LOOP: A4 stepped up to MIDI 76 (E5), an eighth rest after each"
+    },
+    {
+      "key": "M",
+      "name": "seqAB",
+      "src": "m11,@partA,@partB",
+      "velocity": 85,
+      "note": "SEQUENTIAL: partA then partB, inline (each @call returns before the next)"
+    },
+    {
+      "key": "N",
+      "name": "partA",
+      "src": "m11,p80,F++,A++,D+++,A++",
+      "velocity": 85,
+      "note": "a 1-bar part used by seqAB / seqRepeat"
+    },
+    {
+      "key": "O",
+      "name": "partB",
+      "src": "m11,p80,E++,G++,C+++,G++",
+      "velocity": 100,
+      "note": "a 1-bar part used by seqAB / seqRepeat"
+    },
+    {
+      "key": "P",
+      "name": "seqRepeat",
+      "src": "m11,2@partA,2@partB",
+      "velocity": 100,
+      "note": "SEQUENTIAL with repeats: partA twice, then partB twice (N@name)"
+    },
+    {
+      "key": "Q",
+      "name": "parallel3",
+      "src": "m11,@bassRoot&,@padChords&,@leadArp&",
+      "velocity": 100,
+      "note": "PARALLEL: bass, pad and lead start together and loop as one"
+    },
+    {
+      "key": "R",
+      "name": "parAndSeq",
+      "src": "@padChords&,4(@rockBar)",
+      "velocity": 100,
+      "note": "PARALLEL + SEQUENTIAL: the pad runs alongside four drum bars in a row"
+    },
+    {
+      "key": "S",
+      "name": "nested",
+      "src": "m11,2@parAndSeq",
+      "velocity": 100,
+      "note": "NESTED: calls a row that itself launches and calls other rows"
+    },
+    {
+      "key": "T",
+      "name": "introD",
+      "src": "@padChords&,4(@hats8)",
+      "velocity": 100,
+      "note": "section: intro — pad + hats"
+    },
+    {
+      "key": "U",
+      "name": "verseD",
+      "src": "@bassRoot&,@padStabs&,4(@rockBar)",
+      "velocity": 100,
+      "note": "section: verse — bass, stabs, rock drums"
+    },
+    {
+      "key": "V",
+      "name": "chorusD",
+      "src": "@bassOct&,@padPulse&,@leadHook&,3(@rockBar),@fillToms",
+      "velocity": 100,
+      "note": "section: chorus — everything, ending in a fill"
+    },
+    {
+      "key": "W",
+      "name": "bridgeD",
+      "src": "@bassCall&,4(@funkBar)",
+      "velocity": 100,
+      "note": "section: bridge — the subroutine bass over funk drums"
+    },
+    {
+      "key": "X",
+      "name": "outroD",
+      "src": "@padChords&,@leadArp&,3(@rockBar),@crashEnd",
+      "velocity": 100,
+      "note": "section: outro — ends on a crash"
+    },
+    {
+      "key": "Y",
+      "name": "crashEnd",
+      "src": "m10,p0,C#+w",
+      "velocity": 100,
+      "note": "drums: one crash, let ring (1 bar)"
+    },
+    {
+      "key": "Z",
+      "name": "feelSwing",
+      "src": "m11,p80,4(D++e,F++e\\\\\\\\),4(Bb+e,D++e\\\\\\\\),4(A+e,C++e/),4(C++e,E++e/)",
+      "velocity": 100,
+      "note": "FEEL: swung eighths (\\\\\\\\ = 4 ticks late), then pushed ones (/ = 1 tick early)"
+    }
+  ]
+}

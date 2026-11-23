@@ -1,0 +1,257 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Joe Jackson (style) — D 126",
+  "description": "Modelled on the sound of Joe Jackson — original parts, not any of his songs: a bright piano driving latin-pop with montuno chords, congas, cowbell, clave and timbales, a syncopated finger bass, vibes and alto-sax melody, brass pushes, and a new-wave rock break with overdriven guitar. D major at 126 bpm, D Bm G A. Rows 1-7 drums and percussion (ch 10), 8-B bass SUBROUTINES and C-E bass rows (ch 13), F-I piano SUBROUTINES and J-L piano rows (ch 15), M-O melody (ch 11), P horns (ch 16), Q guitar (ch 14), R-W sections, X jam. Row 0 plays the song.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "build a new bank modelled after the band The Cure and make one modelled after the band Depeche Mode and make one modelled after Joe Jackson",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 126,
+  "key": "D",
+  "song": "Jackson Style",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "jjSong",
+      "src": "m11,@intro,@verse,@chorus,@verse,@chorus,@rock,@solo,@chorus,@ending",
+      "velocity": 95,
+      "note": "MAIN: piano intro, latin-pop verses and choruses, a new-wave rock break, sax solo, last chorus, ending — 62 bars"
+    },
+    {
+      "key": "1",
+      "name": "jjHat",
+      "src": "m10,p0,8(F#e)",
+      "velocity": 68,
+      "note": "Closed hi-hat 8ths"
+    },
+    {
+      "key": "2",
+      "name": "jjConga",
+      "src": "m10,p0,D++e,D++e,D++e,D#++e,D#++e,D++e,E++e,E++e",
+      "velocity": 75,
+      "note": "Conga pattern: muted and open high conga, low conga at the end"
+    },
+    {
+      "key": "3",
+      "name": "jjBell",
+      "src": "m10,p0,G#+,G#+e,G#+e,G#+,G#+e,G#+e",
+      "velocity": 75,
+      "note": "Cowbell"
+    },
+    {
+      "key": "4",
+      "name": "jjGroove",
+      "src": "m10,p0,@jjConga&,@jjHat&,C,C#,Ce,Ce,C#",
+      "velocity": 95,
+      "note": "Latin-pop groove: kick and side stick, launches congas and hats"
+    },
+    {
+      "key": "5",
+      "name": "jjClave8",
+      "src": "m10,p0,4(D#+++,Re,D#+++e,R,D#+++,R,D#+++,D#+++,R)",
+      "velocity": 75,
+      "note": "8 bars of 3-2 son clave"
+    },
+    {
+      "key": "6",
+      "name": "jjTimbFill",
+      "src": "m10,p0,F++s,F++s,F#++s,F#++s,F++s,F++s,F#++s,F#++s,F++s,F++s,F#++s,F#++s,C#+",
+      "velocity": 95,
+      "note": "Timbale fill into a crash"
+    },
+    {
+      "key": "7",
+      "name": "rkBeat",
+      "src": "m10,p0,@jjHat&,C,D,Ce,Ce,D",
+      "velocity": 95,
+      "note": "Straight new-wave rock beat"
+    },
+    {
+      "key": "8",
+      "name": "bD",
+      "src": "D+,Re,D+e,A,D+e,Ae",
+      "velocity": 95,
+      "note": "SUBROUTINE: one bar of syncopated latin-pop bass on D"
+    },
+    {
+      "key": "9",
+      "name": "bBm",
+      "src": "B,Re,Be,F#,Be,F#e",
+      "velocity": 95,
+      "note": "SUBROUTINE: bass on Bm"
+    },
+    {
+      "key": "A",
+      "name": "bG",
+      "src": "G,Re,Ge,D+,Ge,D+e",
+      "velocity": 95,
+      "note": "SUBROUTINE: bass on G"
+    },
+    {
+      "key": "B",
+      "name": "bA",
+      "src": "A,Re,Ae,E+,Ae,C#+e",
+      "velocity": 95,
+      "note": "SUBROUTINE: bass on A, leading back to D"
+    },
+    {
+      "key": "C",
+      "name": "bassLatin",
+      "src": "m13,p33,2(@bD,@bBm,@bG,@bA)",
+      "velocity": 95,
+      "note": "8 bars of finger bass, D Bm G A twice"
+    },
+    {
+      "key": "D",
+      "name": "bassRock",
+      "src": "m13,p34,2(8(D+e),8(Be),8(Ge),8(Ae))",
+      "velocity": 95,
+      "note": "8 bars of driving 8th-note pick bass"
+    },
+    {
+      "key": "E",
+      "name": "endBass",
+      "src": "m13,p33,A,A,A,A,D+w",
+      "velocity": 95,
+      "note": "Ending bass"
+    },
+    {
+      "key": "F",
+      "name": "pD",
+      "src": "Re,D++!e,Re,D++!e,D++!e,Re,D++!e,D++!e",
+      "velocity": 95,
+      "note": "SUBROUTINE: one bar of syncopated piano montuno on D"
+    },
+    {
+      "key": "G",
+      "name": "pBm",
+      "src": "Re,B+m!e,Re,B+m!e,B+m!e,Re,B+m!e,B+m!e",
+      "velocity": 95,
+      "note": "SUBROUTINE: montuno on Bm"
+    },
+    {
+      "key": "H",
+      "name": "pG",
+      "src": "Re,G+!e,Re,G+!e,G+!e,Re,G+!e,G+!e",
+      "velocity": 95,
+      "note": "SUBROUTINE: montuno on G"
+    },
+    {
+      "key": "I",
+      "name": "pA",
+      "src": "Re,A+!e,Re,A+!e,A+!e,Re,A+!e,A+!e",
+      "velocity": 95,
+      "note": "SUBROUTINE: montuno on A"
+    },
+    {
+      "key": "J",
+      "name": "pianoMont",
+      "src": "m15,p1,2(@pD,@pBm,@pG,@pA)",
+      "velocity": 77,
+      "note": "8 bars of bright-piano montuno — the piano drives the band"
+    },
+    {
+      "key": "K",
+      "name": "pianoIntro",
+      "src": "m15,p1,D+++e,F#+++e,A+++e,D+++e,Re,F#+++e,A+++,B++e,D+++e,F#+++e,B++e,Re,D+++e,F#+++,G++e,B++e,D+++e,G++e,Re,B++e,D+++,A++e,C#+++e,E+++e,A++e,Re,C#+++e,E+++",
+      "velocity": 77,
+      "note": "4-bar solo piano figure"
+    },
+    {
+      "key": "L",
+      "name": "endPiano",
+      "src": "m15,p1,A+!,A+!,A+!,A+!,D++!w",
+      "velocity": 77,
+      "note": "Ending piano"
+    },
+    {
+      "key": "M",
+      "name": "vibMel",
+      "src": "F#+++,E+++e,D+++e,Re,B++e,A++,D+++,B++e,A++e,Re,F#++e,E++,B++,D+++,G+++,F#+++e,E+++e,E+++,C#+++,A++,R",
+      "velocity": 95,
+      "note": "SUBROUTINE: 4-bar melody (vibes in the chorus, alto sax in the solo)"
+    },
+    {
+      "key": "N",
+      "name": "vibes",
+      "src": "m11,p11,2@vibMel",
+      "velocity": 87,
+      "note": "Vibraphone melody, 8 bars"
+    },
+    {
+      "key": "O",
+      "name": "saxMel",
+      "src": "m11,p65,2@vibMel",
+      "velocity": 87,
+      "note": "The same melody on alto sax, for the solo section"
+    },
+    {
+      "key": "P",
+      "name": "hornStabs",
+      "src": "m16,p61,2(R,Re,D++!e,R,D++!,R,Re,B+m!e,R,B+m!,R,Re,G+!e,R,G+!,R,Re,A+!e,R,A+!)",
+      "velocity": 80,
+      "note": "8 bars of brass-section pushes"
+    },
+    {
+      "key": "Q",
+      "name": "gtrRock",
+      "src": "m14,p29,2(8(D++!e),8(B+m!e),8(G+!e),8(A+!e))",
+      "velocity": 80,
+      "note": "8 bars of overdriven 8th-note chords for the rock break"
+    },
+    {
+      "key": "R",
+      "name": "intro",
+      "src": "@pianoIntro&,4(@jjBell)",
+      "velocity": 95,
+      "note": "SECTION: solo piano over cowbell (4 bars)"
+    },
+    {
+      "key": "S",
+      "name": "verse",
+      "src": "@bassLatin&,@pianoMont&,@jjClave8&,8(@jjGroove)",
+      "velocity": 95,
+      "note": "SECTION: verse — bass, piano montuno, clave, latin groove"
+    },
+    {
+      "key": "T",
+      "name": "chorus",
+      "src": "@bassLatin&,@pianoMont&,@hornStabs&,@vibes&,7(@jjGroove),@jjTimbFill",
+      "velocity": 95,
+      "note": "SECTION: chorus — adds horns and the vibes melody"
+    },
+    {
+      "key": "U",
+      "name": "rock",
+      "src": "@bassRock&,@gtrRock&,7(@rkBeat),@jjTimbFill",
+      "velocity": 95,
+      "note": "SECTION: new-wave rock break — driving bass, overdriven guitar"
+    },
+    {
+      "key": "V",
+      "name": "solo",
+      "src": "@bassLatin&,@pianoMont&,@saxMel&,@jjClave8&,8(@jjGroove)",
+      "velocity": 95,
+      "note": "SECTION: alto sax plays the melody"
+    },
+    {
+      "key": "W",
+      "name": "ending",
+      "src": "@endBass&,@endPiano&,@jjTimbFill,m10,p0,C#+w",
+      "velocity": 95,
+      "note": "SECTION: 2-bar ending"
+    },
+    {
+      "key": "X",
+      "name": "jamRock",
+      "src": "m11,@bassRock&,@gtrRock&,8(@rkBeat)",
+      "velocity": 95,
+      "note": "JAM: the rock break on a loop"
+    }
+  ]
+}

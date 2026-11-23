@@ -1,0 +1,171 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Don't You Want Me — drums — The Human League",
+ "description": "Drums only (m10) of Don't You Want Me by The Human League, as measured from the drum stem by songscribe: row 0 is the song, then its sections, phrases and drum parts. Phrase rows that had no drums are rests so the structure still times out. Compared to the original drum stem: 99% of the hits land on a real onset (±30 ms), drum-likeness 90% with a GM kit stand-in; plays 65 ms early against the recording; offset_ms = +65 sets the console SYNC slider to correct it. Layer your own bass/synth rows over it.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "drum accuracy round 1: put the drum MPL into bank JSON files",
+ "created_at": "2026-11-19T00:00:00.000Z",
+ "bpm": 118,
+ "key": "G major",
+ "offset_ms": 65,
+ "song": "Don't You Want Me",
+ "artist": "The Human League",
+ "main": "0",
+ "slots": [
+  {
+   "name": "Don_t_You_Want_Me_Official_Music_Video",
+   "src": "@intro,2@verse,@verse2,@chorus,@chorus2,2@verse,@verse3,2@chorus,@interlude,@verse,@verse4",
+   "velocity": 100,
+   "key": "0"
+  },
+  {
+   "name": "intro",
+   "src": "@introA,@introB",
+   "velocity": 100,
+   "key": "1"
+  },
+  {
+   "name": "introA",
+   "src": "@introADrums&,4Rw",
+   "velocity": 100,
+   "key": "2"
+  },
+  {
+   "name": "introADrums",
+   "src": "m10,4s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#)",
+   "velocity": 100,
+   "key": "3"
+  },
+  {
+   "name": "introB",
+   "src": "@introBDrums&,2Rw",
+   "velocity": 100,
+   "key": "4"
+  },
+  {
+   "name": "introBDrums",
+   "src": "m10,2s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#)",
+   "velocity": 100,
+   "key": "5"
+  },
+  {
+   "name": "verse",
+   "src": "@introA,@verseA",
+   "velocity": 100,
+   "key": "6"
+  },
+  {
+   "name": "verseA",
+   "src": "@verseADrums&,4Rw",
+   "velocity": 100,
+   "key": "7"
+  },
+  {
+   "name": "verseADrums",
+   "src": "m10,4s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#)",
+   "velocity": 100,
+   "key": "8"
+  },
+  {
+   "name": "verse2",
+   "src": "@verseA,@verse2A",
+   "velocity": 100,
+   "key": "9"
+  },
+  {
+   "name": "verse2A",
+   "src": "@verse2ADrums&,Rw",
+   "velocity": 100,
+   "key": "A"
+  },
+  {
+   "name": "verse2ADrums",
+   "src": "m10,s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#)",
+   "velocity": 100,
+   "key": "B"
+  },
+  {
+   "name": "chorus",
+   "src": "2@chorusA",
+   "velocity": 100,
+   "key": "C"
+  },
+  {
+   "name": "chorusA",
+   "src": "@chorusADrums&,4Rw",
+   "velocity": 100,
+   "key": "D"
+  },
+  {
+   "name": "chorusADrums",
+   "src": "m10,4s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,D,2R,F#)",
+   "velocity": 100,
+   "key": "E"
+  },
+  {
+   "name": "chorus2",
+   "src": "@chorusA",
+   "velocity": 100,
+   "key": "F"
+  },
+  {
+   "name": "verse3",
+   "src": "@chorusA,@verse3A",
+   "velocity": 100,
+   "key": "G"
+  },
+  {
+   "name": "verse3A",
+   "src": "@verse3ADrums&,2Rw",
+   "velocity": 100,
+   "key": "H"
+  },
+  {
+   "name": "verse3ADrums",
+   "src": "m10,2s(|C,F#|,3F#,|D,F#|,R,2F#,|C,F#|,3F#,D,Dvv,2F#)",
+   "velocity": 100,
+   "key": "I"
+  },
+  {
+   "name": "interlude",
+   "src": "@verseA,@interludeA",
+   "velocity": 100,
+   "key": "J"
+  },
+  {
+   "name": "interludeA",
+   "src": "@interludeADrums&,Rw",
+   "velocity": 100,
+   "key": "K"
+  },
+  {
+   "name": "interludeADrums",
+   "src": "m10,s(|C,F#|,3F#,|D,F#|,R,F#,2C,F#,D,R,2D,R,F#)",
+   "velocity": 100,
+   "key": "L"
+  },
+  {
+   "name": "verse4",
+   "src": "@introA,@verseA,@verse4A",
+   "velocity": 100,
+   "key": "M"
+  },
+  {
+   "name": "verse4A",
+   "src": "@verse4ADrums&,3Rw",
+   "velocity": 100,
+   "key": "N"
+  },
+  {
+   "name": "verse4ADrums",
+   "src": "m10,s(C,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#),2s(C,3F#,D,5R,F#,5R)",
+   "velocity": 100,
+   "key": "O"
+  }
+ ]
+}

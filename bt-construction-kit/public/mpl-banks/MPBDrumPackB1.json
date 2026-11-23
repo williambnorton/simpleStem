@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPB Drum Pack B1 — B-grade songs 1-36 of 129",
+  "description": "B-grade whole-song drum strings (80-89%), pack 1 of 4: grades 89% down to 86%. Each row is one song's drums as a single string, measured from its drum stem by drumscribe.py. Rows run from slowest to fastest. Each row starts with its song's tempo (for example 94T), so playing a row sets the bank tempo to that song; the row name ends in the same number. The grade in each row's note says how closely the string reproduces the hits detected in the stem; it does not check the detection against the record.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "Make a MPL Bank from the A-list from above, and make a few banks from the B-list as well. I want to try them",
+  "created_at": "2026-11-15T18:30:05.000Z",
+  "bpm": 132,
+  "key": "",
+  "song": "MPB Drum Pack B1 — B-grade songs 1-36 of 129",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "aid_Swingtown_65",
+      "src": "m10,65T,s(4R,Dvv,6R,F#,Dvv,F#,|C,F#|,F#),6s(2|C,F#|,C,F#,|D,F#|,F#,|C,F#|,F#,2|C,F#|,|C#+,C|,F#,|D,F#|,F#,|C,F#|,F#),9s(3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#),6s(3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,C,2|C,F#|,F#,|D,F#|,F#,2|C,F#|),4s(3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#),7s(C,|C,F#|,C,F#,|D,F#|,F#,C,F#,|D,F#|,|C,F#|,C,F#,|D,F#|,F#,|C,F#|,F#),6s(C,2|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#),6s(|D,F#|,2|C,F#|,F#,|C,D,F#|,2|C,F#|,R,|D,F#|,2|C,F#|,F#,|D,F#|,3|C,F#|),2s(2|D,F#|,|C,D,F#|,D,|C,D,F#|,F#,|C,F#|,F#,2|C,F#|,C,F#,|D,F#|,F#,|C,F#|,F#,3|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,C,2|C,F#|,F#,|D,F#|,F#,|C,D,F#|,|D,F#|),7s(C,|C,F#|,C,F#,|D,F#|,F#,|C,F#|,F#,C,|C,F#|,C,F#,|D,F#|,F#,2|C,F#|),8s(C,|C,F#|,C,F#,|D,F#|,F#,|C,F#|,F#,C,|C,F#|,C,F#,|D,F#|,F#,C,F#),R",
+      "velocity": 100,
+      "note": "Swingtown — Steve Miller Band · 65 bpm · whole song, 64 bars · grade B 89% (kick 90, snare 88, hats 90, crash 25) · 1348 of 1465 hits matched, 218 extra"
+    },
+    {
+      "key": "1",
+      "name": "aid_Easy_66",
+      "src": "m10,66T,2s(26R,D,2R,D,R,|C,D|),8s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C),s(|C,F#|,R,F#,R,F#,R,F#,R,F#,R,D,2R,D,R,C),3s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,C,R,D,C,R,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C),s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,C,R,D,C,R,C),18s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C),8s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,C,R,D,C,R,C),s(F#,R,F#,R,F#,D,|D,F#|,|C,D|,|C,F#|,R,F#,R,|D,F#|,R,F#,C),7s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C),7s(C,R,C,R,D,C,R,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,C),e(2R,Dvv,2R,F#,Dvv,F#),Rw,3R",
+      "velocity": 100,
+      "note": "Easy — Commodores · 66 bpm · whole song, 70 bars · grade B 86% (kick 85, snare 82, hats 88) · 721 of 815 hits matched, 145 extra"
+    },
+    {
+      "key": "2",
+      "name": "aid_Slave_67",
+      "src": "m10,67T,2s(C,R,|C,F#|,C,|D,F#|,2F#,|Dvv,F#|,|C,F#|,2F#,|C,F#|,|D,F#|,2F#,Dvv),11s(|C,F#|,2R,C,D,R,F#,Dvv,|C,F#|,2F#,C,|D,F#|,R,2F#),6s(|C,F#|,R,F#,C,|D,F#|,R,F#,2|C,F#|,R,F#,C,|D,F#|,R,F#,C),10s(|C,F#|,2F#,C,|D,F#|,R,F#,C,|C,F#|,2F#,C,|D,F#|,R,F#,C),5e(C,R,D,F#,|C,F#|,F#,2D),4s(|C,F#|,R,F#,C,|D,F#|,R,2F#,|C,F#|,2F#,C,4F#),3s(|C,F#|,R,F#,C,|D,F#|,R,F#,R,|C,F#|,R,F#,C,|D,F#|,R,F#,C),5s(|C,F#|,R,F#,C,|D,F#|,R,F#,C,|C,F#|,R,F#,C,|D,F#|,R,F#,C),4s(|C,F#|,2F#,C,|D,F#|,R,F#,C,|C,F#|,R,F#,C,|D,F#|,R,|D,F#|,C),6s(|C,F#|,R,F#,C,|D,F#|,R,F#,C,|C,F#|,2F#,C,|D,F#|,R,F#,C),3s(C,R,F#,C,|D,F#|,R,F#,R,|C,F#|,R,F#,C,|D,F#|,R,F#,R),7s(|C,F#|,2F#,C,|D,F#|,R,F#,Dvv,|C,F#|,2F#,C,|D,F#|,R,2F#),4s(C,R,2C,D,R,F#,Dvv,|C,F#|,R,F#,C,|D,F#|,R,F#,R),s(C,R,D,C,D,R,F#,R,C,R,2D,Dvv,2D,R),3s(|C,F#|,R,F#,C,|D,F#|,R,F#,R,|C,F#|,2F#,C,|D,F#|,R,F#,D),3s(|C,F#|,R,F#,C,|D,F#|,R,F#,Dvv,C,2R,2D,2R,C),6s(|C,F#|,2F#,C,|D,F#|,R,F#,C,|C,F#|,R,F#,C,|D,F#|,R,2F#),6e(8F#),s(C,R,Dvv,R,D,R,F#,2|C,F#|,2F#,C,|D,F#|,R,F#,C),7s(C,F#,R,C,D,R,F#,2C,R,F#,C,|D,F#|,R,F#,C),2s(|C,D,F#|,2R,C,D,R,F#,C,|C,F#|,R,F#,C,|D,F#|,R,F#,C,|C,F#|,R,|C,F#|,C,|D,F#|,R,F#,C,|C,D,F#|,D,F#,|C,D,F#|,F#,|C,F#|,|D,F#|,D),4s(|C,F#|,R,|C,F#|,C,|D,F#|,R,F#,2C,R,2C,D,R,F#,C),s(C,3R,D,R,F#,R,C,2R,C,Dvv,3R),2(R,D,R,Dvv),3R",
+      "velocity": 100,
+      "note": "Slave — Rolling Stones · 67 bpm · whole song, 108 bars · grade B 86% (kick 90, snare 84, hats 84) · 1354 of 1548 hits matched, 256 extra"
+    },
+    {
+      "key": "3",
+      "name": "aid_Careless_Whisper_Official_Video_76",
+      "src": "m10,76T,s(|C,D|,3R,D,R,F#,2C,3R,D,R,F#,R),5s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R),7s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,R),4s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,Dvv,|D,F#|,R,|D,F#|,R,F#,R),7s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,3R),3s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,2F#,R,|C,D,F#|,R,F#,R),s(|C,F#|,R,F#,R,D,R,C,R,|D,F#|,2R,D,|C,D|,R,D,R),3s(|C,F#|,R,F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,R),s(|C,F#|,R,2F#,D,R,D,2C,Dvv,F#,C,D,R,C,R),10s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R),15s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R),3s(|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,3R,D,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,D,R,D,R,D,R,|C,F#|,2F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,R,|D,F#|,R,F#,R),2s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,|Dvv,F#|,2C,|Dvv,F#|,|D,F#|,F#,|C#+,D|,R,F#,R,|C,F#|,3F#,|D,F#|,R,F#,2C,R,Dvv,2D,R,D,R,|C#+,C|,2F#,R,D,R,F#,2C,R,Dvv,R,D,R,F#,R),s(|C,F#|,R,F#,R,|D,F#|,R,F#,2C,R,Dvv,R,D,R,F#,R),2s(|C,F#|,R,|D,F#|,F#,|D,F#|,R,F#,C,|C,F#|,R,|Dvv,F#|,R,|D,F#|,R,F#,R,C,R,|C,D|,R,F#,|D,F#|,|C,F#|,3C,|C,Dvv|,|C,D|,|C#+,D|,|C,D|,|C,D,F#|,|C#+,D|),5s(C,R,C,R,F#,D,F#,2C,R,Dvv,R,|C#+,D|,Dvv,F#,R),s(|C,F#|,Dvv,D,R,Dvv,2R,2C,5D,|C,D|,D),2e(C,R,D,R,C,R,D,F#),s(C,3R,D,3R,C,R,F#,R,D,2R,Dvv),2s(10R,F#,5R,C,R,Dvv,R,D,3R,Dvv,R,Dvv,R,3Dvv,R)",
+      "velocity": 100,
+      "note": "Careless Whisper (Official Video) — George Michael · 76 bpm · whole song, 95 bars · grade B 87% (kick 92, snare 85, hats 85, crash 54) · 942 of 1069 hits matched, 166 extra"
+    },
+    {
+      "key": "4",
+      "name": "aid_IMAGINE_1971_OFFICIAL_MUSIC_VIDEO_76",
+      "src": "m10,76T,13Rw,13(4R),s(|C,F#|,R,F#,R,|D,F#|,2F#,R,C,R,C,R,D,2F#,R),9e(|C,F#|,F#,|D,F#|,F#,2C,D,F#),2e(|C,F#|,F#,|D,F#|,F#,C,R,D,F#,C,F#,D,F#,2|C,F#|,D,F#),e(|C,F#|,F#,|D,F#|,F#,C,R,D,F#),5s(|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,R,C,R,D,R,F#,C),3e(|C,F#|,F#,|D,F#|,F#,C,R,D,R),18e(|C,F#|,F#,|D,F#|,F#,2C,D,F#),s(|C,D|,R,F#,R,|D,F#|,2F#,R,D,F#,3D,R,C,R),5(4R),2R",
+      "velocity": 100,
+      "note": "IMAGINE (1971) OFFICIAL MUSIC VIDEO — JOHN LENNON · 76 bpm · whole song, 73 bars · grade B 86% (kick 93, snare 87, hats 81) · 359 of 415 hits matched, 62 extra"
+    },
+    {
+      "key": "5",
+      "name": "aid_Shake_It_Off_80",
+      "src": "m10,80T,4s(D,|C,D,F#|,R,F#,D,C,|C,D|,R,D,R,F#,C,|D,F#|,|C,F#|,|C,D,F#|,F#),6s(D,C,R,F#,D,C,|C,D|,R,D,R,F#,|C,D|,|D,F#|,|C,F#|,|C,D,F#|,R),5s(D,|C,F#|,R,F#,D,2C,R,D,R,F#,C,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,|C,F#|,R,F#,|D,F#|,2C,R,D,2R,C,D,2C,F#),2s(D,C,2F#,D,C,|C,D|,R,D,R,F#,C,|D,F#|,R,|C,D,F#|,F#,|D,F#|,C,F#,R,D,2C,R,D,R,F#,C,D,2C,R,D,|C,Dvv|,R,F#,D,2C,R,D,R,F#,C,D,F#,|C,D|,R,|D,F#|,|C,D|,R,F#,D,2C,R,D,R,F#,C,D,C,|C,D,F#|,F#),s(D,C,2F#,D,C,|C,D|,R,D,R,F#,C,|D,F#|,R,|C,D,F#|,F#,|D,F#|,C,F#,R,D,2C,R,D,R,F#,C,D,2C,R),2s(D,|C,F#|,R,F#,D,2C,R,D,2R,C,D,R,|C,D,F#|,F#,|D,F#|,|C,F#|,R,F#,D,2C,R,D,R,F#,C,|D,F#|,C,|C,F#|,R,|D,F#|,C,2F#,D,C,|C,D|,R,D,R,|D,F#|,C,D,F#,|C,F#|,F#,D,C,R,Dvv,D,2C,R,D,R,D,C,D,2C,|Dvv,F#|),s(D,|C,F#|,R,F#,D,2C,R,D,2R,C,D,R,|C,D,F#|,F#,|D,F#|,|C,F#|,R,F#,D,2C,R,D,R,F#,C,|D,F#|,C,|C,F#|,R),5s(D,C,2R,D,2C,R,D,2R,C,D,R,|C,F#|,F#),16s(D,C,R,F#,D,2C,R,D,2R,C,D,R,C,F#),5s(D,C,F#,R,D,C,|C,D|,F#,D,2R,C,D,R,|C,F#|,F#),4s(D,C,2R,D,2C,F#,|D,F#|,F#,R,C,D,C,|C,D,F#|,F#),2s(D,C,2R,D,2C,R,D,R,D,C,D,2C,R,D,C,2F#,D,|C,F#|,C,F#,|D,F#|,2F#,C,|D,F#|,R,|C,D,F#|,F#),s(D,C,2R,D,2C,R,D,R,D,C,D,2C,R),5Rw,R",
+      "velocity": 100,
+      "note": "Shake It Off — Taylor Swift · 80 bpm · whole song, 80 bars · grade B 86% (kick 95, snare 88, hats 74) · 947 of 1101 hits matched, 145 extra"
+    },
+    {
+      "key": "6",
+      "name": "aid_Middle_of_the_Road_83",
+      "src": "m10,83T,2s(D,2C,R,D,R,|C,D|,2|D,F#|,|C,F#|,C,F#,D,R,C,|C,F#|,|C#+,D|,|C,F#|,|C,D,F#|,F#,D,R,|C,D,F#|,|C,F#|,|D,F#|,|C,F#|,|C,D,F#|,|C,F#|,D,C,|C#+,C,D|,|C,F#|,|C#+,D|,|C,F#|,|C,Dvv|,F#,D,C,2|C,F#|,D,|C,F#|,C,|C,Dvv,F#|,D,R,|C,D|,|C,F#|,|C#+,D|,2|C,F#|,F#,D,2C,|C,F#|,D,|C,D,F#|,|C,D|,|D,F#|,2D,C,F#),8s(D,|C,F#|,C,F#,D,R,C,F#,D,|C,F#|,C,F#,D,R,C,F#),4s(|C#+,D|,F#,|C,F#|,F#,D,C,F#,C,D,R,2C,D,R,|C,D|,C),2s(D,|C,F#|,|C,D|,|C,D,F#|,D,|C,D|,|C,F#|,F#,D,|C,F#|,C,F#,D,|C,F#|,C,F#),9s(D,|C,F#|,C,F#,D,R,C,F#,D,|C,F#|,C,F#,D,R,C,F#),2s(D,R,2C,D,R,|C,D|,C,|C#+,D|,R,C,F#,D,C,F#,|C,D|,D,R,3|C,D|,C,|C,D,F#|,|C,D|,D,|C,F#|,|C,D|,2D,3|C,F#|),8s(D,2C,R,D,2C,R,D,2C,R,D,R,C,R),3s(D,2C,R,D,2C,R,|D,F#|,2C,R,D,R,C,R),s(D,2C,R,D,R,C,D,F#,6D,C),4s(D,R,C,R,D,C,R,C,D,R,2C,D,R,|C,D|,C),s(D,3C,2D,C,F#,|D,F#|,|C,F#|,C,F#,D,|C,F#|,C,F#),8s(D,|C,F#|,C,F#,D,R,C,F#,D,|C,F#|,C,F#,D,R,C,F#),5s(D,|C,F#|,C,F#,D,R,C,F#,D,2C,F#,D,2C,F#),s(R,5D,|C#+,D|,R),3s(|C#+,D|,R,C,F#,D,C,F#,C,D,R,2C,D,R,2C),s(|C#+,D|,R,C,R,D,C,R,D,2R,2D,2R,2D),s(C,2D,R,2D,|C,F#|,F#,D,2C,R),11s(D,2C,R,D,2C,R,D,R,C,R,D,2C,R),s(|C#+,D|,R,C,D,R,2D,F#,D,R,D,C,|C#+,C,D|,F#,|C,F#|,F#),6s(D,|C,F#|,R,C,D,R,2C,D,2R,C,D,R,C,R)",
+      "velocity": 100,
+      "note": "Middle of the Road — Pretenders · 83 bpm · whole song, 87 bars · grade B 87% (kick 91, snare 92, hats 76, crash 62) · 1144 of 1269 hits matched, 209 extra"
+    },
+    {
+      "key": "7",
+      "name": "aid_Billy_Idol_Eyes_Without_A_Face_85",
+      "src": "m10,85T,22s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,2F#,D,|D,F#|,D,2F#),8s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,R,F#,D,|D,F#|,D,2F#),4s(|C,F#|,3F#,|D,F#|,R,F#,C,2|C,F#|,F#,2|D,F#|,D,2F#),19s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,R,F#,D,|D,F#|,D,F#,R),2s(|C,D|,3F#,|D,F#|,R,F#,C,F#,C,2F#,4D,|C,D|,D,|D,F#|,Dvv,|D,F#|,R,F#,C,F#,C,2F#,|D,F#|,R,|C,F#|,D),5s(C,R,2F#,|D,F#|,R,F#,C,F#,C,F#,R,2D,|C,D|,D),5s(C,R,2F#,|D,F#|,R,F#,C,F#,C,2F#,D,R,C,D),7s(C,3F#,|D,F#|,R,F#,C,F#,C,F#,R,D,R,C,Dvv),11s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,2F#,D,|D,F#|,D,F#,R),7s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,R,F#,D,|D,F#|,D,2F#),5s(|C,F#|,2F#,R,|D,F#|,R,F#,C,|C,F#|,R,F#,D,|D,F#|,D,F#,R),3s(|C,F#|,2F#,|C,F#|,D,F#,C,|C,D|,F#,2C,F#,D,2R,D,C,R,D,F#,D,R,F#,C,F#,C,F#,R,D,3R),s(|C,F#|,2F#,|C,F#|,D,F#,C,|C,D|,F#,2C,F#,D,2R,D),2R",
+      "velocity": 100,
+      "note": "Billy Idol - Eyes Without A Face — Billy Idol · 85 bpm · whole song, 104 bars · grade B 89% (kick 88, snare 85, hats 91) · 1578 of 1754 hits matched, 208 extra"
+    },
+    {
+      "key": "8",
+      "name": "aid_Emminence_front_98",
+      "src": "m10,98T,19e(R,2F#,2R,3F#),s(|C,D,F#|,R,F#,R,|D,F#|,R,|C,F#|,R,|C,F#|,R,F#,R,D,Dvv,2R),12s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,Dvv,F#,R),16e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),15e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),s(|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,R,|C,D|,Dvv,C,D,2R),s(|C,D|,F#,Dvv,R,D,R,F#,R,|C,F#|,2F#,R,|D,F#|,R,C,F#),14s(|C,F#|,R,F#,R,|D,F#|,R,C,F#,|C,F#|,R,F#,R,|D,F#|,R,F#,R),2s(|C,F#|,2F#,R,|D,F#|,R,C,R,F#,R,F#,R,3D,R),s(2R,C,R,|D,F#|,R,C,|C,F#|,4R,3D,R),2e(|C,F#|,F#,D,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,D,C,F#,C,D,F#,|C,F#|,F#,|D,F#|,F#),e(|C,F#|,F#,D,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,D,C),s(C,R,4D,R,Dvv,C,F#,2R,D,R,F#,R),3e(C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,D,2C,F#,|D,F#|,2|C,F#|,F#,D,2C,F#,|D,F#|,C),e(C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,D,2C,F#,|D,F#|,|C,F#|),4s(C,R,F#,R,D,R,F#,R,|C,F#|,R,F#,R,D,R,C,F#,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,D,R,C,F#,C,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,2F#,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,D,R,C,F#),s(C,R,F#,R,D,R,F#,R,|C,F#|,R,F#,R,D,R,C,F#),8e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),s(|C,F#|,R,F#,R,D,R,C,R,F#,R,C,R,D,R,C,|C,F#|),e(R,F#,|D,F#|,F#,|C,D|,R,D,F#),2s(|C,D,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,2F#,R,3D,R),R",
+      "velocity": 100,
+      "note": "Emminence front — Who · 98 bpm · whole song, 138 bars · grade B 87% (kick 90, snare 92, hats 85) · 1228 of 1411 hits matched, 168 extra"
+    },
+    {
+      "key": "9",
+      "name": "aid_Brass_In_Pocket_Official_Music_Video_99",
+      "src": "m10,99T,2s(|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,2F#,R,|D,F#|,R,F#,R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,2D,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R),10e(|C,D,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),6e(|C,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),8e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|D,F#|,F#),s(|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,C,F#,C,R,|C,D|,2D,R),3e(|C,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),5e(|C,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),2s(|C,F#|,2F#,R,|D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D|,R,F#,R,C,R,|D,F#|,R,|D,F#|,R,|D,F#|,D,|C,F#|,2F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R),s(|C,F#|,2F#,R,|D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|D,F#|,R,F#,R),s(|C,D,F#|,2F#,R,D,3R,|C,F#|,R,D,R,4D),5e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|D,F#|,F#),7e(|C,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),2s(C,R,F#,R,|D,F#|,R,F#,R,D,3R,D,3R,|C,F#|,F#,|D,F#|,R,|D,F#|,R,|C,F#|,R,|C,D,F#|,R,F#,R,|C#+,D|,R,F#,R),e(C,F#,|D,F#|,F#,D,R,D,R)",
+      "velocity": 100,
+      "note": "Brass In Pocket (Official Music Video) — Pretenders · 99 bpm · whole song, 74 bars · grade B 87% (kick 89, snare 85, hats 88, crash 33) · 827 of 896 hits matched, 173 extra"
+    },
+    {
+      "key": "A",
+      "name": "aid_For_What_It_s_Worth_Official_Audio_99",
+      "src": "m10,99T,4s(C,3R,F#,2R,2C,R,C,R,F#,R,C,R),8s(C,3R,D,2R,2C,R,C,R,D,R,C,R),e(C,R,D,F#,2C,2F#),2e(|C,D|,R,D,R,2C,D,C),10s(C,3R,D,2R,2C,R,C,R,D,R,C,R),e(|C,D|,C,|C,D|,C,4|C,D|),3e(C,R,D,3C,R,C),3s(C,3R,F#,2R,2C,R,C,R,F#,R,C,R),8s(C,3R,D,2R,2C,R,C,R,D,R,C,R),3e(C,R,D,3C,R,C),3s(C,3R,F#,2R,2C,R,C,R,F#,R,C,R),2s(C,3R,|D,F#|,2R,2C,R,C,R,D,R,|D,F#|,R,C,3R,|D,F#|,R,Dvv,2C,R,|C,D|,R,|D,F#|,R,|D,F#|,R,C,3R,D,2R,2C,R,C,R,D,R,C,R,|C,D|,R,C,R,D,R,|C,D|,C,|C,D|,R,|C,D|,R,D,R,|C,D|,R),5e(|C,D|,F#,D,2C,2R,C,|C,D|,C,|C,D|,C,4|C,D|),e(|C,D|,F#,D,2C,2R,C)",
+      "velocity": 100,
+      "note": "For What It's Worth (Official Audio) — Buffalo Springfield · 99 bpm · whole song, 65 bars · grade B 88% (kick 92, snare 85, hats 73, toms 0) · 455 of 513 hits matched, 64 extra"
+    },
+    {
+      "key": "B",
+      "name": "aid_Another_Brick_In_The_Wall_Remastered_103",
+      "src": "m10,103T,2(3R,|C,D,F#|),5(3R,|C,D|),8s(|C,D|,R,F#,R,|C,D|,3R,|C,D|,3R,|C,D|,3R,|C,D,F#|,R,2F#,|C,D|,2F#,R,|C,D,F#|,2F#,R,|C,D,F#|,F#,2R),e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),3s(|C,D|,R,2D,|C,D|,3R,|C,D|,2R,D,|C,D|,3D,|C,D|,2D,R,|C,D|,3R,C,2R,D,|C,D|,3R,|C,D|,|C#+,D|,D,R,|C,D|,R,F#,D,C,D,|D,F#|,R,|C,D|,D,R,D,|C,D|,R,D,R,D,3R,|C,D|,3R,|C,D|,D,R,D),2e(|C#+,D|,F#,|C,D|,R,|C,D,F#|,F#,|C,D|,R,|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C#+,C,D,F#|,F#,|C,D,F#|,F#,|C,D|,R,|C,D|,R),8e(|C,D|,F#,|C,D,F#|,F#,|C,D|,R,|C,D|,R),5e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),6e(|C,D,F#|,F#,|C,D|,R,|C,D|,R,|C,D|,F#),9e(|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D|,R),8e(|C,D|,F#,|C,D|,R,|C,D|,F#,|C,D|,R),2s(|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,3R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C#+,C,D,F#|,C#+,F#,R,|C,D|,3R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,3R,|C,D|,3R,|C,D|,R,F#,R,|C#+,C,D|,R,F#,R,|C,D|,|C#+,F#|,2R,|C,D|,R,F#,R,C,3R),4e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),3s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,3R,|C,D|,R,2F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,3R,|C,D|,2R,F#,|C,D|,R,2F#),s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,3R,|C,D|,R,2F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#),8s(|C,D,F#|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#),6s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#),s(|C,D,F#|,3R,|C,D|,3R,|C,D|,R,2F#),s(|C#+,C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#),4e(3R,F#,6R,D,7R,D,13R),2R",
+      "velocity": 100,
+      "note": "Another Brick In The Wall - Remastered — Pink Floyd · 103 bpm · whole song, 137 bars · grade B 86% (kick 96, snare 94, hats 70, toms 0, crash 36) · 1316 of 1572 hits matched, 187 extra"
+    },
+    {
+      "key": "C",
+      "name": "aid_Pink_Floyd_Another_Brick_In_The_Wall_Rem_103",
+      "src": "m10,103T,(|C,D,F#|,3R),|C,D,F#|,2s(12R,|C,D,F#|,15R,|C,D|,F#,2R),(3R,|C,D,F#|),6s(|C,D,F#|,R,2F#,|C,D|,2F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,F#,2R),2s(|C,D|,3R,|C,D|,3R,|C,D|,3R,|C,D|,3R,|C,D,F#|,3R,|C,D|,3R,|C,D|,3R,|C,D|,3R,|C,D|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,R,2F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,2F#,R),(4|C,D|,|C,D,F#|,3|C,D|),e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),12s(|C,D|,2D,R,|C,D|,3R,|C,D|,2R,D,|C,D|,D,R,D),2e(|C#+,C,D|,F#,|C,D|,R,|C,D,F#|,F#,|C,D|,R,|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C#+,C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C#+,C,D,F#|,F#,|C,D,F#|,F#,|C,D|,R,|C,D|,F#),8e(|C,D|,F#,|C,D,F#|,F#,|C,D|,R,|C,D|,R),11e(|C,D,F#|,F#,|C,D|,R,|C,D|,R,|C,D|,F#),9e(|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D|,R),8e(|C,D|,F#,|C,D|,R,|C,D|,F#,|C,D|,R),2s(|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,3R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C#+,C,D,F#|,C#+,F#,R,|C,D|,3R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,3R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C#+,C,D|,R,F#,R,|C,D|,F#,2R,|C,D|,R,F#,R,C,3R),4e(|C,D|,F#,|C,D|,R,|C,D|,F#,|C,D|,R),3s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,3R,|C,D|,R,2F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#),s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D|,3R,|C,D|,R,2F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,R,2F#),8s(|C,D,F#|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#),6s(|C,D|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#,|C,D,F#|,R,2F#),s(|C,D,F#|,3R,|C,D|,3R,|C,D|,R,2F#),s(|C#+,C,D|,R,2F#,|C,D,F#|,R,F#,R,|C,D|,2R,F#,|C,D|,2R,F#),4e(3R,F#,6R,D,7R,D,13R),2R",
+      "velocity": 100,
+      "note": "Pink Floyd - Another Brick In The Wall - Remastered — Brian Martens Music · 103 bpm · whole song, 136 bars · grade B 86% (kick 96, snare 92, hats 74, toms 0, crash 30) · 1347 of 1567 hits matched, 220 extra"
+    },
+    {
+      "key": "D",
+      "name": "aid_Pink_Floyd_Another_Brick_In_The_Wall_Par_103",
+      "src": "m10,103T,94(4R),(3R,|C,D,F#|),5(3R,|C,D|),2s(|C,D|,R,F#,R,|C,D|,3R,|C,D|,3R,|C,D|,3R,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,2F#,R,|C,D,F#|,3F#),e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),5s(|C,D|,R,F#,R,|C,D|,3F#,|C,D,F#|,R,2F#,|C,D,F#|,F#,2R),s(|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,3F#,|C,D,F#|,F#,C#+,F#),5e(|C,D,F#|,R,|C,D|,R,|C,D|,R,|C,D|,C#+),e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),e(|C#+,C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),11s(|C,D|,2D,R,|C,D|,3R,|C,D|,2R,D,|C,D|,D,R,D),8e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),8e(|C,D|,F#,|C,D|,R,|C,D|,F#,|C,D|,R),12e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),7e(|C,D|,F#,|C,D|,R,|C,D|,R,|C,D|,R),e(|C,D|,F#),21e(|C,D|,R,|C,D|,R,|C,D|,R,|C,D|,F#),2s(C,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#,|C,D,F#|,F#,2R,|C,D|,R,2F#,|C,D,F#|,2R,F#,|C,D|,R,F#,R),s(C,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,2F#),6s(|C,D|,2R,F#,|C,D|,R,2F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R),12s(|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,F#,R),6s(|C,D|,2R,F#,|C,D|,2R,F#,|C,D|,R,2F#,|C,D,F#|,R,F#,R),17(4|C,D|),6(|C#+,C,D|,3|C,D|),5e(|C#+,C,D|,R,|C,D|,F#,|C,D|,R,|C,D|,R),s(|C#+,C,D|,F#,14R),6(4R),R",
+      "velocity": 100,
+      "note": "Pink Floyd · Another Brick In The Wall (Parts I-II-III) — These Dark Sets · 103 bpm · whole song, 248 bars · grade B 86% (kick 98, snare 92, hats 65, toms 0, crash 35) · 1426 of 1759 hits matched, 139 extra"
+    },
+    {
+      "key": "E",
+      "name": "aid_Warren_Zevon_Werewolves_of_London_Offici_103",
+      "src": "m10,103T,4e(C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,D,C,F#,C,D,C),4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,2|C,F#|,F#,D,C,F#,C,D,F#),3e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,D,C,F#,C,D,F#),e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),s(|C,F#|,R,F#,R,D,R,C,R,C#+,R,|C#+,D|,D,|C,D|,3D),2e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,3|C,F#|,D,3|C,F#|,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,2|C,D|,|C,D,F#|,|C,D|),2s(|C,D,F#|,R,C,R,D,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,|C,F#|,R,C,R,F#,R,|D,F#|,R,|C,F#|,R,F#,R,|C,F#|,R,|D,F#|,R,|C,F#|,R,|C,F#|,2F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,|C,F#|,R),4s(C,R,C,R,D,R,F#,R,C,R,C,R,D,R,F#,R,C,R,C,R,D,R,F#,R,|C,D|,R,2D,|C,D|,R,2D),4s(|C,F#|,R,C,R,D,R,F#,R,C,R,C,R,D,R,F#,R,C,R,C,R,D,R,F#,R,|C,D|,R,D,R,4D),7e(2C,D,F#,2C,D,F#),s(C,R,C,R,D,R,F#,R,C,R,D,F#,C,3D),3e(|C,F#|,R,D,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,C,R,D,C),2s(|C,F#|,R,C,R,|C,D|,R,|Dvv,F#|,R,C,R,C,R,D,R,F#,R,C,R,C,R,|C,D|,R,|C,D,F#|,R,|C,D|,R,|D,F#|,R,|C,D|,Dvv,D,Dvv,|C,F#|,R,C,R,D,R,F#,R,C,R,C,R,D,R,F#,R,C,R,|C,Dvv|,R,D,R,F#,R,C,R,C,R,D,R,F#,R),5Rw,3R",
+      "velocity": 100,
+      "note": "Warren Zevon - Werewolves of London (Official Audio) — RHINO · 103 bpm · whole song, 89 bars · grade B 89% (kick 89, snare 91, hats 87, crash 80) · 768 of 827 hits matched, 133 extra"
+    },
+    {
+      "key": "F",
+      "name": "aid_Voices_Carry_106",
+      "src": "m10,106T,16e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),8e(|C,F#|,F#,|D,F#|,2C,F#,|D,F#|,F#),5e(|C,F#|,F#,D,2C,F#,|D,F#|,C),e(|C,F#|,C,D,2C,R,D,C),6e(|C,F#|,F#,|D,F#|,R,C,F#,|D,F#|,F#),8e(|C,F#|,F#,|D,F#|,F#,C,F#,|D,F#|,F#),12e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),3s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,2F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,C,R,C,R,|D,F#|,3R,C,D,2C,|D,F#|,3R,C,R,F#,R,D,R,C,R,C,R,F#,R,D,R,C,R),e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),2s(|C,F#|,2F#,R,D,R,C,R,C,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,|C,F#|,R,C,R,|C,F#|,R,|D,F#|,R,F#,C),3s(|C,F#|,2F#,R,|D,F#|,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|B,F#|,R,F#,R),s(|C,F#|,2F#,R,|D,F#|,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),5e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),2e(|C,F#|,F#,D,2C,F#,D,2C,F#,|D,F#|,F#,2C,|D,F#|,F#,C,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#),e(|C,F#|,F#,D,2C,F#,D,2C,F#,|D,F#|,F#,2C,|D,F#|,F#,C,F#,D,2C,F#,|D,F#|,F#),6e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),2s(C,R,F#,R,|D,F#|,R,F#,R,C,R,C,R,|D,F#|,R,F#,R,|C,F#|,2F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,|C,F#|,R),e(C,F#,|D,F#|,F#,2C,|D,F#|,F#),2e(|C,F#|,F#,|D,F#|,2C,F#,|D,F#|,F#,|C,F#|,F#,D,R,C,F#,|D,F#|,F#,|C,F#|,F#,D,2R,F#,D,2R,F#,Dvv,2R,F#,2R)",
+      "velocity": 100,
+      "note": "Voices Carry — 'Til Tuesday · 106 bpm · whole song, 115 bars · grade B 88% (kick 93, snare 95, hats 83, toms 44) · 1007 of 1100 hits matched, 179 extra"
+    },
+    {
+      "key": "G",
+      "name": "aid_Eagles_Tequila_Sunrise_Official_Audio_110",
+      "src": "m10,110T,2e(|C,F#|,F#,|D,F#|,3F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,D,2C,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,R,C,2|D,F#|,F#),16e(|C,F#|,F#,D,C,|C,F#|,F#,|D,F#|,F#),7s(|C,F#|,R,F#,R,|D,F#|,R,|C,F#|,R,C,R,3F#,R,F#,R),e(R,F#,|D,F#|,F#,R,Dvv,R,F#),15e(|C,F#|,F#,D,R,|C,F#|,F#,|D,F#|,F#),8e(|C,F#|,F#,D,R,C,F#,|D,F#|,F#),e(2F#,|D,F#|,F#,C,2D,C),6e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),8e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),5e(2F#,D,C,|C,F#|,F#,|D,F#|,F#),2s(F#,R,F#,R,D,R,C,R,C,R,Dvv,R,D,R,C,R,2F#,14R),2R",
+      "velocity": 100,
+      "note": "Eagles - Tequila Sunrise (Official Audio) — Eagles · 110 bpm · whole song, 79 bars · grade B 87% (kick 76, snare 95, hats 88) · 664 of 725 hits matched, 143 extra"
+    },
+    {
+      "key": "H",
+      "name": "aid_Miss_You_OFFICIAL_PROMO_110",
+      "src": "m10,110T,7e(|C,F#|,3F#,|C,F#|,3F#),11e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),13e(|C,F#|,F#,|C,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),10e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),6e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),2s(C,3R,D,R,F#,R,|F,F#|,3R,|D,F#|,R,F#,R,C,3R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,D,R,F#,R,|C,D|,R,D,R,|D,F#|,F#,2|C,F#|,|C,D,F#|,F#,R,F#,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,|F,F#|,R,|D,F,F#|,R,F#,R),e(C,R,D,F#,|F,F#|,R,|D,F#|,F#,C,R,|D,F#|,F#,|C,F#|,F#,D,F#),6e(|C,F#|,F#,|C,F#|,F#,C,F#,C,F#),6e(|C,F#|,F#,C,F#,C,R,C,F#),15e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),2s(|C,F,F#|,R,F#,R,|D,F#|,R,F#,R,|F,F#|,R,F#,R,|D,F#|,R,F#,R,|F,F#|,R,F#,R,|C,D,F#|,R,|D,F#|,R,|C,D,F|,3R,|C,D|,R,F#,R,|C,F,F#|,R,F#,R,|D,F#|,R,|Dvv,F#|,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F,F#|,R,F#,R,|D,F#|,R,2F#,|C,F,F#|,R,F#,R,|D,F#|,R,F#,R),e(|C,F,F#|,F#,|D,F#|,F#,|F,F#|,F#,|D,F#|,F#),4e(|C,F#|,F#,|D,F#|,F#,|F,F#|,F#,|D,F#|,F#),s(|C,F#|,R,F#,R,D,C,2R,F,R,F#,R),e(|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#),2s(F#,5R,F#,5R,F#,9R,F#,R,F#,R,F#,7R,F#,R,C,3R,D,R,F#,R,|C,D,F#|,R,|C,D,F#|,F#,C,2R,D,4R,C,3R,D,R,C,R),e(C,R,D,F#,|C,F#|,F#,D,C),C",
+      "velocity": 100,
+      "note": "Miss You - OFFICIAL PROMO — The Rolling Stones · 110 bpm · whole song, 112 bars · grade B 86% (kick 87, snare 80, hats 88, toms 72) · 1075 of 1179 hits matched, 232 extra"
+    },
+    {
+      "key": "I",
+      "name": "aid_Don_t_You_Forget_About_Me_112",
+      "src": "m10,112T,2e(C,R,D,C,2R,D,F#),3s(C,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,C,R,F#,R,D,R,C,3R,F#,R,D,R,F#,R,C,3R,D,R,C,5R,2D,2R,C,3R,D,R,C,R,C,R,F#,R,D,3R),s(C,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,C,R,F#,R,D,R,C,3R,F#,R,D,R,F#,R),12s(C,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),15s(|C,F#|,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),2s(|C,Dvv,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,C,D,2C,R,C,R,|D,F#|,D,|D,F#|,R,|D,F#|,C,|C,F#|,R,|Dvv,F#|,R,D,R,|C,D,F#|,R,C,R,F#,R,|D,F#|,3R,C,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),2s(C,R,F#,R,D,R,C,5R,D,3R,|C,F#|,R,F#,R,D,R,C,R,C,R,|D,F#|,D,|D,F#|,R,|C,F#|,R,C,3R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),e(C,F#,D,C,2R,D,R),4s(C,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,D,3R),16s(|C,F#|,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),6e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),e(C,R,C,R,C,R,C,D),5(4C),2s(C,3R,C,3R,C,3R,C,R,D,R,C,3R,C,3R,C,3R,C,3R,C,3R,C,3R,C,3R,C,3R,C,3R,C,3R,C,R,|Dvv,F#|,D,|C,D|,3D),s(D,R,4D,F#,R,|D,F#|,D,F#,R,3D,C),6s(|C,F#|,R,F#,C,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R),2s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,D,3R,C,R,|C,F#|,C,|D,F#|,D,C,D,|C,D|,C,|D,F#|,D,|D,F#|,D,2|D,F#|),e(|C,F#|,F#,D,2C,F#,D,R),2s(C,2R,C,2R,C,R,C,7R,C,3R,|D,F#|,R,C,R,C,3R,F#,3R),s(C,2R,C,2R,C,R,C,7R),2R",
+      "velocity": 100,
+      "note": "Don't You (Forget About Me) — Simple Minds · 112 bpm · whole song, 121 bars · grade B 88% (kick 92, snare 90, hats 81) · 934 of 1004 hits matched, 192 extra"
+    },
+    {
+      "key": "J",
+      "name": "aid_Wicked_Game_112",
+      "src": "m10,112T,6e(|C,D|,R,D,2|C,D|,R,D,R),7s(|C,D|,3R,D,R,|C,D|,F,|C,D|,R,D,R,D,3R),21e(|C,D|,R,D,2|C,D|,R,D,R),12e(|C,D|,R,D,2|C,D|,2D,R),5e(|C,D|,R,D,2|C,D|,R,D,R),2s(|C,D|,2R,2D,R,|C,D|,R,|C,D|,R,|C,D|,R,D,R,D,R,|C,D|,R,D,R,D,B,|C,D|,R,|C,D|,R,D,R,D,R,B,R,|C,D|,R,D,R,D,R,C,F,|C,D|,R,D,Dvv,D,R,D,R,|C,D|,R,D,R,D,R,|C,D|,R,|C,D|,3R,D,3R),7e(|C,D|,R,D,2|C,D|,R,D,R),2s(|C,D|,F,2R,D,R,|C,D|,R,|C,D|,F,Dvv,2D,3R,|C,D|,R,D,R,D,R,|C,D|,R,|C,D|,R,D,R,D,R,D,R,|C,D|,D,Dvv,2D,R,|C,D|,R,|C,D|,D,R,2D,R,D,R,|C,D|,D,R,Dvv,D,R,|C,D|,F,|C,D|,2D,R,D,3R),6s(|C,D|,F,2R,D,R,|C,D|,R,|C,D|,R,D,R,D,3R),14e(|C,D|,R,D,2|C,D|,2D,R),25e(|C,D|,R,D,2|C,D|,R,D,R),2s(|C,D|,R,D,R,D,R,|C,D|,R,|C,D|,Dvv,D,R,D,R,B,R,|C,D|,3R,D,B,|C,D|,R,|C,D|,R,D,Dvv,D,2R,|D,B|,|C,D|,3R,D,R,|C,D|,R,C,R,D,R,D,R,D,R,|C,D|,2R,Dvv,D,R,|C,D|,R,|C,D|,R,3D,R,D,R),s(C,D,2R,D,R,|C,D|,R,|C,D|,R,D,R,D,R,D,R),2e(3R,D,R,D,10R),e(3R,D,R,D,2R),3R",
+      "velocity": 100,
+      "note": "Wicked Game — Chris Isaak · 112 bpm · whole song, 133 bars · grade B 89% (kick 99, snare 88, toms 36) · 1073 of 1231 hits matched, 101 extra"
+    },
+    {
+      "key": "K",
+      "name": "aid_Have_You_Ever_Seen_The_Rain_115",
+      "src": "m10,115T,25e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),7e(C,F#,D,2C,F#,D,C),6e(|C,D,F#|,F#,D,2C,F#,|D,F#|,F#),10e(|C,F#|,F#,D,2C,F#,|D,F#|,F#),2s(|C,F#|,R,F#,R,D,F#,C,R,C,R,F#,R,|D,F#|,R,|C,F#|,R,C,R,|C,F#|,R,|C#+,C,D|,R,|C,D|,R,|C,D|,R,|C,D|,R,|C,D|,R,C,R,|C,D|,F#,2R,D,R,C,R,|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,D,R,C,R,|C,Dvv|,F#,2R,D,R,C,R),2s(C,F#,2R,D,R,C,R,|C,F#|,R,F#,R,|D,F#|,R,|C,F#|,R,|C,F#|,R,|C,F#|,R,|D,F#|,R,|C,F#|,R,|C,F#|,R,|C,D|,R,D,R,C,R,|C,F#|,3R,D,R,C,R,C,R,F#,R,|C#+,D|,R,C,R,|C,F#|,R,2F#,D,F#,C,R,|C,F#|,F#,2R,D,R,C,R),8s(C,R,F#,R,D,F#,C,R,C,R,F#,R,D,R,C,R),e(C,F#,D,3C,D,F#),2e(8R,|C,D|,C,D,C,F#,C,D,R)",
+      "velocity": 100,
+      "note": "Have You Ever Seen The Rain — Creedence Clearwater Revival · 115 bpm · whole song, 77 bars · grade B 86% (kick 91, snare 89, hats 79, crash 50) · 621 of 695 hits matched, 131 extra"
+    },
+    {
+      "key": "L",
+      "name": "aid_Ray_Parker_Jr_Ghostbusters_Lyrics_115",
+      "src": "m10,115T,5(4R),s(5F#,R,2F#,8D),3s(|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,D,R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,D,F#,Dvv,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,D,R,|C,D|,R,|C,D|,D,|C,D|,D,|D,F#|,R),s(|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,D,R,|C,D|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,D,F#,Dvv,|C,D,F#|,R,F#,R),2s(|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,|C,D|,R,|C,D|,D,|D,F#|,R),e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),5e(|C,D,F#|,F#,|C,D,F#|,F#,3|C,D|,D,|C,D|,R,|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#),e(|C,D,F#|,F#,|C,D,F#|,F#,3|C,D|,D),7e(|C,D|,F#,|C,D|,D,|C,D|,F#,|C,D,F#|,F#),2s(|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,|C,D|,R,|C,D|,2D,R,|C,D|,2F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R),s(|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,|C,D|,R,|C,D|,2D,R),25e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),2s(|C,D,F#|,R,D,R,|C,D|,R,D,R,|C,D|,D,|C,D|,D,|C,D|,D,2R,|C,D|,R,D,R,|C,D|,R,2F#,|C,D|,3D,|C,D|,R,2F#,|C,D,F#|,|D,F#|,D,F#,|C,D|,R,2F#,|C,D|,3D,|C,D|,Dvv,D,R,|C,D|,R,|D,F#|,R,|C,D,F#|,R,F#,R,|C,D|,3D,|C,D|,R,2F#),s(|C,D,F#|,R,D,R,|C,D|,R,D,R,|C,D|,D,|C,D|,D,|C,D|,D,2R),20e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#),6s(|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,2F#,|C,D,F#|,R,F#,R),10e(|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Ray Parker, Jr. - Ghostbusters (Lyrics) — Vibe Music · 115 bpm · whole song, 118 bars · grade B 88% (kick 96, snare 88, hats 82) · 1528 of 1690 hits matched, 254 extra"
+    },
+    {
+      "key": "M",
+      "name": "aid_Don_t_You_Want_Me_Official_Music_Video_118",
+      "src": "m10,118T,19s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#),8s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,D,Dvv,R,F#),5s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,D,2R,F#),7s(|C,F#|,3F#,D,2R,F#,|C,F#|,3F#,D,2R,F#),6s(|C,F#|,3F#,|D,F#|,R,2F#,|C,F#|,3F#,|D,F#|,R,2F#),11s(|C,F#|,3F#,|D,F#|,R,F#,R,|C,F#|,3F#,|D,F#|,R,2F#),5s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,F#,R,F#,D,Dvv,R,F#),8s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#),2s(|C,D,F#|,F#,|D,F#|,F#,|D,F#|,R,|D,F#|,C,|C,D|,F#,D,F#,|C,D,F#|,F#,R,F#,|C,F#|,F#,|C,F#|,F#,|D,F#|,R,2|C,F#|,|C,Dvv,F#|,F#,|C,F#|,F#,|D,F#|,R,|C,F#|,F#,|C,F#|,F#,|C,F#|,F#,|C,D,F#|,R,|C,F#|,F#,|C,F#|,3F#,|D,F#|,R,|C,F#|,F#,|C,F#|,F#,|C,F#|,F#,|C,D,F#|,R,|C,F#|,F#,|C,F#|,F#,|C,F#|,F#,|D,F#|,R,|C,F#|,F#),5s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#),5s(|C,F#|,3F#,|D,F#|,R,F#,R,|C,F#|,3F#,|D,F#|,Dvv,2F#),8s(|C,F#|,3F#,|D,F#|,R,F#,C,|C,F#|,3F#,|D,F#|,R,2F#),6s(|C,F#|,3F#,|D,F#|,R,2F#,|C,F#|,3F#,|D,F#|,R,2F#)",
+      "velocity": 100,
+      "note": "Don't You Want Me (Official Music Video) — The Human League · 118 bpm · whole song, 101 bars · grade B 89% (kick 86, snare 88, hats 90, crash 0) · 1538 of 1658 hits matched, 251 extra"
+    },
+    {
+      "key": "N",
+      "name": "aid_Tim_Pierce_Rhett_Shull_Dreams_Fleetwood_118",
+      "src": "m10,118T,27(4R),e(C,R,|D,F#|,2C,R,|D,F#|,R),7e(C,R,|D,F#|,2C,R,|D,F#|,F#),11e(C,R,|D,F#|,2C,R,|D,F#|,R),11e(|C,F#|,F#,|D,F#|,2C,R,|D,F#|,F#),39e(C,R,|D,F#|,2C,R,|D,F#|,R),6e(C,R,|D,F#|,2C,R,|D,F#|,F#),44e(C,R,|D,F#|,2C,R,|D,F#|,R),4e(C,R,|D,F#|,2C,R,D,R),s(C,R,F#,R,|D,F#|,4R,D,4R,|D,F#|,R),17(4R),2R",
+      "velocity": 100,
+      "note": "Tim Pierce & Rhett Shull – Dreams (Fleetwood Mac) — Rhett Shull · 118 bpm · whole song, 168 bars · grade B 87% (kick 98, snare 93, hats 69) · 833 of 1009 hits matched, 77 extra"
+    },
+    {
+      "key": "O",
+      "name": "aid_Hey_Nineteen_120",
+      "src": "m10,120T,(2R,|C#+,C|,D),7e(|C#+,C|,C,D,C,|C#+,C|,R,|D,F#|,F#),13e(|C#+,C|,R,D,F#,2C,D,C),5e(|C#+,C|,R,D,R,2C,D,C),5e(|C#+,C|,R,D,R,2C,D,C),s(|C#+,D|,R,F#,Dvv,D,R,|C,D|,R),9e(|C#+,C|,R,D,F#,2C,D,C),15e(|C#+,C|,R,D,R,2C,D,C),10e(|C#+,C|,R,D,C,|C#+,C|,R,D,C),11e(2C,D,C,|C#+,C|,F#,|D,F#|,F#),6e(|C#+,C|,C,D,C,|C#+,C|,F#,|D,F#|,F#),9e(|C#+,C|,C,D,C,|C#+,C|,F#,|D,F#|,F#),e(2C,D,C),5e(|C#+,C|,F#,|D,F#|,F#,2C,D,C),8e(|C#+,C|,F#,|D,F#|,F#,|C#+,C|,C,D,C),6e(|C#+,C|,F#,|D,F#|,F#,2C,D,C),e(2C,D,C,|C#+,C|,F#,|D,F#|,F#),11e(|C#+,C|,C,D,C,|C#+,C|,F#,|D,F#|,F#),5e(2C,D,C,|C#+,C|,F#,|D,F#|,F#),8e(|C#+,C|,C,D,C,|C#+,C|,F#,|D,F#|,F#),4e(2C,D,2R,F#,|D,F#|,F#,2R,|D,F#|,2R,F#,|D,F#|,3R,D,R,F#,R,|D,F#|,3R,D,2R,F#,D,R),2R",
+      "velocity": 100,
+      "note": "Hey Nineteen — Steely Dan · 120 bpm · whole song, 151 bars · grade B 89% (kick 96, snare 92, hats 77, crash 86) · 1205 of 1361 hits matched, 128 extra"
+    },
+    {
+      "key": "P",
+      "name": "aid_Papa_Was_A_Rollin_Stone_120",
+      "src": "m10,120T,29(4F#),F#,6e(3F#,R,F#,R,3F#,R,F#,R,3F#,R,15F#,R),e(3F#,R,F#,R,3F#,R,F#,R,3F#,R,8F#),45e(8F#),23e(C,3F#,|C,D,F#|,3F#),e(|C,D|,2F#,R,|C,D|,F#),3e(2F#,|C,D|,3F#,|C,D,F#|,2F#,R,|C,D|,R,2F#,C,R,2F#,|C,D,F#|,2F#,R,|C,D|,R,F#,R,C,R,F#,R,C,R),e(2F#,|C,D|,3F#,|C,D,F#|,F#),2e(F#,R,C,3F#,|C,D|,R,2F#,|C,D|,R,2F#,|C,D|,R,F#,D,|C,D|,D,F#,D,|C,D|,Dvv,F#,|D,F#|,|C,D|,D,F#,D,|C,D|,|D,F#|),15e(F#,D,|C,D|,D,|D,F#|,Dvv,|C,D|,Dvv),9e(F#,R,|C,D|,R,2F#,|C,D|,R),6e(F#,R,|C,D|,R,2F#,|C,D,F#|,F#),9e(F#,R,|C,D|,2F#,R,|C,D|,F#),7e(F#,R,|C,D|,D,F#,Dvv,|C,D|,R),2e(F#,R,|C,D|,|D,F#|,F#,Dvv,|C,D|,2F#,|Dvv,F#|,|C,D,F#|,|Dvv,F#|,F#,|Dvv,F#|,|C,D,F#|,2F#,Dvv,|C,D|,3F#,|C,D|,|Dvv,F#|,2F#,|C,D,F#|,3F#,|C,D|,Dvv),5e(F#,R,|C,D|,3F#,|C,D,F#|,F#),7e(2F#,|C,D|,3F#,|C,D|,F#),9(F#,|C,D|,F#,|C,D|),8e(F#,D,|C,D|,D,F#,D,|C,D|,D),7e(2D,|C,D|,D,|D,F#|,D,|C,D|,D),5e(F#,D,|C,D|,3D,|C,D|,D),8e(|D,F#|,D,|C,D|,3D,|C,D|,D),2s(F#,R,D,R,|C,D|,R,D,R,D,R,F#,R,|C,D|,R,D,R,|D,F#|,R,D,R,|C,D|,R,D,R,|D,F#|,R,D,R,|C,D|,R,|D,F#|,R,|D,F#|,Dvv,|D,F#|,R,|C,D|,R,D,R,|D,F#|,R,|Dvv,F#|,R,|C,D,F#|,R,F#,R,|D,F#|,R,|D,F#|,R,|C,D|,R,D,R,D,R,|D,F#|,R,|C,D|,R,|D,F#|,R),s(F#,3R,|C,D|,R,F#,R,F#,Dvv,F#,R,|C,D,F#|,R,F#,R),10e(2F#,|C,D,F#|,|D,F#|,2F#,|C,D,F#|,F#),5e(F#,D,|C,D|,D,F#,3D),e(2D),6e(|C,D|,7D),e(|C,D|,2D,F#,|D,F#|,F#),6e(2F#,|C,D|,|D,F#|,F#,2|D,F#|,F#),e(F#,D,|C,D|,5D),19e(|C,D,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),20e(|C,D,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,F#),2e(|C,D,F#|,F#,|D,F#|,F#,|C,D,F#|,F#,D,R,|C,D|,F#,|D,F#|,F#,|C,D,F#|,F#,|D,F#|,D,|C,D|,3D,|C,D|,2|D,F#|,F#,|C,D,F#|,2F#,|D,F#|,|C,D|,Dvv,2D),12e(|C,D|,3D,|C,D|,D,|D,F#|,D),2e(C,Dvv,R,D,C,D,2R,|C,D|,D,|D,F#|,D,|C,D|,D,|D,F#|,Dvv,|C,D|,Dvv,2D,|C,D|,2D,R,|C,D|,Dvv,D,R,|C,D|,Dvv,F#,R),e(C,Dvv,R,D,C,D,2R),3R",
+      "velocity": 100,
+      "note": "Papa Was A Rollin' Stone — The Temptations · 120 bpm · whole song, 353 bars · grade B 86% (kick 96, snare 83, hats 86) · 2799 of 3159 hits matched, 524 extra"
+    },
+    {
+      "key": "Q",
+      "name": "aid_Jet_Airliner_123",
+      "src": "m10,123T,s(C,3R,D,3R,|C,D|,2R,C,D,R,C,R),5e(C,F#,|D,F#|,F#,|C,F#|,F#,D,R),39e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),10e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),s(C,R,F#,R,4D,|C,D|,R,2D,|C,D|,3D),s(C,3R,D,3R,C,R,F#,C,D,R,C,R),10e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),9e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),3s(C,R,F#,R,|C,D,F#|,R,F#,R,C,R,F#,R,|C,D|,2D,R,C,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,C,D,R,C,R),s(C,R,F#,R,|C,D,F#|,R,F#,R,C,R,F#,R,|C,D|,2D,R),12e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#),11e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),s(C,3R,D,3R,C,R,F#,C,D,R,C,R),s(C,R,F#,R,|D,F#|,R,F#,R,4D,|C,D|,3D),7e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|D,F#|,F#),3e(|C,F#|,F#,|D,F#|,F#,2R,C,R,C,F#,3R,F#,R,F#,16R),e(|C,F#|,F#,|D,F#|,F#,2R,C,R,C,F#,3R,F#,R,F#),2R",
+      "velocity": 100,
+      "note": "Jet Airliner — Steve Miller Band · 123 bpm · whole song, 135 bars · grade B 87% (kick 87, snare 87, hats 87) · 1377 of 1539 hits matched, 243 extra"
+    },
+    {
+      "key": "R",
+      "name": "aid_CANNED_HEAT_ON_THE_ROAD_AGAIN_129",
+      "src": "m10,129T,10(4R),13(|C,D|,D,|C,D|,D),8(|C,D|e,De\\\\\\\\vv,De,De\\\\\\\\,|C,D|e,De\\\\\\\\,D),8(|C,D|e,De\\\\\\\\vv,De,De\\\\\\\\,|C,D|,D),17(|C,D|e,De\\\\\\\\vv,D,|C,D|,D),21(|C,D|e,De\\\\\\\\,De,De\\\\\\\\,|C,D|,De,De\\\\\\\\),8(|C,D|e,De\\\\\\\\vv,D,|C,D|,D),14(|C,D|e,De\\\\\\\\,D,|C,D|,D),15(|C,D|e,De\\\\\\\\,De,De\\\\\\\\,|C,D|e,De\\\\\\\\,De,De\\\\\\\\),5(|C,D|e,De\\\\\\\\,D,|C,D|,D),17(|C,D|,D,|C,D|e,De\\\\\\\\,D),(|C,D|,De,De\\\\\\\\,|C,D|,De,De\\\\\\\\),7(R,D,R,D,12R),(R,D,R,D,4R),2R",
+      "velocity": 100,
+      "note": "CANNED HEAT - ON THE ROAD AGAIN — HAAKIE48 · 129 bpm · whole song, 167 bars · grade B 88% (kick 96, snare 85, hats 0) · 912 of 1079 hits matched, 92 extra"
+    },
+    {
+      "key": "S",
+      "name": "aid_Fool_in_the_Rain_Remaster_132",
+      "src": "m10,132T,5(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),2(Cs,|C,D,F#|s\\\\,Re,|C,D|s,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,F#e\\\\\\\\,Cs,|C,D,F#|s\\\\,Re,|C,D|s,|D,F#|s\\\\,De\\\\\\\\vv,|C,D|s,|D,F#|s\\\\,De\\\\\\\\,|D,F#|s,F#s\\\\,De\\\\\\\\vv,|C,F#|s,|C,D,F#|s\\\\,F#e\\\\\\\\,|C,F#|s,F#s\\\\,F#e\\\\\\\\,|C,F#|s,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,|C,F#|s,F#s\\\\,|Dvv,F#|e\\\\\\\\,|C,F#|s,|D,F#|s\\\\,Re,F#s,F#s\\\\,De\\\\\\\\vv),3(Cs,|C,D|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,|C,F#|s,F#s\\\\,De\\\\\\\\vv,|C,F#|s,Ds\\\\,Re,F#s,Ds\\\\,Re),(Cs,|C,D|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),3(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,De\\\\\\\\vv,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,F#e\\\\\\\\,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,Ds\\\\,Re,Cs,Ds\\\\,Re,Cs,|C,D|s\\\\,F#e\\\\\\\\,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,De\\\\\\\\vv,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,F#e\\\\\\\\),5(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),(Cs,|C,D|s\\\\,Re,Ds,Ds\\\\,De\\\\\\\\vv,Ds,Ds\\\\,Re,Ds,Ds\\\\,De\\\\\\\\),6(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),2(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,F#e\\\\\\\\,Cs,|C,D|s\\\\,Re,C,Cs,Ds\\\\,Re,F#s,Ds\\\\,Re,|C,D|s,|C,D|s\\\\,F#e\\\\\\\\,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,|D,F#|s\\\\,Re),(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,F#e\\\\\\\\,Cs,|C,D|s\\\\,Re,C,Cs,Ds\\\\,Re,F#s,Ds\\\\,Re),7(Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),(|C,F#|s,|C,D|s\\\\,F#e\\\\\\\\,|D,F#|s,Ds\\\\,F#e\\\\\\\\,Ds,Ds\\\\,De\\\\\\\\,Rs,Ds\\\\vv,Ce\\\\\\\\),6(Cs,|C,D,F#|s\\\\,F#e\\\\\\\\,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,Rs,F#s\\\\,Re),7(Cs,|C,D|s\\\\,F#e\\\\\\\\,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re),2(Cs,Ds\\\\,Re,Ce,F#e\\\\\\\\,Cs,Ds\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,Ds\\\\,Re,Rs,Ds\\\\,Re,D,5R,Ds,F#s\\\\,De\\\\\\\\,|C,D|e,De\\\\\\\\),19(Cs,Ds\\\\,De\\\\\\\\,De,De\\\\\\\\,|C,D|,De,|D,F#|e\\\\\\\\),8(Cs,Ds\\\\,|D,F#|e\\\\\\\\,De,De\\\\\\\\,|C,D|e,De\\\\\\\\vv,De,|D,F#|e\\\\\\\\),2(Cs,Ds\\\\,De\\\\\\\\,Ds,Ds\\\\,De\\\\\\\\,Ds,Ds\\\\,Re,|C,D|e,De\\\\\\\\,Cs,|D,F#|s\\\\,De\\\\\\\\,Ce,De\\\\\\\\,Cs,Ds\\\\,Re,Ds,Ds\\\\,De\\\\\\\\,Cs,Ds\\\\,De\\\\\\\\,Cs,Ds\\\\,|D,F#|e\\\\\\\\,|C,D|s,F#s\\\\,|D,F#|e\\\\\\\\,|C,D|s,|D,F#|s\\\\,|D,F#|e\\\\\\\\,Cs,Ds\\\\,|D,F#|e\\\\\\\\,Cs,Ds\\\\,De\\\\\\\\,|C,D|s,Ds\\\\,De\\\\\\\\,|C,D,F#|s,Ds\\\\,De\\\\\\\\),(Cs,Ds\\\\,De\\\\\\\\,Ds,Ds\\\\,De\\\\\\\\,Ds,Ds\\\\,Re,|C,D|e,De\\\\\\\\,Cs,|D,F#|s\\\\,De\\\\\\\\,Ce,De\\\\\\\\,Cs,Ds\\\\,Re,Ds,Ds\\\\,De\\\\\\\\),2(Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D|s\\\\,Re,Cs,Ds\\\\,Re,|C,D|s,Ds\\\\,Re,|C,D|s,Ds\\\\,De\\\\\\\\,|C,D|s,|C,D|s\\\\,F#e\\\\\\\\,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\),(Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D|s\\\\,Re,Cs,Ds\\\\,Re),18(Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re),4(Cs,Ds\\\\,Re,F#s,Ds\\\\,Re,Cs,|C,D|s\\\\,Re,Cs,F#s\\\\,F#e\\\\\\\\,Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,|C,F#|s,|C,D,F#|s\\\\,Re,|C,F#|s,F#s\\\\,F#e\\\\\\\\),7(Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re),13(Cs,|D,F#|s\\\\,Re,Rs,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re),4(Cs,|D,F#|s\\\\,Re,Rs,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,|C,D|s,F#s\\\\,Re,|C,D|s,Ds\\\\,Re,Rs,Ds\\\\vv,Re,Cs,|C,D|s\\\\,Re,Cs,F#s\\\\,Re),6(|C,D|s,|D,F#|s\\\\,Re,Rs,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re),7(Cs,|D,F#|s\\\\,Re,Rs,F#s\\\\,Re,Cs,|C,D,F#|s\\\\,Re,Cs,F#s\\\\,Re),(Cs,|D,F#|s\\\\,Re,F#s,F#s\\\\,Re,Cs,|C,D|s\\\\,Re,R),2(4R),2R",
+      "velocity": 100,
+      "note": "Fool in the Rain (Remaster) — Led Zeppelin · 132 bpm · whole song, 201 bars · grade B 86% (kick 93, snare 88, hats 79) · 1893 of 2176 hits matched, 318 extra"
+    },
+    {
+      "key": "T",
+      "name": "aid_Gimme_Three_Steps_Audio_132",
+      "src": "m10,132T,2s(D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,5R,D,3R,C,R,C,R,|D,F#|,R,C,F#,|D,F#|,R,C,R,D,R,C,R),2s(4R,D,R,C,R,C,2F#,R,D,3R,C,R,C,R,D,R,C,R,F#,R,C,R,D,3R,C,R,C,R,|D,F#|,R,C,R,C,3R,|D,F#|,3R,C,R,C,R,D,R,C,R,|C,Dvv|,R,C,R,D,R,C,F#),s(4R,D,R,C,R,C,2F#,R,D,3R,C,R,C,R,D,R,C,R,F#,R,C,R,D,3R),2s(C,R,C,R,D,R,C,R,C,3R,D,3R,C,R,C,R,|D,F#|,R,C,2F#,R,C,R,D,R,|C,F#|,R,|C,D|,R,C,R,D,R,C,R,C,2F#,R,|D,F#|,3R,C,R,|C,Dvv|,2D,R,C,R,|C,Dvv,F#|,F#,|C,F#|,R,D,3R),e(2C,D,2C,R,D,R),2e(2C,D,2C,R,D,R,2C,D,C,F#,C,D,C),3e(2C,D,2C,R,D,R,2C,D,C,F#,C,D,R),e(2C,D,2C,R,D,R),4s(C,R,C,R,D,R,C,2F#,3R,D,3R),2e(2C,D,2C,R,D,R,2C,D,C,Dvv,C,D,R),e(2C,D,2C,R,D,R),6e(2C,D,C,2R,D,R),8e(2C,D,2C,R,D,R),2e(2C,D,2C,R,D,R,|C,F#|,C,D,C,F#,C,D,R),3s(C,R,C,R,D,R,C,F#,4R,D,3R),5s(D,R,C,Dvv,D,R,C,R,D,R,C,R,D,R,C,R),3e(D,C,D,C,D,C,D,C),s(C,R,C,R,D,R,C,F#,4R,D,R,F#,R),2s(C,R,|C,Dvv|,2D,R,C,R,C,3R,D,3R,C,R,C,R,D,R,C,R,F#,R,C,R,D,R,C,R),2s(C,R,C,R,D,R,C,R,C,3R,D,3R,C,R,C,Dvv,D,R,C,R,|C,Dvv|,R,C,Dvv,D,R,C,F#),e(2C,D,2C,R,D,R),2s(C,Dvv,|C,D|,R,D,R,C,F#,Dvv,R,C,R,D,R,C,F#,C,R,C,Dvv,D,R,C,R,C,3R,D,3R),7e(2C,D,C,2R,D,R),3e(2C,D,C,F#,C,D,R,2C,D,2C,R,D,R),2e(2C,D,C,F#,C,D,Dvv,2C,D,2C,R,2D),4s(C,R,C,R,D,R,C,F#,4R,D,R,Dvv,R),8s(D,R,C,Dvv,D,R,C,R,D,R,C,R,D,R,C,R),3e(2C,D,C,R,C,D,R,2C,D,2C,R,D,R),2s(C,R,C,R,D,R,C,R,C,R,C,R,D,R,C,F#,C,R,C,R,D,R,C,R,C,F#,R,F#,D,3R),3e(2C,D,2C,R,D,R),2s(C,R,C,R,D,R,C,R,C,F#,2R,D,3R,C,R,C,R,D,R,C,F#,2R,C,R,D,3R),3e(2C,D,C,2R,D,R,C,R,D,3R,D,7R,D,3R,D,3R,Dvv,R),e(2C,D,C,2R,D,R),R",
+      "velocity": 100,
+      "note": "Gimme Three Steps (Audio) — Lynyrd Skynyrd · 132 bpm · whole song, 149 bars · grade B 87% (kick 89, snare 89, hats 60) · 871 of 985 hits matched, 157 extra"
+    },
+    {
+      "key": "U",
+      "name": "aid_Life_During_Wartime_2003_Remaster_132",
+      "src": "m10,132T,5e(|C,D|,F#,|C,D,F#|,F#,|C,D,F#|,F#,|C,D|,D),3e(|C,D,F#|,F#,|C,D,F#|,|D,F#|,|C,D,F#|,F#,|C,D,F#|,|D,F#|),2s(|C,D,F#|,2F#,R,|C,D|,R,|D,F#|,R,|C,D,F#|,R,F#,R,|C,D|,F#,2R,|C,D|,R,F#,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,R,D,R,|C,D,F#|,R,D,R,|C,D|,R,F#,R,|C,D,F#|,R,D,R,|C,D,F#|,R,D,R,|C,D|,R,F#,R),16e(|C,D,F#|,F#,|C,D|,D,|C,D|,D,|C,D|,D),16e(|C,D|,F#,|C,D|,D,|C,D|,D,|C,D|,D),7e(|C,D,F#|,F#,|C,D|,D,|C,D|,D,|C,D|,F#),32e(|C,D|,F#,|C,D|,D,|C,D|,D,|C,D|,D),2s(|C,D,F#|,R,F#,R,|C,D|,R,D,R,|C,D|,R,D,R,|C,D|,R,F#,R,|C,D,F#|,2F#,R,|C,D|,R,D,R,|C,D|,R,|D,D+|,R,|C,D,F#|,R,D,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,R,F#,R,|C,D,F#|,R,F#,D,|C,D|,R,D,R,|C,D|,R,2D,|C,D,F#|,R,F#,R),e(|C,D,F#|,F#,|C,D|,D,|C,D|,D,|C,D|,F#),19e(|C,D,F#|,F#,|C,D|,D,|C,D|,D,|C,D|,F#),7Rw,3R",
+      "velocity": 100,
+      "note": "Life During Wartime (2003 Remaster) — Talking Heads · 132 bpm · whole song, 122 bars · grade B 89% (kick 99, snare 92, hats 69, toms 33) · 1341 of 1508 hits matched, 170 extra"
+    },
+    {
+      "key": "V",
+      "name": "aid_The_Break_Up_Song_140",
+      "src": "m10,140T,7e(|C#+,D|,C,D,C,|C#+,D|,C,D,C),17e(|C#+,C,D|,C,D,R,|C#+,C,D|,C,D,R),2s(|C#+,C,D|,R,C,F#,|D,F#|,3R,|C#+,C,D|,R,C,F#,D,3R,|C#+,C,D|,R,C,R,|D,F#|,3R,|C#+,C|,F#,|C,F#|,F#,D,3R,|C#+,D|,R,|C,Dvv|,R,D,3R,|C,D|,R,C,R,D,2R,F#,|C#+,D|,R,|C,Dvv|,R,D,3R,|C,D|,R,C,R,|D,F#|,3R),4e(|C#+,C,D|,C,D,R,D,C,D,R,|C#+,D|,C,D,R,|C#+,C,D|,C,D,R,|C,D|,C,D,R,|C#+,C,D|,C,D,R,|C#+,D|,C,D,R,|C,D|,C,D,R),2s(|C#+,C,D|,R,C,R,D,3R,C,R,F#,R,D,2R,F#,|C#+,C|,R,C,R,|D,F#|,3R,|C,D|,F#,|C,F#|,R,|D,F#|,3R,|C#+,C,D|,R,C,R,D,3R,|C,D|,F#,|C,F#|,F#,D,2R,F#,|C,D|,R,C,R,D,3R,C,R,C,R,D,2R,F#),16e(|C,D|,C,D,R,|C,D|,C,D,R),s(2D,Dvv,D,|C,D|,R,D,R),12s(C,3R,D,3R,2D,R,D,|C,D|,R,D,R),3s(C,R,F#,R,D,3R,2D,R,D,C,R,D,R,C,3R,D,3R,D,3R,D,7R,D,7R,D,3R,C,3R,D,3R,2D,R,Dvv,C,R,D,R),s(C,R,F#,R,D,3R,2D,R,D,C,R,D,R,C,3R,D,3R,D,3R,D,7R,D,7R,D,3R),3R",
+      "velocity": 100,
+      "note": "The Break Up Song — The Greg Kihn Band · 140 bpm · whole song, 99 bars · grade B 86% (kick 87, snare 92, hats 48, crash 72) · 704 of 784 hits matched, 156 extra"
+    },
+    {
+      "key": "W",
+      "name": "aid_Grateful_Dead_Fire_on_the_Mountain_152",
+      "src": "m10,152T,2e(2F#,|C,D|,R,F#,2D,Dvv,F#,|Dvv,F#|,2|C,F#|,F#,R,D,C),2e(2F#,D,R,F#,Dvv,D,Dvv,2F#,2|C,F#|,2F#,D,C),e(2F#,D,R,F#,Dvv,D,Dvv),5e(2F#,C,R,2F#,D,R),4e(2F#,|C,D|,R,2F#,D,R),3e(2F#,|C,D|,R,F#,R,D,4F#,|C,F#|,F#,R,D,|C,D|),e(2F#,|C,D|,R,F#,R,D,F#),2e(2F#,C,R,2F#,D,R,2F#,|C,D|,R,2F#,D,R,F#,|D,F#|,F#,|C,F#|,2F#,|D,F#|,C,2F#,|C,D|,R,F#,|D,F#|,2D),e(2F#,C,R,2F#,D,R),2e(2F#,C,R,F#,Dvv,2D,3F#,|C,F#|,F#,R,D,C,2|Dvv,F#|,|C,D|,R,F#,Dvv,2D,2F#,|C,D|,R,D,R,D,R),e(2F#,C,R,F#,Dvv,2D,3F#,|C,F#|,F#,R,D,C),2e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,|Dvv,F#|,F#,D,3F#,|C,D|,R,F#,|D,F#|,2D,3F#,|C,F#|,2|Dvv,F#|,D,C),e(2F#,|C,D|,R,F#,R,D,R),4e(2F#,|C,D|,R,F#,R,D,R),5e(2F#,C,R,2F#,D,R),2e(2F#,|C,D|,R,2F#,D,R,3F#,|C,D,F#|,F#,R,D,C,2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R),4e(F#,|D,F#|,|C,D|,R,F#,3D),2e(2F#,|C,D|,R,F#,3D,F#,|D,F#|,F#,|C,D,F#|,2F#,D,C,2F#,|C,D|,R,F#,D,|D,F#|,D,F#,|Dvv,F#|,|C,D|,R,Dvv,R,D,R),e(2F#,|C,D|,R,F#,Dvv,2D,2F#,|C,F#|,|C,D,F#|,|Dvv,F#|,F#,D,C),e(2F#,|C,D|,R,F#,Dvv,2D),e(2F#,C,R,Dvv,R,D,R),2s(F#,R,F#,R,|C,D|,3R,F#,R,Dvv,R,D,R,|Dvv,F#|,R,F#,R,|D,F#|,R,F#,R,|C,D,F#|,F#,|Dvv,F#|,R,2F#,D,R,|C,Dvv|,R,F#,R,F#,R,|C,D|,3R,F#,R,Dvv,R,D,R,Dvv,R,F#,R,F#,R,|C,D|,3R,F#,3R,D,3R),3e(2F#,|C,D|,R,F#,Dvv,D,Dvv,3F#,|D,F#|,F#,R,D,C),e(2F#,|C,D|,R,F#,Dvv,D,Dvv),4e(|Dvv,F#|,F#,|C,D|,R,F#,R,D,R),3e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,4F#,|C,F#|,F#,R,D,C,2F#,|C,D|,R,F#,R,D,R),e(2F#,|C,D|,R,F#,R,D,R),2e(2F#,C,R,F#,R,D,R,3F#,|C,F#|,F#,R,D,C,2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R),e(2F#,C,R,F#,R,D,R),e(F#,|D,F#|,F#,R,4D),6e(F#,|D,F#|,|C,D|,R,F#,Dvv,2D),2e(2F#,|C,D|,R,F#,Dvv,2D,2F#,2|C,F#|,2F#,D,C),2e(2F#,C,3R,2Dvv,F#,R,F#,Dvv,2R,Dvv,7R,Dvv,9R)",
+      "velocity": 100,
+      "note": "Grateful Dead - Fire on the Mountain — Grateful Dead · 152 bpm · whole song, 146 bars · grade B 89% (kick 88, snare 87, hats 91) · 932 of 1010 hits matched, 152 extra"
+    },
+    {
+      "key": "X",
+      "name": "aid_I_Need_To_Know_152",
+      "src": "m10,152T,27e(2C,D,R,C,R,D,R),2s(|C#+,C|,R,C,R,D,3R,C,R,C,R,D,3R,|C#+,C|,R,C,R,|D,F#|,3R,C,R,C,R,|C#+,D,F#|,3R,C,F#,C,R,|D,F#|,3R,C,2F#,R,D,3R,C,R,C,R,D,3R,C,3R,|D,F#|,3R),42e(2C,D,R,C,R,D,R),7e(2C,D,R,2C,D,R),5e(2C,D,R,2C,D,R),s(C,R,D,R,D,R,C,F#,|C,F#|,F#,6R)",
+      "velocity": 100,
+      "note": "I Need To Know — Tom Petty And The Heartbreakers · 152 bpm · whole song, 90 bars · grade B 89% (kick 96, snare 99, hats 25, crash 32) · 472 of 567 hits matched, 17 extra"
+    },
+    {
+      "key": "Y",
+      "name": "aid_I_melt_with_you_157",
+      "src": "m10,157T,2s(|C,D,F#|,R,C,R,D,R,C,R,C,R,C,R,D,R,C,R,C,3R,D,R,C,R,C,R,C,R,D,3R,C,3R,D,R,C,R,C,F#,C,R,D,3R,|C,F#|,R,C,R,D,R,C,R,C,R,|C#+,C,D|,3R,D,R),16e(|C,F#|,F#,|D,F#|,F#,2C,D,F#),4s(C,R,C,R,D,R,C,R,C,R,C,R,D,R,C,R,C,R,C,R,D,R,C,R,C,R,C,R,D,R,C,R,C,3R,D,3R,C,R,C,R,D,R,C,R,C,3R,D,R,C,R,C,R,|C#+,D|,F#,C,R,D,F#),16s(|C,F#|,R,F#,R,|D,F#|,2F#,R,C,R,C,R,D,R,F#,R),4s(C,R,C,R,D,3R,C,R,C,R,D,R,C,R,C,3R,D,R,C,R,C,R,C,R,|D,F#|,R,C,R,C,3R,D,R,C,R,C,R,C,R,D,3R,C,3R,D,R,C,R,C,Dvv,D,F#,C,R,D,R),e(2C,D,R,2C,D,C),3e(2C,2D,Dvv,C,D,C,|C,D|,C,2D,R,C,D,R,2C,2D,C,2D,3C,2D,R,C,D,R),e(2C,2D,Dvv,C,D,C,|C,D|,C,2D,R,C,D,R,2C,2D,C,2D,C),2s(C,R,C,R,|D,F#|,3R,C,R,C,R,|D,F#|,3R,C,R,C,R,|D,F#|,R,C,R,C,R,C,R,|D,F#|,3R,C,3R,|D,F#|,R,C,R,C,R,C,R,|C,D|,3R,C,R,C,R,|D,F#|,R,C,R,C,R,|C#+,D|,R,C,R,D,F#),4e(2C,D,3C,D,R,C,R,D,3C,|D,F#|,R,C,R,D,3C,|D,F#|,R,C,R,D,2C,|C#+,D|,R,D),10e(2C,2D,R,C,D,C),5(4R),s(9R,Dvv,2D,C,2R,F#),2e(2C,D,2C,R,D,2C,R,D,3C,D,R,2C,D,3C,D,R,C,R,|C,D|,2C,|C#+,D|,2D),e(2C,D,2C,R,D,2C,R,D,3C,D,R,2C,D,3C,D,R),3e(C,R,D,2C,|C#+,D|,2D,2C,D,3C,D,R,2C,D,R,2C,D,2C,R,D,3C,D,R),e(C,R,D,2C,|C#+,D|,2D,2C,D,3C,D,R),e(C,R,D,R,2C,D,R),2s(4R,D,11R,C,3R,D,3R,C,R,C,R,D,3R,C,3R,D,5R,Dvv,F#,2R,Dvv,5R,Dvv,7R,Dvv,3R),2R",
+      "velocity": 100,
+      "note": "I melt with you — Modern English · 157 bpm · whole song, 162 bars · grade B 87% (kick 89, snare 92, hats 72, crash 78) · 1042 of 1171 hits matched, 192 extra"
+    },
+    {
+      "key": "Z",
+      "name": "aid_Call_Me_The_Breeze_188",
+      "src": "m10,188T,3(6R,C,R,Ds,F#s\\\\,Re,3R,D,R,C,Re,De\\\\\\\\),(6R,C,R,Ds,F#s\\\\,Re,3R),(Ds,Ds\\\\vv,De\\\\\\\\vv,De,De\\\\\\\\,|C,D|s,Ds\\\\vv,De\\\\\\\\vv,Ds,Ds\\\\vv,De\\\\\\\\),19(C,D,Ce,Ce\\\\\\\\,D),2(C,D,Ce,|C,D|e\\\\\\\\,|C,D|,Cs,F#s\\\\,F#e\\\\\\\\,D,Ce,Ce\\\\\\\\,D,C,|D,F#|,Ce,Ce\\\\\\\\,D,Cs,F#s\\\\,Re,D,Ce,Ce\\\\\\\\,D),35(C,D,Ce,Ce\\\\\\\\,D),3(|C,F#|,D,Ce,Ce\\\\\\\\,D,C,D,Ce,Ce\\\\\\\\,De,F#e\\\\\\\\,Cs,F#s\\\\,Re,D,Ce,Ce\\\\\\\\,D,C,D,Ce,Ce\\\\\\\\,|C,D|),70(C,D,Ce,Ce\\\\\\\\,D),9(Cs,F#s\\\\,Re,D,Ce,Ce\\\\\\\\,De,Ce\\\\\\\\,F#e,Ce\\\\\\\\,D,Ce,Ce\\\\\\\\,De,F#e\\\\\\\\),56(C,D,Ce,Ce\\\\\\\\,D),6(4R),2R",
+      "velocity": 100,
+      "note": "Call Me The Breeze — Lynyrd Skynyrd · 188 bpm · whole song, 240 bars · grade B 88% (kick 92, snare 94, hats 35, crash 0) · 1101 of 1308 hits matched, 82 extra"
+    }
+  ]
+}

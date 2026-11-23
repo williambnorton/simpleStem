@@ -1,0 +1,257 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPB Song Sections A7 — Bad Moon Rising, Take It Easy (Live on MTV 1994) (Official Video) [HD]",
+  "description": "A-grade songs split into their sections so each part can be played on its own: Bad Moon Rising, Take It Easy (Live on MTV 1994) (Official Video) [HD]. For each song there is one row that plays the whole song by calling its section rows in order, then one row per section named with its number and its section name (Intro, Verse1, Chorus2_a …). Every row starts m10 and the song's tempo (for example 94T), so playing a row sets the bank tempo to that song. Section names marked \"(a guess)\" in the note are low-confidence. Grades compare each row with the hits detected in the drum stem.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "make some MPL Bank JSON files with the drums parts into sections with corresponding MPL so I can play each one at a time - maybe a handful of A-list songs could fill a MPL Bank",
+  "created_at": "2026-11-15T19:35:16.000Z",
+  "bpm": 89,
+  "key": "",
+  "song": "Bad Moon Rising, Take It Easy (Live on MTV 1994) (Official Video) [HD]",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "aid_Bad_Moon_Rising",
+      "src": "m10,89T,@aid_Bad_Moon_Rising_s1_Verse1_a,@aid_Bad_Moon_Rising_s2_Verse1_b,@aid_Bad_Moon_Rising_s3_Verse1_c,@aid_Bad_Moon_Rising_s4_Verse1_d,@aid_Bad_Moon_Rising_s5_Verse1_e,@aid_Bad_Moon_Rising_s6_Verse1_f,@aid_Bad_Moon_Rising_s7_Verse1_g,@aid_Bad_Moon_Rising_s8_Solo_a,@aid_Bad_Moon_Rising_s9_Solo_b,@aid_Bad_Moon_Rising_s10_Verse2_a,@aid_Bad_Moon_Rising_s11_Verse2_b,@aid_Bad_Moon_Rising_s12_Verse2_c,@aid_Bad_Moon_Rising_s13_Verse2_d,@aid_Bad_Moon_Rising_s14_Verse2_e,@aid_Bad_Moon_Rising_s15_Outro",
+      "velocity": 100,
+      "note": "Bad Moon Rising — CCR · the whole song: plays its 15 section rows in order · 89 bpm · grade A 90% (kick 93, snare 98, hats 37, crash 45) · 414 of 463 hits matched, 44 extra"
+    },
+    {
+      "key": "1",
+      "name": "aid_Bad_Moon_Rising_s1_Verse1_a",
+      "src": "m10,89T,4e(D,R,D,C,D,C,D,C)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 1 of 7) (a guess) · Section 1 of 15 · 0:00-0:11 · 4 bars · grade C 74% (kick 73, snare 86, hats 0, crash 0) · 20 of 26 hits matched, 8 extra · 89 bpm"
+    },
+    {
+      "key": "2",
+      "name": "aid_Bad_Moon_Rising_s2_Verse1_b",
+      "src": "m10,89T,2s(D,R,|C#+,C|,R,D,R,2C,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 2 of 7) (a guess) · Section 2 of 15 · 0:11-0:22 · 4 bars · grade A 100% (kick 100, snare 100, crash 100) · 36 of 36 hits matched, 0 extra · 89 bpm"
+    },
+    {
+      "key": "3",
+      "name": "aid_Bad_Moon_Rising_s3_Verse1_c",
+      "src": "m10,89T,4s(D,R,C,R,D,R,|C#+,C|,R,D,R,2C,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 3 of 7) (a guess) · Section 3 of 15 · 0:22-0:33 · 4 bars · grade A 91% (kick 92, snare 100, crash 50) · 36 of 39 hits matched, 4 extra · 89 bpm"
+    },
+    {
+      "key": "4",
+      "name": "aid_Bad_Moon_Rising_s4_Verse1_d",
+      "src": "m10,89T,6e(D,C,D,C,D,C,D,C)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 4 of 7) (a guess) · Section 4 of 15 · 0:33-0:49 · 6 bars · grade A 91% (kick 96, snare 98, hats 0, crash 0) · 47 of 55 hits matched, 1 extra · 89 bpm"
+    },
+    {
+      "key": "5",
+      "name": "aid_Bad_Moon_Rising_s5_Verse1_e",
+      "src": "m10,89T,2s(D,R,C,R,|D,F#|,R,2C,D,R,C,R,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 5 of 7) (a guess) · Section 5 of 15 · 0:49-0:54 · 2 bars · grade A 92% (kick 89, snare 100, hats 67) · 17 of 17 hits matched, 3 extra · 89 bpm"
+    },
+    {
+      "key": "6",
+      "name": "aid_Bad_Moon_Rising_s6_Verse1_f",
+      "src": "m10,89T,4s(D,R,|C#+,C|,R,|D,F#|,R,C,R,D,R,2C,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 6 of 7) (a guess) · Section 6 of 15 · 0:54-1:05 · 4 bars · grade B 84% (kick 92, snare 100, hats 33, crash 50) · 38 of 47 hits matched, 6 extra · 89 bpm"
+    },
+    {
+      "key": "7",
+      "name": "aid_Bad_Moon_Rising_s7_Verse1_g",
+      "src": "m10,89T,2s(D,R,C,R,D,R,C,R,D,R,C,F#,D,R,|C#+,C|,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 1 (part 7 of 7) (a guess) · Section 7 of 15 · 1:05-1:10 · 2 bars · grade A 95% (kick 100, snare 100, hats 67, crash 67) · 18 of 18 hits matched, 2 extra · 89 bpm"
+    },
+    {
+      "key": "8",
+      "name": "aid_Bad_Moon_Rising_s8_Solo_a",
+      "src": "m10,89T,3s(D,R,C,R,D,R,2C,D,R,C,R,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Solo (part 1 of 2) · Section 8 of 15 · 1:10-1:18 · 3 bars · grade A 96% (kick 97, snare 100, hats 0) · 26 of 27 hits matched, 1 extra · 89 bpm"
+    },
+    {
+      "key": "9",
+      "name": "aid_Bad_Moon_Rising_s9_Solo_b",
+      "src": "m10,89T,3s(D,R,C,R,D,R,C,R,D,R,2C,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Solo (part 2 of 2) · Section 9 of 15 · 1:18-1:26 · 3 bars · grade A 96% (kick 97, snare 100, hats 0) · 26 of 27 hits matched, 1 extra · 89 bpm"
+    },
+    {
+      "key": "A",
+      "name": "aid_Bad_Moon_Rising_s10_Verse2_a",
+      "src": "m10,89T,5e(D,C,D,C,D,C,D,C)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 2 (part 1 of 5) (a guess) · Section 10 of 15 · 1:26-1:39 · 5 bars · grade B 87% (kick 88, snare 100, hats 0, crash 0) · 38 of 47 hits matched, 2 extra · 89 bpm"
+    },
+    {
+      "key": "B",
+      "name": "aid_Bad_Moon_Rising_s11_Verse2_b",
+      "src": "m10,89T,3e(D,C,D,C,D,C,D,C)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 2 (part 2 of 5) (a guess) · Section 11 of 15 · 1:39-1:47 · 3 bars · grade A 92% (kick 96, snare 100, hats 0, crash 0) · 24 of 28 hits matched, 0 extra · 89 bpm"
+    },
+    {
+      "key": "C",
+      "name": "aid_Bad_Moon_Rising_s12_Verse2_c",
+      "src": "m10,89T,4s(D,R,C,R,D,R,C,R,D,F#,2C,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 2 (part 3 of 5) (a guess) · Section 12 of 15 · 1:47-1:58 · 4 bars · grade B 89% (kick 92, snare 100, hats 50, crash 0) · 36 of 41 hits matched, 4 extra · 89 bpm"
+    },
+    {
+      "key": "D",
+      "name": "aid_Bad_Moon_Rising_s13_Verse2_d",
+      "src": "m10,89T,3e(D,C,D,C,D,C,D,C)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 2 (part 4 of 5) (a guess) · Section 13 of 15 · 1:58-2:06 · 3 bars · grade A 94% (kick 96, snare 100, hats 0, crash 0) · 24 of 27 hits matched, 0 extra · 89 bpm"
+    },
+    {
+      "key": "E",
+      "name": "aid_Bad_Moon_Rising_s14_Verse2_e",
+      "src": "m10,89T,2s(D,F#,C,R,D,R,C,R,D,R,C,|C,F#|,D,R,C,R)",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Verse 2 (part 5 of 5) (a guess) · Section 14 of 15 · 2:06-2:12 · 2 bars · grade A 93% (kick 95, snare 100, hats 67) · 19 of 19 hits matched, 3 extra · 89 bpm"
+    },
+    {
+      "key": "F",
+      "name": "aid_Bad_Moon_Rising_s15_Outro",
+      "src": "m10,89T,2s(D,R,C,R,|C,D|,R,|C#+,D|,|C#+,C|,F#,7R),3R",
+      "velocity": 100,
+      "note": "Bad Moon Rising · Outro · Section 15 of 15 · 2:12-2:19 · 2 bars + 3 beats · grade D 67% (kick 67, snare 67, hats 67, crash 67) · 9 of 9 hits matched, 9 extra · 89 bpm"
+    },
+    {
+      "key": "G",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Official_Video",
+      "src": "m10,144T,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s1_Intro_a,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s2_Intro_b,@aid_Take_It_Easy_Live_on_MTV_1994_Offi_s3_Verse1,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s4_Chorus1,@aid_Take_It_Easy_Live_on_MTV_1994_Of_s5_Verse2_a,@aid_Take_It_Easy_Live_on_MTV_1994_Of_s6_Verse2_b,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s7_Chorus2,@aid_Take_It_Easy_Live_on_MTV_1994_Offi_s8_Verse3,@aid_Take_It_Easy_Live_on_MTV_1994_Offic_s9_Solo1,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s10_Verse4,@aid_Take_It_Easy_Live_on_MTV_1994_Of_s11_Chorus3,@aid_Take_It_Easy_Live_on_MTV_1994_O_s12_Verse5_a,@aid_Take_It_Easy_Live_on_MTV_1994_O_s13_Verse5_b,@aid_Take_It_Easy_Live_on_MTV_1994_Of_s14_Solo2_a,@aid_Take_It_Easy_Live_on_MTV_1994_Of_s15_Solo2_b,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s16_Verse6,@aid_Take_It_Easy_Live_on_MTV_1994_Off_s17_Bridge",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] — Eagles · the whole song: plays its 17 section rows in order · 144 bpm · grade A 90% (kick 95, snare 94, hats 85, crash 51) · 1004 of 1153 hits matched, 85 extra"
+    },
+    {
+      "key": "H",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s1_Intro_a",
+      "src": "m10,144T,Rw",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Intro (part 1 of 2) · Section 1 of 17 · 0:01-0:03 · 1 bar · no drum hits in the stem here · 144 bpm"
+    },
+    {
+      "key": "I",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s2_Intro_b",
+      "src": "m10,144T,3e(C,F#,D,2C,F#,D,R,C,F#,D,2C,F#,D,17R),e(C,F#,D,2C,F#,D,R,C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Intro (part 2 of 2) · Section 2 of 17 · 0:03-0:27 · 14 bars · grade F 54% (kick 57, snare 53, hats 50) · 28 of 48 hits matched, 28 extra · 144 bpm"
+    },
+    {
+      "key": "J",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Offi_s3_Verse1",
+      "src": "m10,144T,8e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 1 · Section 3 of 17 · 0:27-0:40 · 8 bars · grade A 97% (kick 100, snare 100, hats 94, crash 0) · 55 of 57 hits matched, 1 extra · 144 bpm"
+    },
+    {
+      "key": "K",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s4_Chorus1",
+      "src": "m10,144T,6e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Chorus 1 · Section 4 of 17 · 0:40-0:51 · 6 bars · grade A 92% (kick 100, snare 100, hats 83, crash 0) · 42 of 49 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "L",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Of_s5_Verse2_a",
+      "src": "m10,144T,10e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 2 (part 1 of 2) (a guess) · Section 5 of 17 · 0:51-1:08 · 10 bars · grade B 84% (kick 97, snare 84, hats 78, crash 0) · 65 of 84 hits matched, 5 extra · 144 bpm"
+    },
+    {
+      "key": "M",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Of_s6_Verse2_b",
+      "src": "m10,144T,8e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 2 (part 2 of 2) · Section 6 of 17 · 1:08-1:21 · 8 bars · grade A 93% (kick 100, snare 100, hats 88, crash 0) · 55 of 62 hits matched, 1 extra · 144 bpm"
+    },
+    {
+      "key": "N",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s7_Chorus2",
+      "src": "m10,144T,10e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Chorus 2 · Section 7 of 17 · 1:21-1:38 · 10 bars · grade A 95% (kick 100, snare 100, hats 91, crash 0) · 70 of 77 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "O",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Offi_s8_Verse3",
+      "src": "m10,144T,7e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 3 (a guess) · Section 8 of 17 · 1:38-1:50 · 7 bars · grade B 89% (kick 98, snare 93, hats 87, crash 0) · 48 of 59 hits matched, 1 extra · 144 bpm"
+    },
+    {
+      "key": "P",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Offic_s9_Solo1",
+      "src": "m10,144T,16e(|C#+,C|,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Solo 1 · Section 9 of 17 · 1:50-2:17 · 16 bars · grade A 95% (kick 100, snare 100, hats 97, crash 65) · 121 of 127 hits matched, 7 extra · 144 bpm"
+    },
+    {
+      "key": "Q",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s10_Verse4",
+      "src": "m10,144T,9e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 4 · Section 10 of 17 · 2:17-2:33 · 9 bars · grade A 95% (kick 100, snare 100, hats 86, crash 0) · 63 of 70 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "R",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Of_s11_Chorus3",
+      "src": "m10,144T,3s(C,R,F#,R,D,R,C,R,C,R,F#,R,D,3R,C,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,|C,F#|,F#,4R,D,3R,C,3R,|D,F#|,3R,C,R,F#,R,|D,F#|,R,C,R,C,3R,D,3R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Chorus 3 · Section 11 of 17 · 2:33-2:53 · 12 bars · grade C 76% (kick 76, snare 89, hats 72, crash 0) · 68 of 92 hits matched, 19 extra · 144 bpm"
+    },
+    {
+      "key": "S",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_O_s12_Verse5_a",
+      "src": "m10,144T,9e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 5 (part 1 of 2) (a guess) · Section 12 of 17 · 2:53-3:08 · 9 bars · grade A 98% (kick 100, snare 100, hats 97, crash 0) · 62 of 64 hits matched, 1 extra · 144 bpm"
+    },
+    {
+      "key": "T",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_O_s13_Verse5_b",
+      "src": "m10,144T,6e(C,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 5 (part 2 of 2) (a guess) · Section 13 of 17 · 3:08-3:18 · 6 bars · grade A 100% (kick 100, snare 100, hats 100) · 42 of 42 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "U",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Of_s14_Solo2_a",
+      "src": "m10,144T,2s(|C#+,C|,R,F#,R,D,R,C,R,C,R,F#,R,D,3R,|C#+,C|,R,F#,R,D,R,C,R,C,R,F#,R,D,3R,|C#+,C|,R,F#,R,D,R,C,R,C,R,C,R,D,R,C,R,C,2F#,R,D,R,C,R,C,R,F#,R,D,3R),e(|C#+,C|,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Solo 2 (part 1 of 2) · Section 14 of 17 · 3:18-3:33 · 9 bars · grade A 97% (kick 100, snare 100, hats 94, crash 83) · 70 of 70 hits matched, 4 extra · 144 bpm"
+    },
+    {
+      "key": "V",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Of_s15_Solo2_b",
+      "src": "m10,144T,17e(|C#+,C|,F#,D,2C,F#,D,R)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Solo 2 (part 2 of 2) · Section 15 of 17 · 3:33-4:01 · 17 bars · grade A 92% (kick 96, snare 100, hats 91, crash 67) · 128 of 143 hits matched, 8 extra · 144 bpm"
+    },
+    {
+      "key": "W",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s16_Verse6",
+      "src": "m10,144T,8e(|C#+,C|,F#,D,2C,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Verse 6 (a guess) · Section 16 of 17 · 4:01-4:15 · 8 bars · grade A 92% (kick 100, snare 100, hats 90, crash 62) · 74 of 80 hits matched, 6 extra · 144 bpm"
+    },
+    {
+      "key": "X",
+      "name": "aid_Take_It_Easy_Live_on_MTV_1994_Off_s17_Bridge",
+      "src": "m10,144T,s(|C,F#|,R,F#,R,D,R,C,R,C,R,D,2R,F#,2R),2e(2R,D,2R,D,10R),s(5R,Dvv,2R,C,Dvv,2R,D,Dvv,2R),3R",
+      "velocity": 100,
+      "note": "Take It Easy (Live on MTV 1994) (Official Video) [HD] · Bridge · Section 17 of 17 · 4:15-4:27 · 6 bars + 3 beats · grade F 57% (kick 89, snare 57, hats 38) · 13 of 29 hits matched, 4 extra · 144 bpm"
+    }
+  ]
+}

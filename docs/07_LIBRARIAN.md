@@ -12,7 +12,7 @@ has nothing to do at a gig but play. The Librarian:
   members, drum patterns, readiness) and rebuilds the sheet-driven gigs,
 - keeps itself up to date without anyone touching it.
 
-The Librarian **never runs Demucs** (the 8 GB mini can't), and the
+The Librarian **never stems** (the 8 GB mini can't), and the
 Performer never runs the ingest watcher. They meet in the shared Drive
 folder.
 
@@ -56,7 +56,7 @@ server events.
 - **Render progress dots.** The STEMS folder shows the
   most-recently-touched song with one **blue dot** for `source.wav` and
   **six green dots** for the six stem m4as, filling in as each artifact
-  lands — you can watch a Demucs render complete dot by dot.
+  lands — you can watch the stems arrive dot by dot.
 - **Health tick.** *"DRIVE OK · Nms"* with a checkmark that flashes once a
   minute when the Drive health probe runs.
 - **Artifact ticker.** A persistent "Latest artifacts:" line under the
@@ -151,6 +151,5 @@ without writing; `--master-only` skips the per-gig tabs. Unmatched sheet
 rows are reported to `LOGS/mpb_sync_report.json` for triage — the sync
 never creates songs or starts renders on its own.
 
-One hard rule: **never run the render queue on the mini.** Demucs needs
-more memory than the machine has; that's the whole reason the Performer
-renders. (The scripts now guard against this by hostname.)
+One hard rule: **never run the render queue on the mini.** Stemming
+belongs on the Performer, where Logic Pro is. (The scripts now guard against this by hostname.)

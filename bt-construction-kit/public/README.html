@@ -220,7 +220,7 @@
       <div class="body">
         <span class="num">STEP 4</span><span class="lane">Performer &middot; queue_runner.sh</span>
         <h3>Render six stems</h3>
-        <p>Demucs htdemucs_6s splits vocals, drums, bass, guitar, piano and other. Finished jobs move to <code>_done/</code>, failures to <code>_failed/</code> with a log.</p>
+        <p>Logic Pro's Stem Splitter splits vocals, drums, bass, guitar, piano and other, plus six drum-kit pieces, when the Logic stemming queue is run. Finished ingest jobs move to <code>_done/</code>, failures to <code>_failed/</code> with a log.</p>
         <span class="where">STEMS/&lt;slug&gt;/*.m4a</span>
         <span class="time">10 to 25 min per song</span>
       </div>
@@ -253,7 +253,7 @@
       <div class="meter static" id="m-libsvc"><div class="row"><span class="big">–</span><span class="cap">services up</span></div></div>
       <div class="body">
         <h3>Librarian &middot; Mac mini</h3>
-        <p class="role">Always on, 8 GB. Fetches, analyzes, indexes. Never runs Demucs. <code>./librarian.sh</code></p>
+        <p class="role">Always on, 8 GB. Fetches, analyzes, indexes. Never stems. <code>./librarian.sh</code></p>
         <ul class="svc" id="svc-lib">
           <li data-k="lib-watcher"><span class="dot"></span><span class="n">watcher</span><small>webloc_watch.sh, YouTube downloads</small></li>
           <li data-k="lib-audiowatch"><span class="dot"></span><span class="n">audiowatch</span><small>audio files from INCOMING_AUDIO/</small></li>
@@ -288,7 +288,7 @@
         <h3>Performer &middot; MacBook Pro</h3>
         <p class="role">The gig machine, 36 GB. Renders stems and runs the portal. <code>./performer.sh</code></p>
         <ul class="svc" id="svc-perf">
-          <li data-k="perf-runner"><span class="dot"></span><span class="n">runner</span><small>queue_runner.sh + Demucs</small></li>
+          <li data-k="perf-runner"><span class="dot"></span><span class="n">runner</span><small>queue_runner.sh</small></li>
           <li data-k="perf-server"><span class="dot"></span><span class="n">server</span><small>the portal on :3000</small></li>
           <li data-k="perf-midi"><span class="dot"></span><span class="n">midi</span><small>MIDI sidecar :5555 (Helix, XR18, Logic)</small></li>
           <li data-k="perf-logic"><span class="dot"></span><span class="n">logic</span><small>Logic Pro mixer bridge :5556</small></li>
@@ -324,8 +324,8 @@
 <div>&nbsp;&nbsp;├─ <span class="d drive">CATALOG.json</span> <span class="note">the library index; written ONLY by catalog.py on the Librarian; Performer reads its local mirror, never this file, on the hot path</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d drive">STEMS/&lt;slug&gt;/</span> <span class="note">one folder per song; the heart of the library</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ source.wav <span class="note">raw 48 kHz ingest, kept so a song can be re-stemmed without re-downloading (the only permitted wav)</span></div>
-<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ vocals / drums / bass / guitar / piano / other .m4a <span class="note">the six Demucs stems, AAC 256k, moov-first mandatory</span></div>
-<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ metadata.json <span class="note">producer-consumer contract: title, BPM, key, singer fields, automation timeline, sectionCandidates</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ vocals / drums / bass / guitar / piano / other .m4a <span class="note">the six Logic Pro stems, AAC 256k, moov-first mandatory</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ metadata.json <span class="note">producer-consumer contract: title, BPM, key, singer fields, automation timeline, sections</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d drive">STEM_QUEUE/</span> <span class="note">render jobs as .json files; setlists one level deep as NN_&lt;slug&gt;.json; the runner takes the first filename alphabetically</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ _done/ &nbsp;_failed/ <span class="note">finished and dead jobs; every find over the queue must -prune these (327 folders in _done wedged a restart for 15 h)</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ .runner.lock/ <span class="note">single-runner mutex, owner-stamped (host + pid) so a reboot no longer leaves it stale</span></div>
@@ -344,10 +344,10 @@
 <div><span class="tag codet">CODE</span><span class="d codec">~/simpleStem-code/</span> <span class="note">the git clone; the ONLY place to run performer.sh (the Drive copy refuses to run)</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">performer.sh</span> <span class="note">laptop switch for six services (runner, midi, logic, server, caffeinate, midiwatch): start / stop / status / reset / test / drill</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">librarian.sh</span> <span class="note">mini switch: watcher, audiowatch, cataloger (hourly), catalogwatch, mpbsync (daily), portal, autoupdate, heartbeat</span></div>
-<div>&nbsp;&nbsp;├─ <span class="d codec">queue_runner.sh &middot; stem.sh</span> <span class="note">queue consumer and the Demucs heavy worker (Performer only, never the 8 GB mini)</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">queue_runner.sh &middot; stem.sh</span> <span class="note">queue consumer: fetches the SOURCE and queues the song for Logic Pro stemming (Performer only)</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">webloc_watch.sh &middot; audio_watch.sh &middot; metadata.py &middot; catalog.py &middot; mpb_sync.py</span> <span class="note">Librarian-side ingest, analysis, index, sheet sync</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">webloc_drop.sh</span> <span class="note">queue one YouTube URL from any shell; same result as the portal's Add box</span></div>
-<div>&nbsp;&nbsp;├─ <span class="d codec">section_detect.py &middot; midi_sidecar.py &middot; midi_watchdog.sh &middot; logic_bridge.py</span> <span class="note">Performer-side: section analysis after render, MIDI daemon on :5555 and its watchdog, Logic Pro mixer bridge on :5556</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d codec">midi_sidecar.py &middot; midi_watchdog.sh &middot; logic_bridge.py</span> <span class="note">Performer-side: MIDI daemon on :5555 and its watchdog, Logic Pro mixer bridge on :5556</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">bt-construction-kit/</span> <span class="note">the portal: server.js (Express :3000) + public/ with every script and font vendored, zero CDN</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">clip_librarian/</span> <span class="note">fetch_clip.sh, trim_clip.sh, BlackHole + Logic capture walkthrough</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d codec">.run/</span> <span class="note">pidfiles + per-service logs (perf-runner.log, perf-server.log, ...), trimmed to 2000 lines per restart</span></div>

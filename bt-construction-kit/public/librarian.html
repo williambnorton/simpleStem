@@ -749,7 +749,7 @@
     /* ================================================================
        Artifact flows — the two key creation events in the pipeline.
          BLUE  = source.wav (webloc_watch just finished a YouTube pull)
-         GREEN = *.m4a stem (queue_runner just finished a Demucs encode)
+         GREEN = *.m4a stem (a stem file just arrived)
        These are the visualizations Bill asked to see highlighted.
        ================================================================ */
     .pipeline-svg .artifact-dot {
@@ -1035,7 +1035,7 @@
             <text class="folder-label" x="50" y="46">STEMS</text>
             <!-- Artifact progress dots for the most-recently-touched song.
                  One BLUE dot for source.wav (webloc_watch download), six
-                 GREEN dots for the stem *.m4a files (Demucs+ffmpeg). Fills
+                 GREEN dots for the stem *.m4a files. Fills
                  in as each artifact lands so Bill can watch the render
                  progress at a glance. -->
             <text class="artifact-slot-label" x="14" y="60">SRC</text>
@@ -1111,7 +1111,7 @@
         <!-- Artifact ticker — last several source.wav / *.m4a creation
              events, newest first. Blue chip = webloc_watch just finished
              a YouTube pull; green chip = queue_runner just finished a
-             Demucs+ffmpeg encode. Persistent so Bill can scan the
+             stem encode. Persistent so Bill can scan the
              history without watching every frame. -->
         <div class="artifact-ticker" id="artifact-ticker">
           <span class="ticker-label">Latest artifacts:</span>
@@ -1124,7 +1124,7 @@
     <section class="section">
       <div class="section-head">
         <h2>Ingest pipeline</h2>
-        <span class="blurb">YouTube URL → watcher → queue → demucs → STEMS/.</span>
+        <span class="blurb">YouTube URL → watcher → queue → SOURCE in STEMS/ → Logic Pro stemming queue.</span>
       </div>
       <div class="grid-4">
         <div id="card-incoming" class="card state-idle">
@@ -1640,7 +1640,7 @@
     }
     // Working animation — pulses the folder body while the machine is
     // doing the work that produces its output (webloc_watch downloading
-    // a source.wav, queue_runner running Demucs, etc.). Distinct from
+    // a source.wav, queue_runner running stem.sh, etc.). Distinct from
     // .active (which just glows on file arrival) — this signals
     // ongoing computation, not a one-shot event.
     function setFolderWorking(key, on) {
@@ -1744,8 +1744,7 @@
     }
     function phaseArtifactName(phase) {
       const p = String(phase || '').toLowerCase();
-      if (p.includes('demucs') || p.includes('separat'))   return 'vocals.m4a … 6 stems';
-      if (p.includes('mixing') || p.includes('encoding'))  return 'vocals.m4a … 6 stems';
+      if (p.includes('encoding') || p.includes('logic'))   return '_SOURCE.m4a';
       if (p.includes('analyz') || p.includes('metadata'))  return 'metadata.json';
       if (p.includes('download') || p.includes('slicing') || p.includes('cached source')) return 'source.wav';
       return 'job.json';
@@ -2069,7 +2068,7 @@
     //   BLUE  = source.wav landed (webloc_watch just finished a
     //           YouTube download for a song)
     //   GREEN = a *.m4a stem landed (queue_runner just finished
-    //           Demucs+ffmpeg on one stem)
+    //           one stem arriving)
     // =================================================================
     let currentArtifactSong = null;   // whose dots are we showing?
     const M4A_STEMS = ['vocals.m4a','drums.m4a','bass.m4a','guitar.m4a','piano.m4a','other.m4a'];
@@ -2207,7 +2206,7 @@
       // Pop a flare + fly the glyph along the right arrow. For a
       // source.wav we visualize INCOMING → STEMS (webloc_watch's
       // download completing); for a stem m4a we visualize QUEUED →
-      // STEMS (queue_runner's Demucs finishing that stem).
+      // STEMS (that stem arriving).
       if (kind === 'source.wav') {
         popFlare('source.wav', 'SRC.WAV');
         // No direct incoming→stems arrow; run two-hop flight. The full
@@ -2628,5 +2627,6 @@
     };
   </script>
 <script src="help.js"></script>
+<script src="/views-keys.js"></script>
 </body>
 </html>

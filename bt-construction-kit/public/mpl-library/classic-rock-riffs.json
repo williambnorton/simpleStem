@@ -1,0 +1,127 @@
+{
+  "format": "simplestem-mpl-patterns",
+  "version": 1,
+  "about": "Original guitar riffs in classic rock styles, on ch 14, the G amp (GM guitars: p27 clean, p29 overdriven, p30 distortion). Each lists its key, tempo, chord chart and a drum groove from classic-rock-drums that fits. Not transcriptions of real songs.",
+  "patterns": [
+    {
+      "id": "rf-estomp",
+      "group": "Classic rock · Riffs",
+      "label": "E minor pentatonic stomp — 70s hard rock (2 bars) · plays with cr-straight",
+      "main": "rf_estomp",
+      "key": "Em",
+      "bpm": 100,
+      "chart": "| Em | Em |",
+      "parts": {
+        "rf_estomp": "m14,p30,Ee,Ee,Ge,Ee,Ae,Ee,Ge,Ae,Be,Ae,Ge,Ee,D+q,Eq"
+      }
+    },
+    {
+      "id": "rf-boogiea",
+      "group": "Classic rock · Riffs",
+      "label": "Boogie walk in A — 50s rock & roll shuffle (1 bar) · plays with cr-boogie",
+      "main": "rf_boogiea",
+      "key": "A",
+      "bpm": 140,
+      "chart": "| A7 |",
+      "parts": {
+        "rf_boogiea": "m14,p29,Ae,C#+e\\\\\\\\,E+e,F#+e\\\\\\\\,G+e,F#+e\\\\\\\\,E+e,C#+e\\\\\\\\"
+      }
+    },
+    {
+      "id": "rf-mixod",
+      "group": "Classic rock · Riffs",
+      "label": "D–C–G Mixolydian riff — southern rock (4 bars) · plays with cr-drive",
+      "main": "rf_mixod",
+      "key": "D",
+      "bpm": 128,
+      "chart": "| D | C | G | D |",
+      "parts": {
+        "rf_mixod": "m14,p29,D+q,D+e,F#+e,A+q,F#+e,D+e,C+q,C+e,E+e,G+q,E+e,C+e,Gq,Ge,Be,D+q,Be,Ge,D+e,D+e,C+e,Ae,D+q,Rq"
+      }
+    },
+    {
+      "id": "rf-gallop",
+      "group": "Classic rock · Riffs",
+      "label": "Gallop riff in E — British metal (4 bars) · plays with cr-straight",
+      "main": "rf_gallop",
+      "key": "Em",
+      "bpm": 150,
+      "chart": "| Em | G  A | Em | B  A G |",
+      "parts": {
+        "rf_gallop": "m14,p30,4(Ee,Es,Es),2(Ge,Gs,Gs),2(Ae,As,As),4(Ee,Es,Es),2(Be,Bs,Bs),Ae,As,As,Ge,F#s,Gs"
+      }
+    },
+    {
+      "id": "rf-turne",
+      "group": "Classic rock · Riffs",
+      "label": "Blues turnaround in E — last 2 bars of a 12-bar · plays with cr-shuffle",
+      "main": "rf_turne",
+      "key": "E",
+      "bpm": 110,
+      "chart": "| E | B7 |",
+      "parts": {
+        "rf_turne": "m14,p29,E++e,D++e,E++e,C#++e,E++e,C++e,E++e,B+e,Bq,Re,Be,Bq,Rq"
+      }
+    },
+    {
+      "id": "rf-dropd",
+      "group": "Classic rock · Riffs",
+      "label": "Drop-D drone riff (2 bars) — tune low E to D · plays with cr-heavy",
+      "main": "rf_dropd",
+      "key": "D",
+      "bpm": 105,
+      "chart": "| D5 | D5 |",
+      "parts": {
+        "rf_dropd": "m14,p30,De,De,D+e,De,De,C+e,De,Ae,De,De,F+e,De,E+e,De,C+e,Ae"
+      }
+    },
+    {
+      "id": "rf-funka",
+      "group": "Classic rock · Riffs",
+      "label": "Funk-rock 16ths in A — 70s funk-rock (1 bar) · plays with cr-drive",
+      "main": "rf_funka",
+      "key": "A",
+      "bpm": 100,
+      "chart": "| A7 |",
+      "parts": {
+        "rf_funka": "m14,p29,As,Rs,As,C+s,Rs,As,D+s,Rs,D#+s,E+s,Rs,G+s,E+s,Rs,D+s,C+s"
+      }
+    },
+    {
+      "id": "rf-balladam",
+      "group": "Classic rock · Riffs",
+      "label": "Minor ballad arpeggio — Am G F E, clean guitar (4 bars) · plays with cr-heavy",
+      "main": "rf_balladam",
+      "key": "Am",
+      "bpm": 76,
+      "chart": "| Am | G | F | E |",
+      "parts": {
+        "rf_balladam": "m14,p27,Ae,E+e,A+e,C++e,E++e,C++e,A+e,E+e,Ge,D+e,G+e,B+e,D++e,B+e,G+e,D+e,Fe,C+e,F+e,A+e,C++e,A+e,F+e,C+e,Ee,Be,E+e,G#+e,B+e,G#+e,E+e,Be"
+      }
+    },
+    {
+      "id": "rf-pumpe",
+      "group": "Classic rock · Riffs",
+      "label": "Power-pop eighth pump — E B C#m A (4 bars) · plays with cr-drive",
+      "main": "rf_pumpe",
+      "key": "E",
+      "bpm": 140,
+      "chart": "| E | B | C#m | A |",
+      "parts": {
+        "rf_pumpe": "m14,p29,8(Ee),8(Be),8(C#+e),8(Ae)"
+      }
+    },
+    {
+      "id": "rf-doom",
+      "group": "Classic rock · Riffs",
+      "label": "Slow doom riff in E (2 bars) · plays with cr-heavy",
+      "main": "rf_doom",
+      "key": "Em",
+      "bpm": 70,
+      "chart": "| Em | A#5 A5 G5 |",
+      "parts": {
+        "rf_doom": "m14,p30,Eq,Re,Ge,F#e,Fe,Eq,A#q,Aq,Ge,Ee,Gq"
+      }
+    }
+  ]
+}

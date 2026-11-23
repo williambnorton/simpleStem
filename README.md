@@ -28,7 +28,7 @@ flowchart TB
 
     subgraph LAPTOP["MacBook Pro · PERFORMER · 36 GB · travels"]
       LC["~/simpleStem-code/<br/>git clone"]
-      QR["queue_runner.sh + stem.sh<br/>Demucs render"]
+      QR["queue_runner.sh + stem.sh<br/>→ Logic stemming queue"]
       PORTAL["bt-construction-kit<br/>portal :3000"]
     end
 
@@ -55,8 +55,8 @@ Code lives in GitHub. Both machines clone it onto local disk under
 `~/simpleStem-code/`. Drive holds only the data (song folders, queue,
 m4as). The machines never share code; they only share the data folder.
 
-Two-machine split exists because Demucs needs several GB of RAM and the
-8 GB mini crashed running it. The 36 GB laptop owns Demucs; the mini
+Two-machine split exists because stem separation needs Logic Pro and RAM
+that the 8 GB mini does not have. The 36 GB laptop owns stemming; the mini
 owns 24/7 ingest. Audio is fetched from YouTube **once** (on the mini,
 into the cache) and reused by the laptop — the gig tether never hits
 YouTube.
@@ -88,8 +88,9 @@ project-specific guide loaded automatically each session.
 ./install.sh
 ```
 
-Installs Homebrew prereqs (ffmpeg, yt-dlp, pipx), then demucs into a
-pipx venv with torch / torchcodec / librosa / soundfile. Idempotent —
+Installs Homebrew prereqs (ffmpeg, yt-dlp, pipx), then the Python
+environment with librosa / soundfile (still installed under the pipx name
+`demucs`; the Demucs program itself is no longer used). Idempotent —
 re-run if anything is missing.
 
 ### Run
@@ -102,7 +103,7 @@ cd ~/simpleStem-code
 ./librarian.sh start         # watcher + daily catalog poll
 
 # Performer (laptop)
-./performer.sh start         # queue runner (Demucs) + portal at :3000
+./performer.sh start         # queue runner (ingest) + portal at :3000
 ```
 
 Then open <http://localhost:3000>, paste a YouTube URL into "Paste a

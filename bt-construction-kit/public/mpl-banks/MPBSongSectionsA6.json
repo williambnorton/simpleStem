@@ -1,0 +1,180 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPB Song Sections A6 — Fire on the Mountain, Still The Same (Remastered 2011)",
+  "description": "A-grade songs split into their sections so each part can be played on its own: Fire on the Mountain, Still The Same (Remastered 2011). For each song there is one row that plays the whole song by calling its section rows in order, then one row per section named with its number and its section name (Intro, Verse1, Chorus2_a …). Every row starts m10 and the song's tempo (for example 94T), so playing a row sets the bank tempo to that song. Section names marked \"(a guess)\" in the note are low-confidence. Grades compare each row with the hits detected in the drum stem.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "make some MPL Bank JSON files with the drums parts into sections with corresponding MPL so I can play each one at a time - maybe a handful of A-list songs could fill a MPL Bank",
+  "created_at": "2026-11-15T19:35:16.000Z",
+  "bpm": 152,
+  "key": "",
+  "song": "Fire on the Mountain, Still The Same (Remastered 2011)",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "aid_Fire_on_the_Mountain",
+      "src": "m10,152T,@aid_Fire_on_the_Mountain_s1_Intro,@aid_Fire_on_the_Mountain_s2_Verse1_a,@aid_Fire_on_the_Mountain_s3_Verse1_b,@aid_Fire_on_the_Mountain_s4_Verse1_c,@aid_Fire_on_the_Mountain_s5_Verse1_d,@aid_Fire_on_the_Mountain_s6_Solo,@aid_Fire_on_the_Mountain_s7_Verse2_a,@aid_Fire_on_the_Mountain_s8_Verse2_b,@aid_Fire_on_the_Mountain_s9_Outro",
+      "velocity": 100,
+      "note": "Fire on the Mountain — Grateful Dead · the whole song: plays its 9 section rows in order · 152 bpm · grade A 91% (kick 96, snare 87, hats 92) · 933 of 1008 hits matched, 113 extra"
+    },
+    {
+      "key": "1",
+      "name": "aid_Fire_on_the_Mountain_s1_Intro",
+      "src": "m10,152T,2s(F#,R,F#,R,|C,D|,3R,F#,R,D,R,D,R,Dvv,R,F#,R,F#,R,C,3R,F#,3R,D,2R,2F#,R,F#,R,|C,D|,3R,F#,R,D,R,D,R,Dvv,R,F#,R,F#,R,F#,R,|C,F#|,R,F#,R,F#,R,D,R,C,R)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Intro · Section 1 of 9 · 0:00-0:12 · 8 bars · grade A 95% (kick 89, snare 100, hats 93) · 56 of 56 hits matched, 6 extra · 152 bpm"
+    },
+    {
+      "key": "2",
+      "name": "aid_Fire_on_the_Mountain_s2_Verse1_a",
+      "src": "m10,152T,5e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,2F#,D,R,2F#,|C,D|,R,2F#,D,R,3F#,|C,F#|,2F#,D,|C,D|),e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,2F#,D,R)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 1 (part 1 of 4) (a guess) · Section 2 of 9 · 0:12-0:47 · 22 bars · grade A 93% (kick 100, snare 88, hats 93) · 150 of 160 hits matched, 13 extra · 152 bpm"
+    },
+    {
+      "key": "3",
+      "name": "aid_Fire_on_the_Mountain_s3_Verse1_b",
+      "src": "m10,152T,4e(2F#,|C,D|,R,F#,3D,3F#,|C,F#|,F#,R,D,C,2F#,|C,D|,R,F#,Dvv,2D,2F#,|C,D|,R,|Dvv,F#|,F#,D,R),e(2F#,|C,D|,R,F#,3D,3F#,|C,F#|,F#,R,D,C)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 1 (part 2 of 4) (a guess) · Section 3 of 9 · 0:47-1:15 · 18 bars · grade A 90% (kick 95, snare 86, hats 91) · 127 of 139 hits matched, 17 extra · 152 bpm"
+    },
+    {
+      "key": "4",
+      "name": "aid_Fire_on_the_Mountain_s4_Verse1_c",
+      "src": "m10,152T,6e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R,3F#,|C,F#|,2F#,D,C),e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 1 (part 3 of 4) (a guess) · Section 4 of 9 · 1:15-1:55 · 26 bars · grade A 91% (kick 97, snare 83, hats 93) · 162 of 182 hits matched, 12 extra · 152 bpm"
+    },
+    {
+      "key": "5",
+      "name": "aid_Fire_on_the_Mountain_s5_Verse1_d",
+      "src": "m10,152T,3e(2F#,|C,D|,R,F#,Dvv,2D,F#,|D,F#|,F#,|C,D,F#|,2F#,D,C,2F#,|C,D|,R,F#,Dvv,2D,2F#,|C,D|,R,Dvv,R,D,R),e(2F#,|C,D|,R,F#,Dvv,2D,F#,|D,F#|,F#,|C,D,F#|,2F#,D,C)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 1 (part 4 of 4) (a guess) · Section 5 of 9 · 1:55-2:17 · 14 bars · grade A 92% (kick 97, snare 93, hats 90) · 106 of 112 hits matched, 12 extra · 152 bpm"
+    },
+    {
+      "key": "6",
+      "name": "aid_Fire_on_the_Mountain_s6_Solo",
+      "src": "m11,152T,4e(2F#,|C,D|,R,F#,Dvv,D,Dvv,2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,Dvv,D,Dvv,3F#,|D,F#|,2F#,D,C)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Solo · Section 6 of 9 · 2:17-2:42 · 16 bars · grade B 89% (kick 97, snare 85, hats 90) · 107 of 116 hits matched, 17 extra · 152 bpm"
+    },
+    {
+      "key": "7",
+      "name": "aid_Fire_on_the_Mountain_s7_Verse2_a",
+      "src": "m10,152T,5e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R,2F#,C,R,F#,R,D,R,3F#,|C,F#|,F#,R,D,C),e(2F#,|C,D|,R,F#,R,D,R,2F#,|C,D|,R,F#,R,D,R,2F#,C,R,F#,R,D,R),e(F#,|D,F#|,F#,R,4D)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 2 (part 1 of 2) (a guess) · Section 7 of 9 · 2:42-3:20 · 24 bars · grade A 95% (kick 100, snare 89, hats 97) · 147 of 158 hits matched, 3 extra · 152 bpm"
+    },
+    {
+      "key": "8",
+      "name": "aid_Fire_on_the_Mountain_s8_Verse2_b",
+      "src": "m10,152T,3e(2F#,|C,D|,R,F#,Dvv,D,Dvv,F#,Dvv,|C,D|,R,F#,R,D,R,2F#,C,R,F#,Dvv,D,Dvv,3F#,|C,F#|,2F#,D,C),e(2F#,|C,D|,R,F#,Dvv,D,Dvv,F#,Dvv,|C,D|,R,F#,R,D,R,2F#,C,R,F#,Dvv,D,Dvv)",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Verse 2 (part 2 of 2) (a guess) · Section 8 of 9 · 3:20-3:43 · 15 bars · grade B 80% (kick 80, snare 76, hats 83) · 78 of 85 hits matched, 33 extra · 152 bpm"
+    },
+    {
+      "key": "9",
+      "name": "aid_Fire_on_the_Mountain_s9_Outro",
+      "src": "m10,152T,3Rw",
+      "velocity": 100,
+      "note": "Fire on the Mountain · Outro · Section 9 of 9 · 3:43-3:48 · 3 bars · no drum hits in the stem here · 152 bpm"
+    },
+    {
+      "key": "A",
+      "name": "aid_Still_The_Same_Remastered_2011",
+      "src": "m10,115T,@aid_Still_The_Same_Remastered_2011_s1_Intro,@aid_Still_The_Same_Remastered_2011_s2_Verse1,@aid_Still_The_Same_Remastered_2011_s3_Chorus1,@aid_Still_The_Same_Remastered_2011_s4_Verse2,@aid_Still_The_Same_Remastered_2011_s5_Chorus2,@aid_Still_The_Same_Remastered_2011_s6_Verse3_a,@aid_Still_The_Same_Remastered_2011_s7_Verse3_b,@aid_Still_The_Same_Remastered_2011_s8_Verse3_c,@aid_Still_The_Same_Remastered_2011_s9_Chorus3,@aid_Still_The_Same_Remastered_2011_s10_Verse4_a,@aid_Still_The_Same_Remastered_2011_s11_Verse4_b,@aid_Still_The_Same_Remastered_2011_s12_Outro",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) — Bob Seger & The Silver Bullet Band · the whole song: plays its 12 section rows in order · 115 bpm · grade A 90% (kick 92, snare 90, hats 89) · 974 of 1031 hits matched, 158 extra"
+    },
+    {
+      "key": "B",
+      "name": "aid_Still_The_Same_Remastered_2011_s1_Intro",
+      "src": "m10,115T,2(C,7R,|C,F#|,3R,4C),(C,3R),e(C,R,|C,D|,2C,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Intro · Section 1 of 12 · 0:00-0:21 · 10 bars · grade D 61% (kick 67, snare 31, hats 80) · 17 of 32 hits matched, 7 extra · 115 bpm"
+    },
+    {
+      "key": "C",
+      "name": "aid_Still_The_Same_Remastered_2011_s2_Verse1",
+      "src": "m10,115T,7e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 1 · Section 2 of 12 · 0:21-0:35 · 7 bars · grade A 97% (kick 94, snare 100, hats 97) · 92 of 92 hits matched, 6 extra · 115 bpm"
+    },
+    {
+      "key": "D",
+      "name": "aid_Still_The_Same_Remastered_2011_s3_Chorus1",
+      "src": "m10,115T,9e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Chorus 1 · Section 3 of 12 · 0:35-0:54 · 9 bars · grade A 96% (kick 97, snare 90, hats 96) · 120 of 125 hits matched, 6 extra · 115 bpm"
+    },
+    {
+      "key": "E",
+      "name": "aid_Still_The_Same_Remastered_2011_s4_Verse2",
+      "src": "m10,115T,9e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 2 · Section 4 of 12 · 0:54-1:13 · 9 bars · grade A 95% (kick 96, snare 100, hats 94) · 115 of 115 hits matched, 11 extra · 115 bpm"
+    },
+    {
+      "key": "F",
+      "name": "aid_Still_The_Same_Remastered_2011_s5_Chorus2",
+      "src": "m10,115T,8e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Chorus 2 · Section 5 of 12 · 1:13-1:29 · 8 bars · grade B 87% (kick 97, snare 91, hats 80) · 90 of 94 hits matched, 22 extra · 115 bpm"
+    },
+    {
+      "key": "G",
+      "name": "aid_Still_The_Same_Remastered_2011_s6_Verse3_a",
+      "src": "m10,115T,5e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#),s(C,R,C,R,D,R,C,R,C,R,Dvv,D,|C,D|,R,|C,D|,R)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 3 (part 1 of 3) (a guess) · Section 6 of 12 · 1:29-1:42 · 6 bars · grade A 97% (kick 98, snare 97, hats 96) · 77 of 78 hits matched, 4 extra · 115 bpm"
+    },
+    {
+      "key": "H",
+      "name": "aid_Still_The_Same_Remastered_2011_s7_Verse3_b",
+      "src": "m10,115T,2s(C,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D|,3R,C,R,F#,R,|C,D|,3R,C,R,F#,R,|C,D|,2R,F#,|C,D|,R,|D,F#|,R,|C,D,F#|,R,|D,F#|,R),e(C,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 3 (part 2 of 3) (a guess) · Section 7 of 12 · 1:42-2:02 · 10 bars · grade A 91% (kick 96, snare 94, hats 85) · 107 of 109 hits matched, 20 extra · 115 bpm"
+    },
+    {
+      "key": "I",
+      "name": "aid_Still_The_Same_Remastered_2011_s8_Verse3_c",
+      "src": "m10,115T,6e(C,F#,|C,D|,R,C,F#,|C,D|,R)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 3 (part 3 of 3) · Section 8 of 12 · 2:02-2:15 · 6 bars · grade B 89% (kick 98, snare 92, hats 73) · 47 of 58 hits matched, 1 extra · 115 bpm"
+    },
+    {
+      "key": "J",
+      "name": "aid_Still_The_Same_Remastered_2011_s9_Chorus3",
+      "src": "m10,115T,10e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Chorus 3 · Section 9 of 12 · 2:15-2:36 · 10 bars · grade A 90% (kick 94, snare 91, hats 88) · 120 of 127 hits matched, 20 extra · 115 bpm"
+    },
+    {
+      "key": "K",
+      "name": "aid_Still_The_Same_Remastered_2011_s10_Verse4_a",
+      "src": "m10,115T,2s(C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,D|,2R,Dvv,|C,D|,R,|C,D|,R),e(C,F#,|D,F#|,F#,|C,F#|,F#,|C,D|,F#)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 4 (part 1 of 2) · Section 10 of 12 · 2:36-2:46 · 5 bars · grade B 87% (kick 93, snare 90, hats 82) · 52 of 58 hits matched, 9 extra · 115 bpm"
+    },
+    {
+      "key": "L",
+      "name": "aid_Still_The_Same_Remastered_2011_s11_Verse4_b",
+      "src": "m10,115T,2s(C,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,D,|C,D|,D,2R,C,3R,|C,D|,3R,C,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,R,|C,D|,2R,F#),s(C,R,F#,R,|C,D,F#|,R,F#,R,|C,F#|,R,F#,D,|C,D|,D,2R)",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Verse 4 (part 2 of 2) · Section 11 of 12 · 2:46-3:05 · 9 bars · grade A 91% (kick 91, snare 92, hats 91) · 98 of 104 hits matched, 13 extra · 115 bpm"
+    },
+    {
+      "key": "M",
+      "name": "aid_Still_The_Same_Remastered_2011_s12_Outro",
+      "src": "m10,115T,2e(C,R,|C,D,F#|,R,C,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D|,R,C,F#,|D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,C,4R,Dvv),3R",
+      "velocity": 100,
+      "note": "Still The Same (Remastered 2011) · Outro · Section 12 of 12 · 3:05-3:23 · 8 bars + 3 beats · grade D 67% (kick 67, snare 67, hats 67) · 39 of 39 hits matched, 39 extra · 115 bpm"
+    }
+  ]
+}

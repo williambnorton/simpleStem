@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Slow Blues in A — 88 bpm",
+  "description": "Slow blues in A at 88 bpm with a 12/8 feel: every beat is three triplet eighths, written as s, s and e with feel marks (2 and 4 ticks behind) so they land at 0, 1/3 and 2/3 of the beat. Quick-change 12-bar form A D A A | D D A A | E D A E. Rows 1-8 drums (ch 10), 9-B one-bar bass SUBROUTINES that C strings together (ch 13), F-I organ and piano (ch 15, one at a time), J strings (ch 16), K-L sax and harmonica answers (ch 11) calling the shared lick SUBROUTINES M-O, R guitar comping (ch 14), S-X sections, Y-Z jams. Row 0 plays the whole song.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "another big collection of MPL to make a slow blues song, 88 beats per minute",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 88,
+  "key": "A",
+  "song": "Slow Blues in A",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "slowBlues",
+      "src": "m11,@countIn,@intro,@verse,@verse2,@solo,@outChorus,@ending",
+      "velocity": 100,
+      "note": "MAIN: the whole song — count-in, 4-bar intro, two verses, solo chorus, out chorus, ending (55 bars, about 2½ min)"
+    },
+    {
+      "key": "1",
+      "name": "countIn",
+      "src": "m10,p0,4(C#)",
+      "velocity": 85,
+      "note": "One bar of side-stick clicks"
+    },
+    {
+      "key": "2",
+      "name": "sbHat",
+      "src": "m10,p0,4(F#s,F#s\\\\,F#e\\\\\\\\)",
+      "velocity": 72,
+      "note": "Closed hi-hat triplets — the 12/8 pulse (three per beat)"
+    },
+    {
+      "key": "3",
+      "name": "sbRide",
+      "src": "m10,p0,4(D#+s,D#+s\\\\,D#+e\\\\\\\\)",
+      "velocity": 72,
+      "note": "Ride triplets for the solo chorus"
+    },
+    {
+      "key": "4",
+      "name": "sbGroove",
+      "src": "m10,p0,@sbHat&,C,D,Cs,Rs,Ce\\\\\\\\,D",
+      "velocity": 100,
+      "note": "Slow-blues groove: kick 1, snare 2 and 4, kick on 3 plus its last-triplet pickup; launches the hat triplets"
+    },
+    {
+      "key": "5",
+      "name": "sbSoft",
+      "src": "m10,p0,@sbHat&,C,C#,Cs,Rs,Ce\\\\\\\\,C#",
+      "velocity": 100,
+      "note": "Quiet verse groove — side stick instead of snare"
+    },
+    {
+      "key": "6",
+      "name": "sbRideGroove",
+      "src": "m10,p0,@sbRide&,C,D,Cs,Rs,Ce\\\\\\\\,D",
+      "velocity": 100,
+      "note": "The groove on the ride, for solos"
+    },
+    {
+      "key": "7",
+      "name": "sbFill",
+      "src": "m10,p0,Ds,Ds\\\\,De\\\\\\\\,D+s,D+s\\\\,Be\\\\\\\\,Bs,Gs\\\\,Ge\\\\\\\\,Fs,Fs\\\\,Fe\\\\\\\\",
+      "velocity": 100,
+      "note": "One-bar triplet fill down the toms"
+    },
+    {
+      "key": "8",
+      "name": "sbEnd",
+      "src": "m10,p0,4(Ds,Ds\\\\,De\\\\\\\\),C#+w",
+      "velocity": 100,
+      "note": "Ending: a bar of snare triplets, then the crash"
+    },
+    {
+      "key": "9",
+      "name": "bA",
+      "src": "A,C#+,E+,F#+s,Rs,G+e\\\\\\\\",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of A7 bass — root, 3rd, 5th, 6th, b7 pickup (no m#: plays on its caller's channel)"
+    },
+    {
+      "key": "A",
+      "name": "bD",
+      "src": "D+,F#+,A+,B+s,Rs,C++e\\\\\\\\",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of D7 bass"
+    },
+    {
+      "key": "B",
+      "name": "bE",
+      "src": "E+,G#+,B+,C#++s,Rs,D++e\\\\\\\\",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of E7 bass"
+    },
+    {
+      "key": "C",
+      "name": "bass12",
+      "src": "m13,p33,@bA,@bD,2@bA,2@bD,2@bA,@bE,@bD,@bA,@bE",
+      "velocity": 100,
+      "note": "12-bar finger bass (quick change: A D A A | D D A A | E D A E)"
+    },
+    {
+      "key": "D",
+      "name": "bassIntro",
+      "src": "m13,p33,@bE,@bD,@bA,@bE",
+      "velocity": 100,
+      "note": "Intro bass — the last four bars of the form"
+    },
+    {
+      "key": "E",
+      "name": "endBass",
+      "src": "m13,p33,A,C#+,E+,G+,Bb,A,R,R",
+      "velocity": 100,
+      "note": "Ending bass: walk up, then the Bb-to-A slide"
+    },
+    {
+      "key": "F",
+      "name": "org12",
+      "src": "m15,p16,A+!w,D++!w,2A+!w,2D++!w,2A+!w,E++!w,D++!w,A+!w,E++!w",
+      "velocity": 71,
+      "note": "12-bar drawbar organ pad, whole-note chords"
+    },
+    {
+      "key": "G",
+      "name": "orgIntro",
+      "src": "m15,p16,E++!w,D++!w,A+!w,E++!w",
+      "velocity": 71,
+      "note": "Intro organ"
+    },
+    {
+      "key": "H",
+      "name": "orgEnd",
+      "src": "m15,p16,A+!w,Bb+!,A+!,R,R",
+      "velocity": 83,
+      "note": "Ending organ: A, then Bb to A"
+    },
+    {
+      "key": "I",
+      "name": "pnoTrip",
+      "src": "m15,p0,4(A+!s,A+!s\\\\,A+!e\\\\\\\\),4(D++!s,D++!s\\\\,D++!e\\\\\\\\),8(A+!s,A+!s\\\\,A+!e\\\\\\\\),8(D++!s,D++!s\\\\,D++!e\\\\\\\\),8(A+!s,A+!s\\\\,A+!e\\\\\\\\),4(E++!s,E++!s\\\\,E++!e\\\\\\\\),4(D++!s,D++!s\\\\,D++!e\\\\\\\\),4(A+!s,A+!s\\\\,A+!e\\\\\\\\),4(E++!s,E++!s\\\\,E++!e\\\\\\\\)",
+      "velocity": 83,
+      "note": "12-bar piano triplet chords (shares the P amp with the organ — play one or the other)"
+    },
+    {
+      "key": "J",
+      "name": "strPad",
+      "src": "m16,p49,A++!w,D++!w,2A++!w,2D++!w,2A++!w,E++!w,D++!w,A++!w,E++!w",
+      "velocity": 71,
+      "note": "12-bar slow strings pad, an octave above the organ"
+    },
+    {
+      "key": "K",
+      "name": "saxFills",
+      "src": "m11,p66,2(Rw),@lick1,2(Rw),@lick2,2(Rw),@lickT",
+      "velocity": 92,
+      "note": "Tenor sax answers in bars 3-4, 7-8, 11-12 (the gaps after each vocal line)"
+    },
+    {
+      "key": "L",
+      "name": "harpFills",
+      "src": "m11,p22,2(Rw),@lick2,2(Rw),@lick1,2(Rw),@lickT",
+      "velocity": 92,
+      "note": "The same licks on harmonica, in a different order"
+    },
+    {
+      "key": "M",
+      "name": "lick1",
+      "src": "R,E++s,G++s\\\\,A++e\\\\\\\\,C+++,A++s,G++s\\\\,E++e\\\\\\\\,G++,E++s,D++s\\\\,C++e\\\\\\\\,A+,R",
+      "velocity": 100,
+      "note": "SUBROUTINE: 2-bar A blues lick (no m#/p#: the sax and the harp both call it)"
+    },
+    {
+      "key": "N",
+      "name": "lick2",
+      "src": "A++,C+++s,A++s\\\\,G++e\\\\\\\\,Eb++,E++,D++s,C++s\\\\,A+e\\\\\\\\,C++,A+,R",
+      "velocity": 100,
+      "note": "SUBROUTINE: 2-bar lick with the blue note (Eb)"
+    },
+    {
+      "key": "O",
+      "name": "lickT",
+      "src": "A++s,G++s\\\\,E++e\\\\\\\\,G++s,E++s\\\\,D++e\\\\\\\\,C++,A+,B+,G#+,E+,R",
+      "velocity": 100,
+      "note": "SUBROUTINE: 2-bar turnaround lick, A7 to E7"
+    },
+    {
+      "key": "P",
+      "name": "introLead",
+      "src": "m11,p66,2(Rw),@lickT",
+      "velocity": 92,
+      "note": "Intro sax: waits two bars, then the turnaround lick"
+    },
+    {
+      "key": "Q",
+      "name": "endLead",
+      "src": "m11,p66,A++s,G++s\\\\,E++e\\\\\\\\,D++s,C++s\\\\,A+e\\\\\\\\,Bb+,A+,A+w",
+      "velocity": 92,
+      "note": "Ending sax line"
+    },
+    {
+      "key": "R",
+      "name": "gtrComp",
+      "src": "m14,p38,2(R,A+!s,Rs,A+!e\\\\\\\\),2(R,D+!s,Rs,D+!e\\\\\\\\),4(R,A+!s,Rs,A+!e\\\\\\\\),4(R,D+!s,Rs,D+!e\\\\\\\\),4(R,A+!s,Rs,A+!e\\\\\\\\),2(R,E+!s,Rs,E+!e\\\\\\\\),2(R,D+!s,Rs,D+!e\\\\\\\\),2(R,A+!s,Rs,A+!e\\\\\\\\),2(R,E+!s,Rs,E+!e\\\\\\\\)",
+      "velocity": 85,
+      "note": "12-bar clean-guitar comping: a stab on 2 and 4 plus the last-triplet pickup (not in the song — layer it in a jam)"
+    },
+    {
+      "key": "S",
+      "name": "intro",
+      "src": "@bassIntro&,@orgIntro&,@introLead&,3(@sbGroove),@sbFill",
+      "velocity": 100,
+      "note": "SECTION: 4-bar intro from the V chord"
+    },
+    {
+      "key": "T",
+      "name": "verse",
+      "src": "@bass12&,@org12&,12(@sbSoft)",
+      "velocity": 100,
+      "note": "SECTION: verse — side stick, bass and organ, room for the vocal"
+    },
+    {
+      "key": "U",
+      "name": "verse2",
+      "src": "@bass12&,@org12&,@saxFills&,11(@sbGroove),@sbFill",
+      "velocity": 100,
+      "note": "SECTION: second verse — full groove, sax answers, fill into the solo"
+    },
+    {
+      "key": "V",
+      "name": "solo",
+      "src": "@bass12&,@pnoTrip&,12(@sbRideGroove)",
+      "velocity": 100,
+      "note": "SECTION: solo chorus — ride, bass, piano triplets; your guitar takes the lead"
+    },
+    {
+      "key": "W",
+      "name": "outChorus",
+      "src": "@bass12&,@org12&,@strPad&,@harpFills&,11(@sbGroove),@sbFill",
+      "velocity": 100,
+      "note": "SECTION: out chorus — organ, strings and harmonica"
+    },
+    {
+      "key": "X",
+      "name": "ending",
+      "src": "@endBass&,@orgEnd&,@endLead&,@sbEnd",
+      "velocity": 100,
+      "note": "SECTION: 2-bar ending"
+    },
+    {
+      "key": "Y",
+      "name": "jam",
+      "src": "m11,@bass12&,@org12&,12(@sbGroove)",
+      "velocity": 100,
+      "note": "JAM: loops a 12-bar backing to play over"
+    },
+    {
+      "key": "Z",
+      "name": "jamHarp",
+      "src": "m11,@bass12&,@org12&,@harpFills&,@gtrComp&,12(@sbGroove)",
+      "velocity": 100,
+      "note": "JAM: backing with harmonica answers and guitar comping"
+    }
+  ]
+}

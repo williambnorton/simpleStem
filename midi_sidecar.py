@@ -12,6 +12,13 @@ Endpoints
 GET  /health                → { ok, ports: [...] }
 GET  /ports                 → { outputs: [...] }
 POST /send                  → fire one message
+POST /send  + "at"/"tag"    → schedule it: at = epoch ms (Date.now() clock).
+                              The scheduler thread sends it on time, so a
+                              page or server stall shorter than the lead
+                              can't make a note late (2026-11-11).
+POST /cancel {tag, flush}   → drop a tag's pending messages (tag "*" = all);
+                              its pending note_offs go out NOW
+GET  /timing                → how late scheduled messages left, last 10 s
 POST /clock                 → 24-ppqn MIDI clock control
     body: { action: "start" | "bpm" | "stop", bpm: 30-300, port: optional
             substring filter; default = broadcast to every output }
@@ -37,7 +44,10 @@ import json
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+import heapq
+import itertools
+from collections import deque
 
 try:
     import mido
@@ -464,6 +474,16 @@ def amp_preflight():
 # canonical port name (what mido reports) so multiple substring queries that
 # resolve to the same port share one handle.
 _outputs = {}
+# The HTTP server is threaded (2026-11-11): a slow request — chain test
+# (up to 2 s), XR18 OSC queries (1.5 s timeouts), port enumeration — used
+# to block every /send behind it, so sequences stalled every minute.
+_port_lock = threading.Lock()   # opening output ports
+_send_lock = threading.Lock()   # one writer on the MIDI ports at a time
+
+
+def send_locked(out, msg):
+    with _send_lock:
+        out.send(msg)
 
 
 def find_port(needle):
@@ -553,8 +573,9 @@ def get_output(needle, allow_chain=True):
         routed = "chain"
     if not name:
         return None, None
-    if name not in _outputs:
-        _outputs[name] = mido.open_output(name)
+    with _port_lock:
+        if name not in _outputs:
+            _outputs[name] = mido.open_output(name)
     return _outputs[name], routed
 
 
@@ -586,8 +607,9 @@ class MidiClock:
         outs = []
         for n in names:
             try:
-                if n not in _outputs:
-                    _outputs[n] = mido.open_output(n)
+                with _port_lock:
+                    if n not in _outputs:
+                        _outputs[n] = mido.open_output(n)
                 outs.append(_outputs[n])
             except Exception:
                 pass
@@ -634,7 +656,7 @@ class MidiClock:
         while not self._stop_evt.is_set():
             for out in outs:
                 try:
-                    out.send(mido.Message("clock"))
+                    send_locked(out, mido.Message("clock"))
                 except Exception:
                     pass
             with self._lock:
@@ -651,6 +673,80 @@ class MidiClock:
 
 
 _clock = MidiClock()
+
+
+class Scheduler:
+    """Send-ahead queue (2026-11-11). The page posts each message ~180 ms
+    early with its play time (epoch ms); this thread sends it on time
+    (sleep, then a short spin for the last ~1.5 ms). Each message carries a
+    tag (slot + generation) so stopping a slot drops its pending note_ons
+    and sends its pending note_offs at once."""
+
+    def __init__(self):
+        self._heap = []
+        self._cv = threading.Condition()
+        self._seq = itertools.count()
+        self.sent = deque(maxlen=4000)        # (time.time(), late_ms)
+        threading.Thread(target=self._run, daemon=True, name="midi-scheduler").start()
+
+    def add(self, at_ms, out, msg, tag):
+        target = time.perf_counter() + (at_ms / 1000.0 - time.time())
+        with self._cv:
+            heapq.heappush(self._heap, (target, next(self._seq), out, msg, tag or ""))
+            self._cv.notify()
+
+    def cancel(self, tag, flush=True):
+        with self._cv:
+            hit = [e for e in self._heap if tag == "*" or e[4] == tag]
+            keep = [e for e in self._heap if not (tag == "*" or e[4] == tag)]
+            heapq.heapify(keep)
+            self._heap = keep
+            self._cv.notify()
+        offs = [e for e in hit if e[3].type == "note_off"]
+        if flush:
+            for e in offs:
+                try:
+                    send_locked(e[2], e[3])
+                    _record_tx(e[2].name, e[3])
+                except Exception:
+                    pass
+        return {"dropped": len(hit) - len(offs), "offs_sent": len(offs) if flush else 0}
+
+    def pending(self):
+        with self._cv:
+            return len(self._heap)
+
+    def _run(self):
+        while True:
+            with self._cv:
+                while not self._heap:
+                    self._cv.wait()
+                wait = self._heap[0][0] - time.perf_counter()
+                if wait > 0.002:
+                    self._cv.wait(timeout=wait - 0.0015)
+                    continue
+                target, _n, out, msg, _tag = heapq.heappop(self._heap)
+            while time.perf_counter() < target:
+                pass
+            try:
+                send_locked(out, msg)
+                late = (time.perf_counter() - target) * 1000.0
+                self.sent.append((time.time(), late))
+                _record_tx(out.name, msg)
+            except Exception:
+                pass
+
+    def stats(self, window=10.0):
+        now = time.time()
+        lates = sorted(l for t, l in list(self.sent) if now - t <= window)
+        n = len(lates)
+        return {"ok": True, "schedule": True, "window_s": window, "sent": n,
+                "late_max_ms": round(lates[-1], 2) if n else 0.0,
+                "late_p95_ms": round(lates[int(0.95 * (n - 1))], 2) if n else 0.0,
+                "over_5ms": sum(1 for l in lates if l > 5), "pending": self.pending()}
+
+
+_sched = Scheduler()
 
 
 # ── RX monitor (Bill 2026-07-17): the only way to READ state over MIDI
@@ -816,6 +912,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "chain_port": chain,
                                     "xr18_ip": xr_configured_ip(),
                                     "clock": {"running": _clock.running, "bpm": _clock.bpm}})
+        if self.path == "/timing":
+            return self._json(200, _sched.stats())
         if self.path == "/ports":
             return self._json(200, {"outputs": mido.get_output_names(),
                                     "inputs": mido.get_input_names()})
@@ -890,7 +988,7 @@ class Handler(BaseHTTPRequestHandler):
                 for _m in inp.iter_pending():
                     pass
             t0 = time.time()
-            out.send(marker)
+            send_locked(out, marker)
             _record_tx(out.name, marker)
             while time.time() - t0 < 2.0:
                 for n, inp in inps:
@@ -961,6 +1059,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_send(body)
         if self.path == "/clock":
             return self._handle_clock(body)
+        if self.path == "/cancel":
+            tag = str(body.get("tag") or "")
+            if not tag:
+                return self._json(400, {"error": "tag required (\"*\" = everything)"})
+            return self._json(200, {"ok": True, **_sched.cancel(tag, flush=body.get("flush", True) is not False)})
         if self.path == "/xr18/ip":
             import re as _re
             ip = str(body.get("ip") or "").strip()
@@ -1054,12 +1157,28 @@ class Handler(BaseHTTPRequestHandler):
             msg = build_msg(body)
         except ValueError as e:
             return self._json(400, {"error": str(e)})
+        at = body.get("at")
+        if at is not None:
+            try:
+                at = float(at)
+            except (TypeError, ValueError):
+                return self._json(400, {"error": "at must be epoch milliseconds"})
+            lead = at - time.time() * 1000.0
+            if lead > 1.0:
+                if lead > 10000:
+                    return self._json(400, {"error": f"at is {lead:.0f} ms ahead (max 10 s)"})
+                _sched.add(at, out, msg, body.get("tag"))
+                return self._json(200, {"ok": True, "scheduled": True, "lead_ms": round(lead, 1),
+                                        "sent_to": out.name, "routed": routed})
         try:
-            out.send(msg)
+            send_locked(out, msg)
             _record_tx(out.name, msg)
         except Exception as e:
             return self._json(500, {"error": f"send failed: {e}"})
-        return self._json(200, {"ok": True, "sent_to": out.name, "routed": routed, "msg": str(msg)})
+        if at is not None:
+            _sched.sent.append((time.time(), max(0.0, time.time() * 1000.0 - float(at))))
+        return self._json(200, {"ok": True, "sent_to": out.name, "routed": routed, "msg": str(msg),
+                                "scheduled": False})
 
 
 def main():
@@ -1071,7 +1190,9 @@ def main():
         print(f"WARN: could not enumerate MIDI ports: {e}", file=sys.stderr)
     print(f"available MIDI outputs: {outs}")
     threading.Thread(target=_rx_loop, daemon=True, name="rx-monitor").start()
-    HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv.daemon_threads = True
+    srv.serve_forever()
 
 
 if __name__ == "__main__":

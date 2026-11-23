@@ -173,8 +173,9 @@ def main():
                   urllib.parse.quote(f'{args.title} {args.artist}'))
 
     # Self-contained recipe for the downstream pipeline: pull 48 kHz audio
-    # (slicing the clip window if set), separate into 6 stems with Demucs,
-    # and transcode each stem to fast-start m4a. The old 'mixdowns' block
+    # (slicing the clip window if set); the stems come later from the Logic
+    # Pro Stem Splitter run, which records itself under 'separation' (see
+    # logic13.json in the song folder). The old 'mixdowns' block
     # (-V / -V-G / -V-G-B / DO) was retired 2026-06-27 with the mixdown
     # pipeline itself - the portal mixes the six stems client-side.
     # cleanup_mixdown_metadata.py strips the stale block from old files.
@@ -187,11 +188,6 @@ def main():
             'output': 'source.wav',
             'clip_start_sec': clip_start,
             'clip_end_sec': clip_end,
-        },
-        'separation': {
-            'tool': 'demucs',
-            'model': 'htdemucs_6s',
-            'stems': ['vocals', 'drums', 'bass', 'other', 'piano', 'guitar'],
         },
         'stem_format': {'codec': 'aac', 'container': 'm4a',
                         'bitrate': '256k', 'sample_rate_hz': 48000,

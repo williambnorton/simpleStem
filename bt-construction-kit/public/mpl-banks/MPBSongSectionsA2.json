@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPB Song Sections A2 — All I Wanna Do, I Won't Back Down (Official Music Video)",
+  "description": "A-grade songs split into their sections so each part can be played on its own: All I Wanna Do, I Won't Back Down (Official Music Video). For each song there is one row that plays the whole song by calling its section rows in order, then one row per section named with its number and its section name (Intro, Verse1, Chorus2_a …). Every row starts m10 and the song's tempo (for example 94T), so playing a row sets the bank tempo to that song. Section names marked \"(a guess)\" in the note are low-confidence. Grades compare each row with the hits detected in the drum stem.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "make some MPL Bank JSON files with the drums parts into sections with corresponding MPL so I can play each one at a time - maybe a handful of A-list songs could fill a MPL Bank",
+  "created_at": "2026-11-15T19:35:16.000Z",
+  "bpm": 115,
+  "key": "",
+  "song": "All I Wanna Do, I Won't Back Down (Official Music Video)",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "aid_All_I_Wanna_Do",
+      "src": "m10,120T,@aid_All_I_Wanna_Do_s1_Verse1,@aid_All_I_Wanna_Do_s2_Chorus1_a,@aid_All_I_Wanna_Do_s3_Chorus1_b,@aid_All_I_Wanna_Do_s4_Chorus1_c,@aid_All_I_Wanna_Do_s5_Chorus1_d,@aid_All_I_Wanna_Do_s6_Verse2,@aid_All_I_Wanna_Do_s7_Chorus2_a,@aid_All_I_Wanna_Do_s8_Chorus2_b,@aid_All_I_Wanna_Do_s9_Chorus2_c,@aid_All_I_Wanna_Do_s10_Chorus2_d,@aid_All_I_Wanna_Do_s11_Chorus2_e,@aid_All_I_Wanna_Do_s12_Chorus2_f,@aid_All_I_Wanna_Do_s13_Verse3,@aid_All_I_Wanna_Do_s14_Chorus3_a,@aid_All_I_Wanna_Do_s15_Chorus3_b,@aid_All_I_Wanna_Do_s16_Chorus3_c,@aid_All_I_Wanna_Do_s17_Solo,@aid_All_I_Wanna_Do_s18_Verse4_a,@aid_All_I_Wanna_Do_s19_Verse4_b,@aid_All_I_Wanna_Do_s20_Chorus4_a,@aid_All_I_Wanna_Do_s21_Chorus4_b,@aid_All_I_Wanna_Do_s22_Chorus4_c,@aid_All_I_Wanna_Do_s23_Chorus4_d,@aid_All_I_Wanna_Do_s24_Outro_a,@aid_All_I_Wanna_Do_s25_Outro_b",
+      "velocity": 100,
+      "note": "All I Wanna Do — Sheryl Crow · the whole song: plays its 25 section rows in order · 120 bpm · grade A 95% (kick 95, snare 91, hats 96) · 1282 of 1330 hits matched, 99 extra"
+    },
+    {
+      "key": "1",
+      "name": "aid_All_I_Wanna_Do_s1_Verse1",
+      "src": "m10,120T,6(R,D,R,D)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Verse 1 (a guess) · Section 1 of 25 · 0:00-0:12 · 6 bars · grade A 100% (snare 100) · 12 of 12 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "2",
+      "name": "aid_All_I_Wanna_Do_s2_Chorus1_a",
+      "src": "m10,120T,s(2R,D,R,3D,R,C,R,F#,R,|D,F#|,R,F#,R),6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 1 (part 1 of 4) · Section 2 of 25 · 0:12-0:26 · 7 bars · grade A 100% (kick 100, snare 100, hats 100) · 81 of 81 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "3",
+      "name": "aid_All_I_Wanna_Do_s3_Chorus1_b",
+      "src": "m10,120T,5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 1 (part 2 of 4) · Section 3 of 25 · 0:26-0:36 · 5 bars · grade A 96% (kick 95, snare 95, hats 96) · 57 of 59 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "4",
+      "name": "aid_All_I_Wanna_Do_s4_Chorus1_c",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 1 (part 3 of 4) · Section 4 of 25 · 0:36-0:44 · 4 bars · grade A 95% (kick 94, snare 94, hats 95) · 45 of 47 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "5",
+      "name": "aid_All_I_Wanna_Do_s5_Chorus1_d",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 1 (part 4 of 4) · Section 5 of 25 · 0:44-0:52 · 4 bars · grade A 91% (kick 100, snare 84, hats 92) · 43 of 46 hits matched, 5 extra · 120 bpm"
+    },
+    {
+      "key": "6",
+      "name": "aid_All_I_Wanna_Do_s6_Verse2",
+      "src": "m10,120T,s(C,R,2D,|C,D|,R,2D,C,R,F#,R,|D,F#|,R,F#,R),4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Verse 2 · Section 6 of 25 · 0:52-1:02 · 5 bars · grade A 99% (kick 96, snare 100, hats 100) · 60 of 61 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "7",
+      "name": "aid_All_I_Wanna_Do_s7_Chorus2_a",
+      "src": "m10,120T,6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 1 of 6) · Section 7 of 25 · 1:02-1:14 · 6 bars · grade A 99% (kick 92, snare 100, hats 100) · 72 of 74 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "8",
+      "name": "aid_All_I_Wanna_Do_s8_Chorus2_b",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 2 of 6) · Section 8 of 25 · 1:14-1:22 · 4 bars · grade A 96% (kick 100, snare 94, hats 95) · 45 of 46 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "9",
+      "name": "aid_All_I_Wanna_Do_s9_Chorus2_c",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 3 of 6) · Section 9 of 25 · 1:22-1:30 · 4 bars · grade A 91% (kick 89, snare 89, hats 92) · 43 of 47 hits matched, 5 extra · 120 bpm"
+    },
+    {
+      "key": "A",
+      "name": "aid_All_I_Wanna_Do_s10_Chorus2_d",
+      "src": "m10,120T,6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 4 of 6) · Section 10 of 25 · 1:30-1:42 · 6 bars · grade A 100% (kick 100, snare 100, hats 100) · 72 of 72 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "B",
+      "name": "aid_All_I_Wanna_Do_s11_Chorus2_e",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 5 of 6) · Section 11 of 25 · 1:42-1:50 · 4 bars · grade B 86% (kick 94, snare 76, hats 88) · 41 of 47 hits matched, 7 extra · 120 bpm"
+    },
+    {
+      "key": "C",
+      "name": "aid_All_I_Wanna_Do_s12_Chorus2_f",
+      "src": "m10,120T,5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 2 (part 6 of 6) · Section 12 of 25 · 1:50-2:00 · 5 bars · grade B 88% (kick 100, snare 80, hats 87) · 51 of 56 hits matched, 9 extra · 120 bpm"
+    },
+    {
+      "key": "D",
+      "name": "aid_All_I_Wanna_Do_s13_Verse3",
+      "src": "m10,120T,s(|C,D|,2D,R,D,R,2D,C,R,F#,R,|D,F#|,R,F#,R),6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Verse 3 · Section 13 of 25 · 2:00-2:13 · 7 bars · grade A 98% (kick 100, snare 97, hats 97) · 81 of 82 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "E",
+      "name": "aid_All_I_Wanna_Do_s14_Chorus3_a",
+      "src": "m10,120T,4e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 3 (part 1 of 3) · Section 14 of 25 · 2:13-2:21 · 4 bars · grade B 87% (kick 87, snare 74, hats 92) · 44 of 49 hits matched, 8 extra · 120 bpm"
+    },
+    {
+      "key": "F",
+      "name": "aid_All_I_Wanna_Do_s15_Chorus3_b",
+      "src": "m10,120T,5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 3 (part 2 of 3) · Section 15 of 25 · 2:21-2:31 · 5 bars · grade A 96% (kick 91, snare 95, hats 97) · 58 of 61 hits matched, 2 extra · 120 bpm"
+    },
+    {
+      "key": "G",
+      "name": "aid_All_I_Wanna_Do_s16_Chorus3_c",
+      "src": "m10,120T,6e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 3 (part 3 of 3) · Section 16 of 25 · 2:31-2:43 · 6 bars · grade A 96% (kick 96, snare 92, hats 97) · 69 of 72 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "H",
+      "name": "aid_All_I_Wanna_Do_s17_Solo",
+      "src": "m10,120T,4e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Solo · Section 17 of 25 · 2:43-2:51 · 4 bars · grade A 98% (kick 91, snare 100, hats 100) · 50 of 50 hits matched, 2 extra · 120 bpm"
+    },
+    {
+      "key": "I",
+      "name": "aid_All_I_Wanna_Do_s18_Verse4_a",
+      "src": "m10,120T,5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Verse 4 (part 1 of 2) · Section 18 of 25 · 2:51-3:01 · 5 bars · grade A 93% (kick 100, snare 91, hats 92) · 54 of 56 hits matched, 6 extra · 120 bpm"
+    },
+    {
+      "key": "J",
+      "name": "aid_All_I_Wanna_Do_s19_Verse4_b",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Verse 4 (part 2 of 2) · Section 19 of 25 · 3:01-3:09 · 4 bars · grade B 88% (kick 94, snare 74, hats 92) · 42 of 47 hits matched, 6 extra · 120 bpm"
+    },
+    {
+      "key": "K",
+      "name": "aid_All_I_Wanna_Do_s20_Chorus4_a",
+      "src": "m10,120T,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 4 (part 1 of 4) · Section 20 of 25 · 3:09-3:17 · 4 bars · grade A 99% (kick 94, snare 100, hats 100) · 48 of 49 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "L",
+      "name": "aid_All_I_Wanna_Do_s21_Chorus4_b",
+      "src": "m10,120T,2s(|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,R,D,R,|C,D|,R,|D,F#|,R,|C,D,F#|,R,|D,F#|,R,|C,D,F#|,D,|C,F#|,R,|C,F#|,R,F#,R,|C,D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 4 (part 2 of 4) · Section 21 of 25 · 3:17-3:33 · 8 bars · grade A 94% (kick 91, snare 96, hats 95) · 96 of 96 hits matched, 12 extra · 120 bpm"
+    },
+    {
+      "key": "M",
+      "name": "aid_All_I_Wanna_Do_s22_Chorus4_c",
+      "src": "m10,120T,3e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 4 (part 3 of 4) · Section 22 of 25 · 3:33-3:39 · 3 bars · grade A 100% (kick 100, snare 100, hats 100) · 36 of 36 hits matched, 0 extra · 120 bpm"
+    },
+    {
+      "key": "N",
+      "name": "aid_All_I_Wanna_Do_s23_Chorus4_d",
+      "src": "m10,120T,s(C,R,2D,C,R,2D,C,R,F#,R,|C,D,F#|,R,F#,R),4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Chorus 4 (part 4 of 4) · Section 23 of 25 · 3:39-3:49 · 5 bars · grade A 96% (kick 100, snare 93, hats 96) · 57 of 59 hits matched, 3 extra · 120 bpm"
+    },
+    {
+      "key": "O",
+      "name": "aid_All_I_Wanna_Do_s24_Outro_a",
+      "src": "m10,120T,2s(|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,R,D,R,3D,R,|C,D|,3D,|C,D|,R,2D,2R,F#,R,F#,3R)",
+      "velocity": 100,
+      "note": "All I Wanna Do · Outro (part 1 of 2) · Section 24 of 25 · 3:49-3:57 · 4 bars · grade C 72% (kick 67, snare 67, hats 86) · 25 of 25 hits matched, 19 extra · 120 bpm"
+    },
+    {
+      "key": "P",
+      "name": "aid_All_I_Wanna_Do_s25_Outro_b",
+      "src": "m10,120T,3Rw,3R",
+      "velocity": 100,
+      "note": "All I Wanna Do · Outro (part 2 of 2) · Section 25 of 25 · 3:57-4:05 · 3 bars + 3 beats · no drum hits in the stem here · 120 bpm"
+    },
+    {
+      "key": "Q",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_Video",
+      "src": "m10,115T,@aid_I_Won_t_Back_Down_Official_Music_Vi_s1_Intro,@aid_I_Won_t_Back_Down_Official_Music_V_s2_Verse1,@aid_I_Won_t_Back_Down_Official_Music_s3_Chorus1,@aid_I_Won_t_Back_Down_Official_Music_V_s4_Verse2,@aid_I_Won_t_Back_Down_Official_Music_s5_Chorus2,@aid_I_Won_t_Back_Down_Official_Music_Vid_s6_Solo,@aid_I_Won_t_Back_Down_Official_Musi_s7_Chorus3_a,@aid_I_Won_t_Back_Down_Official_Musi_s8_Chorus3_b,@aid_I_Won_t_Back_Down_Official_Music_V_s9_Verse3",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) — Tom Petty And The Heartbreakers · the whole song: plays its 9 section rows in order · 115 bpm · grade A 93% (kick 97, snare 93, hats 92) · 906 of 942 hits matched, 100 extra"
+    },
+    {
+      "key": "R",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_Vi_s1_Intro",
+      "src": "m10,115T,5e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Intro · Section 1 of 9 · 0:00-0:10 · 5 bars · grade B 81% (kick 82, snare 82, hats 81) · 41 of 41 hits matched, 19 extra · 115 bpm"
+    },
+    {
+      "key": "S",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_V_s2_Verse1",
+      "src": "m10,115T,17e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Verse 1 · Section 2 of 9 · 0:10-0:46 · 17 bars · grade A 99% (kick 100, snare 100, hats 99) · 201 of 201 hits matched, 3 extra · 115 bpm"
+    },
+    {
+      "key": "T",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_s3_Chorus1",
+      "src": "m10,115T,10e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Chorus 1 · Section 3 of 9 · 0:46-1:07 · 10 bars · grade A 91% (kick 100, snare 91, hats 88) · 105 of 111 hits matched, 15 extra · 115 bpm"
+    },
+    {
+      "key": "U",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_V_s4_Verse2",
+      "src": "m10,115T,11e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Verse 2 · Section 4 of 9 · 1:07-1:30 · 11 bars · grade A 97% (kick 100, snare 92, hats 97) · 128 of 133 hits matched, 4 extra · 115 bpm"
+    },
+    {
+      "key": "V",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_s5_Chorus2",
+      "src": "m10,115T,11e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Chorus 2 · Section 5 of 9 · 1:30-1:53 · 11 bars · grade A 94% (kick 100, snare 96, hats 92) · 122 of 128 hits matched, 10 extra · 115 bpm"
+    },
+    {
+      "key": "W",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_Vid_s6_Solo",
+      "src": "m10,115T,9e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Solo · Section 6 of 9 · 1:53-2:12 · 9 bars · grade A 97% (kick 100, snare 92, hats 97) · 104 of 107 hits matched, 4 extra · 115 bpm"
+    },
+    {
+      "key": "X",
+      "name": "aid_I_Won_t_Back_Down_Official_Musi_s7_Chorus3_a",
+      "src": "m10,115T,2s(C,R,2F#,|D,F#|,R,2F#,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,F#,R,C,R,D,R,D,R,D,R)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Chorus 3 (part 1 of 2) · Section 7 of 9 · 2:12-2:29 · 8 bars · grade A 96% (kick 100, snare 97, hats 94) · 86 of 86 hits matched, 8 extra · 115 bpm"
+    },
+    {
+      "key": "Y",
+      "name": "aid_I_Won_t_Back_Down_Official_Musi_s8_Chorus3_b",
+      "src": "m10,115T,8e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Chorus 3 (part 2 of 2) · Section 8 of 9 · 2:29-2:46 · 8 bars · grade A 92% (kick 100, snare 94, hats 89) · 87 of 94 hits matched, 9 extra · 115 bpm"
+    },
+    {
+      "key": "Z",
+      "name": "aid_I_Won_t_Back_Down_Official_Music_V_s9_Verse3",
+      "src": "m10,115T,3e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,D,5R),e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "I Won't Back Down (Official Music Video) · Verse 3 · Section 9 of 9 · 2:46-3:01 · 7 bars · grade D 63% (kick 67, snare 63, hats 62) · 32 of 41 hits matched, 28 extra · 115 bpm"
+    }
+  ]
+}

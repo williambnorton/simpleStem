@@ -1,0 +1,23 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Channel Test \u2014 middle C on each amp in turn",
+ "description": "MPL test case: middle C (C++) on each amp's channel in turn \u2014 Voice m11, Drums m10, Bass m13, Guitar m14, Piano m15, Other m16 \u2014 a beat apart. The \ud83d\udd0a channel test button plays the same notes and also speaks each amp's name through its own output.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude"
+ },
+ "bpm": 60,
+ "key": "",
+ "song": "Channel Test",
+ "main": "0",
+ "slots": [
+  {
+   "key": "0",
+   "name": "channel_test",
+   "src": "m11,C++,R,m10,C++,R,m13,C++,R,m14,C++,R,m15,C++,R,m16,C++,R",
+   "velocity": 100,
+   "note": "Middle C on Voice, Drums, Bass, Guitar, Piano, Other in turn"
+  }
+ ]
+}

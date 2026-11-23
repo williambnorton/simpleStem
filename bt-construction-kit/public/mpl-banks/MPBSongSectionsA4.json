@@ -1,0 +1,222 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPB Song Sections A4 — I Ran (So Far Away) (Video), Lullaby",
+  "description": "A-grade songs split into their sections so each part can be played on its own: I Ran (So Far Away) (Video), Lullaby. For each song there is one row that plays the whole song by calling its section rows in order, then one row per section named with its number and its section name (Intro, Verse1, Chorus2_a …). Every row starts m10 and the song's tempo (for example 94T), so playing a row sets the bank tempo to that song. Section names marked \"(a guess)\" in the note are low-confidence. Grades compare each row with the hits detected in the drum stem.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "make some MPL Bank JSON files with the drums parts into sections with corresponding MPL so I can play each one at a time - maybe a handful of A-list songs could fill a MPL Bank",
+  "created_at": "2026-11-15T19:35:16.000Z",
+  "bpm": 144,
+  "key": "",
+  "song": "I Ran (So Far Away) (Video), Lullaby",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "aid_I_Ran_So_Far_Away_Video",
+      "src": "m10,144T,@aid_I_Ran_So_Far_Away_Video_s1_Intro_a,@aid_I_Ran_So_Far_Away_Video_s2_Intro_b,@aid_I_Ran_So_Far_Away_Video_s3_Verse1_a,@aid_I_Ran_So_Far_Away_Video_s4_Verse1_b,@aid_I_Ran_So_Far_Away_Video_s5_Verse1_c,@aid_I_Ran_So_Far_Away_Video_s6_Verse1_d,@aid_I_Ran_So_Far_Away_Video_s7_Chorus1,@aid_I_Ran_So_Far_Away_Video_s8_Solo,@aid_I_Ran_So_Far_Away_Video_s9_Verse2,@aid_I_Ran_So_Far_Away_Video_s10_Chorus2,@aid_I_Ran_So_Far_Away_Video_s11_Outro_a,@aid_I_Ran_So_Far_Away_Video_s12_Outro_b,@aid_I_Ran_So_Far_Away_Video_s13_Outro_c",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) — A Flock Of Seagulls · the whole song: plays its 13 section rows in order · 144 bpm · grade A 91% (kick 97, snare 92, hats 87) · 1218 of 1284 hits matched, 167 extra"
+    },
+    {
+      "key": "1",
+      "name": "aid_I_Ran_So_Far_Away_Video_s1_Intro_a",
+      "src": "m10,144T,6e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Intro (part 1 of 2) · Section 1 of 13 · 0:01-0:11 · 6 bars · grade A 94% (kick 100, snare 96, hats 90) · 56 of 59 hits matched, 4 extra · 144 bpm"
+    },
+    {
+      "key": "2",
+      "name": "aid_I_Ran_So_Far_Away_Video_s2_Intro_b",
+      "src": "m10,144T,10e(C,F#,|D,F#|,R,C,F#,|D,F#|,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Intro (part 2 of 2) · Section 2 of 13 · 0:11-0:27 · 10 bars · grade B 86% (kick 97, snare 98, hats 72) · 76 of 87 hits matched, 14 extra · 144 bpm"
+    },
+    {
+      "key": "3",
+      "name": "aid_I_Ran_So_Far_Away_Video_s3_Verse1_a",
+      "src": "m10,144T,8e(C,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Verse 1 (part 1 of 4) · Section 3 of 13 · 0:27-0:40 · 8 bars · grade A 96% (kick 100, snare 100, hats 92) · 81 of 81 hits matched, 7 extra · 144 bpm"
+    },
+    {
+      "key": "4",
+      "name": "aid_I_Ran_So_Far_Away_Video_s4_Verse1_b",
+      "src": "m10,144T,15e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C),s(C,11R,2D,2R)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Verse 1 (part 2 of 4) · Section 4 of 13 · 0:40-1:07 · 16 bars · grade A 93% (kick 100, snare 96, hats 87) · 139 of 147 hits matched, 14 extra · 144 bpm"
+    },
+    {
+      "key": "5",
+      "name": "aid_I_Ran_So_Far_Away_Video_s5_Verse1_c",
+      "src": "m10,144T,13e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Verse 1 (part 3 of 4) (a guess) · Section 5 of 13 · 1:07-1:28 · 13 bars · grade A 95% (kick 100, snare 93, hats 92) · 122 of 128 hits matched, 8 extra · 144 bpm"
+    },
+    {
+      "key": "6",
+      "name": "aid_I_Ran_So_Far_Away_Video_s6_Verse1_d",
+      "src": "m10,144T,15e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Verse 1 (part 4 of 4) · Section 6 of 13 · 1:28-1:53 · 15 bars · grade A 96% (kick 100, snare 95, hats 93) · 141 of 145 hits matched, 9 extra · 144 bpm"
+    },
+    {
+      "key": "7",
+      "name": "aid_I_Ran_So_Far_Away_Video_s7_Chorus1",
+      "src": "m10,144T,2s(|C,D|,D,F#,R,|C,D,F#|,R,|Dvv,F#|,R,|C,D,F#|,R,|D,F#|,R,|C,D|,R,C,R,|C,D|,R,|D,F#|,F#,D,2Dvv,R,|C,D|,Dvv,|D,F#|,R,D,R,|C,D|,R,|C,D|,R,|D,F#|,R,|C,D|,R,Dvv,R,|C,D|,R,|D,F#|,R,D,Dvv,D,|D,F#|,|C,D,F#|,F#,R,F#,|C,D|,Dvv,2F#,|C,F#|,F#,Dvv,|D,F#|,|C,D|,Dvv,F#,R)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Chorus 1 · Section 7 of 13 · 1:53-2:06 · 8 bars · grade C 74% (kick 80, snare 74, hats 69) · 81 of 81 hits matched, 57 extra · 144 bpm"
+    },
+    {
+      "key": "8",
+      "name": "aid_I_Ran_So_Far_Away_Video_s8_Solo",
+      "src": "m10,144T,19e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Solo · Section 8 of 13 · 2:06-2:38 · 19 bars · grade B 88% (kick 96, snare 92, hats 81) · 154 of 159 hits matched, 36 extra · 144 bpm"
+    },
+    {
+      "key": "9",
+      "name": "aid_I_Ran_So_Far_Away_Video_s9_Verse2",
+      "src": "m10,144T,13e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Verse 2 · Section 9 of 13 · 2:38-2:59 · 13 bars · grade A 96% (kick 100, snare 96, hats 93) · 124 of 129 hits matched, 6 extra · 144 bpm"
+    },
+    {
+      "key": "A",
+      "name": "aid_I_Ran_So_Far_Away_Video_s10_Chorus2",
+      "src": "m10,144T,12e(C,F#,|D,F#|,F#,|C,F#|,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Chorus 2 · Section 10 of 13 · 2:59-3:19 · 12 bars · grade A 100% (kick 100, snare 100, hats 100) · 120 of 120 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "B",
+      "name": "aid_I_Ran_So_Far_Away_Video_s11_Outro_a",
+      "src": "m10,144T,11e(C,F#,D,R,C,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Outro (part 1 of 3) · Section 11 of 13 · 3:19-3:37 · 11 bars · grade B 85% (kick 94, snare 95, hats 65) · 69 of 86 hits matched, 8 extra · 144 bpm"
+    },
+    {
+      "key": "C",
+      "name": "aid_I_Ran_So_Far_Away_Video_s12_Outro_b",
+      "src": "m10,144T,8e(C,F#,D,R,C,F#,D,C)",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Outro (part 2 of 3) · Section 12 of 13 · 3:37-3:50 · 8 bars · grade A 92% (kick 100, snare 94, hats 77) · 52 of 57 hits matched, 4 extra · 144 bpm"
+    },
+    {
+      "key": "D",
+      "name": "aid_I_Ran_So_Far_Away_Video_s13_Outro_c",
+      "src": "m10,144T,s(C,11R,C,D,2R),2(4R),3R",
+      "velocity": 100,
+      "note": "I Ran (So Far Away) (Video) · Outro (part 3 of 3) · Section 13 of 13 · 3:50-3:57 · 3 bars + 3 beats · grade C 75% (kick 80, snare 100, hats 0) · 3 of 5 hits matched, 0 extra · 144 bpm"
+    },
+    {
+      "key": "E",
+      "name": "aid_Lullaby",
+      "src": "m10,94T,@aid_Lullaby_s1_Intro_a,@aid_Lullaby_s2_Intro_b,@aid_Lullaby_s3_Verse_a,@aid_Lullaby_s4_Verse_b,@aid_Lullaby_s5_Verse_c,@aid_Lullaby_s6_Verse_d,@aid_Lullaby_s7_Verse_e,@aid_Lullaby_s8_Verse_f,@aid_Lullaby_s9_Verse_g,@aid_Lullaby_s10_Verse_h,@aid_Lullaby_s11_Outro_a,@aid_Lullaby_s12_Outro_b,@aid_Lullaby_s13_Outro_c,@aid_Lullaby_s14_Outro_d",
+      "velocity": 80,
+      "note": "Lullaby — The Cure · the whole song: plays its 14 section rows in order · 94 bpm · grade A 91% (kick 92, snare 92, hats 91) · 906 of 997 hits matched, 80 extra"
+    },
+    {
+      "key": "F",
+      "name": "aid_Lullaby_s1_Intro_a",
+      "src": "m10,94T,9(4R),s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Intro (part 1 of 2) · Section 1 of 14 · 0:00-0:25 · 10 bars · grade C 71% (kick 73, snare 67, hats 71) · 11 of 20 hits matched, 0 extra · 94 bpm"
+    },
+    {
+      "key": "G",
+      "name": "aid_Lullaby_s2_Intro_b",
+      "src": "m10,94T,7e(|C,F#|,F#,D,2C,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "Lullaby · Intro (part 2 of 2) · Section 2 of 14 · 0:25-0:43 · 7 bars · grade A 92% (kick 91, snare 93, hats 91) · 67 of 76 hits matched, 3 extra · 94 bpm"
+    },
+    {
+      "key": "H",
+      "name": "aid_Lullaby_s3_Verse_a",
+      "src": "m10,94T,11s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 1 of 8) (a guess) · Section 3 of 14 · 0:43-1:11 · 11 bars · grade A 93% (kick 91, snare 96, hats 94) · 112 of 120 hits matched, 9 extra · 94 bpm"
+    },
+    {
+      "key": "I",
+      "name": "aid_Lullaby_s4_Verse_b",
+      "src": "m10,94T,10s(|C,F#|,R,F#,R,D,R,C,R,2C,2F#,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 2 of 8) (a guess) · Section 4 of 14 · 1:11-1:37 · 10 bars · grade A 91% (kick 91, snare 95, hats 89) · 107 of 116 hits matched, 13 extra · 94 bpm"
+    },
+    {
+      "key": "J",
+      "name": "aid_Lullaby_s5_Verse_c",
+      "src": "m10,94T,11e(|C,F#|,F#,D,2C,F#,|D,F#|,F#)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 3 of 8) (a guess) · Section 5 of 14 · 1:37-2:05 · 11 bars · grade A 91% (kick 89, snare 90, hats 92) · 105 of 122 hits matched, 5 extra · 94 bpm"
+    },
+    {
+      "key": "K",
+      "name": "aid_Lullaby_s6_Verse_d",
+      "src": "m10,94T,4s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 4 of 8) (a guess) · Section 6 of 14 · 2:05-2:15 · 4 bars · grade A 94% (kick 90, snare 100, hats 95) · 42 of 45 hits matched, 2 extra · 94 bpm"
+    },
+    {
+      "key": "L",
+      "name": "aid_Lullaby_s7_Verse_e",
+      "src": "m10,94T,5s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 5 of 8) (a guess) · Section 7 of 14 · 2:15-2:28 · 5 bars · grade B 89% (kick 95, snare 87, hats 86) · 50 of 57 hits matched, 5 extra · 94 bpm"
+    },
+    {
+      "key": "M",
+      "name": "aid_Lullaby_s8_Verse_f",
+      "src": "m10,94T,4s(|C,F#|,R,F#,R,D,R,C,R,2C,2F#,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 6 of 8) (a guess) · Section 8 of 14 · 2:28-2:38 · 4 bars · grade A 95% (kick 90, snare 100, hats 96) · 44 of 45 hits matched, 4 extra · 94 bpm"
+    },
+    {
+      "key": "N",
+      "name": "aid_Lullaby_s9_Verse_g",
+      "src": "m10,94T,2s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,D,R,C,F#,2C,2F#,|D,F#|,|C,D,F#|,2|D,F#|,|C,F#|,2R,F#,D,R,C,R,C,R,F#,R,|D,F#|,R,2F#,|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 7 of 8) (a guess) · Section 9 of 14 · 2:38-2:59 · 8 bars · grade A 93% (kick 98, snare 93, hats 90) · 89 of 89 hits matched, 13 extra · 94 bpm"
+    },
+    {
+      "key": "O",
+      "name": "aid_Lullaby_s10_Verse_h",
+      "src": "m10,94T,2s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,2F#,|D,F#|,R,|C,F#|,R,|C,F#|,C,2F#,|D,F#|,F#,2|D,F#|)",
+      "velocity": 100,
+      "note": "Lullaby · Verse (part 8 of 8) (a guess) · Section 10 of 14 · 2:59-3:09 · 4 bars · grade A 94% (kick 100, snare 91, hats 92) · 53 of 53 hits matched, 7 extra · 94 bpm"
+    },
+    {
+      "key": "P",
+      "name": "aid_Lullaby_s11_Outro_a",
+      "src": "m10,94T,4s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Outro (part 1 of 4) · Section 11 of 14 · 3:09-3:19 · 4 bars · grade A 94% (kick 90, snare 100, hats 95) · 42 of 45 hits matched, 2 extra · 94 bpm"
+    },
+    {
+      "key": "Q",
+      "name": "aid_Lullaby_s12_Outro_b",
+      "src": "m10,94T,12s(|C,F#|,R,F#,R,D,R,C,R,2C,F#,R,|D,F#|,R,F#,R)",
+      "velocity": 100,
+      "note": "Lullaby · Outro (part 2 of 4) · Section 12 of 14 · 3:19-3:50 · 12 bars · grade A 90% (kick 91, snare 86, hats 91) · 120 of 135 hits matched, 12 extra · 94 bpm"
+    },
+    {
+      "key": "R",
+      "name": "aid_Lullaby_s13_Outro_c",
+      "src": "m10,94T,3s(|C,F#|,R,F#,R,D,R,C,R,C,R,F#,R,|D,F#|,R,F#,R,|C,F#|,R,F#,R,|D,F#|,R,|C,F#|,R,|C,F#|,C,F#,R,D,3R)",
+      "velocity": 100,
+      "note": "Lullaby · Outro (part 3 of 4) · Section 13 of 14 · 3:50-4:05 · 6 bars · grade B 89% (kick 93, snare 92, hats 85) · 61 of 71 hits matched, 5 extra · 94 bpm"
+    },
+    {
+      "key": "S",
+      "name": "aid_Lullaby_s14_Outro_d",
+      "src": "m10,94T,s(|C,F#|,C,14R),3R",
+      "velocity": 100,
+      "note": "Lullaby · Outro (part 4 of 4) · Section 14 of 14 · 4:05-4:10 · 1 bar + 3 beats · grade A 100% (kick 100, hats 100) · 3 of 3 hits matched, 0 extra · 94 bpm"
+    }
+  ]
+}

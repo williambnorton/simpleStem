@@ -129,7 +129,7 @@
   <g filter="url(#shadow)">
     <rect x="540" y="676" width="320" height="56" rx="8" fill="url(#script)"/>
     <text x="700" y="698" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="ui-monospace, monospace">queue_runner.sh → stem.sh</text>
-    <text x="700" y="719" text-anchor="middle" font-size="10" fill="#cbd5e1">on Performer · Demucs htdemucs_6s (~25 min/song) · ffmpeg → m4a</text>
+    <text x="700" y="719" text-anchor="middle" font-size="10" fill="#cbd5e1">on Performer · SOURCE m4a → Logic stemming queue (~3 min/song)</text>
   </g>
   <line x1="700" y1="628" x2="700" y2="676" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
 
@@ -142,7 +142,7 @@
     <text x="490" y="788" text-anchor="middle" font-size="14" font-weight="800" fill="#064e3b" font-family="ui-monospace, monospace">STEMS/&lt;slug&gt;/</text>
     <text x="490" y="810" text-anchor="middle" font-size="11" fill="#065f46">source.wav (48 kHz reference; kept for re-stemming without re-download)</text>
     <text x="490" y="826" text-anchor="middle" font-size="11" fill="#065f46">vocals.m4a · drums.m4a · bass.m4a · guitar.m4a · piano.m4a · other.m4a</text>
-    <text x="490" y="842" text-anchor="middle" font-size="11" fill="#065f46">metadata.json · sectionCandidates · lyrics.txt</text>
+    <text x="490" y="842" text-anchor="middle" font-size="11" fill="#065f46">metadata.json · lyrics.txt</text>
     <text x="490" y="856" text-anchor="middle" font-size="10" fill="#047857" font-style="italic">portal mixes the six stems client-side · no pre-baked mixdowns</text>
   </g>
   <g filter="url(#shadow)">

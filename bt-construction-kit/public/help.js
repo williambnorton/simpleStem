@@ -34,12 +34,12 @@
           ['⟳ reset', 'Relaunches the MIDI sidecar and portal server. SAFE: an active render is left alone. The full restart including the render queue lives in the Stem Mixer Console.'],
           ['View buttons', 'Four surfaces of one system: Performer (this mixer), Librarian (the pipeline dashboard), MIDI (the control room), Desktop (a file-level prototype). The lit button is where you are.'],
           ['Flash Cache (hard-drive icon)', 'Forces every song’s stems into ~/.bt-cache before you leave for a gig. Shift-click overwrites files already cached. If a song is in the library, its six stems are on local disk: that is the offline contract.'],
-          ['Queue chips', 'Live render status: downloading source, analyzing BPM/key, separating stems (Demucs, 10-25 min per song), mixing m4a. A red ✕ webloc chip means a YouTube URL could not be fetched; hover it for the fix.'],
+          ['Queue chips', 'Live ingest status: downloading source, analyzing BPM/key, encoding the SOURCE m4a, queued for Logic Pro stemming. A red ✕ webloc chip means a YouTube URL could not be fetched; hover it for the fix.'],
         ]),
         s('Library', [
           ['Columns', 'Set / Title (with ☆ favorite star) / Artist / Duration / Tempo / Key / Singer / Action (⋯ menu). The singer cell is a pulldown; changing it re-buckets the song in the singer views immediately.'],
           ['Drum pattern pill', 'The opaque pattern tag from the band sheet, like 120@130. Shown next to BPM and key; the drum machine uses it to pick a pattern.'],
-          ['Add from YouTube', 'Paste a video or playlist URL. It becomes a .webloc for the Librarian, which downloads the audio and queues the render. A new song appears when Demucs finishes.'],
+          ['Add from YouTube', 'Paste a video or playlist URL. It becomes a .webloc for the Librarian, which downloads the audio. The Performer then queues the song for Logic Pro stemming; it plays once the Logic stemming queue has been run.'],
           ['Filters', 'Tempo, key, singer, readiness. A song with no BPM or tags stays visible when every filter is checked; vanishing rows are a bug, not a feature.'],
         ]),
         s('Gig sidebar: Gig ▸ Setlist ▸ Song', [
@@ -81,7 +81,7 @@
         s('Plumbing and the living pipeline', [
           'The flow reads left to right: INCOMING_WEBLOC (dropped URLs) ▸ STEM_QUEUE (render jobs) ▸ STEMS (finished songs). Counts update live; a growing _failed or a red webloc badge is the thing to investigate.',
           ['✕ webloc failed', 'yt-dlp could not fetch a URL (403, deleted, age-restricted). Delete the .failed file in INCOMING_WEBLOC or fix the URL and re-drop it. Updating yt-dlp on the mini cures most VEVO 403s.'],
-          ['Failed renders', 'Demucs crashed or the source was corrupt. The job sits in STEM_QUEUE/_failed so it cannot loop forever.'],
+          ['Failed renders', 'The download or the source file was bad. The job sits in STEM_QUEUE/_failed so it cannot loop forever.'],
         ]),
         s('Pending & recent', [
           'What is queued right now and what just landed, with the current render’s phase. A new song appears in the library the moment its six stems and metadata exist.',

@@ -1,0 +1,222 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Depeche Mode (style) — C minor 118",
+  "description": "Modelled on the sound of Depeche Mode — original parts, not any of their songs: 808-style electronic beat with claps and metallic percussion, 16th-note sequenced synth bass, saw arpeggios, choir pad, synth-brass stabs, a tubular-bell melody and a twangy guitar riff. C minor at 118 bpm, Cm Ab Fm G. Rows 1-4 drums (ch 10), 5-8 bass SUBROUTINES and 9-B bass rows (ch 13), C-F arp SUBROUTINES and G arps (ch 11), H-I pad (ch 15), J stabs (ch 16), K-L bells (ch 11), M guitar (ch 14), N-R sections, S jam. Row 0 plays the song.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "build a new bank modelled after the band The Cure and make one modelled after the band Depeche Mode and make one modelled after Joe Jackson",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 118,
+  "key": "Cm",
+  "song": "Depeche Style",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "dmSong",
+      "src": "@intro,@verse,@chorus,@verse,@chorus,@bridge,@chorus,@outro",
+      "velocity": 100,
+      "note": "MAIN: arp intro, verse, chorus, verse, chorus, guitar bridge, chorus, outro — 58 bars"
+    },
+    {
+      "key": "1",
+      "name": "dmHat",
+      "src": "m10,p25,16(F#s)",
+      "velocity": 72,
+      "note": "16th hats on the 808 kit (the kit switches only on a GM synth)"
+    },
+    {
+      "key": "2",
+      "name": "dmBeat",
+      "src": "m10,p25,@dmHat&,Ce,Ce,D#,Re,Ce,D#",
+      "velocity": 100,
+      "note": "Electronic beat: kick on 1 and 1&, clap on 2 and 4, kick on 3&"
+    },
+    {
+      "key": "3",
+      "name": "dmPerc",
+      "src": "m10,p25,4(Re,F#+s,G#+s)",
+      "velocity": 80,
+      "note": "Metallic percussion: tambourine and cowbell on the off-beat 16ths"
+    },
+    {
+      "key": "4",
+      "name": "dmFill",
+      "src": "m10,p25,C+s,C+s,Bs,Bs,As,As,Gs,Gs,Fs,Fs,Fs,Fs,D#e,D#e",
+      "velocity": 100,
+      "note": "Electronic tom fill into two claps"
+    },
+    {
+      "key": "5",
+      "name": "bCm",
+      "src": "4(C+s,C+s,C++s,C+s)",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of sequenced octave bass on C"
+    },
+    {
+      "key": "6",
+      "name": "bAb",
+      "src": "4(Abs,Abs,Ab+s,Abs)",
+      "velocity": 100,
+      "note": "SUBROUTINE: sequenced bass on Ab"
+    },
+    {
+      "key": "7",
+      "name": "bFm",
+      "src": "4(Fs,Fs,F+s,Fs)",
+      "velocity": 100,
+      "note": "SUBROUTINE: sequenced bass on F"
+    },
+    {
+      "key": "8",
+      "name": "bG",
+      "src": "4(Gs,Gs,G+s,Gs)",
+      "velocity": 100,
+      "note": "SUBROUTINE: sequenced bass on G"
+    },
+    {
+      "key": "9",
+      "name": "bassSeq",
+      "src": "m13,p39,2(@bCm,@bAb,@bFm,@bG)",
+      "velocity": 100,
+      "note": "8 bars of 16th-note synth-bass sequence"
+    },
+    {
+      "key": "A",
+      "name": "bassPulse",
+      "src": "m13,p38,2(8(C+e),8(Abe),8(Fe),8(Ge))",
+      "velocity": 100,
+      "note": "8 bars of 8th-note pulse bass for the verses"
+    },
+    {
+      "key": "B",
+      "name": "bassEnd",
+      "src": "m13,p39,@bCm,C+w",
+      "velocity": 100,
+      "note": "Ending bass"
+    },
+    {
+      "key": "C",
+      "name": "aCm",
+      "src": "4(C++s,Eb++s,G++s,C+++s)",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of 16th arpeggio over Cm"
+    },
+    {
+      "key": "D",
+      "name": "aAb",
+      "src": "4(Ab+s,C++s,Eb++s,Ab++s)",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over Ab"
+    },
+    {
+      "key": "E",
+      "name": "aFm",
+      "src": "4(F+s,Ab+s,C++s,F++s)",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over Fm"
+    },
+    {
+      "key": "F",
+      "name": "aG",
+      "src": "4(G+s,B+s,D++s,G++s)",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over G"
+    },
+    {
+      "key": "G",
+      "name": "arpSeq",
+      "src": "m11,p81,2(@aCm,@aAb,@aFm,@aG)",
+      "velocity": 82,
+      "note": "8 bars of saw-lead arpeggios"
+    },
+    {
+      "key": "H",
+      "name": "padCh",
+      "src": "m15,p91,2(C++m!w,Ab+!w,F+m!w,G+!w)",
+      "velocity": 70,
+      "note": "8 bars of choir pad"
+    },
+    {
+      "key": "I",
+      "name": "padEnd",
+      "src": "m15,p91,C++m!w,C++m!w",
+      "velocity": 70,
+      "note": "Ending pad"
+    },
+    {
+      "key": "J",
+      "name": "stabs",
+      "src": "m16,p62,2(R,C++m!e,Re,R,C++m!e,C++m!e,R,Ab+!e,Re,R,Ab+!e,Ab+!e,R,F+m!e,Re,R,F+m!e,F+m!e,R,G+!e,Re,R,G+!e,G+!e)",
+      "velocity": 85,
+      "note": "8 bars of synth-brass stabs"
+    },
+    {
+      "key": "K",
+      "name": "belMel",
+      "src": "G+++,Eb+++,C+++,R,Ab++,C+++,Eb+++,R,F+++,Eb+++,C+++,Ab++,G++w",
+      "velocity": 100,
+      "note": "SUBROUTINE: 4-bar bell melody"
+    },
+    {
+      "key": "L",
+      "name": "bellLine",
+      "src": "m11,p14,2@belMel",
+      "velocity": 92,
+      "note": "Tubular-bell melody for the chorus, 8 bars (takes over ch 11 from the arp)"
+    },
+    {
+      "key": "M",
+      "name": "gtrTwang",
+      "src": "m14,p27,2(C++e,Eb++e,F++e,G++e,Bb++,G++),Ab+e,C++e,Eb++e,F++e,G++,Eb++,G+e,B+e,D++e,F++e,G++,R",
+      "velocity": 85,
+      "note": "4-bar twangy single-note guitar riff for the bridge"
+    },
+    {
+      "key": "N",
+      "name": "intro",
+      "src": "@arpSeq&,@padCh&,8(@dmPerc)",
+      "velocity": 100,
+      "note": "SECTION: arps, pad and metal percussion (8 bars)"
+    },
+    {
+      "key": "O",
+      "name": "verse",
+      "src": "@bassPulse&,@arpSeq&,8(@dmBeat)",
+      "velocity": 100,
+      "note": "SECTION: verse — pulse bass, arps, beat"
+    },
+    {
+      "key": "P",
+      "name": "chorus",
+      "src": "@bassSeq&,@padCh&,@stabs&,@bellLine&,7(@dmBeat),@dmFill",
+      "velocity": 100,
+      "note": "SECTION: chorus — sequenced bass, choir, brass stabs, bells"
+    },
+    {
+      "key": "Q",
+      "name": "bridge",
+      "src": "@bassSeq&,@gtrTwang&,4(@dmBeat),@gtrTwang&,3(@dmBeat),@dmFill",
+      "velocity": 100,
+      "note": "SECTION: bridge — the guitar riff twice"
+    },
+    {
+      "key": "R",
+      "name": "outro",
+      "src": "@bassEnd&,@padEnd&,@dmBeat,m10,p25,C#+w",
+      "velocity": 100,
+      "note": "SECTION: 2-bar ending"
+    },
+    {
+      "key": "S",
+      "name": "jam",
+      "src": "@bassSeq&,@arpSeq&,@padCh&,8(@dmBeat)",
+      "velocity": 100,
+      "note": "JAM: loops 8 bars to play over"
+    }
+  ]
+}

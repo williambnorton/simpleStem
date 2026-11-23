@@ -566,54 +566,23 @@ async function scanLoops() {
   return bySlug;
 }
 
-// ── Stem sets (Bill 2026-10-20) ─────────────────────────────────────────────
-// A song folder can hold TWO six-stem sets side by side:
-//   STEMS/<song>/vocals.m4a …        Demucs (htdemucs_6s) — always present
-//   STEMS/<song>/logic/vocals.m4a …  Logic Pro Stem Splitter — optional
-// Each song remembers which set plays in metadata.json `stem_set`
-// ('demucs' | 'logic'). With nothing saved, Logic plays when it exists.
-// Library rows carry `stemsBySet`, `stemSets`, `stemSet`, and `stems` (the
-// chosen set's file paths, relative to the song folder). catalog.py
-// mirrors this.
-const LOGIC_STEM_SUBDIR = 'logic';
-const STEM_SET_NAMES = ['demucs', 'logic'];
+// Logic Pro 13 songs (Bill 2026-11-23, flat layout): the six stems AND the six kit
+// pieces (kick, snare, hihat, toms, cymbals, percussion) for the Performer's DRUM
+// KIT faders all sit in the song folder itself, beside <folder>_SOURCE.m4a and the
+// MPL/JSON files. They are served by /api/audio/stems/:song/:file and cached by
+// songStemM4as like any other m4a there. There is no logic13/ subfolder any more.
 const SIX_STEM_NAMES = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
-// The Logic set counts only when all six m4a stems are there, so a bounce
-// still in progress is never offered.
-function logicStemSetFrom(files) {
-  const have = new Set(files);
-  if (!SIX_STEM_NAMES.every(n => have.has(`${n}.m4a`))) return null;
-  const out = {};
-  for (const n of SIX_STEM_NAMES) out[n] = `${LOGIC_STEM_SUBDIR}/${n}.m4a`;
-  return out;
-}
-function resolveStemSet(demucs, logic, saved) {
-  const stemsBySet = { demucs };
-  if (logic) stemsBySet.logic = logic;
-  const stemSet = (saved && stemsBySet[saved]) ? saved : (logic ? 'logic' : 'demucs');
-  return { stems: stemsBySet[stemSet], stemsBySet, stemSets: Object.keys(stemsBySet), stemSet };
-}
-// Every cacheable m4a in a song folder, relative to it: the Demucs stems
-// at the top plus logic/*.m4a when that subfolder exists. `names` is the
-// folder's readdir() the caller already has.
+// Every cacheable m4a in a song folder, relative to it (stems and kit
+// pieces). `names` is the folder's readdir() the caller already has.
 async function songStemM4as(folder, names) {
   // <folder>_SOURCE.m4a (the stereo original, CONTRACTS F-9) stays on Drive:
   // ~3 GB across the library must never push stems out of the gig cache.
-  const out = names.filter(f => /\.m4a$/i.test(f) && !/_SOURCE\.m4a$/i.test(f));
-  if (names.includes(LOGIC_STEM_SUBDIR)) {
-    try {
-      const lf = await driveRace(fsp.readdir(path.join(folder, LOGIC_STEM_SUBDIR)));
-      for (const f of lf) if (/\.m4a$/i.test(f)) out.push(`${LOGIC_STEM_SUBDIR}/${f}`);
-    } catch (e) {}
-  }
-  return out;
+  return names.filter(f => /\.m4a$/i.test(f) && !/_SOURCE\.m4a$/i.test(f));
 }
-// Stem-set picks made through PUT /api/song/:base/stem-set. The Performer
-// usually loads the library from the Librarian's CATALOG.json, which can
-// lag a pick by up to an hour; overlayCachedState re-applies these so a
-// catalog reload never flips a song back.
-const recentStemSetPicks = new Map();   // folderName → 'demucs' | 'logic'
-// Same idea for "Skip for all" in the fill-missing-lyrics workflow.
+// Changes made on the Performer that the Librarian's CATALOG.json can lag
+// by up to an hour; overlayCachedState re-applies them so a catalog reload
+// never flips a song back.
+// "Skip for all" in the fill-missing-lyrics workflow.
 const recentLyricsSkips = new Map();    // folderName → true | false
 const recentLibraryMoves = new Map();   // folderName → 'jam' | 'song' (PUT /api/song/:base/library)
 
@@ -651,11 +620,11 @@ async function scanStems() {
       if (filesInFolder.includes(`${name}.wav`)) return `${name}.wav`;
       return null;
     };
-    // Task #150: the six canonical demucs stems only. The legacy `rhythm`
+    // Task #150: the six canonical stems only. The legacy `rhythm`
     // (bass+drums combined) and `source` (raw 48kHz wav) leaked into the
     // client's `currentSong.stems` dict and drifted the shape away from
     // ARCHITECTURE.md's contract. `source.wav` is still used internally
-    // (see `representativeFile` below and `logic-restem` emitters) — that
+    // (see `representativeFile` below) — that
     // path reads the file directly from disk, not from this dict.
     const stems = {
       vocals: pickStem('vocals'),
@@ -670,14 +639,6 @@ async function scanStems() {
     // library row surfaces a yellow 'Logic' chip that opens it in a fresh
     // Logic instance so you can re-mix / re-route stems to different XR18
     // outputs without disturbing whatever Logic is already doing.
-    // Optional Logic Pro stem set in logic/ (see LOGIC_STEM_SUBDIR above).
-    let logicStems = null;
-    if (filesInFolder.includes(LOGIC_STEM_SUBDIR)) {
-      try {
-        logicStems = logicStemSetFrom(await driveRace(fsp.readdir(path.join(folderPath, LOGIC_STEM_SUBDIR))));
-      } catch (e) {}
-    }
-
     const logicProjectName = filesInFolder.find(f => f.toLowerCase().endsWith('.logicx')) || null;
 
     // Find loop files (e.g. drums_loop1_83bars.m4a; legacy .wav also accepted)
@@ -767,7 +728,6 @@ async function scanStems() {
         var play_count_meta = mj.play_count | 0;
         var last_played_at_meta = mj.last_played_at || null;
         var drum_machine_default_meta = !!mj.drum_machine_default;
-        var stem_set_meta = STEM_SET_NAMES.includes(mj.stem_set) ? mj.stem_set : null;
         var lyrics_skip_meta = !!mj.lyrics_skip;
         // Jam page "Import as: Jam track" (Bill 2026-11-08): webloc_watch.sh
         // writes library:"jam" + lyrics_skip:true; such rows live in the Jam
@@ -834,9 +794,6 @@ async function scanStems() {
       }
     }
 
-    const stemSel = resolveStemSet(stems, logicStems,
-      (typeof stem_set_meta !== 'undefined') ? stem_set_meta : null);
-
     results.push({
       id: `stem-${folder}`,
       type: 'stems',
@@ -895,10 +852,7 @@ async function scanStems() {
       // etc.), set via PUT /api/song/:base/lyrics-skip.
       lyrics_skip: (typeof lyrics_skip_meta !== 'undefined') ? lyrics_skip_meta : false,
       library: (typeof library_meta !== 'undefined') ? library_meta : 'song',
-      stems: stemSel.stems,
-      stemsBySet: stemSel.stemsBySet,
-      stemSets: stemSel.stemSets,
-      stemSet: stemSel.stemSet,
+      stems: stems,
       cached: isStemsFolderCached(folder),
       logicProjectName: logicProjectName,
       loops: Object.values(groupedLoops).sort((a, b) => a.loopNum - b.loopNum),
@@ -1426,6 +1380,25 @@ setImmediate(() => { try { bootPhase('library.refresh.startup', () => refreshLib
 }});
 setInterval(() => refreshLibraryCache('hourly'), LIBRARY_REFRESH_MS);
 
+// Safety net (Bill 2026-11-23): the Librarian's CATALOG.json can list a stem as
+// missing while the Librarian's copy of Drive is still catching up. After the
+// Logic stems replaced the earlier ones, 299 of 337 songs lost strips this way
+// although every file was on the Performer. The gig cache holds every song's
+// stems (the offline contract), so a stem the catalog row lacks is taken from
+// ~/.bt-cache when it is there. A stem that is in neither place stays missing.
+function healStemsFromCache(s) {
+  if (!s.folderName) return;
+  if (!s.stems) s.stems = {};
+  for (const n of SIX_STEM_NAMES) {
+    if (s.stems[n]) continue;
+    try {
+      if (fs.statSync(path.join(AUDIO_CACHE_STEMS, s.folderName, `${n}.m4a`)).size > 0) {
+        s.stems[n] = `${n}.m4a`;
+      }
+    } catch (e) {}
+  }
+}
+
 // Overlay fresh `cached` state on every song in a library payload. The
 // cached state changes frequently (every precache completion) but the
 // library cache only rebuilds when source dirs change — so we update
@@ -1436,11 +1409,7 @@ function overlayCachedState(data) {
     if (s.type === 'stems' && s.folderName) {
       if (recentLyricsSkips.has(s.folderName)) s.lyrics_skip = recentLyricsSkips.get(s.folderName);
       if (recentLibraryMoves.has(s.folderName)) s.library = recentLibraryMoves.get(s.folderName);
-      const pick = recentStemSetPicks.get(s.folderName);
-      if (pick && s.stemsBySet && s.stemsBySet[pick]) {
-        s.stemSet = pick;
-        s.stems = s.stemsBySet[pick];
-      }
+      healStemsFromCache(s);
       s.cached = isStemsFolderCached(s.folderName);
     } else if (s.type === 'm4a' && s.fileName) {
       s.cached = isM4aCached(s.fileName);
@@ -1871,21 +1840,11 @@ async function sendCachedAudio(req, res, sourcePath, cachePath) {
   });
   // Schedule background cache copy so NEXT play is hot.
   if (cachePath) {
-    setImmediate(() => {
-      ensureCachedAsync(sourcePath, cachePath).catch(() => {});
+    setImmediate(async () => {
+      if (await precacheHasRoom()) ensureCachedAsync(sourcePath, cachePath).catch(() => {});
     });
   }
 }
-
-// Logic Pro stem set — STEMS/<song>/logic/<stem>.m4a, cached under the
-// same relative path in ~/.bt-cache/STEMS/.
-app.get(`/api/audio/stems/:song/${LOGIC_STEM_SUBDIR}/:file`, (req, res) => {
-  const { song, file } = req.params;
-  if (song.includes('..') || file.includes('..') || !/\.m4a$/i.test(file)) return res.status(403).send('Forbidden');
-  return sendCachedAudio(req, res,
-    path.join(STEMS_DIR, song, LOGIC_STEM_SUBDIR, file),
-    path.join(AUDIO_CACHE_STEMS, song, LOGIC_STEM_SUBDIR, file));
-});
 
 app.get('/api/audio/stems/:song/:file', async (req, res) => {
   const { song, file } = req.params;
@@ -2649,9 +2608,7 @@ function isStemsFolderCached(folderName) {
   // Look up the expected file list from the library cache (already in memory)
   const data = libraryCache && libraryCache.data;
   const entry = data && data.songs.find(s => s.type === 'stems' && s.folderName === folderName);
-  // The sentinel can predate a Logic set added later, so when the Logic
-  // set is the one that plays, check its files instead.
-  if (fs.existsSync(sentinel) && !(entry && entry.stemSet === 'logic')) return true;
+  if (fs.existsSync(sentinel)) return true;
   if (!entry) return false;
 
   // Only the main mixable stems count toward "ready". Loops + source.wav
@@ -2788,6 +2745,19 @@ let cacheJobState = {
   forceMode: false, // when true, overwrite cached files (bytes don't change but mtime refreshes)
 };
 
+const PRECACHE_MIN_FREE_GB = 4;
+let _precacheRoom = { at: 0, ok: true };
+async function precacheHasRoom() {
+  if (Date.now() - _precacheRoom.at < 15000) return _precacheRoom.ok;
+  let ok = true;
+  try {
+    const st = await fsp.statfs(AUDIO_CACHE_DIR);
+    ok = st.bavail * st.bsize >= PRECACHE_MIN_FREE_GB * 1024 ** 3;
+    if (!ok && _precacheRoom.ok) console.warn(`[stem precache] less than ${PRECACHE_MIN_FREE_GB} GB free — not caching more`);
+  } catch (e) {}
+  _precacheRoom = { at: Date.now(), ok };
+  return ok;
+}
 async function precacheAllStemsM4a(opts) {
   const force = !!(opts && opts.force);
   const trigger = (opts && opts.trigger) || 'auto';
@@ -2815,7 +2785,10 @@ async function precacheAllStemsM4a(opts) {
         const src = path.join(STEMS_DIR, song);
         const dst = path.join(AUDIO_CACHE_STEMS, song);
         await fsp.mkdir(dst, { recursive: true });
-        const files = await songStemM4as(src, await fsp.readdir(src));
+        const names = await fsp.readdir(src);
+        const files = await songStemM4as(src, names);
+        // The song's MPL file rides along (CONTRACTS F-11) so MPL DRUMS works with no Drive.
+        if (names.includes(song + '_MPL.json')) files.push(song + '_MPL.json');
         let localCopied = 0;
         for (const f of files) {
           const cachePath = path.join(dst, f);
@@ -2823,6 +2796,9 @@ async function precacheAllStemsM4a(opts) {
             cacheJobState.skipped++;
             continue;
           }
+          // Never fill the disk (Bill 2026-11-21: the Logic 13 stems add ~20 GB): stop copying
+          // when less than PRECACHE_MIN_FREE_GB is left. What is already cached still plays.
+          if (!(await precacheHasRoom())) { cacheJobState.noRoom = (cacheJobState.noRoom || 0) + 1; continue; }
           try {
             await ensureCachedAsync(path.join(src, f), cachePath, { force });
             cacheJobState.copied++;
@@ -3424,7 +3400,7 @@ setImmediate(() => { reconcileLibrarianFolders().catch(() => {}); });
 // "wav flow" (blue) and "m4a flow" (green) visualizations — the two
 // key creation events in the pipeline:
 //   • source.wav → webloc_watch just finished the YouTube download.
-//   • *.m4a      → queue_runner just finished a Demucs+ffmpeg encode.
+//   • *.m4a      → a stem file just arrived.
 // Snapshot per song is a Set of artifact filenames; deltas broadcast.
 const STEMS_ARTIFACT_NAMES = new Set([
   'source.wav', 'vocals.m4a', 'drums.m4a', 'bass.m4a',
@@ -3997,6 +3973,62 @@ app.get('/api/audio/song-source/:base', async (req, res) => {
   return onDrive ? sendCachedAudio(req, res, main, mainCache) : sendCachedAudio(req, res, alt, altCache);
 });
 
+// The song's MPL file (2026-11-17): STEMS/<base>/<base>_MPL.json, for the Performer's MPL DRUMS
+// source. Drive first, on a short budget; every good read is copied to ~/.bt-cache so the same
+// song still answers with no Drive at all (the offline contract). 404 = the song has no MPL yet.
+app.get('/api/song/:base/mpl', async (req, res) => {
+  const base = path.basename(String(req.params.base || ''));
+  if (!base || base.startsWith('.') || base.includes('..')) return res.status(400).json({ error: 'bad song' });
+  const file = `${base}_MPL.json`;
+  const main = path.join(STEMS_DIR, base, file), cache = path.join(AUDIO_CACHE_STEMS, base, file);
+  let txt = null, from = '', missing = false;
+  try { txt = await driveRace(fsp.readFile(main, 'utf8'), 5000); from = 'drive'; } catch (e) { missing = !!(e && e.code === 'ENOENT'); }
+  if (txt != null) {
+    fsp.mkdir(path.dirname(cache), { recursive: true }).then(() => fsp.writeFile(cache, txt)).catch(() => {});
+  } else {
+    try { txt = await fsp.readFile(cache, 'utf8'); from = 'cache'; } catch (e) {}
+  }
+  // 404 = the song has no MPL file; 503 = Drive has not handed it over yet (the Performer asks again)
+  if (txt == null) return res.status(missing ? 404 : 503).json({ error: missing ? 'no MPL file for this song' : 'Drive did not answer in time' });
+  let bank;
+  try { bank = JSON.parse(txt); } catch (e) { return res.status(500).json({ error: 'the MPL file is not valid JSON' }); }
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, from, bank });
+});
+
+// The catalog as MPL (2026-11-17): one entry per song for the MIDI console's song list — title, drum grade
+// and the song's top row. Read from the local copies in ~/.bt-cache (every song's MPL file is kept there),
+// so it answers with no Drive; parsed again only when a file there changes.
+let mplSongIndex = { sig: null, songs: [] };
+app.get('/api/mpl/songs', async (req, res) => {
+  try {
+    const dirs = await fsp.readdir(AUDIO_CACHE_STEMS).catch(() => []);
+    const files = [];
+    await Promise.all(dirs.map(async (d) => {
+      if (d.startsWith('.')) return;
+      const f = path.join(AUDIO_CACHE_STEMS, d, d + '_MPL.json');
+      try { const st = await fsp.stat(f); files.push({ d, f, m: st.mtimeMs, s: st.size }); } catch (e) {}
+    }));
+    files.sort((a, b) => (a.d < b.d ? -1 : 1));
+    const sig = files.map(x => x.d + ':' + x.m + ':' + x.s).join('|');
+    if (sig !== mplSongIndex.sig) {
+      const songs = [];
+      for (const x of files) {
+        try {
+          const b = JSON.parse(await fsp.readFile(x.f, 'utf8'));
+          const row = (b.slots || [])[0] || {}, g = b.grade || row.grade || {};
+          songs.push({ folder: x.d, title: String(b.song || b.name || x.d), artist: String(b.artist || ''), version: +b.version || 1,
+                       letter: String(g.letter || '-'), pct: g.pct == null ? null : +g.pct, rows: (b.slots || []).length, bpm: +b.bpm || 0, key: String(b.key || ''),
+                       name: String(row.name || ''), src: +b.version >= 2 ? String(row.src || '').slice(0, 400) : '' });
+        } catch (e) {}
+      }
+      mplSongIndex = { sig, songs };
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, songs: mplSongIndex.songs });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // HARD delete one stereo source file (Bill chose hard delete + confirm).
 // The confirm handshake: the body must repeat the exact filename. Drive
 // unlink is budgeted and fails LOUD; on failure nothing local is touched,
@@ -4549,6 +4581,56 @@ app.post('/api/enqueue', (req, res) => {
     logActivity('error', 'ingest', `enqueue failed: ${e.message}`, { url });
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Logic Pro stemming queue (Bill 2026-11-23) ─────────────────────────────
+// New songs are stem-split in Logic Pro. stem.sh makes the song
+// folder with <folder>_SOURCE.m4a and drops LOGIC_QUEUE/<folder>.json. Claude
+// drives Logic Pro's Stem Splitter over the queued folders once Bill hands the
+// Mac over with the button in the Performer (public/logic-queue.js). The
+// handover is a flag file, LOGIC_QUEUE/_handover.json, plus a caffeinate that
+// keeps the screen from sleeping or locking while Claude works. A finished
+// song's entry moves to LOGIC_QUEUE/_done/.
+const LOGIC_QUEUE_DIR = `${SIMPLE_STEM_ROOT}/LOGIC_QUEUE`;
+const LOGIC_HANDOVER_HOURS = 4;
+let logicHandoverCaffeinate = null;
+async function readLogicQueue() {
+  const out = { pending: [], handover: null };
+  let names = [];
+  try { names = await driveRace(fsp.readdir(LOGIC_QUEUE_DIR), 4000); } catch (e) { return out; }
+  for (const f of names.sort()) {
+    if (!f.endsWith('.json') || f.startsWith('.')) continue;
+    let j = {};
+    try { j = JSON.parse(await driveRace(fsp.readFile(path.join(LOGIC_QUEUE_DIR, f), 'utf8'), 4000)); } catch (e) {}
+    if (f === '_handover.json') { out.handover = j; continue; }
+    out.pending.push({ folder: j.folder || f.slice(0, -5), title: j.title || null, artist: j.artist || null, queued_at: j.queued_at || null });
+  }
+  return out;
+}
+app.get('/api/logic-queue', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, ...(await readLogicQueue()) });
+});
+app.post('/api/logic-queue/handover', async (req, res) => {
+  try {
+    await fsp.mkdir(LOGIC_QUEUE_DIR, { recursive: true });
+    const flag = { requested_at: new Date().toISOString(), hours: LOGIC_HANDOVER_HOURS, note: 'Bill handed the Mac to Claude for Logic Pro stemming' };
+    await fsp.writeFile(path.join(LOGIC_QUEUE_DIR, '_handover.json'), JSON.stringify(flag, null, 1) + '\n');
+    try { if (logicHandoverCaffeinate) logicHandoverCaffeinate.kill(); } catch (e) {}
+    try {
+      logicHandoverCaffeinate = spawn('caffeinate', ['-dimsu', '-t', String(LOGIC_HANDOVER_HOURS * 3600)], { stdio: 'ignore' });
+      logicHandoverCaffeinate.on('error', () => {});
+    } catch (e) {}
+    logActivity('info', 'logic-queue', 'Mac handed to Claude for Logic Pro stemming');
+    res.json({ ok: true, handover: flag });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/logic-queue/handover', async (req, res) => {
+  try { if (logicHandoverCaffeinate) logicHandoverCaffeinate.kill(); } catch (e) {}
+  logicHandoverCaffeinate = null;
+  try { await fsp.rm(path.join(LOGIC_QUEUE_DIR, '_handover.json'), { force: true }); } catch (e) {}
+  logActivity('info', 'logic-queue', 'Mac taken back from Claude');
+  res.json({ ok: true });
 });
 
 // ─── Jam: YouTube backing-track finder (Bill 2026-10-31) ────────────────────
@@ -5544,7 +5626,7 @@ app.post('/api/loop-session/:base/:sessionId/layer',
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileBase = `layer${n}_${name}_${stamp}`;
       // WAV to LOCAL scratch first (never encode against the Drive mount —
-      // same lesson as the Demucs local-scratch fix).
+      // a Drive-sync race).
       const os2 = require('os');
       const scratchWav = path.join(os2.tmpdir(), `simplestem_od_${process.pid}_${Date.now()}.wav`);
       const scratchM4a = scratchWav.replace(/\.wav$/, '.m4a');
@@ -6090,11 +6172,6 @@ app.get('/api/song/:base/automation', async (req, res) => {
       base: s.b,
       automation: Array.isArray(meta.automation) ? meta.automation : [],
       sections:   Array.isArray(meta.sections)   ? meta.sections   : [],
-      // sectionCandidates is a read-only array of timestamps produced by
-      // section_detect.py — moments where multiple stems change together.
-      // The portal uses them to snap user-placed section markers to real
-      // musical boundaries (see snapTimeToBeat in app.js).
-      sectionCandidates: Array.isArray(meta.sectionCandidates) ? meta.sectionCandidates : [],
       // Cached drum-stem beat grid (PUT /api/song/:base/beat-grid).
       beat_grid: (meta.beat_grid && Array.isArray(meta.beat_grid.beats)) ? meta.beat_grid : null,
       countIn:    !!meta.countIn,
@@ -6106,7 +6183,7 @@ app.get('/api/song/:base/automation', async (req, res) => {
   } catch (e) {
     if (isDriveTimeout(e)) {
       console.warn(`[automation] Drive read timed out for ${s.b} — serving empty automation (offline?)`);
-      return res.json({ base: s.b, automation: [], sections: [], sectionCandidates: [],
+      return res.json({ base: s.b, automation: [], sections: [],
         countIn: false, pitch_semis: 0, pitch_cents: 0, driveTimeout: true });
     }
     res.status(500).json({ error: e.message });
@@ -7023,35 +7100,6 @@ app.put('/api/song/:base/drum-default', express.json(), (req, res) => {
 // next open and auto-engages. Backward compat: drum_machine_default is
 // kept in sync (drum=true, stems/backing=false) so any legacy consumer
 // still sees the correct flag.
-// Per-song stem set: which six-stem set plays ('demucs' | 'logic').
-// Saved as metadata.json `stem_set`; see LOGIC_STEM_SUBDIR above.
-app.put('/api/song/:base/stem-set', express.json(), (req, res) => {
-  const s = safeSongDir(req.params.base);
-  if (!s) return res.status(400).json({ error: 'bad song id' });
-  const set = req.body && req.body.set;
-  if (!STEM_SET_NAMES.includes(set)) {
-    return res.status(400).json({ error: `set must be one of ${STEM_SET_NAMES.join(', ')}` });
-  }
-  const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
-  const row = Array.isArray(songs) ? songs.find(x => x.type === 'stems' && x.folderName === s.b) : null;
-  if (row && row.stemsBySet && !row.stemsBySet[set]) {
-    return res.status(409).json({ error: `no ${set} stems for this song` });
-  }
-  const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
-  try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
-    meta.stem_set = set;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
-    recentStemSetPicks.set(s.b, set);
-    if (row && row.stemsBySet) {
-      row.stemSet = set;
-      row.stems = row.stemsBySet[set];
-    }
-    res.json({ ok: true, stemSet: set, stems: row ? row.stems : null });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 const PLAYBACK_MODES = new Set(['stems', 'drum', 'backing']);
 app.put('/api/song/:base/playback-mode', express.json(), (req, res) => {
   const s = safeSongDir(req.params.base);
@@ -7681,7 +7729,7 @@ app.post('/api/desktop/logic-key', express.json(), (req, res) => {
 
 // ── One-button Performer reset (Bill 2026-07-27) ────────────────────────
 // Relaunches the MIDI sidecar + this server via `performer.sh start` —
-// the SAFE reset: an active Demucs render is deliberately left alone
+// the SAFE reset: an active ingest job is deliberately left alone
 // (performer.sh start never kills the runner). The child is detached and
 // delayed so it survives this very process dying mid-restart. The repo
 // root (where performer.sh lives) is one level above bt-construction-kit.
@@ -7768,6 +7816,390 @@ app.get('/api/midi/monitor', async (req, res) => {
   }
 });
 
+// ── MPL AI (Bill 2026-11-10) ───────────────────────────────────────────────
+// The MIDI page's AI song buttons and chat box write MPL into the bank.
+// Bill chose the Claude Code CLI on the Performer (`claude -p`, his Claude
+// subscription — no API key). The prompt carries the MPL grammar
+// (docs/18_MPL_LANGUAGE.md), the current bank and the request; the answer
+// must be one JSON object: { reply, bpm, slots: [{ i, name, src }], start }.
+// The page validates every slot with its own parser before using it.
+function mplClaudeBin() {
+  const home = os.homedir();
+  const cands = [process.env.CLAUDE_BIN, path.join(home, '.local/bin/claude'), path.join(home, '.claude/local/claude'),
+                 '/opt/homebrew/bin/claude', '/usr/local/bin/claude', path.join(home, '.npm-global/bin/claude')];
+  for (const c of cands) { try { if (c && fs.existsSync(c)) return c; } catch (e) {} }
+  try {
+    const out = execFileSync('/bin/zsh', ['-lc', 'command -v claude'], { timeout: 4000, encoding: 'utf8' }).trim();
+    if (out && fs.existsSync(out)) return out;
+  } catch (e) {}
+  return null;
+}
+let mplAiBusy = false;
+app.get('/api/mpl/ai/status', (req, res) => {
+  const bin = mplClaudeBin();
+  res.json({ ok: !!bin, bin, busy: mplAiBusy });
+});
+function mplAiPrompt(body) {
+  let grammar = '';
+  try { grammar = fs.readFileSync(path.join(__dirname, '..', 'docs', '18_MPL_LANGUAGE.md'), 'utf8'); } catch (e) {}
+  const keyOf = (i) => i < 10 ? String(i) : String.fromCharCode(55 + i);
+  const bank = (Array.isArray(body.bank) ? body.bank : []).slice(0, 36)
+    .map((b, i) => ({ i, key: keyOf(i), name: String((b && b.name) || '').slice(0, 48), src: String((b && b.src) || '').slice(0, 4096) }))
+    .filter(b => b.name || b.src.trim());
+  const si = Math.max(0, Math.min(35, Math.round(+body.slot || 0)));
+  const ask = body.mode === 'slot'
+    ? `Recommend ONE sequence for slot ${si} (key ${keyOf(si)}` + (body.name ? `, named "${String(body.name).slice(0, 16)}"` : '') + '). ' +
+      (String(body.hint || '').trim() ? `The musician wants: "${String(body.hint).slice(0, 1000)}". ` : 'The musician left it to you: write something that would sound good with the bank. ') +
+      (String(body.current || '').trim() ? `The slot holds now: ${JSON.stringify(String(body.current).slice(0, 2000))} — use it as a starting point if it helps. ` : '') +
+      `Slots playing right now: ${JSON.stringify(body.running || [])}. It must fit with them (key, feel, register, channel) and its length must be ` +
+      `a whole number of bars that lines up with theirs. ` +
+      `If the request is ONE instrument part, answer with exactly one entry in "slots", i = ${si}` + (body.name ? ' and the same name' : ' and a short name') + '. ' +
+      `If it asks for SEVERAL parts played together (e.g. "drums and slap bass"), make a GROUP: slot ${si} becomes the group — launches only, ` +
+      `e.g. "@drums${keyOf(si)}&,@slap${keyOf(si)}&" — and each part goes in its own slot chosen from these EMPTY slots, in this order: ` +
+      `${JSON.stringify((Array.isArray(body.free) ? body.free : []).slice(0, 12))}. Give every part a unique name (letter first, letters/digits, max 16 ` +
+      `characters, ending with ${keyOf(si)} so it cannot clash with other slots), make every part EXACTLY the same number of beats (whole bars), ` +
+      `drums on m10 (split kick/snare and hats into two parts if needed — a part plays one note at a time), and follow the channel convention ` +
+      `(lead m11, bass m13, guitar m14, keys/pad m15, strings/FX m16; set the sound with p#, e.g. p36 slap bass). ` +
+      'Never write any other slot; leave "start" empty and keep the tempo.'
+    : body.mode === 'song'
+    ? `Write a new ${String(body.style || 'rock').slice(0, 60)} song groove in ${String(body.key || 'E').slice(0, 12)} at ${+body.bpm || 120} bpm, ` +
+      `${Math.max(1, Math.min(16, +body.bars || 4))} bars per pass, using the song layout below. Fill slots 0-4 and list them all in "start".`
+    : `The musician says: "${String(body.message || '').slice(0, 2000)}". Change the bank to do that. ` +
+      `Slots playing right now: ${JSON.stringify(body.running || [])} (changed playing slots switch over at their next pass; ` +
+      `only put slots in "start" if the musician asks to start or restart playback — those slots will be restarted together on beat 1).`;
+  return [
+    'You write MPL, the MIDI Programming Language of the simpleStem MIDI console. A bank has 36 slots (i 0-35; their keys are 0-9 then A-Z,',
+    'so i 10 = key A); each slot is an MPL',
+    'program that loops. The console plays them to Logic Pro over MIDI. Answer with ONE JSON object and nothing else (no prose,',
+    'no code fences):',
+    '{"reply": "one or two plain sentences for the musician", "bpm": <number>, "slots": [{"i": <0-35>, "name": "<= 16 chars", "src": "<MPL>"}], "start": [<slot numbers>]}',
+    'Include only the slots you add or change. Do not use any tools; just answer.',
+    '',
+    'MIDI channel convention (fixed): channels match the amps / backing-track outputs: 11 V lead; 10 drums (General MIDI drum',
+    'notes, p# picks the kit; Logic plays them through the D amp); 13 B bass; 14 G guitar sounds; 15 P keys/organ/pad;',
+    '16 O strings/brass/FX. Use only 10, 11 and 13-16 for notes. Channel 12 is empty; channel 5 is reserved for the Helix (never send',
+    'notes on 5); 1-4 and 6-9 are unused. One channel plays one sound at a time: the last p# sent on it wins, so parts sharing a channel share its sound.',
+    'Notes are CAPITAL letters A-G; lowercase b after a note is a flat (Bb2), lowercase',
+    'w/q/e/s are durations. Song layout: slot 0 "kick" kick + snare on m10; slot 4 "hats" hi-hat/ride/crash on m10;',
+    'slot 1 "bass" m13 p38; slot 2 "pad" m15 p89; slot 3 "lead" m11 p81. m# and p# are optional: a slot without m# plays on the',
+    'default channel (11); give a part its m# (and p# for its sound) when it needs another channel or sound — drums always m10.',
+    'A slot sounds one note at a time (chords are only ! major and m! minor triads), which is why drums are split over two slots.',
+    'GM drums: B1 kick 2 (35), C2 kick (36), C#2 side stick (37), D2 snare (38), D#2 clap (39), E2 electric snare (40),',
+    'F2 low floor tom (41), F#2 closed hat (42), G2 high floor tom (43), G#2 pedal hat (44), A2 low tom (45), A#2 open hat (46),',
+    'B2 low-mid tom (47), C3 hi-mid tom (48), C#3 crash (49), D3 high tom (50), D#3 ride (51), F3 ride bell (53), F#3 tambourine (54),',
+    'G3 splash (55), G#3 cowbell (56). Pitch: MIDI = 12*(octave+1) + semitone. NOTATION: write notes WITHOUT octave digits, as',
+    '+ / - marks relative to the C that plays the bass drum (MIDI 36): on m10 C = kick, D = snare, F# = closed hat, A# = open hat,',
+    'C#+ = crash, D#+ = ride. Pitched parts count from the same C: bass mostly C to C+, middle C = C++, leads around C+++. Move a',
+    'whole phrase with an octave group instead of marking each note: ++(C,E,G); with a loop the count goes first: 4++(C,E,G).',
+    'TIMING IS CRITICAL: the slots start together on beat 1 and loop independently, so every slot in a song must last exactly the',
+    'same number of beats per pass: bars x 4 quarter beats. Durations: w = 4 beats, q = 1, e = 0.5, s = 0.25; rests count',
+    '(R, Re, Rs; and each extra comma is a quarter rest). Count each slot before answering. Prefer N( ) loops to keep it short;',
+    'avoid ... trajectories and .. ranges.',
+    'DEFAULTS FIRST: a bare note is in the bass drum\'s octave (C = MIDI 36), a quarter note, at 120 bpm, so write only what differs. Never write',
+    'q (A not Aq, R not Rq). A run of notes with one length takes it once on the group head: 4e(E,F,G,A) = 4(Ee,Fe,Ge,Ae) — the count,',
+    'then the length, then any octave marks, then "(": 2e-(C,E). A note\'s own letter still wins inside the group.',
+    'STARTING SEQUENCES: a slot that no other slot calls starts with its m# (m11,... / m10,... for drums). Subroutines (slots other',
+    'slots call) usually have no m#: they play on the caller\'s channel, and they may but usually do not change program.',
+    'DYNAMICS: ^ ^^ ^^^ after a note make that one note louder (a little, a lot, max); v vv vvv softer (vvv = a ghost note).',
+    'TEMPO: 88T sets the tempo of the whole bank to 88 bpm from that point (30T-300T, capital T). Use it only when asked for a tempo change inside the MPL; otherwise set "bpm" in the reply.',
+    'STACKS: |C,F#| plays the notes between the bars TOGETHER on one step (kick + hat); each note inside may take ^ or v; the length letter goes after the closing bar: |C,F#|e. Use stacks so one drum row can carry kick, snare and hats.',
+    'Use them for accents and ghost notes: D--^ snare accent, D--svvv ghost, Ee^ a pushed melody note.',
+    '',
+    'MPL reference:',
+    grammar,
+    '',
+    'Current bank (JSON, filled slots only): ' + JSON.stringify(bank),
+    'Current tempo: ' + (+body.bpm || 120) + ' bpm. Keep it unless asked to change it.',
+    '',
+    'Request: ' + ask,
+  ].join('\n');
+}
+function mplAiExtract(text) {
+  const t = String(text || '');
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const cand = fence ? fence[1] : t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1);
+  const j = JSON.parse(cand);
+  const slots = (Array.isArray(j.slots) ? j.slots : [])
+    .filter(x => x && Number.isInteger(+x.i) && +x.i >= 0 && +x.i <= 35 && typeof x.src === 'string')
+    .map(x => ({ i: +x.i, name: String(x.name || '').slice(0, 48), src: x.src.slice(0, 4096) }));
+  const start = (Array.isArray(j.start) ? j.start : []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 35);
+  const bpm = Math.max(30, Math.min(300, Math.round(+j.bpm || 0))) || null;
+  return { reply: String(j.reply || '').slice(0, 600), bpm, slots, start };
+}
+app.post('/api/mpl/ai', express.json({ limit: '200kb' }), async (req, res) => {
+  const bin = mplClaudeBin();
+  if (!bin) return res.status(503).json({ ok: false, error: 'Claude Code is not installed on this Mac (no `claude` command found).' });
+  if (mplAiBusy) return res.status(429).json({ ok: false, error: 'The AI is still working on the last request.' });
+  mplAiBusy = true;
+  const t0 = Date.now();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mpl-ai-'));
+  try {
+    const out = await new Promise((resolve, reject) => {
+      const env = { ...process.env, PATH: `${path.dirname(bin)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ''}` };
+      const p = spawn(bin, ['-p', 'Follow the instructions in the input exactly and answer with the JSON object only.'], { cwd, env });
+      let so = '', se = '';
+      const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) {} reject(new Error('the AI took longer than 150 s')); }, 150000);
+      p.stdout.on('data', d => { so += d; });
+      p.stderr.on('data', d => { se += d; });
+      p.on('error', e => { clearTimeout(timer); reject(e); });
+      p.on('close', code => {
+        clearTimeout(timer);
+        if (code !== 0 && !so.trim()) reject(new Error((se || `claude exited ${code}`).trim().split('\n').pop().slice(0, 300)));
+        else resolve(so);
+      });
+      /* If claude exits before reading its input (e.g. signed out) the
+         write fails with EPIPE — without this handler that error crashed
+         the whole server (found 2026-11-11). */
+      p.stdin.on('error', () => {});
+      p.stdin.end(mplAiPrompt(req.body || {}));
+    });
+    let result;
+    try { result = mplAiExtract(out); }
+    catch (e) {
+      /* Say what Claude Code actually said (2026-11-11: an expired login
+         showed up only as "did not answer with valid JSON"). */
+      const said = String(out || '').trim();
+      const first = said.split('\n').find(l => l.trim()) || '(no output)';
+      const auth = /authenticat|oauth|log ?in|api key|credential|unauthori[sz]ed/i.test(said);
+      const error = auth
+        ? 'Claude Code on the Performer is not signed in — it said: "' + first.slice(0, 200) + '". Open Terminal on the Performer, run `claude`, type /login, sign in, then /exit and try again.'
+        : (said.indexOf('{') < 0 ? 'Claude Code answered without any JSON — it said: "' + first.slice(0, 200) + '"' : 'The AI did not answer with valid JSON (' + e.message + ').');
+      logActivity('warn', 'midi', 'MPL AI failed: ' + error);
+      return res.status(502).json({ ok: false, error, raw: said.slice(0, 1500) });
+    }
+    logActivity('info', 'midi', `MPL AI (${(req.body && req.body.mode) || 'chat'}): ${result.slots.length} slot(s) in ${Math.round((Date.now() - t0) / 1000)}s`);
+    res.json({ ok: true, ms: Date.now() - t0, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  } finally {
+    mplAiBusy = false;
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch (e) {}
+  }
+});
+
+// ── MPL BANK FILES (2026-11-14) ─────────────────────────────────────────
+// The MIDI console writes every change of the selected bank straight back
+// to its file in public/mpl-banks/. That folder is local disk in the code
+// clone, never Drive, so this works with no internet. Only a bank file that
+// already exists can be written; index.json cannot. Write is tmp + rename.
+const MPL_BANK_DIR = path.join(__dirname, 'public', 'mpl-banks');
+const MPL_BANK_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.json$/;
+app.put('/api/mpl/banks/:file', async (req, res) => {
+  const file = String(req.params.file || '');
+  const b = req.body || {};
+  if (!MPL_BANK_FILE_RE.test(file) || file === 'index.json') return res.status(400).json({ ok: false, error: 'bad bank file name' });
+  if (b.format !== 'simplestem-mpl-bank' || !Array.isArray(b.slots) || b.slots.length > 5000 ||
+      b.slots.some(x => !x || typeof x.src !== 'string' || x.src.length > 4096)) {
+    return res.status(400).json({ ok: false, error: 'not a bank (format simplestem-mpl-bank with a slots list)' });
+  }
+  const dest = path.join(MPL_BANK_DIR, file), tmp = dest + '.tmp';
+  try {
+    await fsp.access(dest);
+    await fsp.writeFile(tmp, JSON.stringify(b, null, 2) + '\n');
+    await fsp.rename(tmp, dest);
+    res.json({ ok: true, file, slots: b.slots.length });
+  } catch (e) {
+    res.status(e.code === 'ENOENT' ? 404 : 500).json({ ok: false, error: e.code === 'ENOENT' ? 'no such bank file' : e.message });
+  }
+});
+
+// ── MPL LIBRARY (2026-11-11) ────────────────────────────────────────────
+// One JSON file per MPL set: <SIMPLE_STEM_ROOT>/MPL_LIBRARY/<id>.mpl.json
+// (a sibling of STEMS, so song scans never see it; Drive syncs it to the
+// Librarian). A set is a program: `main` (or `start`, for AI songs whose
+// parts start together) is the entry point and `parts` are its named
+// subroutines. Metadata says who made it — the user, or an AI with the
+// prompt it was given. Deleting moves the file to MPL_LIBRARY/_trash/.
+// Format: docs/19_MPL_LIBRARY.md.
+const MPL_LIB_DIR = path.join(SIMPLE_STEM_ROOT, 'MPL_LIBRARY');
+const MPL_SET_ID_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const MPL_PART_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
+const mplSetPath = (id) => path.join(MPL_LIB_DIR, id + '.mpl.json');
+function mplSlug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'set';
+}
+function mplStamp(d) {
+  const z = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+}
+function mplSetProblem(b) {
+  if (!b || typeof b !== 'object') return 'no set in the request';
+  if (!String(b.name || '').trim()) return 'the set needs a name';
+  if (!Array.isArray(b.parts) || !b.parts.length) return 'the set needs at least one part';
+  if (b.parts.length > 64) return 'too many parts (max 64)';
+  const names = new Set();
+  for (const pt of b.parts) {
+    if (!pt || !MPL_PART_NAME_RE.test(String(pt.name || ''))) return 'bad part name "' + (pt && pt.name) + '" (letter first, then letters/digits/_ , max 48)';
+    const k = pt.name.toLowerCase();
+    if (names.has(k)) return 'two parts are named "' + pt.name + '"';
+    names.add(k);
+    if (typeof pt.src !== 'string' || !pt.src.trim() || pt.src.length > 20000) return 'part "' + pt.name + '" has no MPL text (or over 20000 chars)';
+  }
+  if (b.main && !names.has(String(b.main).toLowerCase())) return 'main "' + b.main + '" is not one of the parts';
+  if (b.start && (!Array.isArray(b.start) || b.start.some(n => !names.has(String(n).toLowerCase())))) return 'start lists a part that is not in the set';
+  if (!b.main && !(b.start && b.start.length)) return 'the set needs a main part (or a start list)';
+  const by = b.created_by && b.created_by.kind;
+  if (by && by !== 'user' && by !== 'ai') return 'created_by.kind must be "user" or "ai"';
+  return null;
+}
+async function mplWriteSet(set) {
+  await fsp.mkdir(MPL_LIB_DIR, { recursive: true });
+  const fp = mplSetPath(set.id), tmp = fp + '.tmp-' + process.pid;
+  await fsp.writeFile(tmp, JSON.stringify(set, null, 2) + '\n');
+  await fsp.rename(tmp, fp);
+}
+const mplSetSummary = (s) => ({
+  id: s.id, name: s.name, description: s.description || '', created_by: s.created_by || null,
+  prompt: s.prompt || '', created_at: s.created_at || '', modified_at: s.modified_at || '',
+  bpm: s.bpm || 0, key: s.key || '', tags: s.tags || [], main: s.main || '', start: s.start || [],
+  parts: (s.parts || []).length,
+});
+app.get('/api/mpl/library', async (req, res) => {
+  try {
+    let files = [];
+    try { files = await withDriveBudget(fsp.readdir(MPL_LIB_DIR), 6000, 'mpl-library'); }
+    catch (e) { if (e.code === 'ENOENT') return res.json({ ok: true, dir: MPL_LIB_DIR, sets: [] }); throw e; }
+    const sets = [], skipped = [];
+    for (const f of files.filter(f => f.endsWith('.mpl.json') && !f.startsWith('.'))) {
+      try { sets.push(mplSetSummary(JSON.parse(await withDriveBudget(fsp.readFile(path.join(MPL_LIB_DIR, f), 'utf8'), 4000, 'mpl-set')))); }
+      catch (e) { skipped.push(f + ': ' + e.message); }
+    }
+    sets.sort((a, b) => String(b.modified_at || b.created_at).localeCompare(String(a.modified_at || a.created_at)));
+    res.json({ ok: true, dir: MPL_LIB_DIR, sets, skipped });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/mpl/library/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!MPL_SET_ID_RE.test(id)) return res.status(400).json({ ok: false, error: 'bad set id' });
+  try { res.json({ ok: true, set: JSON.parse(await fsp.readFile(mplSetPath(id), 'utf8')) }); }
+  catch (e) { res.status(e.code === 'ENOENT' ? 404 : 500).json({ ok: false, error: e.code === 'ENOENT' ? 'no such set' : e.message }); }
+});
+// Save. Body = the set. With an existing `id` it updates that file (its
+// creator, prompt and created_at are kept); otherwise it makes a new id
+// from the name + time. The server stamps times, host and the user name.
+app.post('/api/mpl/library', async (req, res) => {
+  const b = req.body || {};
+  const problem = mplSetProblem(b);
+  if (problem) return res.status(400).json({ ok: false, error: problem });
+  try {
+    const now = new Date();
+    let prev = null;
+    if (b.id) {
+      if (!MPL_SET_ID_RE.test(String(b.id))) return res.status(400).json({ ok: false, error: 'bad set id' });
+      try { prev = JSON.parse(await fsp.readFile(mplSetPath(b.id), 'utf8')); } catch (e) { prev = null; }
+    }
+    let id = prev ? prev.id : mplSlug(b.name) + '-' + mplStamp(now);
+    const taken = async (x) => { try { await fsp.access(mplSetPath(x)); return true; } catch (e) { return false; } };
+    for (let n = 2; !prev && await taken(id); n++) id = mplSlug(b.name) + '-' + mplStamp(now) + '-' + n;
+    const by = b.created_by && b.created_by.kind === 'ai'
+      ? { kind: 'ai', name: String(b.created_by.name || 'Claude'), model: String(b.created_by.model || ''), via: String(b.created_by.via || '') }
+      : { kind: 'user', name: String((b.created_by && b.created_by.name) || os.userInfo().username) };
+    // Unknown fields in an existing file are kept, and a free-form `meta`
+    // object is merged in, so hand-added metadata survives re-saves.
+    const meta = { ...((prev && prev.meta) || {}), ...((b.meta && typeof b.meta === 'object' && !Array.isArray(b.meta)) ? b.meta : {}) };
+    const set = {
+      ...(prev || {}),
+      format: 'simplestem-mpl-set', version: 1, id,
+      name: String(b.name).trim().slice(0, 80),
+      description: String(b.description || (prev && prev.description) || ''),
+      created_by: prev ? prev.created_by : by,
+      prompt: prev ? (prev.prompt || '') : String(b.prompt || ''),
+      ai_reply: prev ? (prev.ai_reply || '') : String(b.ai_reply || ''),
+      created_at: prev ? prev.created_at : now.toISOString(),
+      modified_at: now.toISOString(),
+      ...(prev ? { modified_by: by } : {}),
+      host: MACHINE_IDENTITY,
+      tags: Array.isArray(b.tags) ? b.tags.map(String).slice(0, 20) : [],
+      key: String(b.key || ''),
+      bpm: Math.max(0, Math.min(300, Math.round(+b.bpm || 0))),
+      ...(b.main ? { main: String(b.main) } : {}),
+      ...(b.start && b.start.length ? { start: b.start.map(String) } : {}),
+      parts: b.parts.map(pt => ({ name: pt.name, src: pt.src,
+        vol: Math.max(0, Math.min(100, Math.round(pt.vol == null ? 100 : +pt.vol))),
+        ...(pt.channel ? { channel: +pt.channel } : {}) })),
+      ...(Object.keys(meta).length ? { meta } : {}),
+    };
+    if (!b.main) delete set.main;
+    if (!(b.start && b.start.length)) delete set.start;
+    await mplWriteSet(set);
+    logActivity('info', 'midi', `MPL library: ${prev ? 'updated' : 'saved'} "${set.name}" (${set.parts.length} parts, by ${set.created_by.kind})`);
+    res.json({ ok: true, id, updated: !!prev, set: mplSetSummary(set) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.delete('/api/mpl/library/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!MPL_SET_ID_RE.test(id)) return res.status(400).json({ ok: false, error: 'bad set id' });
+  try {
+    const trash = path.join(MPL_LIB_DIR, '_trash');
+    await fsp.mkdir(trash, { recursive: true });
+    await fsp.rename(mplSetPath(id), path.join(trash, id + '.' + mplStamp(new Date()) + '.mpl.json'));
+    logActivity('info', 'midi', `MPL library: moved "${id}" to _trash`);
+    res.json({ ok: true });
+  } catch (e) { res.status(e.code === 'ENOENT' ? 404 : 500).json({ ok: false, error: e.code === 'ENOENT' ? 'no such set' : e.message }); }
+});
+
+// ── MPL SAMPLES (Bill 2026-11-20) ────────────────────────────────────────
+// Short audio clips an MPL sequence plays with *name. They live in
+// SAMPLES/ under the simpleStem root on Drive, one file per sample; the
+// name is the file name without its extension, letters digits and _ only.
+//   GET  /api/mpl/samples              -> { ok, dir, samples: [{ name, file, bytes }] }
+//   POST /api/mpl/samples?name=<file>  -> body = the audio bytes; saves it, returns { ok, name, file }
+//   GET  /api/audio/sample/:file       -> the audio (cached locally like the other audio)
+const MPL_SAMPLES_DIR = path.join(SIMPLE_STEM_ROOT, 'SAMPLES');
+const AUDIO_CACHE_SAMPLES = path.join(AUDIO_CACHE_DIR, 'SAMPLES');
+try { fs.mkdirSync(AUDIO_CACHE_SAMPLES, { recursive: true }); } catch (e) {}
+const MPL_SAMPLE_EXT_RE = /\.(wav|mp3|m4a|aac|ogg|flac)$/i;
+const mplSampleStem = (f) => String(f).replace(/\.[^.]+$/, '');
+async function mplSampleFiles() {
+  let files = [];
+  try { files = await fsp.readdir(MPL_SAMPLES_DIR); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  return files.filter(f => MPL_SAMPLE_EXT_RE.test(f) && !f.startsWith('.') && /^[A-Za-z0-9_]{1,64}$/.test(mplSampleStem(f)));
+}
+app.get('/api/mpl/samples', async (req, res) => {
+  try {
+    const out = [];
+    for (const f of await mplSampleFiles()) { let bytes = 0; try { bytes = (await fsp.stat(path.join(MPL_SAMPLES_DIR, f))).size; } catch (e) {} out.push({ name: mplSampleStem(f), file: f, bytes }); }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ ok: true, dir: MPL_SAMPLES_DIR, samples: out });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/mpl/samples', express.raw({ type: () => true, limit: '30mb' }), async (req, res) => {
+  try {
+    const orig = path.basename(String(req.query.name || ''));
+    const em = MPL_SAMPLE_EXT_RE.exec(orig);
+    if (!em) return res.status(400).json({ ok: false, error: 'a sample is a .wav, .mp3, .m4a, .aac, .ogg or .flac file' });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ ok: false, error: 'the file arrived empty' });
+    const ext = em[1].toLowerCase();
+    let stem = mplSampleStem(orig).replace(/[^A-Za-z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'sample';
+    await fsp.mkdir(MPL_SAMPLES_DIR, { recursive: true });
+    const have = await mplSampleFiles();
+    const taken = (st) => have.find(f => mplSampleStem(f).toLowerCase() === st.toLowerCase());
+    let name = stem, n = 1, reused = false;
+    for (;;) {
+      const f = taken(name);
+      if (!f) break;
+      let same = false;                                   // the same clip dropped again: keep the one file
+      try { same = f.toLowerCase().endsWith('.' + ext) && (await fsp.stat(path.join(MPL_SAMPLES_DIR, f))).size === req.body.length && (await fsp.readFile(path.join(MPL_SAMPLES_DIR, f))).equals(req.body); } catch (e) {}
+      if (same) { reused = true; break; }
+      name = stem + '_' + (++n);
+    }
+    const file = reused ? taken(name) : name + '.' + ext;
+    if (!reused) {
+      const tmp = path.join(MPL_SAMPLES_DIR, '.' + file + '.tmp');
+      await fsp.writeFile(tmp, req.body);
+      await fsp.rename(tmp, path.join(MPL_SAMPLES_DIR, file));
+      try { await fsp.writeFile(path.join(AUDIO_CACHE_SAMPLES, file), req.body); } catch (e) {}
+      logActivity('info', 'midi', `MPL sample: saved ${file} (${req.body.length} bytes)`);
+    }
+    res.json({ ok: true, name: mplSampleStem(file), file, bytes: req.body.length, reused });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/audio/sample/:file', (req, res) => {
+  const file = path.basename(String(req.params.file || ''));
+  if (!MPL_SAMPLE_EXT_RE.test(file) || file.startsWith('.')) return res.status(400).send('Bad sample name');
+  sendCachedAudio(req, res, path.join(MPL_SAMPLES_DIR, file), path.join(AUDIO_CACHE_SAMPLES, file));
+});
+
 app.get('/api/midi/chain-test', async (req, res) => {
   try {
     const r = await sidecarFetch('/chain/test', undefined, 6000);
@@ -7806,6 +8238,22 @@ app.post('/api/midi/send', async (req, res) => {
   } catch (e) {
     res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message });
   }
+});
+
+// Send-ahead scheduling (2026-11-11): /api/midi/send with {at, tag} is
+// queued in the sidecar and sent on time; cancel drops a tag's pending
+// note_ons and flushes its note_offs; timing reports how late they left.
+app.post('/api/midi/cancel', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body || {}) });
+    res.status(r.status).json(r.body);
+  } catch (e) { res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message }); }
+});
+app.get('/api/midi/timing', async (req, res) => {
+  try {
+    const r = await sidecarFetch('/timing', undefined, 1500);
+    res.status(r.status).json(r.body);
+  } catch (e) { res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message }); }
 });
 
 // MIDI clock control — the sidecar owns the 24-ppqn clock thread; the
@@ -8186,223 +8634,6 @@ app.post('/api/song/:base/refetch', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Re-stem in Logic Pro via Keyboard Maestro ──────────────────────────────
-// Hands a song off to a Keyboard Maestro macro that drives Logic Pro's Stem
-// Splitter and bounces replacement m4a mixdowns. The server sets KBM Engine
-// variables (so the macro can read them as %Variable%simpleStem_*%) and then
-// fires the macro via the kmtrigger:// URL scheme — fire-and-forget, so the
-// HTTP request returns in <1s even though the macro runs for ~3 minutes.
-//
-// Two protections against overlapping Logic runs:
-//   1. Atomic check-and-set in a single osascript: read simpleStem_Running;
-//      if non-empty, return its value (the song already in flight) and
-//      DON'T overwrite any variables. Otherwise set all variables in one
-//      block and stamp simpleStem_Running with the new song's base.
-//   2. The macro itself MUST clear simpleStem_Running at exit (both the
-//      success and error paths). The /api/logic-restem/unlock endpoint
-//      below clears it manually if the macro fails to.
-//
-// If KBM Engine restarts, all engine variables reset — the lock auto-clears.
-// If the macro hangs and never clears the variable, the user calls
-// /api/logic-restem/unlock to release it.
-//
-// KBM macro contract:
-//   Macro name: "simpleStem"
-//   Reads these KBM variables (all strings; empty if unknown):
-//     ─ paths ───────────────────────────────────────────────────────
-//     simpleStem_SourceDir   → STEMS/<base>            (folder)
-//     simpleStem_SourceWav   → STEMS/<base>/source.wav (full path)
-//     simpleStem_M4ADir      → M4A                     (bounce target)
-//     simpleStem_M4ABase     → <base>                  (filename prefix)
-//     ─ identity ────────────────────────────────────────────────────
-//     simpleStem_Title       → song title
-//     simpleStem_Artist      → artist
-//     simpleStem_Version     → "studio"/"live"/etc
-//     simpleStem_SourceUrl   → YouTube URL of the source
-//     ─ musical metadata (for Logic project setup) ──────────────────
-//     simpleStem_BPM         → e.g. "120.5"   (from metadata.json bpm)
-//     simpleStem_Key         → e.g. "G# major"
-//     simpleStem_KeySignature→ e.g. "3 sharps"
-//     simpleStem_Duration    → active audio length in seconds
-//     simpleStem_Bars        → ceil(BPM × Duration / 240), 4/4 assumed
-//     simpleStem_ClipStartSec→ chapter window start (album sources only)
-//     simpleStem_ClipEndSec  → chapter window end (album sources only)
-//     ─ reference links (for Project Notes) ─────────────────────────
-//     simpleStem_LyricsUrl   → lyrics_search_url
-//     simpleStem_ChordsUrl   → chords_search_url
-//     ─ lifecycle (managed by server + macro together) ──────────────
-//     simpleStem_Running     → set by server before firing (= song base);
-//                              MACRO MUST CLEAR THIS AT EXIT (success or
-//                              error path). While non-empty, new triggers
-//                              are rejected with 409.
-//
-//   Expected output files (overwriting the demucs versions):
-//     M4A/<base>_-V.m4a       source minus vocals
-//     M4A/<base>_-V-G.m4a     source minus vocals, guitar
-//     M4A/<base>_-V-G-B.m4a   source minus vocals, guitar, bass
-//     M4A/<base>_DO.m4a       drums only
-const KBM_MACRO_NAME = 'simpleStem';
-const KBM_VAR_PREFIX = 'simpleStem_';
-const KBM_RUNNING_VAR = KBM_VAR_PREFIX + 'Running';
-
-// Escape a string for embedding inside an AppleScript double-quoted literal.
-function asEscape(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-// Format a number to a stable string for KBM (no JS quirks like "12.0"→"12").
-// Returns '' for null/undefined/NaN so the macro can branch on empty.
-function numStr(n, digits) {
-  if (n == null || (typeof n === 'number' && !isFinite(n))) return '';
-  const x = Number(n);
-  if (!isFinite(x)) return '';
-  return digits == null ? String(x) : x.toFixed(digits);
-}
-
-app.post('/api/song/:base/logic-restem', (req, res) => {
-  const s = safeSongDir(req.params.base);
-  if (!s) return res.status(400).json({ error: 'bad song id' });
-  if (!fs.existsSync(s.dir)) return res.status(404).json({ error: 'song folder not found' });
-  // Since 2026-11-01 songs keep only <base>_SOURCE.m4a (no WAVs, F-1);
-  // Logic opens the m4a just as well. A leftover source.wav still wins.
-  let sourceWav = path.join(s.dir, 'source.wav');
-  if (!fs.existsSync(sourceWav)) sourceWav = path.join(s.dir, `${s.b}_SOURCE.m4a`);
-  if (!fs.existsSync(sourceWav)) return res.status(404).json({ error: 'no source.wav or _SOURCE.m4a in song folder' });
-
-  // Pull metadata.json — every field is best-effort. Missing values are
-  // passed to KBM as empty strings so the macro can branch on them.
-  let meta = {};
-  try {
-    meta = JSON.parse(fs.readFileSync(path.join(s.dir, 'metadata.json'), 'utf8')) || {};
-  } catch (e) {}
-
-  // Active audio duration: source.wav is the clip window when this is an
-  // album chapter; the full youtube video duration otherwise. Pick whichever
-  // describes what's actually in source.wav so KBM/Logic see consistent length.
-  const clipStart = (typeof meta.clip_start_sec === 'number') ? meta.clip_start_sec : null;
-  const clipEnd   = (typeof meta.clip_end_sec   === 'number') ? meta.clip_end_sec   : null;
-  const fullDur   = (typeof meta.duration_sec   === 'number') ? meta.duration_sec   : null;
-  const activeDur = (clipStart != null && clipEnd != null) ? (clipEnd - clipStart) : fullDur;
-
-  // Bars assumes 4/4 (covers the band's repertoire; flag in CLAUDE.md if that
-  // ever changes). Formula: ceil(BPM × seconds / 240). Empty if either input
-  // is missing so the macro can skip setting project end.
-  let bars = '';
-  if (typeof meta.bpm === 'number' && typeof activeDur === 'number' && meta.bpm > 0) {
-    bars = String(Math.ceil((meta.bpm * activeDur) / 240));
-  }
-
-  // Six-stem targets — Logic Pro 12's Stem Splitter produces the same
-  // 6 stems Demucs produces. Since 2026-10-20 the Logic set lives in its
-  // own subfolder so it sits beside the Demucs set instead of
-  // overwriting it:
-  //   STEMS/<song>/logic/{vocals,drums,bass,guitar,piano,other}.m4a
-  // The legacy variables (M4ADir, M4ABase) are kept for backward compat
-  // with any old macro version still in the wild; they point at the same
-  // logic/ folder so an old macro can't overwrite the Demucs stems.
-  const stemDir = path.join(s.dir, LOGIC_STEM_SUBDIR);
-  try { fs.mkdirSync(stemDir, { recursive: true }); }
-  catch (e) { return res.status(500).json({ error: `could not create ${stemDir}: ${e.message}` }); }
-  const vars = {
-    // paths
-    SourceDir:      s.dir,
-    SourceWav:      sourceWav,
-    StemDir:        stemDir,               // NEW: bounce target for all 6 stems
-    StemBase:       s.b,
-    // Explicit filenames the macro should write. Six canonical stems.
-    VocalsFile:     path.join(stemDir, 'vocals.m4a'),
-    DrumsFile:      path.join(stemDir, 'drums.m4a'),
-    BassFile:       path.join(stemDir, 'bass.m4a'),
-    GuitarFile:     path.join(stemDir, 'guitar.m4a'),
-    PianoFile:      path.join(stemDir, 'piano.m4a'),
-    OtherFile:      path.join(stemDir, 'other.m4a'),
-    // Legacy vars kept for backward compat. Older macro versions read
-    // M4ADir + suffix; point those at the SAME stem folder so they
-    // still land in the right place if not yet updated.
-    M4ADir:         stemDir,
-    M4ABase:        s.b,
-    // identity
-    Title:          meta.title  || s.b,
-    Artist:         meta.artist || '',
-    Version:        meta.version || '',
-    SourceUrl:      meta.source_url || '',
-    // musical metadata
-    BPM:            numStr(meta.bpm, 1),
-    Key:            meta.key || '',
-    KeySignature:   meta.key_signature || '',
-    Duration:       numStr(activeDur, 2),
-    Bars:           bars,
-    ClipStartSec:   numStr(clipStart, 2),
-    ClipEndSec:     numStr(clipEnd, 2),
-    // reference links
-    LyricsUrl:      meta.lyrics_search_url || '',
-    ChordsUrl:      meta.chords_search_url || '',
-  };
-
-  // Phase 1 — atomic check-and-set, fully synchronous but tiny (~16 KBM
-  // setvariable AppleEvents, sub-second total). The AppleScript reads the
-  // current lock first; if held, it returns the existing owner WITHOUT
-  // overwriting any variables. Otherwise it sets every variable, stamps
-  // the lock, and returns "". This single tell-block is atomic from the
-  // Engine's perspective — concurrent triggers can't interleave halfway.
-  const setupLines = [
-    `tell application "Keyboard Maestro Engine"`,
-    `  set existingLock to getvariable "${KBM_RUNNING_VAR}"`,
-    `  if existingLock is not "" then return existingLock`,
-  ];
-  for (const [k, v] of Object.entries(vars)) {
-    setupLines.push(`  setvariable "${KBM_VAR_PREFIX}${k}" to "${asEscape(v)}"`);
-  }
-  // Stamp the lock LAST so all the song's variables are already in place
-  // by the time any observer sees Running != "".
-  setupLines.push(`  setvariable "${KBM_RUNNING_VAR}" to "${asEscape(s.b)}"`);
-  setupLines.push(`  return ""`);
-  setupLines.push(`end tell`);
-  const setupScript = setupLines.join('\n');
-
-  let lockOwner;
-  try {
-    const out = execFileSync('osascript', ['-e', setupScript],
-      { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
-    lockOwner = out.toString().trim();
-  } catch (e) {
-    const stderr = (e.stderr && e.stderr.toString()) || '';
-    return res.status(500).json({
-      error: `Failed to set up KBM variables: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}. Is KBM Engine running?`
-    });
-  }
-
-  if (lockOwner) {
-    // Lock was already held — macro is currently running for that song.
-    return res.status(409).json({
-      error: `Keyboard Maestro is already running simpleStem for "${lockOwner}". Wait for it to finish, or POST /api/logic-restem/unlock if the macro is stuck.`,
-      lockedBy: lockOwner,
-    });
-  }
-
-  // Phase 2 — fire the macro via the kmtrigger:// URL scheme, detached.
-  // open(1) hands the URL to the OS URL handler and returns in ~50ms;
-  // KBM picks it up out of band and runs the macro for its full 3
-  // minutes without holding any handle back to this Node process.
-  try {
-    const proc = spawn('open',
-      [`kmtrigger://macro=${encodeURIComponent(KBM_MACRO_NAME)}`],
-      { detached: true, stdio: 'ignore' });
-    proc.unref();
-  } catch (e) {
-    // Couldn't even fire open(1). Release the lock so the user isn't stuck.
-    try {
-      execFileSync('osascript', ['-e',
-        `tell application "Keyboard Maestro Engine" to setvariable "${KBM_RUNNING_VAR}" to ""`
-      ], { timeout: 5000 });
-    } catch (e2) { /* best-effort */ }
-    return res.status(500).json({ error: `Failed to fire kmtrigger URL: ${e.message}` });
-  }
-
-  console.log(`[logic-restem] ${s.b}: lock acquired, kmtrigger URL fired (detached)`);
-  res.json({ ok: true, base: s.b, macro: KBM_MACRO_NAME, vars });
-});
-
 // Open the song's Logic Pro project in a FRESH Logic instance. macOS by
 // default brings an existing Logic forward and opens the project there;
 // 'open -n' forces a new process, so the user can have multiple Logic
@@ -8423,22 +8654,6 @@ app.post('/api/song/:base/open-in-logic', (req, res) => {
     res.json({ ok: true, project: proj });
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
-
-// Manual lock release — escape hatch for when the macro fails to clear
-// simpleStem_Running on exit (macro doesn't exist yet, user aborted it
-// from the KBM Editor, macro crashed, etc.). Idempotent.
-app.post('/api/logic-restem/unlock', (req, res) => {
-  try {
-    execFileSync('osascript', ['-e',
-      `tell application "Keyboard Maestro Engine" to setvariable "${KBM_RUNNING_VAR}" to ""`
-    ], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
-    console.log(`[logic-restem] unlocked: ${KBM_RUNNING_VAR} cleared`);
-    res.json({ ok: true, note: `Cleared ${KBM_RUNNING_VAR} in KBM Engine.` });
-  } catch (e) {
-    const stderr = (e.stderr && e.stderr.toString()) || '';
-    res.status(500).json({ error: `Unlock failed: ${e.message}${stderr ? ' — ' + stderr.trim() : ''}` });
   }
 });
 

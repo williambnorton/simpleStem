@@ -1,0 +1,260 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Bm Blues — shuffle at 130",
+  "description": "A minor blues in B minor at 130 bpm, 12-bar form Bm Bm Bm Bm | Em Em Bm Bm | F#7 Em Bm F#7, shuffle feel (swung eighths: the off-beat eighth sits 4 ticks late, on the triplet). Rows 1-9 drums, A-E bass (A-C are one-bar boogie SUBROUTINES that D strings together), F-G organ, H-K lick SUBROUTINES that both the harmonica (L) and the guitar (M) call, N octave groups, O-T sections, U ending bass, V a backing track to play over. Row 0 plays the whole song. W-Z are free for your own.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "another MPL bank: a blues beat, key of Bm at 130 bpm",
+  "created_at": "2026-11-11T00:00:00.000Z",
+  "bpm": 130,
+  "key": "Bm",
+  "song": "Bm Blues",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "blues",
+      "src": "m11,@intro,@chorus12,@harpChorus,@guitarSolo,@stopSec,@chorus12,@ending",
+      "velocity": 75,
+      "note": "MAIN: the whole song in order — intro, 12-bar choruses, harmonica, guitar solo, stop-time, ending"
+    },
+    {
+      "key": "1",
+      "name": "shuffle",
+      "src": "m10,p0,@shufHat&,C,D,Ce,Ce\\\\\\\\,D",
+      "velocity": 75,
+      "note": "drums: Texas shuffle bar — kick/snare line launches the swung hats"
+    },
+    {
+      "key": "2",
+      "name": "shufHat",
+      "src": "m10,p0,4(F#e,F#e\\\\\\\\)",
+      "velocity": 75,
+      "note": "drums: swung hi-hat eighths (the off-beat lands on the triplet)"
+    },
+    {
+      "key": "3",
+      "name": "shufRide",
+      "src": "m10,p0,4(D#+e,D#+e\\\\\\\\)",
+      "velocity": 75,
+      "note": "drums: swung ride eighths, for solos"
+    },
+    {
+      "key": "4",
+      "name": "shuffleRide",
+      "src": "m10,p0,@shufRide&,C,D,Ce,Ce\\\\\\\\,D",
+      "velocity": 75,
+      "note": "drums: the shuffle bar on the ride"
+    },
+    {
+      "key": "5",
+      "name": "halfShuf",
+      "src": "m10,p0,@shufHat&,C,Re,Ce\\\\\\\\,D,R",
+      "velocity": 75,
+      "note": "drums: half-time shuffle, snare on 3"
+    },
+    {
+      "key": "6",
+      "name": "turnFill",
+      "src": "m10,p0,De,De\\\\\\\\,D+e,D+e\\\\\\\\,Be,Be\\\\\\\\,Ge,Fe\\\\\\\\",
+      "velocity": 75,
+      "note": "drums: one-bar swung fill into the next chorus"
+    },
+    {
+      "key": "7",
+      "name": "stopTime",
+      "src": "m10,p0,C#+,R,R,R",
+      "velocity": 75,
+      "note": "drums: stop-time hit — crash on 1, then silence"
+    },
+    {
+      "key": "8",
+      "name": "crashEnd",
+      "src": "m10,p0,C#+w",
+      "velocity": 75,
+      "note": "drums: final crash, let ring"
+    },
+    {
+      "key": "9",
+      "name": "countIn",
+      "src": "m10,p0,4(G-)",
+      "velocity": 75,
+      "note": "drums: four stick clicks"
+    },
+    {
+      "key": "A",
+      "name": "bBm",
+      "src": "m13,p33,Be,D+e\\\\\\\\,F#+e,G#+e\\\\\\\\,A+e,G#+e\\\\\\\\,F#+e,D+e\\\\\\\\",
+      "velocity": 75
+    },
+    {
+      "key": "B",
+      "name": "bEm",
+      "src": "m13,p33,E+e,G+e\\\\\\\\,B+e,C#++e\\\\\\\\,D++e,C#++e\\\\\\\\,B+e,G+e\\\\\\\\",
+      "velocity": 75,
+      "note": "SUBROUTINE: 1 bar of E-minor boogie"
+    },
+    {
+      "key": "C",
+      "name": "bFs",
+      "src": "m13,p33,F#e,A#e\\\\\\\\,C#+e,D#+e\\\\\\\\,E+e,D#+e\\\\\\\\,C#+e,A#e\\\\\\\\",
+      "velocity": 75,
+      "note": "SUBROUTINE: 1 bar of F#7 boogie"
+    },
+    {
+      "key": "D",
+      "name": "bass12",
+      "src": "m13,p33,4@bBm,2@bEm,2@bBm,@bFs,@bEm,@bBm,@bFs",
+      "velocity": 75,
+      "note": "SUBROUTINES in SEQUENCE: the 12-bar minor blues built from bBm / bEm / bFs"
+    },
+    {
+      "key": "E",
+      "name": "bassWalk",
+      "src": "m13,p34,4(B,D+,F#+,A+),2(E+,G+,B+,D++),2(B,D+,F#+,A+),F#,A#,C#+,E+,E+,G+,B+,D++,B,D+,F#+,A+,F#,A#,C#+,E+",
+      "velocity": 75,
+      "note": "bass: quarter-note walk through the 12 bars (pick bass)"
+    },
+    {
+      "key": "F",
+      "name": "orgComp",
+      "src": "m15,p16,4(R,B+m!,R,B+m!),2(R,E++m!,R,E++m!),2(R,B+m!,R,B+m!),R,F#+!,R,F#+!,R,E++m!,R,E++m!,R,B+m!,R,B+m!,R,F#+!,R,F#+!",
+      "velocity": 75,
+      "note": "organ: chords on 2 and 4 through the 12 bars"
+    },
+    {
+      "key": "G",
+      "name": "orgPad",
+      "src": "m15,p16,4B+m!w,2E++m!w,2B+m!w,F#+!w,E++m!w,B+m!w,F#+!w",
+      "velocity": 75,
+      "note": "organ: whole-note chords through the 12 bars"
+    },
+    {
+      "key": "H",
+      "name": "lickA",
+      "src": "F#++e,A++e\\\\\\\\,B++,A++e,F#++e\\\\\\\\,E++",
+      "velocity": 75,
+      "note": "SUBROUTINE: lick A (B minor pentatonic)"
+    },
+    {
+      "key": "I",
+      "name": "lickB",
+      "src": "D+++e,B++e\\\\\\\\,A++e,F++e\\\\\\\\,E++,D++",
+      "velocity": 75,
+      "note": "SUBROUTINE: lick B — with the blue note F"
+    },
+    {
+      "key": "J",
+      "name": "lickC",
+      "src": "B++e,B++e\\\\\\\\,D+++,B++e,A++e\\\\\\\\,F#++",
+      "velocity": 75,
+      "note": "SUBROUTINE: lick C"
+    },
+    {
+      "key": "K",
+      "name": "lickTurn",
+      "src": "A#++e,C#+++e\\\\\\\\,E+++,D+++e,C#+++e\\\\\\\\,A#++",
+      "velocity": 75,
+      "note": "SUBROUTINE: turnaround lick over F#7"
+    },
+    {
+      "key": "L",
+      "name": "harp12",
+      "src": "m11,p22,@lickA,@lickB,@lickA,@lickC,@lickB,@lickB,@lickA,@lickC,@lickTurn,@lickB,@lickC,@lickTurn",
+      "velocity": 75,
+      "note": "SAME SUBROUTINES, harmonica (p22): 12 bars of licks"
+    },
+    {
+      "key": "M",
+      "name": "guitar12",
+      "src": "m14,p29,@lickA,@lickB,@lickA,@lickC,@lickB,@lickB,@lickA,@lickC,@lickTurn,@lickB,@lickC,@lickTurn",
+      "velocity": 75,
+      "note": "SAME SUBROUTINES, overdriven guitar (p29) — only the caller's p# differs"
+    },
+    {
+      "key": "N",
+      "name": "licksOct",
+      "src": "m14,p26,-(@lickA,@lickB),+(@lickC),@lickTurn",
+      "velocity": 75,
+      "note": "OCTAVE GROUPS: licks an octave down, an octave up, then as written (4 bars)"
+    },
+    {
+      "key": "O",
+      "name": "intro",
+      "src": "@countIn,3(@shuffle),@turnFill",
+      "velocity": 75,
+      "note": "section: count-in, three shuffle bars, a fill (5 bars, drums only)"
+    },
+    {
+      "key": "P",
+      "name": "chorus12",
+      "src": "@bass12&,@orgComp&,12(@shuffle)",
+      "velocity": 75,
+      "note": "section: 12-bar chorus — bass and organ in PARALLEL over 12 drum bars in SEQUENCE"
+    },
+    {
+      "key": "Q",
+      "name": "harpChorus",
+      "src": "@bass12&,@orgPad&,@harp12&,12(@shuffle)",
+      "velocity": 75,
+      "note": "section: harmonica chorus"
+    },
+    {
+      "key": "R",
+      "name": "guitarSolo",
+      "src": "@bassWalk&,@orgComp&,@guitar12&,12(@shuffleRide)",
+      "velocity": 75,
+      "note": "section: guitar solo over walking bass and ride"
+    },
+    {
+      "key": "S",
+      "name": "stopSec",
+      "src": "@harp12&,@orgPad&,4(@stopTime),8(@shuffle)",
+      "velocity": 75,
+      "note": "section: 4 bars of stop-time hits, then the groove comes back"
+    },
+    {
+      "key": "T",
+      "name": "ending",
+      "src": "@endBass&,@turnFill,@crashEnd",
+      "velocity": 75,
+      "note": "section: 2-bar ending"
+    },
+    {
+      "key": "U",
+      "name": "endBass",
+      "src": "m13,p33,F#,A#,C#+,E+,Bw",
+      "velocity": 75,
+      "note": "bass for the ending: up the F#7, land on B"
+    },
+    {
+      "key": "V",
+      "name": "jam",
+      "src": "m11,@bassWalk&,@orgPad&,12(@shuffleRide)",
+      "velocity": 104,
+      "note": "BACKING for you: walking bass, organ and ride — no lead, play over it"
+    },
+    {
+      "key": "W",
+      "name": "",
+      "src": "m15,p25,8(A,2Ae),8(G,2Ge),8(E,2Ee)",
+      "velocity": 72
+    },
+    {
+      "key": "X",
+      "name": "",
+      "src": "m10,8(C,r)",
+      "velocity": 100
+    },
+    {
+      "key": "Y",
+      "name": "",
+      "src": "m13,8(A,2Ae,G,2Ge,E,2Ee,D,2De)",
+      "velocity": 100
+    }
+  ]
+}

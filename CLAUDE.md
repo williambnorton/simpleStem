@@ -7,7 +7,7 @@ stepping on the other machine.
 ## What this is
 
 A band backing-track system. It turns YouTube songs (and full-album/playlist
-URLs) into 6-stem Demucs separations served through a web studio
+URLs) into 6-stem Logic Pro separations (plus six drum-kit pieces) served through a web studio
 (`bt-construction-kit`) for rehearsal and live use. The portal mixes the
 six stems client-side — no pre-baked mixdowns, no per-song loop files. End
 goal: load a setlist and, live, drive the XR18 with per-stem level + routing
@@ -17,8 +17,9 @@ The end-to-end flow is drawn in `WORKFLOW.md` (Mermaid). In short:
 
 ```
 YouTube URL → INCOMING_WEBLOC/*.webloc → webloc_watch.sh → metadata jobs in
-STEM_QUEUE → queue_runner.sh → stem.sh (yt-dlp 48k → Demucs htdemucs_6s)
-→ STEMS/<slug>/{vocals,drums,bass,guitar,piano,other}.m4a + metadata.json
+STEM_QUEUE → queue_runner.sh → stem.sh (yt-dlp 48k → <slug>_SOURCE.m4a +
+metadata.json + LOGIC_QUEUE/<slug>.json) → Logic Pro Stem Splitter run
+→ STEMS/<slug>/{vocals,drums,bass,guitar,piano,other}.m4a + six kit pieces
 → bt-construction-kit (Express :3000) mixes them client-side → XR18.
 ```
 
@@ -37,7 +38,7 @@ just by hardware. Three roles share the same Drive folder
 
 | Role | Hardware (typical) | Drive mode | Responsibility |
 |---|---|---|---|
-| **Performer** — the **live App** | MacBook Pro (36 GB, travels); hostname `Performer` (formerly `doghouse`), prompt `wbn@Performer` | streams Drive, pins active jobs | The portal at gig time. Plays back the six stems (mixed client-side) plus drum patterns and clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs Demucs renders when home on wifi. |
+| **Performer** — the **live App** | MacBook Pro (36 GB, travels); hostname `Performer` (formerly `doghouse`), prompt `wbn@Performer` | streams Drive, pins active jobs | The portal at gig time. Plays back the six stems (mixed client-side) plus drum patterns and clips. Drives the XR18. Fires automation events. **Must run offline** — no internet at the venue. Also runs the ingest queue and the Logic Pro stemming when home on wifi. |
 | **Song Librarian** | Mac mini (8 GB, 24/7); hostname `Librarian`, prompt `wbn@Librarian` | mirrors Drive to external disk | Curates the song library. `webloc_watch.sh` ingests YouTube URLs, `metadata.py` analyzes BPM/key, `catalog.py` keeps `CATALOG.json` consistent, `mpb_sync.py` pulls Songlist fields. Writes to `STEMS/` and `CATALOG.json`. |
 | **Clip Librarian** | Any Mac with Logic Pro + BlackHole | mirrors Drive (or copy out) | Curates the clip library. Uses video downloaders, BlackHole + Logic Pro for hard-to-grab sources, ffmpeg trim. Writes to `CUSTOM_LOOPS/`. **Lives outside the App** — see `clip_librarian/README.md`. |
 
@@ -49,7 +50,7 @@ just by hardware. Three roles share the same Drive folder
   to the Librarian roles.
 - **Curation is iterative and slow.** Trimming a sample, EQing it, re-rendering
   through Logic Pro happens at desk over coffee, not at the wedge. Same logic
-  the song pipeline already uses (Demucs takes 25 min per song).
+  the song pipeline already uses (stemming happens at home, not at the gig).
 - **Mac apps are powerful.** Logic Pro, BlackHole, dedicated video downloaders
   do the audio capture/cleanup work better than anything we'd ever build into
   the portal. Lean on them; the App just consumes the resulting .m4a files.
@@ -58,8 +59,8 @@ just by hardware. Three roles share the same Drive folder
 
 Why this split (reversed from the original):
 
-- **Demucs needs several GB of RAM** and crashed the 8 GB machine ("out of
-  application memory"). It belongs on the 36 GB laptop.
+- **Stemming needs Logic Pro and RAM.** Both are on the 36 GB laptop; the
+  8 GB mini only fetches and indexes.
 - **The big audio file is fetched once.** The Librarian downloads `source.wav`
   into `STEMS/<base>/` (the cache); the Performer reuses it (`stem.sh` skips its
   own download). The audio crosses the network once, at home on wifi, and never
@@ -70,7 +71,7 @@ Why this split (reversed from the original):
 ### If you are the Claude on the Performer (laptop)
 
 - Own rendering + the portal: `performer.sh start` runs `queue_runner.sh`
-  (Demucs) and the `bt-construction-kit` server.
+  (ingest → Logic stemming queue) and the `bt-construction-kit` server.
 - **Do** edit `bt-construction-kit/` (server.js, public/*) and validate with
   `node --check`.
 - **Don't** run the watcher/cataloger here — that's the Librarian's job.
@@ -79,7 +80,7 @@ Why this split (reversed from the original):
 
 - Own ingest + the catalog: `librarian.sh start` runs `webloc_watch.sh` and the
   daily `catalog.py` pass; `librarian.sh catalog` runs the consistency pass now.
-- **Never run Demucs here** (the memory crash). No `queue_runner.sh`/`stem.sh`.
+- **Never stem here.** No `queue_runner.sh`/`stem.sh`.
 - **Don't** change the `metadata.json` schema without also updating
   `metadata.py` and `catalog.py` — see Conventions.
 
@@ -114,13 +115,10 @@ Pick from this table:
 | `metadata.py` (analyzing source.wav for BPM/key) | **Librarian** | Called by `webloc_watch.sh` after the slice is ready. |
 | `mpb_sync.py` / `./librarian.sh sheet` | **Librarian** | Pulls the Google Sheet songlist and writes singer/band/drum-pattern fields. |
 | `catalog.py` / `./librarian.sh catalog` | **Librarian** | **Owner of `CATALOG.json`.** Runs hourly via `librarian.sh start`; you can re-trigger by hand. Performer reads a mirror of the file. |
-| `queue_runner.sh` (Demucs queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs Demucs, writes 6 stems + metadata. |
-| `stem.sh` (single-job demucs render) | **Performer** | Called by `queue_runner.sh`. |
+| `queue_runner.sh` (ingest queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs `stem.sh`: SOURCE m4a + metadata, then an entry in `LOGIC_QUEUE/`. |
+| `stem.sh` (single-job fetch + queue for Logic) | **Performer** | Called by `queue_runner.sh`. |
 | `bt-construction-kit/` Express server | **Performer** | `performer.sh start` brings up the portal at `:3000`. |
-| `backfill_section_detect.sh` | **Performer** | Needs the demucs venv's `librosa`. |
 | `retire_legacy_files.sh` | **Either** | One-shot migration that moves the retired `M4A/` and per-song loop artefacts aside. Reversible. |
-| `section_detect.py` (single-song) | **Performer** | Same reason as the backfill — librosa lives in the demucs venv. |
-| `post_process.py` | **Performer** | Optional gain-matching pass; not run automatically. |
 | MIDI sidecar (`midi_sidecar.py`) | **Performer** | Drives the user's Helix / XR18 / Logic via macOS MIDI ports — must be on the gig laptop. |
 | Logic bridge (`logic_bridge.py`, :5556) | **Performer** | Reads and writes Logic Pro's mixer by emulating a Mackie Control surface over virtual MIDI ports ("LogicBridge Virtual"). Track names, per-strip meters, fader moves. Verbs: `GET /tracks`, `POST /fader`, `POST /bank`, `POST /balance`; the portal proxies them at `/api/logic/*` and adds `POST /api/logic/balance-singers {base}` (resolves who sings the song from MPB metadata, matches Logic tracks named by singer first name). One-time Logic setup: Control Surfaces > Setup > New > Install > Mackie Control, both ports set to "LogicBridge Virtual". Keep vocal tracks in Logic's first 8 tracks so the surface can see them without banking. Fully offline (localhost MIDI + HTTP). At a gig the portal can fire these verbs with no Claude; Claude uses the same verbs conversationally at rehearsal. |
 | Editing `bt-construction-kit/` source | **Performer** | The Performer is the primary editor and pushes; the Librarian pulls. |
@@ -135,7 +133,7 @@ command set lists them in order (e.g. push from Performer → pull on Librarian)
 
 Pipeline (acquisition machine):
 - `studio.sh` — one control script: `start|stop|restart|status|logs`. Tracks
-  PIDs/logs in `.run/`, tree-kills children (fswatch, node, demucs), clears the
+  PIDs/logs in `.run/`, tree-kills children (fswatch, node), clears the
   runner lock. **Start here.**
 - `webloc_watch.sh` — watches `INCOMING_WEBLOC/` for `*.webloc`; a single video →
   one `STEM_QUEUE/<slug>.json`; a playlist (`list=`) or a chaptered "full album"
@@ -143,7 +141,7 @@ Pipeline (acquisition machine):
   `STEM_QUEUE/<setlist>/`.
 - `metadata.py` — per song: BPM + key (librosa), version (live/studio/…),
   lyric/chord search URLs, `clip_start/end` (album chapters), and a
-  `processing` block (48 kHz, Demucs htdemucs_6s). MusicBrainz year
+  `processing` block (48 kHz download recipe). MusicBrainz year
   lookup retired 2026-06-28 — operator pastes lyrics + facts via the
   Performer's lyrics dialog (Google / UG / AZLyrics) or manual Google.
   Flags: `--clip-start`, `--duration`, `--info-json`, `--url`, `--force`.
@@ -151,9 +149,10 @@ Pipeline (acquisition machine):
   chapters: download whole video, slice the clip window, then stem). Publishes
   the current job + phase to `STEM_QUEUE/.current`; moves finished jobs to
   `_done/`, failures to `_failed/`.
-- `stem.sh` — the heavy worker: yt-dlp → 48 kHz `source.wav` → Demucs
-  htdemucs_6s (6 stems) → m4a transcode. Writes `STEMS/<slug>/`.
-- `post_process.py` — optional gain-matching pass, not run automatically.
+- `stem.sh` — yt-dlp → 48 kHz `source.wav` → `metadata.json` →
+  `STEMS/<slug>/<slug>_SOURCE.m4a` → `LOGIC_QUEUE/<slug>.json`. The stems come
+  from the Logic Pro Stem Splitter run over that queue (Performer panel
+  "Logic stemming queue").
   Earlier `loop_detect.py` / mixdown emitters were retired 2026-06-27 — see
   the Status & roadmap note about the future loop construction kit.
   The legacy Google-Sheet batch path (`mpbbatch.bash`) and the Docker bundle
@@ -197,7 +196,7 @@ one for :3000/:5555; performer.sh now refuses, 2026-08-16):
 ```
 cd ~/simpleStem-code
 (cd bt-construction-kit && npm install)   # once
-./performer.sh start          # queue_runner (Demucs) + portal, then runs the gig test automatically
+./performer.sh start          # queue_runner (ingest) + portal, then runs the gig test automatically
 ./performer.sh status         # queue depth + current render & phase
 ./performer.sh test           # gig readiness: prerequisites + regression pass, PASS/WARN/FAIL + verdict (start/restart run this too)
 ./performer.sh reset          # RECOVERY: clear stale lock/ports/pidfiles, wait for Drive, restart all, verify
@@ -217,14 +216,13 @@ says so plainly.
 
 > `studio.sh` is the legacy single-machine switch (ingest+render+serve on one
 > Mac). It still works but predates the cache model and the machine flip; prefer
-> `librarian.sh` / `performer.sh`. A full rebuild is staged with `./rebuild.sh`
-> (dry-run by default; `--go` to execute) — see `ARCHITECTURE.md`.
+> `librarian.sh` / `performer.sh`.
 
 Add a song from the portal's "Add from YouTube" box (or drop a `.webloc` into
 `INCOMING_WEBLOC/`). Render phases show in the portal and in `status`:
-`downloading source → analyzing (BPM/key) → separating stems · demucs → mixing
-m4a`. Demucs is ~10–25 min/song on CPU; that's expected — a new request just
-queues behind the current song.
+`downloading source → analyzing (BPM/key) → encoding SOURCE m4a → queued for
+Logic Pro stemming`. The song plays once the Logic stemming queue has been run
+(about 3 minutes per song).
 
 ## CATALOG.json is the library API contract
 
@@ -364,32 +362,6 @@ without OAuth.
 and `catalogwatch`). Manual triggers: `./librarian.sh sheet` (full sync),
 `./librarian.sh sheet --dry-run` (preview), `./librarian.sh sheet
 --master-only` (skip the gig tabs).
-
-### Section auto-detection (`section_detect.py`)
-
-When `stem.sh` finishes a render, it calls `section_detect.py` on the song
-folder. That script runs a multi-stem novelty function:
-
-1. Load each stem's audio, compute RMS energy envelope at 10 Hz.
-2. Take the per-stem absolute first derivative (energy change rate).
-3. Sum the derivatives across stems → combined "section change strength."
-4. Find peaks above 35% of the global max with ≥6 s spacing.
-5. Write the peak timestamps to `metadata.json` as `sectionCandidates`.
-
-The portal's `/api/song/:base/automation` endpoint exposes these
-candidates alongside the editable `sections` array. The client uses them
-two ways:
-
-- **Snap on placement.** When the user drops a section (key 1–9) or
-  drags a section divider, `snapSectionToCandidate(t)` looks for a
-  candidate within ±2 s and snaps to it. Falls back to BPM-grid snap
-  if none is in range.
-- **Visual hints.** Faint vertical ticks on the lane background mark
-  every candidate timestamp, so the user can see where the algorithm
-  thinks boundaries are before placing their own.
-
-Backfill the existing library: `./backfill_section_detect.sh --go`.
-~3 sec per song on CPU, ~9 min for 176 songs.
 
 ### Time-of-day scheduling (planned)
 
@@ -656,6 +628,33 @@ respect them or update this list.
   `mode-fetch` style AND clicks straight into the editor (no confirm),
   matching the visual/behavior of a song that never had lyrics at all.
 
+## MPL notation: + and - from middle C (Bill 2026-11-14)
+
+Locked-in simplifying assumption: every MPL note is written relative to
+middle C's octave. `C` is middle C, `C-` is one octave down, `C--` two
+down, `C+` one up. Never write an octave digit (`C2`, `F#3`) in MPL that a
+person will read: bank files, pattern and library files, AI answers, docs
+examples, the drum wheel, tap record. Bill reads the distance between
+notes (octave drops, descents) from the marks, and a digit hides that.
+
+- The parser still accepts digits as input. The MIDI console rewrites them
+  on save (`mplToShifts` in `midi-console.html`, called from `mplBankSave`),
+  so a pasted or typed `F#2` becomes `F#--` at the same pitch.
+- Drums follow the same rule: kick is `C--`, snare `D--`, closed hat `F#--`.
+- A whole phrase moves with the octave group: `-(A,B)` plays A and B one
+  octave down, `++(A,B)` two up. Put a loop count BEFORE the marks:
+  `4-(A,B)` is four rounds an octave down. `-4(A,B)` is NOT that: a lone
+  `-` is a rest, so it means a quarter rest and then `4(A,B)` at pitch.
+- Channels display by name in the bank rows: `m10` mDrum, `m11` mVoice,
+  `m12` mDrum2, `m13` mBass, `m14` mGuitar, `m15` mPiano, `m16` mOther,
+  `m5` mHelix. Any other channel shows its `m#`. Hover shows the coded
+  `m#`, a click lists the alternatives, and the text on disk stays `m#`.
+- The selected bank writes every change to its JSON file in
+  `public/mpl-banks/` within a second (`PUT /api/mpl/banks/<file>`).
+  Details in `docs/19_MPL_LIBRARY.md`.
+- This assumes the Defaults row octave stays at 4. Changing it moves every
+  bare note, so leave it alone unless Bill asks.
+
 ## Creative-user UI mandate (Bill 2026-08-18)
 
 **The vantage point for ALL UI work is the creative user, not the
@@ -850,11 +849,10 @@ machine pull from it, rather than trusting Drive to sync `.git`.
 - **Logic Pro 12 Stem Splitter produces 6 stems** (vocals, drums, bass, guitar,
   piano, "other") — *not* the 4 (vocals/drums/bass/other) that earlier Logic
   versions and most third-party write-ups describe. Don't assert otherwise in
-  designs that hand off to Logic; the KBM `simpleStem` macro is built around
-  the 6-stem output and matches the demucs `htdemucs_6s` shape one-to-one.
+  designs that hand off to Logic.
 
-- **Memory (8 GB acquisition Mac):** don't pile heavy UI/agent work on top of
-  Demucs — that's what the two-machine split is for.
+- **Memory (8 GB acquisition Mac):** don't pile heavy UI/agent work on it —
+  that's what the two-machine split is for.
 - **Hardcoded path:** `bt-construction-kit/server.js` sets
   `SIMPLE_STEM_ROOT = '/Users/wbn/ClaudeDrive/simpleStem'`. Verify this resolves
   on each machine; if usernames/mounts differ, this breaks. Worth refactoring to

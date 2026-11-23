@@ -1031,6 +1031,28 @@ select {
   text-transform: uppercase;
 }
 .drum-machine-banner.show { display: block; }
+/* MPL DRUMS (2026-11-17) */
+.strip-click-mini { flex: 1 1 50%; min-width: 0; padding: 6px 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); color: var(--text-muted); transition: var(--transition-smooth); }
+.strip-click-mini i, .strip-click-mini svg { width: 16px; height: 16px; }
+#drums-click-btn.click-ready { background: rgba(39, 174, 96, 0.18); border-color: rgba(39, 174, 96, 0.6); color: #1d8f4f; }
+#drums-click-btn.click-ready.beat-flash { background: var(--color-green, #27ae60); border-color: transparent; color: #fff; }
+#drums-click-btn.click-live { background: rgba(241, 196, 15, 0.3); border-color: rgba(241, 196, 15, 0.8); color: #7a6207; }
+#drums-click-btn.click-live.beat-flash { background: #f1c40f; border-color: transparent; color: #000; }
+.pos-btn.mpl-send-btn.disabled { opacity: 0.3; }
+.pos-btn.mpl-send-btn.active { background: #37b26c; border: 1px solid #2a8a54; color: #fff; box-shadow: 0 0 8px rgba(55, 178, 108, 0.45); }
+.mpl-strip-btn { flex: 1 1 50%; min-width: 0; padding: 8px 0; font-size: 12px; font-weight: 800; letter-spacing: 0.3px; border-radius: 6px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); color: var(--text-muted); transition: var(--transition-smooth); }
+.mpl-strip-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.mpl-strip-btn.disabled { opacity: 0.4; }
+.mpl-strip-btn.none { display: none !important; }
+.mpl-strip-btn { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.mpl-strip-btn.active.both { background: rgba(52, 152, 219, 0.22); border-color: rgba(52, 152, 219, 0.7); color: #2e86c1; box-shadow: 0 0 10px rgba(52, 152, 219, 0.35); }
+.mpl-strip-btn.active { background: rgba(55, 178, 108, 0.22); border-color: rgba(55, 178, 108, 0.6); color: #37b26c; box-shadow: 0 0 10px rgba(55, 178, 108, 0.35); }
+.mpl-drums-btn { cursor: pointer; }
+.mpl-drums-btn.disabled { opacity: 0.45; }
+.mpl-drums-banner { background: rgba(55, 178, 108, 0.16); border-left-color: #37b26c; color: #5fd698; text-transform: none; letter-spacing: 0.2px; }
+.mpl-drums-banner.mpl-bad { background: rgba(229, 57, 53, 0.18); border-left-color: #e53935; color: #ff8a80; }
 
 /* ─── Backing-track pill — parallel to drum-machine-btn ─────────────── */
 .backing-track-btn {
@@ -6889,19 +6911,6 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   overflow: hidden;
 }
 
-/* Section-candidate hint ticks — faint vertical lines on the lane at
-   timestamps where section_detect.py found multi-stem energy changes.
-   They guide the user toward placing section markers at musical
-   boundaries; sections snap to the closest candidate within ±2 s. */
-.automation-section-hint {
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 1px;
-  margin-left: -0.5px;
-  background: rgba(200, 210, 230, 0.28);
-  pointer-events: none;
-  z-index: 0;
-}
 .automation-section-label {
   /* Lives in the padding-top strip above the canvas (see .canvas-wrap
      padding-top:20px). Sits flush with the strip and clear of the
@@ -9095,6 +9104,9 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   z-index: 100;
 }
 #portals .tb-dd-menu[hidden] { display: none; }
+/* Performer shows the four view buttons directly (2026-11-10) — the
+   pulldown hid MIDI behind an extra click. Same grid as the other views. */
+#portals .tb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 #portals .tb-dd-menu .pb { width: 100%; height: 28px; }
 
 #portals .pb { display: flex; align-items: center; justify-content: center; gap: 5px; height: 27px;
@@ -9112,32 +9124,8 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 #portals .pb-desk { color: #0f4f70; background: #d9eefb; border-color: #8fcdf0; }
 #portals .pb-desk.here { color: #fff; background: #1f97d9; border-color: #00e676; box-shadow: 0 0 10px rgba(79,195,247,.6), inset 0 1px 3px rgba(0,0,0,.25); }
 
-/* ===== Pinned player (Bill 2026-10-17, gig feedback) =====
-   An accidental trackpad scroll on the gig laptop slid the player off the
-   top of the screen. The player no longer scrolls: .main-content is a
-   column whose only scroller is the tab area below the player, and
-   overscroll-behavior stops a scroll that hits the end of a list from
-   carrying on to the column. The tab area shrinks to zero before the
-   column itself would scroll, so .main-content only scrolls if the player
-   alone is taller than the window. Collapse the mixer (its ⌃ button) to
-   give the Library more room. Desktop only; the ≤768px stacked layout
-   keeps its whole-page scroll. */
-@media (min-width: 769px) {
-  .main-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0;  /* was inert under display:block; keep spacing as it was */
-    overscroll-behavior: contain;
-  }
-  .main-content > .player-hero-section,
-  .main-content > .tab-bar { flex: 0 0 auto; }
-  .main-content > .tab-container {
-    flex: 1 1 0;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-}
+/* Pinned player (2026-10-17) removed 2026-11-10 at Bill's request: the
+   whole page scrolls again, so a zoomed-in view can reach the Library. */
 
 /* ===== Section marker strip + loop seam editor (Bill 2026-10-28) ===== */
 .section-strip {
@@ -9281,3 +9269,51 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .routing-fx .routing-radio input { margin: 0; accent-color: var(--color-green, #27ae60); cursor: pointer; }
 .routing-fx .routing-radio:has(input:checked) { background: var(--color-green, #27ae60); border-color: #2e8b57; color: #fff; font-weight: 700; }
 .routing-fx .routing-radio:has(input:disabled) { opacity: .35; cursor: not-allowed; }
+
+/* Fader presets (2026-11-13): a column of 100/75/50/10/5 % buttons on the
+   right edge of each stem's fader track. The slider is nudged left (a
+   relative offset, so the track keeps its width) so the fat thumb never
+   covers them. */
+.fader-track.has-presets .vertical-slider { position: relative; left: -13px; }
+.fader-presets {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 2;
+}
+.fader-preset {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  font: 600 9px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #445;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fader-preset:hover { background: #fff; border-color: rgba(0, 0, 0, 0.35); }
+.fader-preset.active { background: #2ecc71; color: #fff; border-color: #27ae60; }
+
+/* DRUM KIT panel (kit-drums.js, Bill 2026-11-21): a second row of strips for the six drum pieces,
+   built from the same parts as the stem strips (ring of amp buttons, fader with presets, M and S). */
+.kit-panel { margin-top: 12px; }
+.kit-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.kit-title { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #555; }
+.kit-on { font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.35); background: #fff; color: #333; cursor: pointer; }
+.kit-on.active { background: #2ecc71; color: #fff; border-color: #27ae60; }
+.kit-status { flex: 1; min-width: 180px; font-size: 11px; color: #555; }
+.kit-preset { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.25); background: #fff; color: #333; cursor: pointer; }
+.kit-preset:hover { border-color: rgba(0, 0, 0, 0.45); }
+.kit-strips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+/* the box itself: what .channel-strip is for a stem (that class is left to the six stems, which the app walks) */
+.kit-strip { position: relative; isolation: isolate; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 6px 4px; border: 1.5px solid var(--border-color); border-radius: 10px; background: #fafbfd; transition: var(--transition-smooth); }
+.kit-panel:not(.on) .kit-strip { opacity: 0.6; }
+.kit-strip > .channel-buttons { width: 100%; margin-top: 2px; display: flex; gap: 4px; padding: 0 4px; box-sizing: border-box; }
+.kit-strip > .channel-buttons .mute-btn, .kit-strip > .channel-buttons .solo-btn { flex: 1 1 50%; min-width: 0; padding: 8px 0; font-size: 14px; }
+.kit-strip .pos-bottom-row .pos-btn { flex: 0 0 32px; }

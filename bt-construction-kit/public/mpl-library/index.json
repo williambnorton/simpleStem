@@ -1,0 +1,9 @@
+{
+  "format": "simplestem-mpl-library-index",
+  "version": 1,
+  "libraries": [
+    "classic-rock-drums.json",
+    "classic-rock-riffs.json",
+    "classic-rock-songs.json"
+  ]
+}

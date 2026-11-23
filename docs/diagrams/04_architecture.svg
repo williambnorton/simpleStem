@@ -29,12 +29,12 @@
     <rect x="60" y="120" width="500" height="36" rx="14" fill="#2563eb"/>
     <text x="310" y="144" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">PERFORMER (MacBook Pro, 36 GB)</text>
 
-    <text x="310" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">live App at gigs · runs Demucs at home</text>
+    <text x="310" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">live App at gigs · Logic stemming at home</text>
 
     <!-- Services -->
     <rect x="84" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
     <text x="194" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">performer.sh start</text>
-    <text x="194" y="240" text-anchor="middle" font-size="10" fill="#1e40af">queue_runner.sh (Demucs)</text>
+    <text x="194" y="240" text-anchor="middle" font-size="10" fill="#1e40af">queue_runner.sh (ingest)</text>
     <text x="194" y="254" text-anchor="middle" font-size="10" fill="#1e40af">bt-construction-kit @ :3000</text>
 
     <rect x="316" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
@@ -67,7 +67,7 @@
     <rect x="840" y="120" width="500" height="36" rx="14" fill="#2563eb"/>
     <text x="1090" y="144" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">SONG LIBRARIAN (Mac mini, 8 GB)</text>
 
-    <text x="1090" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">24/7 ingest + catalog · never runs Demucs</text>
+    <text x="1090" y="180" text-anchor="middle" font-size="12" fill="#1e3a8a" font-style="italic">24/7 ingest + catalog · never stems</text>
 
     <rect x="864" y="200" width="220" height="60" rx="8" fill="#fff" stroke="#3b82f6"/>
     <text x="974" y="221" text-anchor="middle" font-size="12" font-weight="800" fill="#1e3a8a" font-family="ui-monospace, monospace">librarian.sh start</text>

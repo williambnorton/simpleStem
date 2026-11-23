@@ -1,0 +1,106 @@
+{
+  "format": "simplestem-mpl-patterns",
+  "version": 1,
+  "about": "Original backing songs on standard rock progressions: drums ch 10 (→ D amp), bass ch 13 (B; p33 finger / p34 pick), organ ch 15 (P; p16 drawbar / p18 rock organ), guitar riff ch 14 (G). Leave room to play guitar over them.",
+  "patterns": [
+    {
+      "id": "sg-blues12",
+      "group": "Classic rock · Songs",
+      "label": "12-bar shuffle in A — boogie bass + drawbar organ",
+      "main": "bl_12",
+      "key": "A",
+      "bpm": 120,
+      "chart": "| A | A | A | A | D | D | A | A | E | D | A | E |",
+      "parts": {
+        "bl_12": "@bl_bass&,@bl_organ&,12(@bl_drum)",
+        "bl_bass": "m13,p33,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,De,F#e\\\\\\\\,Ae,Be\\\\\\\\,C+e,Be\\\\\\\\,Ae,F#e\\\\\\\\,De,F#e\\\\\\\\,Ae,Be\\\\\\\\,C+e,Be\\\\\\\\,Ae,F#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,Ee,G#e\\\\\\\\,Be,C#+e\\\\\\\\,D+e,C#+e\\\\\\\\,Be,G#e\\\\\\\\,De,F#e\\\\\\\\,Ae,Be\\\\\\\\,C+e,Be\\\\\\\\,Ae,F#e\\\\\\\\,A-e,C#e\\\\\\\\,Ee,F#e\\\\\\\\,Ge,F#e\\\\\\\\,Ee,C#e\\\\\\\\,Ee,G#e\\\\\\\\,Be,C#+e\\\\\\\\,D+e,C#+e\\\\\\\\,Be,G#e\\\\\\\\",
+        "bl_organ": "m15,p16,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,D+!q,Rq,D+!q,Rq,D+!q,Rq,D+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,A+!q,Rq,E+!q,Rq,E+!q,Rq,D+!q,Rq,D+!q,Rq,A+!q,Rq,A+!q,Rq,E+!q,Rq,E+!q",
+        "bl_drum": "m10,p0,@bl_shufhat&,Cq,Dq,Ce,Ce\\\\\\\\,Dq",
+        "bl_shufhat": "m10,p0,4(F#e,F#e\\\\\\\\)"
+      }
+    },
+    {
+      "id": "sg-mixorock",
+      "group": "Classic rock · Songs",
+      "label": "Mixolydian rocker in D — intro, verse, chorus ×2, outro",
+      "main": "mx_song",
+      "key": "D",
+      "bpm": 128,
+      "chart": "intro riff ×4 bars · verse | D | C | G | D | ×2 · chorus | G | A | D | D | ×2 · (verse+chorus twice) · outro riff + crash",
+      "parts": {
+        "mx_song": "@mx_intro,2(@mx_verse,@mx_chorus),@mx_outro",
+        "mx_intro": "@mx_gtr&,4(@mx_drum)",
+        "mx_verse": "2(@mx_vbass&,@mx_vorg&,@mx_gtr&,4(@mx_drum))",
+        "mx_chorus": "2(@mx_cbass&,@mx_corg&,4(@mx_drumc))",
+        "mx_outro": "@mx_gtr&,3(@mx_drum),@mx_end",
+        "mx_gtr": "m14,p29,D+q,D+e,F#+e,A+q,F#+e,D+e,C+q,C+e,E+e,G+q,E+e,C+e,Gq,Ge,Be,D+q,Be,Ge,D+e,D+e,C+e,Ae,D+q,Rq",
+        "mx_vbass": "m13,p34,8(De),8(Ce),8(G-e),8(De)",
+        "mx_vorg": "m15,p18,D+!w,C+!w,G+!w,D+!w",
+        "mx_cbass": "m13,p34,8(G-e),8(A-e),8(De),8(De)",
+        "mx_corg": "m15,p18,G+!w,A+!w,D+!w,D+!w",
+        "mx_drum": "m10,p0,@mx_hat&,Cq,Dq,Ce,Ce,Dq",
+        "mx_hat": "m10,p0,8(F#e)",
+        "mx_drumc": "m10,p0,@mx_ride&,Cq,Dq,Ce,Ce,Dq",
+        "mx_ride": "m10,p0,8(D#+e)",
+        "mx_end": "m10,p0,@mx_endk&,C#+w",
+        "mx_endk": "m10,p0,Cw"
+      }
+    },
+    {
+      "id": "sg-ballad",
+      "group": "Classic rock · Songs",
+      "label": "Minor rock ballad in Am — Am G F E, arpeggio + organ",
+      "main": "bd_song",
+      "key": "Am",
+      "bpm": 76,
+      "chart": "| Am | G | F | E |",
+      "parts": {
+        "bd_song": "@bd_arp&,@bd_bass&,@bd_org&,4(@bd_drum)",
+        "bd_arp": "m14,p27,Ae,E+e,A+e,C++e,E++e,C++e,A+e,E+e,Ge,D+e,G+e,B+e,D++e,B+e,G+e,D+e,Fe,C+e,F+e,A+e,C++e,A+e,F+e,C+e,Ee,Be,E+e,G#+e,B+e,G#+e,E+e,Be",
+        "bd_bass": "m13,p33,A-w,G-w,F-w,E-w",
+        "bd_org": "m15,p16,A+m!w,G+!w,F+!w,E+!w",
+        "bd_drum": "m10,p0,@bd_hat&,Cq,Re,Ce,Dq,Rq",
+        "bd_hat": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "sg-powerpop",
+      "group": "Classic rock · Songs",
+      "label": "Power-pop in E — E B C#m A, eighth-note drive",
+      "main": "pp_song",
+      "key": "E",
+      "bpm": 140,
+      "chart": "| E | B | C#m | A |",
+      "parts": {
+        "pp_song": "@pp_gtr&,@pp_bass&,@pp_org&,4(@pp_drum)",
+        "pp_gtr": "m14,p29,8(Ee),8(Be),8(C#+e),8(Ae)",
+        "pp_bass": "m13,p34,8(E-e),8(B-e),8(C#e),8(A-e)",
+        "pp_org": "m15,p18,E+!w,B!w,C#+m!w,A!w",
+        "pp_drum": "m10,p0,@pp_hat&,Ce,Ce,Dq,Re,Ce,Dq",
+        "pp_hat": "m10,p0,8(F#e)"
+      }
+    },
+    {
+      "id": "sg-heavy",
+      "group": "Classic rock · Songs",
+      "label": "Heavy riff song in E minor — stomp riff ×2, gallop bridge",
+      "main": "hv_song",
+      "key": "Em",
+      "bpm": 100,
+      "chart": "verse | Em | Em | ×4 (stomp riff) · bridge | Em | G A | Em | B A G | (gallop)",
+      "parts": {
+        "hv_song": "2(@hv_verse),@hv_bridge",
+        "hv_verse": "2(@hv_riff&,@hv_bass&,2(@hv_drum))",
+        "hv_bridge": "@hv_gallop&,@hv_gbass&,4(@hv_drumg)",
+        "hv_riff": "m14,p30,Ee,Ee,Ge,Ee,Ae,Ee,Ge,Ae,Be,Ae,Ge,Ee,D+q,Eq",
+        "hv_bass": "m13,p34,E-e,E-e,G-e,E-e,A-e,E-e,G-e,A-e,B-e,A-e,G-e,E-e,Dq,E-q",
+        "hv_gallop": "m14,p30,4(Ee,Es,Es),2(Ge,Gs,Gs),2(Ae,As,As),4(Ee,Es,Es),2(Be,Bs,Bs),Ae,As,As,Ge,F#s,Gs",
+        "hv_gbass": "m13,p34,4(E-e,E-s,E-s),2(G-e,G-s,G-s),2(A-e,A-s,A-s),4(E-e,E-s,E-s),2(B-e,B-s,B-s),A-e,A-s,A-s,G-e,F#-s,G-s",
+        "hv_drum": "m10,p0,@hv_hat&,Cq,Dq,Ce,Ce,Dq",
+        "hv_hat": "m10,p0,8(F#e)",
+        "hv_drumg": "m10,p0,@hv_sn&,4(Ce,Cs,Cs)",
+        "hv_sn": "m10,p0,Rq,Dq,Rq,Dq"
+      }
+    }
+  ]
+}

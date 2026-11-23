@@ -40,3 +40,6 @@ __pycache__/
 __pycache__/
 *.pyc
 xr18_ip.txt
+
+# Claude working files, backups and run tools (large; not code)
+Claude outputs/

@@ -140,7 +140,6 @@ def main():
                     "key_signature": None,
                     "rebuilt_from_cache": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "processing": {
-                        "separation": "htdemucs_6s",
                         "note": "restored from ~/.bt-cache after Drive folder loss; source.wav not recovered",
                     },
                 }

@@ -22,7 +22,7 @@ gviz endpoint, then:
 
 Source-of-truth model: the Google Sheet wins. Re-running the script overwrites
 the MPB fields in each matched metadata.json. Other metadata fields (bpm, key,
-sectionCandidates, automation, …) are NOT touched.
+automation, …) are NOT touched.
 
 Sheet requirement: must be shared as "Anyone with the link can view" so the
 gviz endpoint returns CSV without OAuth.

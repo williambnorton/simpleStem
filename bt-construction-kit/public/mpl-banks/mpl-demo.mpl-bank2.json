@@ -1,0 +1,232 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "MPL Demo",
+  "description": "",
+  "created_by": {
+    "kind": "user",
+    "name": ""
+  },
+  "created_at": "2026-11-12T03:56:30.964Z",
+  "bpm": 130,
+  "song": "Bm Blues",
+  "main": "Y",
+  "slots": [
+    {
+      "key": "0",
+      "name": "demo",
+      "src": "m11,@introD,2@verseD,@chorusD,@bridgeD,@chorusD,@outroD",
+      "velocity": 45
+    },
+    {
+      "key": "1",
+      "name": "kick4",
+      "src": "m10,p0,C,Re,Ce,C,R",
+      "velocity": 43
+    },
+    {
+      "key": "2",
+      "name": "backbeat",
+      "src": "m10,p0,R,D,R,D",
+      "velocity": 71
+    },
+    {
+      "key": "3",
+      "name": "hats8",
+      "src": "m10,p0,8(F#e)",
+      "velocity": 41
+    },
+    {
+      "key": "4",
+      "name": "hats16",
+      "src": "m10,p0,16(F#s)",
+      "velocity": 61
+    },
+    {
+      "key": "5",
+      "name": "rockBar",
+      "src": "m10,p0,@hats8&,C,D,Ce,Ce,D",
+      "velocity": 47
+    },
+    {
+      "key": "6",
+      "name": "funkBar",
+      "src": "m10,p0,@hats16&,Ce,Rs,Cs,D,Re,Ce,D",
+      "velocity": 45
+    },
+    {
+      "key": "7",
+      "name": "fillToms",
+      "src": "m10,p0,4(Ds),4(D+s),2(Bs),2(Gs),Fe,Fe",
+      "velocity": 64
+    },
+    {
+      "key": "8",
+      "name": "beatParallel",
+      "src": "m11,@kick4&,@backbeat&,@hats8&",
+      "velocity": 68
+    },
+    {
+      "key": "9",
+      "name": "beat808",
+      "src": "m10,p25,@hats8&,C,D#,Re,Ce,D#",
+      "velocity": 52
+    },
+    {
+      "key": "A",
+      "name": "bassRoot",
+      "src": "m13,p38,8(D+e),8(Bbe),8(Fe),8(C+e)",
+      "velocity": 100
+    },
+    {
+      "key": "B",
+      "name": "bassOct",
+      "src": "m13,p38,4(D+e,D++e),4(Bbe,Bb+e),4(Fe,F+e),4(C+e,C++e)",
+      "velocity": 100
+    },
+    {
+      "key": "C",
+      "name": "bassCall",
+      "src": "m13,p39,2@bassFig,-(@bassFig),@bassFig",
+      "velocity": 100
+    },
+    {
+      "key": "D",
+      "name": "bassFigCCOOOOOOO",
+      "src": "m13,p39,D+e,F+e,A+e,F+e,D+e,C+e,Ae,C+e",
+      "velocity": 100
+    },
+    {
+      "key": "E",
+      "name": "padChords",
+      "src": "m15,p89,D++m!w,Bb+!w,F+!w,C++!w",
+      "velocity": 100
+    },
+    {
+      "key": "F",
+      "name": "padStabs",
+      "src": "m15,p90,2(Re,D++m!e,R),2(Re,Bb+!e,R),2(Re,F+!e,R),2(Re,C++!e,R)",
+      "velocity": 80
+    },
+    {
+      "key": "G",
+      "name": "padPulse",
+      "src": "m15,p90,8(D++m!e),8(Bb+!e),8(F+!e),8(C++!e)",
+      "velocity": 69
+    },
+    {
+      "key": "H",
+      "name": "leadHook",
+      "src": "m11,p80,A++,A++e,G++e,F++,D++,Bb+,D++,F++,D++,C+++,A++e,G++e,F++,A++,G++w",
+      "velocity": 100
+    },
+    {
+      "key": "I",
+      "name": "leadArp",
+      "src": "m11,p81,4(D++s,F++s,A++s,D+++s),4(Bb+s,D++s,F++s,Bb++s),4(F+s,A+s,C++s,F++s),4(C++s,E++s,G++s,C+++s)",
+      "velocity": 100
+    },
+    {
+      "key": "J",
+      "name": "trajectory",
+      "src": "m11,p81,D++q...D+++,Rw,Rw",
+      "velocity": 100
+    },
+    {
+      "key": "K",
+      "name": "incLoop",
+      "src": "m15,p1...4(A++,C+++,E+++,A+++)",
+      "velocity": 100
+    },
+    {
+      "key": "L",
+      "name": "rangeLoop",
+      "src": "m11,p80,A++q..76(Re),Rw",
+      "velocity": 92
+    },
+    {
+      "key": "M",
+      "name": "seqAB",
+      "src": "m11,@partA,@partB",
+      "velocity": 85
+    },
+    {
+      "key": "N",
+      "name": "partA",
+      "src": "m11,p80,F++,A++,D+++,A++",
+      "velocity": 85
+    },
+    {
+      "key": "O",
+      "name": "partB",
+      "src": "m11,p80,E++,G++,C+++,G++",
+      "velocity": 100
+    },
+    {
+      "key": "P",
+      "name": "seqRepeat",
+      "src": "m11,2@partA,2@partB",
+      "velocity": 100
+    },
+    {
+      "key": "Q",
+      "name": "parallel3",
+      "src": "m11,@bassRoot&,@padChords&,@leadArp&",
+      "velocity": 100
+    },
+    {
+      "key": "R",
+      "name": "parAndSeq",
+      "src": "@padChords&,4(@rockBar)",
+      "velocity": 100
+    },
+    {
+      "key": "S",
+      "name": "nested",
+      "src": "m11,2@parAndSeq",
+      "velocity": 100
+    },
+    {
+      "key": "T",
+      "name": "introD",
+      "src": "@padChords&,4(@hats8)",
+      "velocity": 100
+    },
+    {
+      "key": "U",
+      "name": "verseD",
+      "src": "@bassRoot&,@padStabs&,4(@rockBar)",
+      "velocity": 100
+    },
+    {
+      "key": "V",
+      "name": "chorusD",
+      "src": "@bassOct&,@padPulse&,@leadHook&,3(@rockBar),@fillToms",
+      "velocity": 100
+    },
+    {
+      "key": "W",
+      "name": "bridgeD",
+      "src": "@bassCall&,4(@funkBar)",
+      "velocity": 100
+    },
+    {
+      "key": "X",
+      "name": "outroD",
+      "src": "@padChords&,@leadArp&,3(@rockBar),@crashEnd",
+      "velocity": 100
+    },
+    {
+      "key": "Y",
+      "name": "crashEnd",
+      "src": "m10,p0,C#+w",
+      "velocity": 100
+    },
+    {
+      "key": "Z",
+      "name": "feelSwing",
+      "src": "m11,p80,4(D++e,F++e\\\\\\\\),4(Bb+e,D++e\\\\\\\\),4(A+e,C++e/),4(C++e,E++e/)",
+      "velocity": 100
+    }
+  ]
+}

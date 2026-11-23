@@ -1,0 +1,14 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Favorites",
+ "description": "Sequences you copied here with the ➜ button on a row. Each arrives with the rows it calls.",
+ "created_by": {
+  "kind": "user",
+  "name": ""
+ },
+ "created_at": "2026-11-20T00:00:00.000Z",
+ "bpm": 120,
+ "song": "Favorites",
+ "slots": []
+}

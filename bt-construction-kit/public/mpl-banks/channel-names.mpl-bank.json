@@ -1,0 +1,72 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Channel names — a voice says each channel on its own output",
+ "description": "Eight spoken samples from the SAMPLES folder (*Left, *Right, *Drums, *Vocals, *Bass, *Guitar, *Piano, *Other). Row 0 says them in turn, one bar apart, each on its own output: Left and Right on outputs 1 and 2 (the two clips are stereo files with the voice on one side only, played on a channel that has no amp), then Drums on m10 (output 12), Vocals m11 (output 11), Bass m13, Guitar m14, Piano m15, Other m16. Rows 1-8 are one channel each: press 1-8 to hear a single name; a row of only samples plays once per press. The audio is played by this page, not by Logic. On a device with fewer than 16 outputs every name comes out in stereo (Left and Right still on their own side).",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "a sample file for each channel, a voice saying the 8 channel names, and an MPL that sends them in sequence to each channel",
+ "created_at": "2026-11-20T00:00:00.000Z",
+ "bpm": 120,
+ "song": "Channel names",
+ "main": "0",
+ "slots": [
+  {
+   "key": "0",
+   "name": "chanNames",
+   "src": "m1,*Left,Rw,m1,*Right,Rw,m10,*Drums,Rw,m11,*Vocals,Rw,m13,*Bass,Rw,m14,*Guitar,Rw,m15,*Piano,Rw,m16,*Other,Rw",
+   "velocity": 100
+  },
+  {
+   "key": "1",
+   "name": "sayLeft",
+   "src": "m1,*Left",
+   "velocity": 100
+  },
+  {
+   "key": "2",
+   "name": "sayRight",
+   "src": "m1,*Right",
+   "velocity": 100
+  },
+  {
+   "key": "3",
+   "name": "sayDrums",
+   "src": "m10,*Drums",
+   "velocity": 100
+  },
+  {
+   "key": "4",
+   "name": "sayVocals",
+   "src": "m11,*Vocals",
+   "velocity": 100
+  },
+  {
+   "key": "5",
+   "name": "sayBass",
+   "src": "m13,*Bass",
+   "velocity": 100
+  },
+  {
+   "key": "6",
+   "name": "sayGuitar",
+   "src": "m14,*Guitar",
+   "velocity": 100
+  },
+  {
+   "key": "7",
+   "name": "sayPiano",
+   "src": "m15,*Piano",
+   "velocity": 100
+  },
+  {
+   "key": "8",
+   "name": "sayOther",
+   "src": "m16,*Other",
+   "velocity": 100
+  }
+ ]
+}

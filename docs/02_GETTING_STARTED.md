@@ -83,20 +83,20 @@ You don't have to do anything — but here's the relay race you just started:
 1. **The Librarian (Mac mini)** notices the new URL within seconds. It
    downloads the audio once at 48 kHz (`source.wav`), analyzes BPM and key,
    writes the song's `metadata.json`, and drops a render job in the queue.
-2. **The Performer (this laptop)** picks the job up and runs **Demucs**, the
-   AI stem separator, producing the six stems, then converts them to m4a.
-   This is the slow part: **10–25 minutes per song on CPU**. A new request
-   simply queues behind the current one.
-3. When the render finishes, section boundaries are auto-detected, the
-   catalog updates, and the song appears in the library, fully cached and
-   playable.
+2. **The Performer (this laptop)** picks the job up, saves the stereo
+   original as `<song>_SOURCE.m4a` and adds the song to the **Logic stemming
+   queue**. The Performer shows that queue in a panel with a button to hand
+   the Mac over; Logic Pro's Stem Splitter then makes the six stems and six
+   drum-kit pieces (about 3 minutes per song).
+3. When the Logic run finishes, the catalog updates and the song appears in
+   the library, fully cached and playable.
 
 You can watch all of this live on the Librarian dashboard
 (`http://localhost:3000/librarian` — see [07_LIBRARIAN.md](07_LIBRARIAN.md)),
 where the **Living Pipeline** animation shows the actual files flying between
 folders. Render phases also show in `./performer.sh status`:
-*downloading source → analyzing (BPM/key) → separating stems · demucs →
-mixing m4a*.
+*downloading source → analyzing (BPM/key) → encoding SOURCE m4a → queued for
+Logic Pro stemming*.
 
 **Note for home use:** the Performer must be on the same network as the
 Drive folder syncs happen over (i.e., at home on wifi). At a gig, you don't

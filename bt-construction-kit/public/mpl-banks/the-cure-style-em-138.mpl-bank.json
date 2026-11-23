@@ -1,0 +1,215 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "The Cure (style) — E minor 138",
+  "description": "Modelled on the sound of The Cure — original parts, not any of their songs: a melodic picked bass high on the neck that carries the tune, chorused clean-guitar arpeggios, synth-string pads, tom-driven drums. E minor at 138 bpm, Em C G D. Rows 1-5 drums (ch 10), 6-9 bass SUBROUTINES and A-C bass rows (ch 13), D-G guitar SUBROUTINES and H guitar (ch 14), I string pad (ch 15), J-K lead melody (ch 11), L slow strings (ch 16), M-Q sections, R jam. Row 0 plays the song.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "build a new bank modelled after the band The Cure and make one modelled after the band Depeche Mode and make one modelled after Joe Jackson",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 138,
+  "key": "Em",
+  "song": "Cure Style",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "cureSong",
+      "src": "@intro,@verse,@chorus,@verse,@chorus,@bridge,@chorus,@outro",
+      "velocity": 100,
+      "note": "MAIN: lead-bass intro, verse, chorus, verse, chorus, tom-driven bridge, chorus, outro — 58 bars"
+    },
+    {
+      "key": "1",
+      "name": "cuHat",
+      "src": "m10,p0,8(F#e)",
+      "velocity": 72,
+      "note": "Closed hi-hat 8ths"
+    },
+    {
+      "key": "2",
+      "name": "cuBeat",
+      "src": "m10,p0,@cuHat&,C,D,Ce,Ce,D",
+      "velocity": 100,
+      "note": "Straight post-punk beat, snare on 2 and 4; launches the hats"
+    },
+    {
+      "key": "3",
+      "name": "cuTomBeat",
+      "src": "m10,p0,Ce,Fe,De,Fe,Ce,Fe,De,Fe",
+      "velocity": 100,
+      "note": "Tom-driven groove: floor tom on every off-8th between kick and snare"
+    },
+    {
+      "key": "4",
+      "name": "cuFill",
+      "src": "m10,p0,C+s,C+s,Bs,Bs,As,As,Gs,Gs,Fs,Fs,Fs,Fs,De,De",
+      "velocity": 100,
+      "note": "One-bar fill down the toms into two snares"
+    },
+    {
+      "key": "5",
+      "name": "cuEnd",
+      "src": "m10,p0,C#+w",
+      "velocity": 95,
+      "note": "Crash"
+    },
+    {
+      "key": "6",
+      "name": "bEm",
+      "src": "E++e,E++e,B+e,E++e,G++e,F#++e,E++e,B+e",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of melodic picked bass over Em (high on the neck)"
+    },
+    {
+      "key": "7",
+      "name": "bC",
+      "src": "C++e,C++e,G+e,C++e,E++e,D++e,C++e,G+e",
+      "velocity": 100,
+      "note": "SUBROUTINE: bass bar over C"
+    },
+    {
+      "key": "8",
+      "name": "bG",
+      "src": "G+e,G+e,D++e,G+e,B+e,A+e,G+e,D++e",
+      "velocity": 100,
+      "note": "SUBROUTINE: bass bar over G"
+    },
+    {
+      "key": "9",
+      "name": "bD",
+      "src": "D++e,D++e,A+e,D++e,F#++e,E++e,D++e,A+e",
+      "velocity": 100,
+      "note": "SUBROUTINE: bass bar over D"
+    },
+    {
+      "key": "A",
+      "name": "bassVerse",
+      "src": "m13,p34,2(@bEm,@bC,@bG,@bD)",
+      "velocity": 100,
+      "note": "8 bars of picked bass, Em C G D twice"
+    },
+    {
+      "key": "B",
+      "name": "bassHook",
+      "src": "m13,p34,E++e,B+e,E++e,F#++e,G++,F#++e,E++e,C++e,G+e,C++e,D++e,E++,D++e,C++e,B+e,G+e,B+e,C++e,D++,C++e,B+e,A+e,D++e,F#++e,E++e,D++,A+",
+      "velocity": 100,
+      "note": "4-bar lead-bass melody — the bass carries the tune, as in the intro"
+    },
+    {
+      "key": "C",
+      "name": "bassEnd",
+      "src": "m13,p34,E++e,B+e,G+e,E+e,B,E+,Ew",
+      "velocity": 100,
+      "note": "Ending: down the chord to a low E"
+    },
+    {
+      "key": "D",
+      "name": "gEm",
+      "src": "E++e,B++e,G++e,B++e,E+++e,B++e,G++e,B++e",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of chorused clean-guitar arpeggio over Em"
+    },
+    {
+      "key": "E",
+      "name": "gC",
+      "src": "C++e,G++e,E++e,G++e,C+++e,G++e,E++e,G++e",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over C"
+    },
+    {
+      "key": "F",
+      "name": "gG",
+      "src": "G+e,D++e,B+e,D++e,G++e,D++e,B+e,D++e",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over G"
+    },
+    {
+      "key": "G",
+      "name": "gD",
+      "src": "D++e,A++e,F#++e,A++e,D+++e,A++e,F#++e,A++e",
+      "velocity": 100,
+      "note": "SUBROUTINE: arpeggio over D"
+    },
+    {
+      "key": "H",
+      "name": "gtrArp",
+      "src": "m14,p27,2(@gEm,@gC,@gG,@gD)",
+      "velocity": 85,
+      "note": "8 bars of clean-guitar arpeggios"
+    },
+    {
+      "key": "I",
+      "name": "padStr",
+      "src": "m15,p50,2(E++m!w,C++!w,G+!w,D++!w)",
+      "velocity": 70,
+      "note": "8 bars of synth-string chords"
+    },
+    {
+      "key": "J",
+      "name": "melA",
+      "src": "B++w,C+++,B++,G++,E++,D+++w,A++,F#++,D++,A++",
+      "velocity": 100,
+      "note": "SUBROUTINE: 4-bar keyboard melody"
+    },
+    {
+      "key": "K",
+      "name": "leadMel",
+      "src": "m11,p80,2@melA",
+      "velocity": 92,
+      "note": "Square-lead melody, 8 bars"
+    },
+    {
+      "key": "L",
+      "name": "strCounter",
+      "src": "m16,p49,2(G++w,E++w,B++w,F#++w)",
+      "velocity": 70,
+      "note": "Slow-strings counter line, 8 bars"
+    },
+    {
+      "key": "M",
+      "name": "intro",
+      "src": "@bassHook,@bassHook&,4(@cuTomBeat)",
+      "velocity": 100,
+      "note": "SECTION: the bass melody alone, then again with the tom groove (8 bars)"
+    },
+    {
+      "key": "N",
+      "name": "verse",
+      "src": "@bassVerse&,@gtrArp&,8(@cuBeat)",
+      "velocity": 100,
+      "note": "SECTION: verse — bass, guitar arpeggios, beat"
+    },
+    {
+      "key": "O",
+      "name": "chorus",
+      "src": "@bassVerse&,@gtrArp&,@padStr&,@leadMel&,7(@cuBeat),@cuFill",
+      "velocity": 100,
+      "note": "SECTION: chorus — adds string pad and the lead melody"
+    },
+    {
+      "key": "P",
+      "name": "bridge",
+      "src": "@bassHook&,@strCounter&,@padStr&,4(@cuTomBeat),@bassHook&,4(@cuTomBeat)",
+      "velocity": 100,
+      "note": "SECTION: bridge — toms, bass melody twice, strings"
+    },
+    {
+      "key": "Q",
+      "name": "outro",
+      "src": "@bassEnd&,@cuFill,@cuEnd",
+      "velocity": 100,
+      "note": "SECTION: 2-bar ending"
+    },
+    {
+      "key": "R",
+      "name": "jam",
+      "src": "@bassVerse&,@gtrArp&,@padStr&,8(@cuBeat)",
+      "velocity": 100,
+      "note": "JAM: loops 8 bars to play over"
+    }
+  ]
+}

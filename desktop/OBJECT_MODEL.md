@@ -48,7 +48,7 @@ Methods:
 | `moveTo(x, y)` ✅ | drag engine | machines remember via `rememberPosition` |
 | `setState(s)` ◇ | everything | single choke-point so state→CSS→sound stays consistent |
 | `refresh()` ◇ | menu, poller | force one poll now (today only the queue tray has "Refresh now") |
-| `speak()` ◇ | voice "what does X do / how is X" | say intake→output, or current status ("Stemcutter: separating Boys of Summer, phase demucs") |
+| `speak()` ◇ | voice "what does X do / how is X" | say intake→output, or current status ("Stemcutter: separating Boys of Summer, phase queued for Logic") |
 | `serialize()` ◇ | debug/tests | plain-JSON snapshot for `__desk` assertions |
 
 ## Nouns (things that flow through machines)
@@ -67,7 +67,7 @@ Shared machine attrs: `accepts[]` ✅, `outputType` ◇ (today implied by `work`
 
 Per-machine extras:
 
-- **Stemcutter**: `renderPhases[]` ✅ (downloading→analyzing→demucs→mixing); `cancelJob()` ◇, `retryFailed()` ◇ (today _failed/ jobs need a terminal).
+- **Stemcutter**: `renderPhases[]` ✅ (downloading→analyzing→encoding SOURCE→queued for Logic); `cancelJob()` ◇, `retryFailed()` ◇ (today _failed/ jobs need a terminal).
 - **Tagger**: `card` ✅ (real bpm/key/singer); `editField(k, v)` ◇ (the card becomes a real metadata editor — writes through the existing PUT endpoints).
 - **Library**: `count` ✅, `drawer` ✅; `find(title)` ◇ (voice: "library, find Boys of Summer" → folder pops out), `randomChip()` ✅ (the demo chip is a real random song).
 - **The Amp**: `nowPlaying` ◇; `play(folder)` ✅ (opens portal tab), `stop()` ◇ — and the amp is where desk-audio ideas (audible drag, key chimes) live.

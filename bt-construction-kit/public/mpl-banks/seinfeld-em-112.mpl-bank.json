@@ -1,0 +1,271 @@
+{
+  "format": "simplestem-mpl-bank",
+  "version": 1,
+  "name": "Seinfeld",
+  "description": "A slap-bass study in the style of a 90s sitcom theme — original lines in E minor at 112 bpm, not a transcription of the show's theme — plus a tour of every MIDI channel and GM instrument. Rows 1-4 drums (ch 10), 5-8 slap SUBROUTINES that 9-B string together (ch 13), C keys (ch 15), D guitar (ch 14), E horns (ch 16), F-G lead (ch 11), H-J subroutines for the tours, K-O sections, P a channel check, Q-X instrument tours per channel (p range loops), Y-Z all 128 GM sounds. Row 0 plays the song. Program changes are heard only with a GM synth (DLSMusicDevice) on the Logic tracks.",
+  "created_by": {
+    "kind": "ai",
+    "name": "Claude",
+    "via": "Cowork chat"
+  },
+  "prompt": "a new MPL Bank called Seinfeld which seeks to recreate the seinfeld theme slap bass with a demonstration of all of the MIDI channels and instruments",
+  "created_at": "2026-11-12T00:00:00.000Z",
+  "bpm": 130,
+  "key": "Em",
+  "song": "Bm Blues",
+  "main": "0",
+  "slots": [
+    {
+      "key": "0",
+      "name": "seinfeld",
+      "src": "m11,@intro,@groove,@groove2,@hits,@outro",
+      "velocity": 76,
+      "note": "MAIN: intro (bass + pops), groove, groove 2, full band, outro — 20 bars"
+    },
+    {
+      "key": "1",
+      "name": "sfHat",
+      "src": "m10,p0,16(F#s)",
+      "velocity": 43,
+      "note": "Closed hi-hat 16ths"
+    },
+    {
+      "key": "2",
+      "name": "sfGroove",
+      "src": "m10,p0,@sfHat&,Ce,Rs,Cs,De,Rs,Cs,Re,Ce,De,Re",
+      "velocity": 71,
+      "note": "Funk groove: syncopated kick, snare on 2 and 4; launches the hat 16ths"
+    },
+    {
+      "key": "3",
+      "name": "sfPops",
+      "src": "m10,p0,Re,E+++s,Rs,R,F+++s,Rs,E+++s,Rs,R",
+      "velocity": 41,
+      "note": "Wood-block pops (GM has no mouth pops — high and low wood block stand in)"
+    },
+    {
+      "key": "4",
+      "name": "kitBeat",
+      "src": "Ce,F#e,De,F#e,Ce,Ce,De,F#e",
+      "velocity": 61,
+      "note": "SUBROUTINE: plain one-bar beat for the drum-kit tour (no m#/p#: the caller sets them)"
+    },
+    {
+      "key": "5",
+      "name": "slap1",
+      "src": "E-s,Rs,Es,Rs,E-s,E-s,Es,Rs,G-s,A-s,Rs,Es,Ds,Rs,B-s,Es",
+      "velocity": 47,
+      "note": "SUBROUTINE: slap bar 1 — thumb on the low E, popped octaves, a G-A hammer"
+    },
+    {
+      "key": "6",
+      "name": "slap2",
+      "src": "E-s,Es,Rs,E-s,Rs,Es,G-s,G#-s,A-s,Rs,As,Rs,G-s,Es,Ds,B-s",
+      "velocity": 45,
+      "note": "SUBROUTINE: slap bar 2 — chromatic climb to A"
+    },
+    {
+      "key": "7",
+      "name": "slapFill",
+      "src": "Es,Ds,B-s,A-s,G-s,E-s,Rs,E-s,G-s,A-s,B-s,Ds,Es,Rs,E+s,Rs",
+      "velocity": 64,
+      "note": "SUBROUTINE: one-bar fill down and up the E minor pentatonic, ends on a high pop"
+    },
+    {
+      "key": "8",
+      "name": "slapOct",
+      "src": "4(E-s,Es,Rs,Es)",
+      "velocity": 68,
+      "note": "SUBROUTINE: octave pops, thumb-pop-rest-pop"
+    },
+    {
+      "key": "9",
+      "name": "bassA",
+      "src": "m13,p36,@slap1,@slap2,@slap1,@slapFill",
+      "velocity": 52,
+      "note": "4 bars of slap bass (Slap Bass 1)"
+    },
+    {
+      "key": "A",
+      "name": "bassB",
+      "src": "m13,p37,@slapOct,@slap2,@slapOct,@slapFill",
+      "velocity": 100,
+      "note": "4 bars, octave version (Slap Bass 2)"
+    },
+    {
+      "key": "B",
+      "name": "slapEnd",
+      "src": "m13,p36,E-s,Es,G-s,G#-s,A-s,B-s,Ds,Es,R,E+s,Rs,Re,E-w",
+      "velocity": 100,
+      "note": "Ending: run up, high pop, low E rings"
+    },
+    {
+      "key": "C",
+      "name": "sfKeys",
+      "src": "m15,p4,2(R,E+m!e,Re,R,E+m!e,E+m!e),R,A+!e,Re,R,A+!e,A+!e,R,E+m!e,Re,R,E+m!e,E+m!e",
+      "velocity": 100,
+      "note": "Electric piano stabs, Em Em A Em"
+    },
+    {
+      "key": "D",
+      "name": "sfGtr",
+      "src": "m14,p28,32(Rs,E+m!s)",
+      "velocity": 100,
+      "note": "Muted guitar 16th skank on the off-16ths"
+    },
+    {
+      "key": "E",
+      "name": "sfHorns",
+      "src": "m16,p61,3(Rw),Re,E++m!s,E++m!s,R,D++!e,E++m!e,R",
+      "velocity": 100,
+      "note": "Brass section hits in the 4th bar"
+    },
+    {
+      "key": "F",
+      "name": "sfLead",
+      "src": "m11,p81,Rw,Rw,@leadLick",
+      "velocity": 80,
+      "note": "Saw-lead answer in bars 3-4"
+    },
+    {
+      "key": "G",
+      "name": "leadLick",
+      "src": "E++s,G++s,A++s,B++s,Rs,D+++s,B++s,A++s,G++e,E++e,R,Rs,E+++s,D+++s,B++s,A++e,G++e,E++,R",
+      "velocity": 69,
+      "note": "SUBROUTINE: 2-bar E minor pentatonic lick (the lead row and the lead tour call it)"
+    },
+    {
+      "key": "H",
+      "name": "gtrRiff",
+      "src": "E+s,Rs,G+s,A+s,Rs,E+s,D+s,Rs,E+e,G+e,A+",
+      "velocity": 100,
+      "note": "SUBROUTINE: one-bar guitar riff for the guitar tour"
+    },
+    {
+      "key": "I",
+      "name": "keysComp",
+      "src": "R,E+m!e,Re,R,E+m!e,E+m!e",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of Em stabs for the piano and organ tours"
+    },
+    {
+      "key": "J",
+      "name": "padChord",
+      "src": "E++m!,Re,E++m!e,A+!,R",
+      "velocity": 100,
+      "note": "SUBROUTINE: one bar of chords for the strings and brass tours"
+    },
+    {
+      "key": "K",
+      "name": "intro",
+      "src": "@bassA&,4(@sfPops)",
+      "velocity": 100,
+      "note": "SECTION: slap bass alone with wood-block pops"
+    },
+    {
+      "key": "L",
+      "name": "groove",
+      "src": "@bassA&,@sfKeys&,4(@sfGroove)",
+      "velocity": 92,
+      "note": "SECTION: bass, drums, electric piano"
+    },
+    {
+      "key": "M",
+      "name": "groove2",
+      "src": "@bassB&,@sfGtr&,@sfLead&,4(@sfGroove)",
+      "velocity": 85,
+      "note": "SECTION: octave bass, muted guitar, saw-lead answer"
+    },
+    {
+      "key": "N",
+      "name": "hits",
+      "src": "@bassA&,@sfKeys&,@sfGtr&,@sfHorns&,@sfLead&,4(@sfGroove)",
+      "velocity": 85,
+      "note": "SECTION: everyone — channels 10, 11, 13, 14, 15 and 16 at once"
+    },
+    {
+      "key": "O",
+      "name": "outro",
+      "src": "@slapEnd&,@sfGroove,m10,C#+w",
+      "velocity": 100,
+      "note": "SECTION: last groove bar, then the crash under the low E"
+    },
+    {
+      "key": "P",
+      "name": "chanCheck",
+      "src": "m10,p0,C,D,m11,p81,E++,B++,m13,p36,E-,E,m14,p28,E+m!,R,m15,p4,E+m!,R,m16,p48,E++m!,R",
+      "velocity": 100,
+      "note": "CHANNEL CHECK: two beats on each amp in turn — 10 drums (D), 11 lead (V), 13 bass (B), 14 guitar (G), 15 keys (P), 16 strings (O). Ch 12 is empty."
+    },
+    {
+      "key": "Q",
+      "name": "tourBass",
+      "src": "m13,p32..39(@slap1)",
+      "velocity": 100,
+      "note": "TOUR: the slap bar on all 8 GM basses, p32-39 (acoustic, finger, pick, fretless, slap 1-2, synth 1-2)"
+    },
+    {
+      "key": "R",
+      "name": "tourLead",
+      "src": "m11,p80..87(@leadLick)",
+      "velocity": 100,
+      "note": "TOUR: the lead lick on all 8 GM synth leads, p80-87"
+    },
+    {
+      "key": "S",
+      "name": "tourGtr",
+      "src": "m14,p24..31(@gtrRiff)",
+      "velocity": 100,
+      "note": "TOUR: the riff on all 8 GM guitars, p24-31 (nylon … distortion, harmonics)"
+    },
+    {
+      "key": "T",
+      "name": "tourPiano",
+      "src": "m15,p0..7(@keysComp)",
+      "velocity": 100,
+      "note": "TOUR: Em stabs on the 8 GM pianos, p0-7"
+    },
+    {
+      "key": "U",
+      "name": "tourOrgan",
+      "src": "m15,p16..23(@keysComp)",
+      "velocity": 100,
+      "note": "TOUR: the 8 GM organs, p16-23 (drawbar … accordion, harmonica)"
+    },
+    {
+      "key": "V",
+      "name": "tourStrings",
+      "src": "m16,p40..55(@padChord)",
+      "velocity": 100,
+      "note": "TOUR: strings and ensembles, p40-55 (violin … orchestra hit)"
+    },
+    {
+      "key": "W",
+      "name": "tourBrass",
+      "src": "m16,p56..71(@padChord)",
+      "velocity": 100,
+      "note": "TOUR: brass and reeds, p56-71 (trumpet … clarinet)"
+    },
+    {
+      "key": "X",
+      "name": "tourKits",
+      "src": "m10,p0,@kitBeat,p8,@kitBeat,p16,@kitBeat,p24,@kitBeat,p25,@kitBeat,p32,@kitBeat,p40,@kitBeat,p48,@kitBeat,p56,@kitBeat",
+      "velocity": 100,
+      "note": "TOUR: the GM drum kits — standard, room, power, electronic, TR-808, jazz, brush, orchestra, SFX (only a GM synth switches kits)"
+    },
+    {
+      "key": "Y",
+      "name": "gmTour1",
+      "src": "m15,p0..63(C++e,E++e,G++e,C+++e)",
+      "velocity": 100,
+      "note": "TOUR: every GM sound 0-63, two beats each (pianos to brass)"
+    },
+    {
+      "key": "Z",
+      "name": "gmTour2",
+      "src": "m15,p64..127(C++e,E++e,G++e,C+++e)",
+      "velocity": 100,
+      "note": "TOUR: every GM sound 64-127 (reeds to sound effects)"
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+ "format": "simplestem-mpl-bank",
+ "version": 1,
+ "name": "Modern sequencer styles",
+ "description": "Five loops in the style of present-day sequencer songs, written from each song's tempo, key and chord progression: drums, a bass line on the chord roots, and a chord or arpeggio part. They are style sketches, not transcriptions: the signature melodies and hooks are left out on purpose, and nothing here was measured against the recordings (tempo, key and chords are from memory). Start a song row (blinding, levitating, badguy, getlucky, uptown); its tempo token sets the bank tempo. m10 drums, m13 bass, m14 guitar, m15 keys, m16 pad, m11 arpeggio.",
+ "created_by": {
+  "kind": "ai",
+  "name": "Claude",
+  "via": "Cowork chat"
+ },
+ "prompt": "banks of sequencer songs in MPL; prompts that create MPL sequences that match modern-day sequencer songs",
+ "created_at": "2026-11-20T00:00:00.000Z",
+ "bpm": 120,
+ "song": "Modern sequencer styles",
+ "main": "0",
+ "slots": [
+  {
+   "name": "blinding",
+   "src": "171T,@blindingDrums&,@blindingBass&,@blindingPad&,@blindingArp&,8Rw",
+   "velocity": 100,
+   "key": "0",
+   "note": "In the style of Blinding Lights (The Weeknd) · 171 bpm · F minor · Fm, Cm, Eb, Bb, two bars each · 8 bars"
+  },
+  {
+   "name": "blindingDrums",
+   "src": "m10,p0,8e(|C,F#|,F#,|D,F#|,F#,|C,F#|,F#,|D,F#|,F#)",
+   "velocity": 100,
+   "key": "1"
+  },
+  {
+   "name": "blindingBass",
+   "src": "m13,p38,2e(8F),2e(8C),2e(8Eb),2e(8Bb)",
+   "velocity": 100,
+   "key": "2"
+  },
+  {
+   "name": "blindingPad",
+   "src": "m16,p89,+(2Fm!w,2Cm!w,2Eb!w,2Bb!w)",
+   "velocity": 100,
+   "key": "3"
+  },
+  {
+   "name": "blindingArp",
+   "src": "m11,p81,2e++(F,Ab,C+,Ab,F,Ab,C+,Ab),2e++(C,Eb,G,Eb,C,Eb,G,Eb),2e++(Eb,G,Bb,G,Eb,G,Bb,G),2e++(Bb,D+,F+,D+,Bb,D+,F+,D+)",
+   "velocity": 100,
+   "key": "4"
+  },
+  {
+   "name": "levitating",
+   "src": "103T,@levitatingDrums&,@levitatingBass&,@levitatingKeys&,4Rw",
+   "velocity": 100,
+   "key": "5",
+   "note": "In the style of Levitating (Dua Lipa) · 103 bpm · B minor · Bm, F#m, Em, Em · 4 bars"
+  },
+  {
+   "name": "levitatingDrums",
+   "src": "m10,p0,4e(|C,F#|,A#,|C,D#,F#|,A#,|C,F#|,A#,|C,D#,F#|,A#)",
+   "velocity": 100,
+   "key": "6"
+  },
+  {
+   "name": "levitatingBass",
+   "src": "m13,p38,e(B,B+,R,B,B+,R,B,B+),e(F#,F#+,R,F#,F#+,R,F#,F#+),2e(E,E+,R,E,E+,R,E,E+)",
+   "velocity": 100,
+   "key": "7"
+  },
+  {
+   "name": "levitatingKeys",
+   "src": "m15,p4,+(e(Bm!,R,Bm!,R,R,Bm!,R,Bm!),e(F#m!,R,F#m!,R,R,F#m!,R,F#m!),2e(Em!,R,Em!,R,R,Em!,R,Em!))",
+   "velocity": 100,
+   "key": "8"
+  },
+  {
+   "name": "badguy",
+   "src": "135T,@badguyDrums&,@badguyBass&,4Rw",
+   "velocity": 100,
+   "key": "9",
+   "note": "In the style of bad guy (Billie Eilish) · 135 bpm · G minor · Gm, Gm, Cm, D · 4 bars · kick and clap only"
+  },
+  {
+   "name": "badguyDrums",
+   "src": "m10,p0,4(C,|C,D#|,C,|C,D#|)",
+   "velocity": 100,
+   "key": "A"
+  },
+  {
+   "name": "badguyBass",
+   "src": "m13,p38,2e(G,R,G,G,R,G,R,G),e(C+,R,C+,C+,R,C+,R,C+),e(D+,R,D+,D+,R,D+,R,D+)",
+   "velocity": 100,
+   "key": "B"
+  },
+  {
+   "name": "getlucky",
+   "src": "116T,@getluckyDrums&,@getluckyBass&,@getluckyGuitar&,4Rw",
+   "velocity": 100,
+   "key": "C",
+   "note": "In the style of Get Lucky (Daft Punk) · 116 bpm · B minor · Bm, D, F#m, E · 4 bars"
+  },
+  {
+   "name": "getluckyDrums",
+   "src": "m10,p0,4e(|C,F#|,F#,|C,D,F#|,F#,|C,F#|,F#,|C,D,F#|,A#)",
+   "velocity": 100,
+   "key": "D"
+  },
+  {
+   "name": "getluckyBass",
+   "src": "m13,p33,e(B,R,B,B+,R,B,F#,B),e(D+,R,D+,D++,R,D+,A,D+),e(F#,R,F#,F#+,R,F#,C#+,F#),e(E,R,E,E+,R,E,B,E)",
+   "velocity": 100,
+   "key": "E"
+  },
+  {
+   "name": "getluckyGuitar",
+   "src": "m14,p28,+(e(Bm!,R,Bm!,Bm!,R,Bm!,R,Bm!),e(D!,R,D!,D!,R,D!,R,D!),e(F#m!,R,F#m!,F#m!,R,F#m!,R,F#m!),e(E!,R,E!,E!,R,E!,R,E!))",
+   "velocity": 100,
+   "key": "F"
+  },
+  {
+   "name": "uptown",
+   "src": "115T,@uptownDrums&,@uptownBass&,@uptownBrass&,4Rw",
+   "velocity": 100,
+   "key": "G",
+   "note": "In the style of Uptown Funk (Mark Ronson, Bruno Mars) · 115 bpm · D minor · Dm, Dm, G, G · 4 bars"
+  },
+  {
+   "name": "uptownDrums",
+   "src": "m10,p0,4e(|C,F#|,F#,|D,F#|,F#,|C,F#|,|C,F#|,|D,F#|,F#)",
+   "velocity": 100,
+   "key": "H"
+  },
+  {
+   "name": "uptownBass",
+   "src": "m13,p33,2e(D,R,D,R,D+,D,R,C+),2e(G,R,G,R,G+,G,R,F+)",
+   "velocity": 100,
+   "key": "I"
+  },
+  {
+   "name": "uptownBrass",
+   "src": "m15,p61,+(2e(Dm!,3R,Dm!,3R),2e(G!,3R,G!,3R))",
+   "velocity": 100,
+   "key": "J"
+  }
+ ]
+}

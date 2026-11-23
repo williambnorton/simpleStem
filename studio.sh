@@ -4,10 +4,10 @@
 # Manages three long-running processes:
 #   server   bt-construction-kit Express UI (http://localhost:3000)
 #   watcher  webloc_watch.sh  — dropped YouTube URLs → metadata jobs
-#   runner   queue_runner.sh  — jobs → STEMS/ + M4A/ (the slow demucs work)
+#   runner   queue_runner.sh  — jobs → SOURCE in STEMS/ + LOGIC_QUEUE/
 #
 # PIDs and logs live in .run/. Stopping kills each process *and its children*
-# (fswatch, node, demucs) and clears the runner lock.
+# (fswatch, node) and clears the runner lock.
 #
 # Usage:
 #   ./studio.sh start          # start any that aren't running

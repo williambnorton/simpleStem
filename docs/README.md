@@ -12,7 +12,7 @@ Runbook if the van leaves in an hour.
 | [02_GETTING_STARTED.md](02_GETTING_STARTED.md) | First launch on the Performer laptop, adding a song from YouTube, what happens during ingest, and playing your first song in each of the three playback modes. |
 | [03_PLAYER_REFERENCE.md](03_PLAYER_REFERENCE.md) | Every control in the player, region by region — pills, visualizer, sections, action bar, transport, LOOPER, pitch knobs, the stem mixer console, and the XR18 banner buttons. |
 | [04_GIGS_AND_SETLISTS.md](04_GIGS_AND_SETLISTS.md) | The Gig → Setlist → Song hierarchy, the gig picker and all nine pseudo-gigs, gig management, the Gig Builder, manual setlists, ghost-add, and auto-advance. |
-| [05_LIBRARY.md](05_LIBRARY.md) | The library table column by column: stars, tags, singer pulldown, drum chip, the ⋯ action menu (re-fetch, Re-stem in Logic, delete), search syntax, sorting, grid view, and Library Analytics. |
+| [05_LIBRARY.md](05_LIBRARY.md) | The library table column by column: stars, tags, singer pulldown, drum chip, the ⋯ action menu (re-fetch, delete), search syntax, sorting, grid view, and Library Analytics. |
 | [06_KEYBOARD_SHORTCUTS.md](06_KEYBOARD_SHORTCUTS.md) | The complete shortcut cheat sheet, organized by category, plus the meta combos and Keyboard Maestro notes. Press `?` in the portal for the live version. |
 | [07_LIBRARIAN.md](07_LIBRARIAN.md) | The Mac mini's role, a tour of the `/librarian` dashboard (Living Pipeline, health table, daemons), auto-update behavior, and `librarian.sh` commands. |
 | [08_GIG_DAY_RUNBOOK.md](08_GIG_DAY_RUNBOOK.md) | The pre-gig checklist (Flash Cache, offline test, XR18 hookup, sound check), during-gig operations, and the audio failure first-aid ladder. |

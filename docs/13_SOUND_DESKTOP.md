@@ -47,7 +47,7 @@ desktop deterministic physics:
 
 | Desktop object | Looks like | Input plate | Output | Existing code |
 |---|---|---|---|---|
-| **Stemcutter** | a jukebox with a saw blade | URL slot | `BackingTrack/` folder: `source.wav`, six stems, empty `metadata.json` | `webloc_watch.sh` + `stem.sh` (Demucs) |
+| **Stemcutter** | a jukebox with a saw blade | URL slot | `BackingTrack/` folder: `source.wav`, six stems, empty `metadata.json` | `webloc_watch.sh` + `stem.sh` + Logic Pro Stem Splitter |
 | **Tagger** | a machine with checkboxes on its cover | folder tray | fills `metadata.json`: bpm, key, song details, empty section breaks, stem-mix trims, play count, last-played | `metadata.py` + `mpb_sync.py` + portal edits |
 | **Click Forge** | an anvil with a metronome | folder tray | beat grid + click/count-in defaults into the folder | visualizer beat tracker + click actions |
 | **Setlist Press** | a ring binder press | multi-folder tray | `Setlist/` folder of aliases, ordered | `SETLISTS/*.json`, Make-Gig-from-selection |
