@@ -217,6 +217,19 @@ def fill_gaps(base, stem_dir, meta):
     return meta, changed
 
 
+def _stemmed_at_iso(stem_dir, stems):
+    """Birth date of the render: mtime of the vocals stem (written once at
+    render time, never touched again — metadata.json's mtime moves on every
+    favorite/singer/automation save so it can't act as a birth date)."""
+    name = stems.get('vocals') or 'metadata.json'
+    try:
+        ts = os.path.getmtime(os.path.join(stem_dir, name))
+        return datetime.fromtimestamp(ts, tz=timezone.utc) \
+            .strftime('%Y-%m-%dT%H:%M:%SZ')
+    except OSError:
+        return None
+
+
 def build_stems_row(base, stem_dir, files_in_folder, meta):
     """Match scanStems output in bt-construction-kit/server.js byte-for-byte."""
     stems = pick_stem_files(files_in_folder)
