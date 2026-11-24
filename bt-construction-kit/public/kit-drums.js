@@ -9,6 +9,17 @@
 // M and S, and a level fill. Wherever the app silences the drum stem itself (LOOPER, MPL
 // drums) the pieces are silent too. If a piece cannot play (not loaded, stalled),
 // the whole drum stem comes back, so the drums never drop out.
+//
+// KIT is ON by default (Bill 2026-11-23). While the Drums strip is an MPL strip (INPUT ROUTING:
+// MPL, or its MPL button) the row is shown for every song with a drum MPL and its faders are MPL
+// faders: each sets how hard that drum's notes of the drum sequence play (80% = as written), with
+// its own value (kit.mplVol); M and S among the pieces are shared with the audio pieces.
+//
+// Each strip also has (Bill 2026-11-23): the boost buttons +5 +10 +20 +50 dB of the stem strips; an MPL
+// button that swaps the piece's audio for its own transcription (<piece>_MPL.json, every hit where it was
+// found) with the transcription's accuracy against the audio — hold or Option-click for both together;
+// a blue LED that lights on each MPL note; and, while its fader is an MPL fader, speaker buttons that are
+// Logic tracks (kit.mplRoute; mpl-drums.js does the sending).
 
 const KIT_PIECES = [
   { id: 'kick',       label: 'Kick',    amp: 'D', rgb: '46, 204, 113' },   // the drum amp, where the whole kit used to be
@@ -25,13 +36,17 @@ const KIT_TICK_MS = 40;
 const KIT_UNITY = 0.8;       // where a fader rests, like the stem faders: the piece at the level it has in the drum stem
 const KIT_PRESETS = [100, 75, 50, 10, 5];
 
-const kit = { on: false, vol: {}, mute: {}, solo: {}, routes: {} };
+const kit = { on: true, v3: true, vol: {}, mplVol: {}, mute: {}, solo: {}, routes: {}, mplRoute: {}, boost: {} };   // v3: saved since ON became the default
 let kitSong = null;          // folder whose pieces are loaded into the elements
 let kitProbe = null;         // folder being asked "do you have kit pieces?"
 let kitFailed = false;       // a piece of kitSong would not load
 let kitNodes = null;         // audio graph, built once the app's graph exists
-let kitWasLive = null;
-let kitBadSince = 0, kitHadAll = false, kitLastG = -1;
+let kitWasLive = null, kitWasMpl = null;
+const kitMpl = () => typeof mplFaderOn === 'function' && mplFaderOn('drums');
+const kitPieceMode = (id) => (typeof mplKitMpl !== 'undefined' && mplKitMpl[id]) || 'off';       // the piece's own MPL button: off / replace / both
+const kitMplFader = (id) => kitMpl() || kitPieceMode(id) === 'replace';                          // is this strip's fader an MPL fader now
+let kitSig = '';
+let kitBadSince = 0, kitHadAll = false, kitLastG = -1, kitHoldUntil = 0;
 const kitEls = {};
 const kitNudge = {};
 
@@ -39,16 +54,19 @@ function kitSpread() { const r = {}; for (const p of KIT_PIECES) r[p.id] = ['L',
 
 (function kitLoadState() {
   kit.routes = kitSpread();
-  for (const p of KIT_PIECES) { kit.vol[p.id] = KIT_UNITY; kit.mute[p.id] = false; kit.solo[p.id] = false; }
+  for (const p of KIT_PIECES) { kit.vol[p.id] = KIT_UNITY; kit.mplVol[p.id] = KIT_UNITY; kit.mute[p.id] = false; kit.solo[p.id] = false; kit.mplRoute[p.id] = ['D']; kit.boost[p.id] = 0; }
   try {
     const s = JSON.parse(localStorage.getItem(KIT_KEY) || 'null');
     if (!s) return;
-    kit.on = !!s.on;
+    kit.on = s.v3 ? !!s.on : true;            // a state saved before ON was the default says nothing about what Bill wants now
     for (const p of KIT_PIECES) {
       if (typeof (s.vol || {})[p.id] === 'number') kit.vol[p.id] = Math.max(0, Math.min(1, s.vol[p.id]));
+      if (typeof (s.mplVol || {})[p.id] === 'number') kit.mplVol[p.id] = Math.max(0, Math.min(1, s.mplVol[p.id]));
       kit.mute[p.id] = !!(s.mute || {})[p.id]; kit.solo[p.id] = !!(s.solo || {})[p.id];
       const r = (s.routes || {})[p.id];
       if (Array.isArray(r)) kit.routes[p.id] = r.filter(k => k in KIT_OUT);
+      const mr = (s.mplRoute || {})[p.id];
+      if (Array.isArray(mr)) kit.mplRoute[p.id] = mr.filter(k => 'VDBGPO'.includes(k));
     }
   } catch (e) {}
 })();
@@ -123,8 +141,8 @@ function kitApplyFaders() {
   if (!kitNodes) return;
   const anySolo = KIT_PIECES.some(p => kit.solo[p.id]);
   for (const p of KIT_PIECES) {
-    const off = kit.mute[p.id] || (anySolo && !kit.solo[p.id]);
-    kitNodes.piece[p.id].fader.gain.value = off ? 0 : kit.vol[p.id] / KIT_UNITY;
+    const off = kit.mute[p.id] || (anySolo && !kit.solo[p.id]) || kitPieceMode(p.id) === 'replace';   // its MPL is playing in its place
+    kitNodes.piece[p.id].fader.gain.value = off ? 0 : kit.vol[p.id] / KIT_UNITY * Math.pow(10, (kit.boost[p.id] || 0) / 20);
   }
 }
 function kitApplyRoutes(id) {
@@ -155,6 +173,9 @@ function kitReady() {
 }
 
 function kitTick() {
+  const mpl = kitMpl();
+  const sig = mpl + '|' + KIT_PIECES.map(p => kitPieceMode(p.id) + (typeof mplAcc === 'function' ? mplAcc(p.id) : '')).join(',') + '|' + (typeof mplRouteOf === 'function' ? mplRouteOf('drums').has('D') : '');
+  if (mpl !== kitWasMpl || sig !== kitSig) { kitWasMpl = mpl; kitSig = sig; kitApplyFaders(); kitPaint(); }
   const want = kitSongWanted();
   if (want !== kitProbe) kitCheckSong(want);
   if (!kitNodes) {
@@ -167,7 +188,7 @@ function kitTick() {
   if (live !== kitWasLive) { kitWasLive = live; kitPaint(); }
   const stem = dn.mediaMute.gain.value * dn.preFader.gain.value;   // 0 while the app has the drum stem silenced (LOOPER, MPL drums)
   const g = live ? dn.stripGain.gain.value * stem : 0;
-  if (g !== kitLastG) {
+  if (g !== kitLastG && performance.now() >= kitHoldUntil) {
     kitLastG = g;
     for (const p of KIT_PIECES) kitNodes.piece[p.id].group.gain.setTargetAtTime(g, audioCtx.currentTime, 0.012);
   }
@@ -205,6 +226,21 @@ function kitTick() {
   }
 }
 
+// INPUT ROUTING (mpl-drums.js) switches the stems on a downbeat, set on the audio clock: the pieces go
+// silent, or come back, with the drum stem at `when`; the tick leaves their level alone until just after.
+function kitGateAt(stemOn, when) {
+  if (!kitNodes) return;
+  const dn = stripNodes.drums;
+  const g = stemOn && kit.on && kitReady() ? dn.stripGain.gain.value * dn.mediaMute.gain.value : 0;
+  for (const p of KIT_PIECES) { const gp = kitNodes.piece[p.id].group.gain; try { gp.cancelScheduledValues(when); gp.setValueAtTime(g, when); } catch (e) {} }
+  kitHoldUntil = performance.now() + (when - audioCtx.currentTime) * 1000 + 30;
+}
+function kitGateCancel() {
+  if (!kitNodes) return;
+  for (const p of KIT_PIECES) { try { kitNodes.piece[p.id].group.gain.cancelScheduledValues(0); } catch (e) {} }
+  kitHoldUntil = 0; kitLastG = -1;
+}
+
 // ── panel: a second row of strips, built like the stem strips ─────────────
 function kitBuild() {
   const host = document.querySelector('.faders-container');
@@ -212,6 +248,9 @@ function kitBuild() {
   const panel = document.createElement('div');
   panel.id = 'kit-panel'; panel.className = 'kit-panel'; panel.style.display = 'none';
   const out = (p, k) => `<button class="pos-btn pos-${k} kit-out" data-out="${k}" title="${p.label} → ${k === 'L' ? 'left main' : k === 'R' ? 'right main' : 'amp ' + k}">${k}</button>`;
+  const boost = (p, db) => `<button class="boost-btn boost-${db} kit-boost${db >= 20 ? ' boost-extreme' : ''}" data-db="${db}" title="${db >= 20
+    ? `Boost ${p.label} by +${db} dB (~${db === 20 ? '10x' : '316x'} gain). DIAGNOSTIC: it will clip real signal. Use it to hear faint bleed.`
+    : `Boost ${p.label} by +${db} dB. Click again to switch it off; one boost at a time.`}">+${db}</button>`;
   panel.innerHTML = `
     <div class="kit-head">
       <span class="kit-title">DRUM KIT</span>
@@ -227,7 +266,7 @@ function kitBuild() {
         <div class="pos-middle-row">
           <div class="pos-side-left">${out(p, 'O')}${out(p, 'L')}${out(p, 'G')}</div>
           <div class="fader-container">
-            <div class="channel-header"><span class="channel-icon text-green"><i data-lucide="drum"></i></span><span class="channel-name">${p.label}</span></div>
+            <div class="channel-header"><span class="channel-icon text-green"><i data-lucide="drum"></i></span><span class="channel-name">${p.label}</span><span class="mpl-led" data-led="${p.id}" title="Lights each time one of this piece's MPL notes sounds."></span></div>
             <div class="fader-track has-presets">
               <input type="range" class="vertical-slider kit-fader" min="0" max="1" step="0.01" title="${p.label} level — 80% is the level it has in the drum stem">
               <div class="fader-presets">${KIT_PRESETS.map(v => `<button type="button" class="fader-preset" data-pct="${v}" title="Set ${p.label} to ${v}%">${v}</button>`).join('')}</div>
@@ -236,10 +275,11 @@ function kitBuild() {
           </div>
           <div class="pos-side-right">${out(p, 'P')}${out(p, 'R')}${out(p, 'B')}</div>
         </div>
-        <div class="pos-bottom-row">${out(p, 'D')}</div>
+        <div class="pos-bottom-row">${boost(p, 5)}${boost(p, 10)}${out(p, 'D')}${boost(p, 20)}${boost(p, 50)}</div>
         <div class="channel-buttons">
           <button class="mute-btn kit-mute" title="Mute ${p.label}">M</button>
           <button class="solo-btn kit-solo" title="Solo ${p.label} among the drum pieces">S</button>
+          <button class="mpl-strip-btn kit-mpl none">MPL</button>
         </div>
       </div>`).join('')}
     </div>`;
@@ -252,12 +292,25 @@ function kitBuild() {
     if (b.id === 'kit-on') { kit.on = !kit.on; }
     else if (b.id === 'kit-spread') { kit.routes = kitSpread(); KIT_PIECES.forEach(p => kitApplyRoutes(p.id)); }
     else if (b.id === 'kit-home') { for (const p of KIT_PIECES) { kit.routes[p.id] = ['L', 'R', 'D']; kitApplyRoutes(p.id); } }
+    else if (id && b.classList.contains('kit-out') && kitMplFader(id)) {          // an MPL fader: the speakers are Logic tracks
+      const k = b.dataset.out, r = kit.mplRoute[id] || [];
+      if (k === 'L' || k === 'R') { try { showToast('In MPL mode the sound comes from Logic: pick one of its tracks (V, D, B, G, P, O)'); } catch (x) {} return; }
+      kit.mplRoute[id] = r.includes(k) ? r.filter(x => x !== k) : r.concat(k);
+    }
     else if (id && b.classList.contains('kit-out')) {
       const k = b.dataset.out, r = kit.routes[id] || [];
       kit.routes[id] = r.includes(k) ? r.filter(x => x !== k) : r.concat(k);
       kitApplyRoutes(id);
     }
-    else if (id && b.classList.contains('fader-preset')) { kit.vol[id] = +b.dataset.pct / 100; kitApplyFaders(); }
+    else if (id && b.classList.contains('kit-boost')) { const db = +b.dataset.db; kit.boost[id] = kit.boost[id] === db ? 0 : db; kitApplyFaders(); }
+    else if (id && b.classList.contains('kit-mpl')) {
+      if (typeof mplHoldFired === 'function' && mplHoldFired(e)) return;        // the hold already switched it to MPL+
+      if (b.classList.contains('disabled') || typeof mplKitPieceSet !== 'function') return;
+      const m = kitPieceMode(id);
+      mplKitPieceSet(id, m === 'both' || (m === 'replace' && !e.altKey) ? 'off' : e.altKey ? 'both' : 'replace');
+      return;
+    }
+    else if (id && b.classList.contains('fader-preset')) { (kitMplFader(id) ? kit.mplVol : kit.vol)[id] = +b.dataset.pct / 100; kitApplyFaders(); }
     else if (id && b.classList.contains('kit-mute')) { kit.mute[id] = !kit.mute[id]; kitApplyFaders(); }
     else if (id && b.classList.contains('kit-solo')) { kit.solo[id] = !kit.solo[id]; kitApplyFaders(); }
     else return;
@@ -266,33 +319,52 @@ function kitBuild() {
   panel.addEventListener('input', (e) => {
     const f = e.target.closest('.kit-fader'); if (!f) return;
     const id = f.closest('.kit-strip').dataset.kit;
-    kit.vol[id] = parseFloat(f.value); kitApplyFaders(); kitSave(); kitPaint();
+    (kitMplFader(id) ? kit.mplVol : kit.vol)[id] = parseFloat(f.value); kitApplyFaders(); kitSave(); kitPaint();
   });
   kitPaint();
 }
 
 function kitPaint() {
   const panel = document.getElementById('kit-panel'); if (!panel) return;
-  panel.style.display = kitSong ? '' : 'none';
-  if (!kitSong) return;
+  const mpl = kitMpl();
+  panel.style.display = kitSong || mpl ? '' : 'none';
+  if (!kitSong && !mpl) return;
   const live = kit.on && kitReady();
-  panel.classList.toggle('on', kit.on);
+  panel.classList.toggle('on', kit.on || mpl);
+  panel.classList.toggle('mpl-mode', mpl);
   const on = document.getElementById('kit-on');
   on.textContent = kit.on ? 'KIT ON' : 'KIT OFF'; on.classList.toggle('active', kit.on);
   document.getElementById('kit-status').textContent =
-    !kit.on ? 'Off — the whole drum stem is playing. Click KIT to play the six pieces on their own faders and amps.'
+    mpl ? 'MPL: each fader sets how hard that drum\'s notes play (80% = as written). M and S work among the pieces; the Drums fader, M and S control them all.'
+    : !kit.on ? 'Off — the whole drum stem is playing. Click KIT to play the six pieces on their own faders and amps.'
     : kitFailed ? 'The pieces would not load — the whole drum stem is playing.'
     : !live ? 'Loading the six pieces… the whole drum stem plays until they are ready.'
     : 'Six pieces in place of the drum stem. The Drums fader, M and S control them all.';
   const stereo = typeof outputChannelCount !== 'undefined' && outputChannelCount <= 2;
   for (const strip of panel.querySelectorAll('.kit-strip')) {
-    const id = strip.dataset.kit, r = kit.routes[id] || [];
+    const id = strip.dataset.kit, mf = kitMplFader(id), pm = kitPieceMode(id), vol = mf ? kit.mplVol : kit.vol;
+    const r = (mf ? kit.mplRoute[id] : kit.routes[id]) || [];
+    strip.classList.toggle('mpl-fader', mf); strip.classList.toggle('mpl-piece', mpl || pm !== 'off');
     for (const b of strip.querySelectorAll('.kit-out')) {
-      b.classList.toggle('active', r.includes(b.dataset.out));
-      b.disabled = stereo && KIT_OUT[b.dataset.out] > 1;      // no such output on this audio device, as on the stem strips
+      const k = b.dataset.out;
+      b.classList.toggle('active', r.includes(k) && !(mf && k === 'D' && typeof mplRouteOf === 'function' && !mplRouteOf('drums').has('D')));
+      b.disabled = mf ? (k === 'L' || k === 'R') : (stereo && KIT_OUT[k] > 1);      // no such output on this audio device, as on the stem strips; no Logic track for L and R
     }
-    const f = strip.querySelector('.kit-fader'), pct = Math.round(kit.vol[id] * 100);
-    if (document.activeElement !== f) f.value = kit.vol[id];
+    for (const b of strip.querySelectorAll('.kit-boost')) b.classList.toggle('latched', kit.boost[id] === +b.dataset.db);
+    const mb = strip.querySelector('.kit-mpl');
+    if (mb) {
+      const has13 = typeof mplL13 === 'function' && !!mplL13(), acc = typeof mplAcc === 'function' ? mplAcc(id) : null, label = (KIT_PIECES.find(p => p.id === id) || {}).label;
+      mb.classList.toggle('none', !has13);
+      mb.classList.toggle('disabled', acc == null);
+      mb.classList.toggle('active', pm !== 'off'); mb.classList.toggle('both', pm === 'both');
+      mb.textContent = (pm === 'both' ? 'MPL+' : 'MPL') + (acc != null ? ' ' + Math.round(acc) + '%' : ' —');
+      mb.title = acc == null ? 'No transcription of the ' + label + ' for this song: Logic found nothing in that piece.'
+        : pm === 'both' ? 'MPL+: the ' + label + ' audio and its MPL transcription play together, so you can hear how well they line up. Click to turn the MPL off.'
+        : pm === 'replace' ? 'The ' + label + ' is playing as MPL (its transcription, ' + Math.round(acc) + '% of its hits within 30 ms of the audio) in place of its audio. Click for the audio again.'
+        : 'MPL: swap the ' + label + ' audio for its MPL transcription (every hit where it was found; ' + Math.round(acc) + '% of them within 30 ms of the audio), as MIDI on channel 10. Click again for the audio. Hold the button (or Option-click) to hear both together.';
+    }
+    const f = strip.querySelector('.kit-fader'), pct = Math.round(vol[id] * 100);
+    if (document.activeElement !== f || Math.abs(parseFloat(f.value) - vol[id]) > 0.004) f.value = vol[id];
     strip.querySelector('.fader-value').textContent = pct + '%';
     for (const b of strip.querySelectorAll('.fader-preset')) b.classList.toggle('active', +b.dataset.pct === pct);
     strip.querySelector('.kit-mute').classList.toggle('active', kit.mute[id]);

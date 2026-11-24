@@ -3996,6 +3996,81 @@ app.get('/api/song/:base/mpl', async (req, res) => {
   res.json({ ok: true, from, bank });
 });
 
+// One stem's exact transcription (Bill 2026-11-23): STEMS/<base>/<stem>_MPL.json, written by stemscribe.py
+// for each of the six stems and the six kit pieces (every note where it was found, no loops), so the
+// Performer can play it against the stem's audio. Drive first, on a short budget; a good read is copied
+// to ~/.bt-cache so the same song still answers with no Drive (the cache copy answers first and is
+// refreshed from Drive behind the reply). 404 = that stem has no transcription.
+const MPL_STEM_NAMES = new Set(['vocals', 'bass', 'guitar', 'piano', 'other', 'kick', 'snare', 'hihat', 'toms', 'cymbals', 'percussion']);
+app.get('/api/song/:base/mpl/:stem', async (req, res) => {
+  const base = path.basename(String(req.params.base || '')), stem = String(req.params.stem || '');
+  if (!base || base.startsWith('.') || base.includes('..') || !MPL_STEM_NAMES.has(stem)) return res.status(400).json({ error: 'bad song or stem' });
+  const file = `${stem}_MPL.json`;
+  const main = path.join(STEMS_DIR, base, file), cache = path.join(AUDIO_CACHE_STEMS, base, file);
+  let txt = null, from = '', missing = false;
+  try { txt = await fsp.readFile(cache, 'utf8'); from = 'cache'; } catch (e) {}
+  if (txt != null) {                                         // answer from the cache now; pick up a newer Drive copy for the next time
+    const had = txt;
+    driveRace(fsp.readFile(main, 'utf8'), 5000).then(t => { if (t && t !== had) return fsp.writeFile(cache, t); }).catch(() => {});
+  } else {
+    try { txt = await driveRace(fsp.readFile(main, 'utf8'), 5000); from = 'drive'; } catch (e) { missing = !!(e && e.code === 'ENOENT'); }
+    if (txt != null) fsp.mkdir(path.dirname(cache), { recursive: true }).then(() => fsp.writeFile(cache, txt)).catch(() => {});
+  }
+  if (txt == null) return res.status(missing ? 404 : 503).json({ error: missing ? 'no transcription for this stem' : 'Drive did not answer in time' });
+  let bank;
+  try { bank = JSON.parse(txt); } catch (e) { return res.status(500).json({ error: 'the transcription file is not valid JSON' }); }
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, from, bank });
+});
+
+// Save rows edited in the Performer's MPL Player panel (Bill 2026-11-23). Body: { rows: [{ name, src }] }.
+// Only the `src` of the named rows changes (and the matching `text` lines); everything else in the
+// file stays as it is. The first save of a song keeps the file as it was in <base>_MPL.orig.json.
+// Drive is written first, through a temp file and a rename (an online-only Drive file cannot be
+// overwritten in place), then the gig cache copy. Nothing is written when Drive does not answer.
+app.put('/api/song/:base/mpl', express.json({ limit: '2mb' }), async (req, res) => {
+  const base = path.basename(String(req.params.base || ''));
+  if (!base || base.startsWith('.') || base.includes('..')) return res.status(400).json({ error: 'bad song' });
+  const rows = Array.isArray(req.body && req.body.rows) ? req.body.rows.filter(x => x && typeof x.name === 'string' && typeof x.src === 'string') : [];
+  if (!rows.length || rows.length > 400 || rows.some(x => !x.src.trim() || x.src.length > 20000)) {
+    return res.status(400).json({ error: 'rows must be [{ name, src }] with MPL in every src' });
+  }
+  const file = `${base}_MPL.json`, dir = path.join(STEMS_DIR, base);
+  const main = path.join(dir, file), cache = path.join(AUDIO_CACHE_STEMS, base, file), orig = path.join(dir, `${base}_MPL.orig.json`);
+  let txt = null;
+  try { txt = await driveRace(fsp.readFile(main, 'utf8'), 8000); }
+  catch (e) { return res.status(e && e.code === 'ENOENT' ? 404 : 503).json({ error: e && e.code === 'ENOENT' ? 'no MPL file for this song' : 'Drive did not answer in time — nothing was saved' }); }
+  let bank;
+  try { bank = JSON.parse(txt); } catch (e) { return res.status(500).json({ error: 'the MPL file is not valid JSON' }); }
+  const slots = Array.isArray(bank.slots) ? bank.slots : [];
+  const lineOf = (x) => `${x.name}=${x.src};`;
+  const textInStep = Array.isArray(bank.text) && bank.text.length === slots.length && slots.every((x, i) => bank.text[i] === lineOf(x));
+  const byName = new Map(slots.map((x, i) => [String((x && x.name) || '').toLowerCase(), i]));
+  const now = new Date().toISOString(), changed = [];
+  for (const x of rows) {
+    const i = byName.get(x.name.toLowerCase());
+    if (i == null) return res.status(400).json({ error: `no row named "${x.name}" in this song` });
+    if (slots[i].src !== x.src) { slots[i].src = x.src; slots[i].edited_at = now; changed.push(slots[i].name); }
+  }
+  if (!changed.length) return res.json({ ok: true, changed: [] });
+  if (textInStep) bank.text = slots.map(lineOf);
+  bank.edited_at = now;
+  const out = JSON.stringify(bank, null, 1) + '\n';
+  let keptOriginal = false;
+  try {
+    let haveOrig = true;
+    try { await driveRace(fsp.access(orig), 5000); } catch (e) { if (e && e.code === 'ENOENT') haveOrig = false; else throw e; }
+    if (!haveOrig) { await driveRace(fsp.writeFile(orig, txt), 10000); keptOriginal = true; }
+    const tmp = main + '.tmp';
+    await driveRace(fsp.writeFile(tmp, out).then(() => fsp.rename(tmp, main)), 12000);
+  } catch (e) {
+    return res.status(503).json({ error: 'could not write the song file on Drive (' + ((e && e.message) || e) + ') — nothing was saved' });
+  }
+  try { await fsp.mkdir(path.dirname(cache), { recursive: true }); await fsp.writeFile(cache, out); } catch (e) {}
+  try { logActivity('info', 'midi', `MPL saved for ${base}: ${changed.join(', ')}`); } catch (e) {}
+  res.json({ ok: true, changed, edited_at: now, original: path.basename(orig), keptOriginal });
+});
+
 // The catalog as MPL (2026-11-17): one entry per song for the MIDI console's song list — title, drum grade
 // and the song's top row. Read from the local copies in ~/.bt-cache (every song's MPL file is kept there),
 // so it answers with no Drive; parsed again only when a file there changes.
@@ -7847,7 +7922,21 @@ function mplAiPrompt(body) {
     .map((b, i) => ({ i, key: keyOf(i), name: String((b && b.name) || '').slice(0, 48), src: String((b && b.src) || '').slice(0, 4096) }))
     .filter(b => b.name || b.src.trim());
   const si = Math.max(0, Math.min(35, Math.round(+body.slot || 0)));
-  const ask = body.mode === 'slot'
+  const q = (x, n) => JSON.stringify(String(x == null ? '' : x).slice(0, n));
+  const ask = body.mode === 'row'
+    /* the Performer's MPL Player panel (2026-11-23): rewrite one row of a song file as the musician asks */
+    ? `Rewrite ONE row of a song file: slot 0, the ${String(body.strip || 'instrument').replace(/[^a-z]/gi, '').slice(0, 12)} part named ${q(body.name, 48)}. ` +
+      `It holds now: ${q(body.current, 4096)}. The musician wants: ${q(body.hint, 1000)}. ` +
+      `Rules for this row: one line; it must be EXACTLY ${Math.max(1, Math.min(4096, +body.beats || 16))} beats long — count them before answering; ` +
+      'keep its m# channel token at the start (and its p# if it has one); do not call or launch other slots. ' +
+      (body.strip === 'drums'
+        ? 'It is the whole drum kit on one row, so drums that sound together are written as a stack between bars with commas: |C,F#| is kick and ' +
+          'closed hat together. A stack takes one step; its length comes from the group or goes after the closing bar, as in 4e(|C,F#|,F#,|D,F#|,F#). '
+        : 'It plays one note at a time. ') +
+      `The song is in ${q(body.key, 24)} at ${Math.round(+body.bpm || 120)} bpm. Rows that play at the same time, for context only (do not change ` +
+      `them): ${JSON.stringify((Array.isArray(body.with) ? body.with : []).slice(0, 8).map(x => ({ name: String((x && x.name) || '').slice(0, 48), src: String((x && x.src) || '').slice(0, 1500) })))}. ` +
+      'Answer with exactly one entry in "slots": i = 0, the same name, the new MPL in "src". Leave "start" empty and keep the tempo.'
+    : body.mode === 'slot'
     ? `Recommend ONE sequence for slot ${si} (key ${keyOf(si)}` + (body.name ? `, named "${String(body.name).slice(0, 16)}"` : '') + '). ' +
       (String(body.hint || '').trim() ? `The musician wants: "${String(body.hint).slice(0, 1000)}". ` : 'The musician left it to you: write something that would sound good with the bank. ') +
       (String(body.current || '').trim() ? `The slot holds now: ${JSON.stringify(String(body.current).slice(0, 2000))} — use it as a starting point if it helps. ` : '') +

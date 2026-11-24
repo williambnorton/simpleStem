@@ -33,7 +33,7 @@
         <!-- The PORTALS tab bar IS the brand block now: wordmark + build
              version on the top line, the four system views as tabs below. -->
         <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
-  <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">simpleStem</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
+  <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">Mark5</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
   <div class="tb-grid" title="Switch view — ⌥1 Performer · ⌥2 Librarian · ⌥3 MIDI · ⌥4 Desktop"><a class="pb pb-performer here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
         <!-- Gig Mode toggle moved to the persistent top-right bar inside the
@@ -699,7 +699,9 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
                  the ring of amp buttons around every fader);
                  INSTRUMENT ROUTING = what plays (SOURCE, all stems, stem
                  combinations — the rest are muted).
-                 Logic in app.js (routingFx*, routingInput*). -->
+                 Logic in app.js (routingFx*, routingInput*).
+                 INPUT ROUTING = MPL | STEM for every strip at once (mplInput* in
+                 mpl-drums.js). -->
             <div class="routing-fx" id="routing-fx">
               <span class="routing-fx-label">OUTPUT ROUTING</span>
               <label class="routing-radio" title="Every channel on its default: each stem on its own amp (Vocals → V, Drums → D, Bass → B, Guitar → G, Piano → P, Other → O) plus L/R. Also clears Flip."><input type="radio" name="output-routing" value="normal" checked><span>Normal</span></label>
@@ -715,6 +717,10 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <button class="btn-secondary routing-in" data-input="BD" type="button" title="Bass + drums (the rest muted).">BD</button>
               <button class="btn-secondary routing-in" data-input="B" type="button" title="Bass only (the rest muted).">B</button>
               <button class="btn-secondary routing-in" data-input="BDV" type="button" title="Bass + drums + vocals (the rest muted).">BDV</button>
+              <span class="routing-fx-break"></span>
+              <span class="routing-fx-label">INPUT ROUTING</span>
+              <label class="routing-radio" title="MPL: every strip whose MPL this song has plays it in place of its stem, as MIDI to Logic Pro — the same as pressing the MPL button on each strip. A strip with no MPL part keeps its stem. Neither MPL nor STEM is lit while the strips are mixed."><input type="radio" name="input-routing" value="mpl"><span>MPL</span></label>
+              <label class="routing-radio" title="STEM: every strip plays its stem; all the strips' MPL buttons go off."><input type="radio" name="input-routing" value="stem" checked><span>STEM</span></label>
             </div>
 
             <div class="faders-container">
@@ -1318,10 +1324,11 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
   <!-- Audio Context scripts -->
   <script src="visualizer.js"></script>
   <script src="app.js"></script>
-  <script src="mpl-core.js?v=20261117"></script>
-  <script src="mpl-drums.js?v=20261118b"></script>
-  <script src="kit-drums.js?v=20261123a"></script>
+  <script src="mpl-core.js?v=20261123b"></script>
+  <script src="mpl-drums.js?v=20261123h"></script>
+  <script src="kit-drums.js?v=20261123d"></script>
   <script src="logic-queue.js?v=20261123a"></script>
+  <script src="mpl-player.js?v=20261123g"></script>
   <script src="mic_listener.js"></script>
   
   <script>

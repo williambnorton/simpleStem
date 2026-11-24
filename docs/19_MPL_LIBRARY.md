@@ -453,3 +453,71 @@ how closely each follows the audio.
   These are sketches; 60–80 % is usual.
 - A low drum number usually means the part is not on the sixteenth-note grid (shuffled hats, swelling
   cymbals), not that hits were missed.
+
+## INPUT ROUTING: MPL | STEM, and MPL strips (2026-11-23)
+
+Under OUTPUT ROUTING and INSTRUMENT ROUTING in the Stem Mixer Console there is a third row, **INPUT ROUTING**, with two choices: **MPL** and **STEM** (`mplInput*` in `mpl-drums.js`).
+
+- **MPL**: every strip whose MPL the song has plays it in place of its stem, the same as pressing the MPL button on each strip (drums on channel 10, the others on their own channels). A strip with no MPL part keeps its stem.
+- **STEM**: every strip back on its stem; all the strips' MPL buttons go off.
+- **When it switches.** Stopped: at once. Playing: on the downbeat of the next bar; the waiting choice has a blinking outline. A second click on it switches at once; a click on the other choice calls it off. With the section looper running the switch is at once.
+  - To MPL: half a second before the downbeat the MPL joins beside the stems with its notes held back; on the downbeat the first notes sound and the stems go silent.
+  - To STEM: no note from the downbeat on is sent, and the stems come back on the downbeat.
+  - The stems' switch (and the kit pieces', with the drum stem) is set on the audio clock, so it does not depend on the page's timers.
+- Neither is lit while the strips are mixed (some on MPL and some not, or an MPL+). MPL is greyed out when the song has no MPL or the six stems are not the source. The choice is not saved; a new song starts on STEM.
+
+**MPL strips.** A strip that plays its MPL in place of its stem (through INPUT ROUTING or its own MPL button) becomes an MPL strip: purple outline, "MPL" before the fader value. The layout (ring of amp buttons, presets, M, S) stays.
+
+- **Fader** = how hard that channel's notes play (80% = as written). It has its own value (`mplVol`, kept in the browser as `performer.mplVol.v1`), so the stem's level is where it was when the strip goes back to its stem. Moving it writes no stem level, no saved mixer state and no automation event. **M and S** are shared with the stem and work as before.
+- **Under M and S: the controls of the sequence the strip is playing now** (`mpl-player.js`, "MPL controls on the faders"). They follow the song from sequence to sequence; while you type, the block stays on the one you are changing.
+  - **⬇ ⬆** the sequence's notes an octave down / up (drum sequences are not shifted).
+  - **◀ ▶** backwards / forwards. The lit one drops the sequence out at its next cycle; pressed again it comes back. The other turns it round at its next cycle.
+  - **Text**: the sequence's MPL, to edit while it plays. A text that builds takes over at the sequence's next cycle; one that does not is shown in red and not used.
+  - **what do you want here?** + 🤖: a request in words; the AI rewrites the sequence (`POST /api/mpl/ai`, `mode: "row"`), used only if it builds and keeps its length.
+  - A sequence is shared by every place the song uses it. Nothing is written to the song file until **Save** in the MPL Player panel (● marks a changed sequence).
+- **DRUM KIT row.** KIT is now ON by default (a KIT OFF saved before this change is not carried over). While the Drums strip is an MPL strip the row is shown for every song with a drum MPL, and its faders are MPL faders: each sets how hard that drum's notes of the drum sequence play (kick 35/36, snare 37/38/40, hi-hat 42/44/46, toms 41/43/45/47/48/50, cymbals 49/51/52/53/55/57/59, percussion = the rest), with its own value (`kit.mplVol`). M and S among the pieces are shared with the audio pieces. The Drums fader, M and S remain master.
+
+**Song | Exact, scores, kit-piece MPL, LEDs and speakers (2026-11-23, second step).**
+
+- **Two MPL versions per stem.** *Song* = the stem's part in the song MPL (sections and loops, editable). *Exact* = the stem's own transcription, `<stem>_MPL.json` from `stemscribe.py`: every note where it was found, no loops, scored against the stem's audio (the `logic13` block of the song MPL). The server hands a transcription out at `GET /api/song/:base/mpl/:stem` (gig-cache copy first, refreshed from Drive behind the reply).
+- **Song | Exact** sits at the top of each MPL strip's control block (`mplSrc`, `mplSrcSet` in `mpl-drums.js`). Exact plays the transcription; nothing is editable there. For the Drums strip, Exact is the six kit pieces' transcriptions together. The choice stays from song to song; a song without a transcription plays Song.
+- **MPL (%)**: each MPL button shows the score of what it plays. Exact: the transcription's accuracy (drum pieces: hits within 30 ms of the audio; pitched stems: pitch classes heard, beat by beat). Song: only the drum part has a score (the song MPL's drum grade); the other five song parts were never measured, so they show none.
+- **DRUM KIT strips** now have the boost buttons (+5, +10, +20, +50 dB, one at a time, not saved) and an **MPL nn%** button: the piece's audio is swapped for its transcription (MIDI on channel 10); click again for the audio; hold the button or Option-click for both together (MPL+), which is the way to hear whether they line up. A piece with no transcription shows "MPL —". A piece on MPL has an MPL fader of its own. While a piece plays its transcription, the song MPL's drum part leaves that piece alone. INPUT ROUTING: STEM switches every piece back to audio.
+- **Blue LED** beside the name of every strip that is sending MPL notes (six strips and kit pieces): lit for a moment on each note.
+- **Speakers in MPL mode.** An MPL strip's sound is made in Logic, so its ring of amp buttons cannot move audio. Each lit button (blue) is instead a Logic track the strip's notes are sent to: V = MIDI 11, B = 13, G = 14, P = 15, O = 16, D = 10. The notes play with that track's instrument. A strip's own track is lit to begin with; click to add or remove. On the Drums strip the other five are the D sends (the drum sequence as notes of the song's key). Kit pieces have their own list (`kit.mplRoute`, D to begin with; another track gets the piece's hits as notes of the key). L and R have no track. The audio routing underneath is not changed.
+
+## MPL Player panel in the Performer (2026-11-23)
+
+`bt-construction-kit/public/mpl-player.js`. A small panel at the bottom left of the Performer, shown while the loaded song has an MPL file; click its title to fold or unfold it. It is the MIDI console's bank in miniature for the song that is playing: one line per row of the song's MPL (the song, its sections, their phrases, the parts), each with a button that carries the row's key (0-9, A-Z for the first 36 rows).
+
+**Starting and stopping pieces.** Press a row's button, or its key while **⌨ Keys** is lit:
+
+- A piece the song is playing drops out from its next cycle ("out from its next cycle", then "out"); pressed again it comes back at its next cycle. Everything a dropped row calls or starts is silent with it, so dropping a phrase or a section silences its parts.
+- A part the song is playing while its strip still plays the stem ("stem playing"): the MPL takes over that strip, as the strip's own MPL button does.
+- A piece the song is not playing loops on top, in time with the song, from the next bar ("looping on top"); pressed again it stops at the end of its cycle. Loops layer; they sound together with the stems, at the strip's fader level, and follow the strip's M and S.
+- **Reset** stops every loop, brings every row back and clears M, S, backwards and the levels.
+- **⌨ Keys**: while lit, 0-9 and A-Z belong to the rows and the Performer's own number and letter shortcuts are paused; Space still plays and pauses. Unlit, nothing changes for the Performer's shortcuts.
+
+**Row buttons.** Each row also carries the MIDI console's row buttons:
+
+- **⬇ ⬆** the row's own notes an octave down / up; drum notes and the rows it calls are left alone.
+- **−\\ +\\** every note of the row 1/24 beat earlier / later.
+- **🤖** opens the editor on the row with the Ask AI box ready. **🗑** clears the row to rests of the same length, so the song still lines up; pressed again (**↶**) its text comes back.
+- **➜** copies the row, with the rows it calls, to the Favorites bank of the MIDI console (`PUT /api/mpl/banks/favorites.mpl-bank.json`).
+- **Level** slider: the row's level and that of everything under it (75 = as written; double-click = 75).
+- **◀ ▶** play the row backwards / forwards: the lit one stops it, the other turns it round at its next cycle.
+- **M S** mute / solo the row and everything it calls or starts, at once.
+- **≡** (in the editor) puts each sequence group of the row on its own line, or joins them again; it plays the same.
+
+Octave, feel and 🗑 change the row's text, so they are saved with **Save** like any edit; level, direction, M and S are not saved and last until Reset or the next song.
+
+**Edit** opens the editor for the selected row (click a row's name, or pick a strip to follow the row that strip is playing):
+
+- **Row text.** Checked as you type; a text that does not build is shown in red and not used. A good one takes over at the row's next cycle ("new text next cycle"), or at once when the song is stopped or the row has no further cycle. A row whose length differs from the file's gets a warning, because it drifts against the other parts.
+- **Step grid (drum parts).** Sixteen steps to the bar; click a step to add or remove a hit; the row is written as `m10,<repeats>s(...)`. Louder (`^`) and softer (`v`) marks are kept. "Loop" is the stretch the row repeats; choose a longer one to change a single bar. A row with timing marks or notes off the sixteenth grid is flagged: a click rewrites it as straight sixteenths.
+- **Ask AI.** A request in words is sent with the row, its length, the song's key and tempo and the rows that play with it to `POST /api/mpl/ai` (`mode: "row"`, Claude Code on the Performer). The answer is used only if it builds and has the same length.
+- **Undo, Revert row.** **Save** (in the bar) sends the changed rows to `PUT /api/song/:base/mpl`, which changes only those rows' `src` (and their `text` lines), marks them `edited_at`, writes Drive first and then the gig cache, and on the first save of a song keeps the file as it was in `<song>_MPL.orig.json`. Nothing is written until Save; unsaved changes are lost when another song is loaded (a toast says so). Which rows are out or looping is not saved: it lasts until Reset or the next song.
+
+A row is shared by every phrase that calls it, so a change is heard everywhere the row is used. Grades, the `.mid` file and the per-stem MPL files still describe a row as it was measured.
+
+Engine side (`mpl-drums.js`): `mplLive = { off, ov, mute, solo, vol, rev }` holds the rows dropped out, the loops on top, and the rows muted, soloed, turned in level or played backwards; `mplDrumsBuild` skips the notes of dropped rows (through launches and through the call path the parser leaves on in-line tokens), builds the loops into `overlays`, and returns `spans` (every pass of every row) and the bank; `mplDrumsRebuild(bank, soft)` builds again and, when soft, leaves the notes already on their way alone and continues every list after them, so a switch at a cycle boundary neither cuts nor doubles a note. The panel applies a waiting switch when the posted notes reach the boundary.
