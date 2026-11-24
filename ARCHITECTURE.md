@@ -674,7 +674,7 @@ Install deps with `pipx inject demucs mido python-rtmidi`.
 | `GET` | `/api/version`, `POST /api/update` | Self-update: file-mtime versioning, restart on drift. |
 | `GET` | `/api/song/:base/metadata` | Per-song metadata + artifact summary. |
 | `POST` | `/api/song/:base/refetch` | Wipe artifacts; re-ingest from a new URL. |
-| `GET` | `/api/audio/song-source/:folder` | The song's stereo original for the SOURCE pill: `STEMS/<folder>/<folder>_SOURCE.m4a`, else `AUDIO_SOURCES/<folder>.m4a`; cached on first play in `~/.bt-cache/SONG_SOURCES/`. |
+| `GET` | `/api/audio/song-source/:folder` | The song's stereo original for the SOURCE pill: `STEMS/<folder>/<folder>_SOURCE.m4a`, else `AUDIO_SOURCES/<folder>.m4a`; cached for every song by the precache pass in `~/.bt-cache/SONG_SOURCES/`. |
 | `GET` | `/api/prune/candidates` | Prune page (`/prune.html`): duplicate-version groups with a suggested keeper, live tracks, songs with ≤ 1 play, and the gigs/setlists that use each. |
 | `POST` | `/api/prune/apply` | Merge each duplicate group into its keeper (plays, favorite, tags, lyrics; same-video timed data; setlist/gig entries re-pointed), then hard-delete the rest. Needs `confirm: <count>`. |
 | `GET` | `/api/mpl/library` | MPL library: summaries of every set in `MPL_LIBRARY/`, newest first. |

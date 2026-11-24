@@ -586,8 +586,8 @@ const SIX_STEM_NAMES = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
 // Every cacheable m4a in a song folder, relative to it (stems and kit
 // pieces). `names` is the folder's readdir() the caller already has.
 async function songStemM4as(folder, names) {
-  // <folder>_SOURCE.m4a (the stereo original, CONTRACTS F-9) stays on Drive:
-  // ~3 GB across the library must never push stems out of the gig cache.
+  // <folder>_SOURCE.m4a (the stereo original, CONTRACTS F-9) is not a stem:
+  // the precache pass copies it separately into SONG_SOURCES/.
   return names.filter(f => /\.m4a$/i.test(f) && !/_SOURCE\.m4a$/i.test(f));
 }
 // Changes made on the Performer that the Librarian's CATALOG.json can lag
@@ -2824,6 +2824,31 @@ async function precacheAllStemsM4a(opts) {
             localCopied++;
           } catch (e) { cacheJobState.failed++; }
         }
+        // The original stereo too (Bill 2026-11-24: "Cache all SOURCE"), so the
+        // SOURCE input plays with no Drive. It goes where /api/audio/song-source
+        // looks: SONG_SOURCES/. Stems come first; the free-space floor still holds.
+        const srcName = song + '_SOURCE.m4a';
+        if (names.includes(srcName)) {
+          const srcDir = path.join(AUDIO_CACHE_DIR, 'SONG_SOURCES'), srcCache = path.join(srcDir, srcName);
+          const sizeOf = (f) => fsp.stat(f).then(s => s.size, () => -1);
+          if (!force && (await sizeOf(srcCache)) > 0) cacheJobState.skipped++;
+          else if (!(await precacheHasRoom())) cacheJobState.noRoom = (cacheJobState.noRoom || 0) + 1;
+          else {
+            try {
+              // A copy already beside the cached stems is reused when it is the same size as Drive's.
+              const beside = path.join(dst, srcName);
+              const bs = force ? -1 : await sizeOf(beside);
+              if (bs > 0 && bs === (await sizeOf(path.join(src, srcName)))) {
+                await fsp.mkdir(srcDir, { recursive: true });
+                await fsp.copyFile(beside, srcCache);
+              } else {
+                await ensureCachedAsync(path.join(src, srcName), srcCache, { force });
+              }
+              cacheJobState.copied++;
+              cacheJobState.sources = (cacheJobState.sources || 0) + 1;
+            } catch (e) { cacheJobState.failed++; }
+          }
+        }
         try {
           await fsp.writeFile(
             path.join(dst, '.cached'),
@@ -3972,9 +3997,9 @@ app.get('/api/audio/source/:file', (req, res) => {
 
 // A song's original stereo for the player's SOURCE pill (Bill 2026-11-01):
 // STEMS/<base>/<base>_SOURCE.m4a (CONTRACTS F-9), else the older
-// AUDIO_SOURCES/<base>.m4a. Cache-first like stems; the first play copies
-// it to ~/.bt-cache/SONG_SOURCES/ so the next one works offline. The bulk
-// precache still skips these (F-9) — only songs actually played get cached.
+// AUDIO_SOURCES/<base>.m4a. Cache-first like stems, from
+// ~/.bt-cache/SONG_SOURCES/. The stem precache pass fills that folder for
+// every song (Bill 2026-11-24: "Cache all SOURCE").
 const AUDIO_CACHE_SONG_SOURCES = path.join(AUDIO_CACHE_DIR, 'SONG_SOURCES');
 app.get('/api/audio/song-source/:base', async (req, res) => {
   const base = path.basename(String(req.params.base || ''));

@@ -63,6 +63,24 @@ VARIANT_PATTERNS = [
 DRIVE_DUP_M4A_RE = re.compile(r' \(\d+\)\.m4a$', re.I)
 LOOP_M4A_RE      = re.compile(r'[_ ]loop\d+[_ ]\d+bars\.m4a$', re.I)
 DRIVE_DUP_DIR_RE = re.compile(r' \(\d+\)$')
+DRIVE_DUP_NAME_RE = re.compile(r'^(.*) \(\d+\)(\.[^.]+)?$')
+
+
+def undup_names(names):
+    """Google Drive on one machine can show the ONLY copy of a file under a
+    " (1)" name after it was replaced from another machine (seen on the
+    Librarian 2026-11-24: "bass (1).m4a" with no "bass.m4a" beside it).
+    Returns {plain_name: name_on_this_disk}; a real duplicate that sits
+    beside its plain name keeps its own "(1)" name and is ignored as before."""
+    have = set(names)
+    out = {n: n for n in names}
+    for n in names:
+        m = DRIVE_DUP_NAME_RE.match(n)
+        if m:
+            plain = m.group(1) + (m.group(2) or '')
+            if plain not in have and plain not in out:
+                out[plain] = n
+    return out
 
 # Per-folder loop filename pattern (mirrors scanStems in server.js).
 PER_FOLDER_LOOP_RE = re.compile(r'^([a-z+]+)_loop(\d+)_(\d+)bars\.(m4a|wav)$', re.I)
@@ -93,9 +111,10 @@ def default_root():
     return Path.home() / 'ClaudeDrive' / 'simpleStem'
 
 
-def load_metadata(stem_dir):
-    """Return the parsed metadata.json for a STEMS/<base>/ dir, or {}."""
-    p = stem_dir / 'metadata.json'
+def load_metadata(stem_dir, name='metadata.json'):
+    """Return the parsed metadata.json for a STEMS/<base>/ dir, or {}.
+    `name` is the file's name on this disk (see undup_names)."""
+    p = stem_dir / (name or 'metadata.json')
     if not p.exists():
         return {}
     try:
@@ -217,11 +236,12 @@ def fill_gaps(base, stem_dir, meta):
     return meta, changed
 
 
-def _stemmed_at_iso(stem_dir, stems):
+def _stemmed_at_iso(stem_dir, stems, actual=None):
     """Birth date of the render: mtime of the vocals stem (written once at
     render time, never touched again — metadata.json's mtime moves on every
     favorite/singer/automation save so it can't act as a birth date)."""
     name = stems.get('vocals') or 'metadata.json'
+    name = (actual or {}).get(name, name)
     try:
         ts = os.path.getmtime(os.path.join(stem_dir, name))
         return datetime.fromtimestamp(ts, tz=timezone.utc) \
@@ -230,7 +250,7 @@ def _stemmed_at_iso(stem_dir, stems):
         return None
 
 
-def build_stems_row(base, stem_dir, files_in_folder, meta):
+def build_stems_row(base, stem_dir, files_in_folder, meta, actual=None):
     """Match scanStems output in bt-construction-kit/server.js byte-for-byte."""
     stems = pick_stem_files(files_in_folder)
     loops, raw_loop_count = scan_per_folder_loops(files_in_folder)
@@ -262,7 +282,7 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # 'init' event, i.e. the operator has set levels and pressed SAVE.
         'has_init':           any(isinstance(ev, dict) and ev.get('type') == 'init'
                                   for ev in (meta.get('automation') or [])),
-        'stemmed_at':         _stemmed_at_iso(stem_dir, stems),
+        'stemmed_at':         _stemmed_at_iso(stem_dir, stems, actual),
         # Source URL + extracted YouTube video ID — used by the portal's
         # ingest tracker to recognize when a submitted URL has landed in
         # the library. Without these the tracker can never trim a row.
@@ -408,6 +428,7 @@ def build(root, do_fill):
         'metadata_without_stems': [],
         'incomplete':             [],
         'unreadable_kept':        [],
+        'drive_dup_names':        [],
     }
 
     # Rows of the last catalog, to carry forward a song this machine cannot
@@ -424,10 +445,14 @@ def build(root, do_fill):
     stem_rows = []
     if stems_root.exists():
         dirs = sorted([d for d in stems_root.iterdir() if d.is_dir() and not d.name.startswith('.')])  # .aifolder = Stemmer machinery
+        names_here = {d.name for d in dirs}
         for d in dirs:
             base = d.name
-            if DRIVE_DUP_DIR_RE.search(base):
-                continue
+            dup = DRIVE_DUP_DIR_RE.search(base)
+            if dup:
+                if base[:dup.start()] in names_here:
+                    continue                      # a real duplicate beside the song's folder
+                base = base[:dup.start()]         # this machine shows the song itself under a "(1)" name
             try:
                 files = os.listdir(d)
             except Exception as e:
@@ -436,7 +461,12 @@ def build(root, do_fill):
                     stem_rows.append(prev_rows[base])
                     drift['unreadable_kept'].append(base)
                 continue
-            meta = load_metadata(d)
+            actual = undup_names(files)          # plain name -> name on this disk
+            renamed = (base != d.name) or any(k != v for k, v in actual.items())
+            files = sorted(actual)
+            if renamed:
+                drift['drive_dup_names'].append(base)
+            meta = load_metadata(d, actual.get('metadata.json'))
             if not meta and 'metadata.json' in files and base in prev_rows \
                     and (prev_rows[base].get('artist') or 'Unknown Artist') != 'Unknown Artist':
                 # metadata.json is there but could not be read: keep the last good row
@@ -445,9 +475,9 @@ def build(root, do_fill):
                 continue
             if not meta:
                 drift['stems_without_metadata'].append(base)
-            if do_fill and meta:
+            if do_fill and meta and not renamed:   # never write beside a "(1)" name: that makes a real duplicate
                 meta, _ = fill_gaps(base, d, meta)
-            row = build_stems_row(base, d, files, meta)
+            row = build_stems_row(base, d, files, meta, actual)
             if row['stats']['stemCount'] == 0 and meta:
                 drift['metadata_without_stems'].append(base)
             if row['stats']['stemCount'] < len(EXPECTED_STEMS):
