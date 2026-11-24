@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Mark5 — Sound Desktop prototype</title>
+<title>Mark5 — Desktop</title>
 <style>
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
   html, body { height: 100%; }
@@ -925,7 +925,7 @@ async function loadRealLibrary() {
     realLib = (j.songs || j || []).filter(x => x && x.title);
     const stemsSongs = realLib.filter(x => x.type === 'stems');
     realSong = stemsSongs[Math.floor(Math.random() * stemsSongs.length)] || null;
-    library.el.querySelector('.sub').textContent = `${realLib.length} song folders · claude.md + git each`;
+    library.el.querySelector('.sub').textContent = `${realLib.length} song folders`;
     if (realSong) {
       const chip = document.getElementById('url');
       chip.querySelector('.label').textContent = realSong.title.slice(0, 22);
@@ -1016,7 +1016,7 @@ function flyWorklogToLibrary() {
     card.classList.remove('flying');
     card.style.transform = ''; card.style.opacity = '';
     S.latch(); S.chime();
-    lib.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders · claude.md + git each`;
+    lib.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders`;
     hint('Filed into the <b>LIBRARY</b> — drawer closed. The song is ready to play.');
   }, 1300);
 }
@@ -1382,7 +1382,7 @@ function runMachine(m, o) {
       drawer.classList.remove('out');
       folder.el.remove();
       S.latch(); S.chime();
-      m.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders · claude.md + git each`;
+      m.el.querySelector('.sub').textContent = `${realLib.length + 1} song folders`;
       folderStage = 'shelved';
       hint(`<b>${folderName}</b> filed — drawer closed. claude.md + runlog.md + git ride along in every song folder. Refresh to run the loop again.`);
     }, 2100);

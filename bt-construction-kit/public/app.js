@@ -2203,9 +2203,9 @@ function renderGigSidebar() {
     delBtn.title = 'YouTube Sync gig is read-only';
     addBtn.title = 'YouTube Sync gig is read-only';
   } else if (synthetic) {
-    dupBtn.title = 'Synthetic gig — use the Setlist Planner to add setlists';
+    dupBtn.title = 'Synthetic gig — use the Builder to add setlists';
     delBtn.title = 'Synthetic gig — delete setlists individually';
-    addBtn.title = 'Synthetic gig — create new setlists from the planner';
+    addBtn.title = 'Synthetic gig — create new setlists from the Builder';
   } else {
     dupBtn.title = ''; delBtn.title = ''; addBtn.title = '';
   }
@@ -6071,20 +6071,28 @@ function savePitchState() {
   // Pitch is a per-SESSION control now; nothing persists. No-op.
 }
 
+// One rate for the six stems: speed x pitch. Both controls are playbackRate
+// based, so they multiply (a lone speed change keeps pitch via preservesPitch;
+// once SEMI/FINE are off zero the pitch follows the combined rate).
+function applyStemRate() {
+  const total = pitchSemis + pitchCents / 100;
+  const rate = (playbackSpeed || 1) * Math.pow(2, total / 12);
+  const keep = total === 0;
+  for (const ae of Object.values(audioElements || {})) {
+    try {
+      ae.preservesPitch = keep;
+      ae.mozPreservesPitch = keep;
+      ae.webkitPreservesPitch = keep;
+      ae.playbackRate = rate;
+    } catch (e) {}
+  }
+}
+
 function applyPitchToShifter() {
   // playbackRate-based pitch shift. Couples tempo to pitch (~6%/semitone)
   // but works reliably without stalling the media decoder, unlike Tone.js
   // PitchShift between MediaElementSource and stripGain.
-  const total = pitchSemis + pitchCents / 100;
-  const rate = Math.pow(2, total / 12);
-  for (const ae of Object.values(audioElements || {})) {
-    try {
-      ae.preservesPitch = false;
-      ae.mozPreservesPitch = false;
-      ae.webkitPreservesPitch = false;
-      ae.playbackRate = rate;
-    } catch (e) {}
-  }
+  applyStemRate();
   // Drum machine inherits the same rate (combined with playbackSpeed) so
   // SEMI/FINE knobs change the drum loop tempo too.
   try { applyRateToDrumMachine(); } catch (e) {}
@@ -11025,9 +11033,7 @@ function setPlaybackSpeed(speed) {
   if (els.speedDisplay) els.speedDisplay.textContent = `${speed.toFixed(2)}x`;
   if (els.speedDisplayMini) els.speedDisplayMini.textContent = `${speed.toFixed(2)}x`;
 
-  Object.values(audioElements).forEach(ae => {
-    ae.playbackRate = speed;
-  });
+  applyStemRate();
   // Drum machine follows the same speed so tempo adjustments apply to it.
   try { applyRateToDrumMachine(); } catch (e) {}
   try { applyRateToBackingTrack(); } catch (e) {}
@@ -12576,7 +12582,7 @@ function setupEventListeners() {
     fader.addEventListener('change', (e) => {
       if (!automationCurrentBase) return;
       const vol = parseFloat(e.target.value);
-      const lvl = Math.max(0, Math.min(10, Math.round(vol * 10)));
+      const lvl = Math.max(0, Math.min(10, Math.round(vol * 100) / 10));
       recordFadeEvent(chan, lvl);
     });
 
@@ -14928,7 +14934,6 @@ function kbNudgePlayhead(deltaSec) {
     const base = els[0];
     const t = Math.max(0, Math.min((base.duration || 0) - 0.1, (base.currentTime || 0) + deltaSec));
     for (const a of els) { try { a.currentTime = t; } catch (e) {} }
-    if (typeof updatePlayheadDisplay === 'function') updatePlayheadDisplay();
   } catch (e) {}
 }
 
@@ -14947,7 +14952,6 @@ function kbJumpSection(dir) {
     else         target = [...sorted].reverse().find(t => t < now - 0.25);
     if (target == null) { showToast(dir > 0 ? 'No next section' : 'No previous section'); return; }
     for (const a of els) { try { a.currentTime = target; } catch (e) {} }
-    if (typeof updatePlayheadDisplay === 'function') updatePlayheadDisplay();
   } catch (e) {}
 }
 
@@ -15723,7 +15727,7 @@ function firePlayClip(e) {
 // hardware/Web Audio gain nodes follow.
 function applyFadeToStem(stem, level) {
   if (!stem || !mixerState.muted || !(stem in mixerState.muted)) return;
-  level = Math.max(0, Math.min(10, Math.round(level)));
+  level = Math.max(0, Math.min(10, Math.round(level * 10) / 10));
   const wantMute = (level === 0);
   const vol = wantMute ? 0 : (level / 10);
   if (mixerState.muted[stem] !== wantMute) {
@@ -15957,7 +15961,7 @@ function setupMidiUI() {
         if (!(stem in (mixerState.volumes || {}))) continue;
         const vol = mixerState.volumes[stem];
         const muted = mixerState.muted[stem];
-        state[stem] = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 10)));
+        state[stem] = muted ? 0 : Math.max(0, Math.min(10, Math.round(vol * 100) / 10));
       }
       const hadInit = automationEvents.some(e => e.type === 'init');
       automationEvents = automationEvents.filter(e => e.type !== 'init');

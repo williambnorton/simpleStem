@@ -137,8 +137,7 @@ function getAudioDuration(filePath) {
     return durationCache[filePath];
   }
   try {
-    const cmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
-    const stdout = execSync(cmd, { encoding: 'utf8' });
+    const stdout = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath], { encoding: 'utf8', timeout: 8000 });
     const duration = parseFloat(stdout.trim());
     if (!isNaN(duration) && duration > 0) {
       durationCache[filePath] = duration;
@@ -1516,18 +1515,6 @@ app.get('/api/library', async (req, res) => {
       });
     }
     res.status(503).json({ error: 'Library not ready' });
-  } catch (error) {
-    console.error('Error scanning library:', error);
-    res.status(500).json({ error: 'Failed to scan music library' });
-  }
-});
-
-// Old inline endpoint replaced by the cached version above. The block below
-// remains only to keep variable scope tidy for the catch-all at the bottom.
-app.get('/api/library-uncached', async (req, res) => {
-  try {
-    const data = await buildLibraryData();
-    res.json(data);
   } catch (error) {
     console.error('Error scanning library:', error);
     res.status(500).json({ error: 'Failed to scan music library' });
@@ -7530,20 +7517,21 @@ app.post('/api/snapshot/save', (req, res) => {
   }
 });
 
-app.get('/api/snapshot/list', (req, res) => {
+app.get('/api/snapshot/list', async (req, res) => {
   try {
     const list = [];
-    if (fs.existsSync(SNAPSHOTS_DIR)) {
-      for (const e of fs.readdirSync(SNAPSHOTS_DIR, { withFileTypes: true })) {
+    const scan = (async () => {
+      let entries = [];
+      try { entries = await fs.promises.readdir(SNAPSHOTS_DIR, { withFileTypes: true }); } catch (e) { return; }
+      for (const e of entries) {
         if (!e.isDirectory() || e.name.includes('.bak_')) continue;
-        const manifestPath = path.join(SNAPSHOTS_DIR, e.name, 'manifest.json');
-        if (!fs.existsSync(manifestPath)) continue;
         try {
-          const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const m = JSON.parse(await fs.promises.readFile(path.join(SNAPSHOTS_DIR, e.name, 'manifest.json'), 'utf8'));
           list.push({ name: m.name, created_at: m.created_at, version: m.version });
         } catch (err) {}
       }
-    }
+    })();
+    await Promise.race([scan, new Promise(r => setTimeout(r, 3000))]);
     list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     res.json({ snapshots: list });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -8452,7 +8440,7 @@ async function resolveDeskFolder(base, title) {
   const stemsRoot = path.join(SIMPLE_STEM_ROOT, 'STEMS');
   if (base) {
     const s = safeSongDir(base);
-    if (s && fs.existsSync(s.dir)) return { target: s.dir, how: 'exact' };
+    if (s && await Promise.race([fs.promises.access(s.dir).then(() => true, () => false), new Promise(r => setTimeout(() => r(false), 3000))])) return { target: s.dir, how: 'exact' };
   }
   const bounded = (p) => Promise.race([p, new Promise(r => setTimeout(() => r(null), 3000))]);
   if (title) {
@@ -8644,14 +8632,17 @@ app.post('/api/desktop/logic-open', express.raw({ type: () => true, limit: '400m
 });
 
 // The band's songlist sheet URL for the desk's SHEET object.
-app.get('/api/desktop/sheeturl', (req, res) => {
+app.get('/api/desktop/sheeturl', async (req, res) => {
   try {
     for (const cand of [path.join(SIMPLE_STEM_ROOT, 'mpb_sync_config.json'),
                         path.join(__dirname, '..', 'mpb_sync_config.json')]) {
-      if (fs.existsSync(cand)) {
-        const cfg = JSON.parse(fs.readFileSync(cand, 'utf8'));
-        if (cfg.sheet_id) return res.json({ ok: true, url: 'https://docs.google.com/spreadsheets/d/' + cfg.sheet_id });
-      }
+      let txt = null;
+      try {
+        txt = await Promise.race([fs.promises.readFile(cand, 'utf8'), new Promise(r => setTimeout(() => r(null), 3000))]);
+      } catch (e) {}
+      if (!txt) continue;
+      const cfg = JSON.parse(txt);
+      if (cfg.sheet_id) return res.json({ ok: true, url: 'https://docs.google.com/spreadsheets/d/' + cfg.sheet_id });
     }
     res.json({ ok: false });
   } catch (e) { res.json({ ok: false, error: e.message }); }

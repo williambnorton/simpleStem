@@ -662,7 +662,6 @@ Install deps with `pipx inject demucs mido python-rtmidi`.
 | Verb | Path | What |
 |---|---|---|
 | `GET` | `/api/library` | Cached library scan: stems, m4as, metadata per song, format chips. |
-| `GET` | `/api/library-uncached` | Forces a fresh scan, bypassing the in-memory cache. |
 | `GET` | `/api/audio/stems/:song/:file` | Stream one stem file; transparent disk cache to `~/.bt-cache`. |
 | `GET` | `/api/audio/m4a/:file` | Stream one m4a; same cache. |
 | `POST` | `/api/precache/stems/:song` | Pre-warm the disk cache for one song. |

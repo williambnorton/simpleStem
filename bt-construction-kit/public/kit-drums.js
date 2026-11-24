@@ -41,7 +41,7 @@ let kitSong = null;          // folder whose pieces are loaded into the elements
 let kitProbe = null;         // folder being asked "do you have kit pieces?"
 let kitFailed = false;       // a piece of kitSong would not load
 let kitNodes = null;         // audio graph, built once the app's graph exists
-let kitWasLive = null, kitWasMpl = null;
+let kitWasLive = null, kitWasMpl = null, kitWasReady = null;
 const kitMpl = () => typeof mplFaderOn === 'function' && mplFaderOn('drums');
 const kitPieceMode = (id) => (typeof mplKitMpl !== 'undefined' && mplKitMpl[id]) || 'off';       // the piece's own MPL button: off / replace / both
 const kitMplFader = (id) => kitMpl() || kitPieceMode(id) === 'replace';                          // is this strip's fader an MPL fader now
@@ -178,6 +178,8 @@ function kitTick() {
   if (mpl !== kitWasMpl || sig !== kitSig) { kitWasMpl = mpl; kitSig = sig; kitApplyFaders(); kitPaint(); }
   const want = kitSongWanted();
   if (want !== kitProbe) kitCheckSong(want);
+  const rdy = !!kit.on && kitReady();
+  if (rdy !== kitWasReady) { kitWasReady = rdy; kitPaint(); }   // status must not wait for the first Play to build the audio graph
   if (!kitNodes) {
     if (typeof audioCtx === 'undefined' || !audioCtx || !stripNodes || !stripNodes.drums || !masterMerger) return;
     kitWire();
