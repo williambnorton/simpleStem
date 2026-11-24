@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>simpleStem · Browse audio</title>
+<title>Mark5 · Browse audio</title>
 <!--
   Browse for audio content (Bill 2026-10-31, reworked 2026-11-02) — find a
-  YouTube backing track, preview it, then hand it to the simpleStem Performer:
+  YouTube backing track, preview it, then hand it to the Mark5 Performer:
     • opens on a "backing track" YouTube search with the results showing
     • search: GET /api/jam/search (yt-dlp, no API key)
     • preview: a normal YouTube player — sound comes out of the system output
-    • "Play in simpleStem": POST /api/jam/fetch downloads the audio only (a few
+    • "Play in Mark5": POST /api/jam/fetch downloads the audio only (a few
       seconds); then this page tells the Performer tab (BroadcastChannel
       'simplestem-jam') to play it as-is, left on strip 1 and right on strip 2,
       where the Output Routing buttons can spread it over all six amps.
@@ -96,13 +96,13 @@
 </header>
 <main>
   <section>
-    <div id="keys"><kbd>↓</kbd> from the search box, then <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Space</kbd> preview · <kbd>Enter</kbd> play in simpleStem · <kbd>Esc</kbd> back to search</div>
-    <div id="results"><div class="msg">Search for a song. Click a result to preview it here — the preview plays out of the system output. When you like one, press <b>Play in simpleStem</b>.</div></div>
+    <div id="keys"><kbd>↓</kbd> from the search box, then <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Space</kbd> preview · <kbd>Enter</kbd> play in Mark5 · <kbd>Esc</kbd> back to search</div>
+    <div id="results"><div class="msg">Search for a song. Click a result to preview it here — the preview plays out of the system output. When you like one, press <b>Play in Mark5</b>.</div></div>
   </section>
   <aside id="stage">
     <div id="player-wrap"><div id="empty">Pick a result to preview it</div><div id="player"></div></div>
     <div id="now"></div>
-    <button id="playbtn" type="button" disabled>▶ Play in simpleStem</button>
+    <button id="playbtn" type="button" disabled>▶ Play in Mark5</button>
     <div id="status"></div>
   </aside>
 </main>
@@ -145,8 +145,8 @@ async function getJSON(url, opts) {
   return j;
 }
 function showOldServer(where, retry) {
-  where.innerHTML = `<div class="msg"><b>The simpleStem server is running older code than this page</b> — it was not restarted after the update, so the Jam search isn't there yet.<br>
-    <button type="button" class="fixbtn" id="fix-restart">Restart simpleStem server</button>
+  where.innerHTML = `<div class="msg"><b>The Mark5 server is running older code than this page</b> — it was not restarted after the update, so the Jam search isn't there yet.<br>
+    <button type="button" class="fixbtn" id="fix-restart">Restart Mark5 server</button>
     <div class="m">Same as the ⟳ reset button at the top-left of the Performer: restarts the portal and MIDI helper; a render in progress is left alone. Takes about 10 seconds.</div></div>`;
   document.getElementById('fix-restart').onclick = async (e) => {
     e.target.disabled = true;
@@ -232,7 +232,7 @@ function setMode(m) {
                      : m === 'jammed' ? 'Filter your jammed tracks (empty = all)'
                      : 'Search the Stem Library — title, artist, singer, tag (empty = all)';
   if (m !== 'yt' || $('q').value.trim()) search();
-  else $('results').innerHTML = '<div class="msg">Search YouTube for a song. Click a result to preview it — the preview plays out of the system output. When you like one, press <b>Play in simpleStem</b>.</div>';
+  else $('results').innerHTML = '<div class="msg">Search YouTube for a song. Click a result to preview it — the preview plays out of the system output. When you like one, press <b>Play in Mark5</b>.</div>';
 }
 document.getElementById('modes').addEventListener('click', (e) => {
   const b = e.target.closest('.mode');
@@ -248,7 +248,7 @@ function renderResults() {
         <div class="t">${esc(v.title)}${v.inLibrary && !v.library ? '<span class="badge">IN LIBRARY</span>' : ''}</div>
         <div class="m">${esc(v.channel)}${v.duration ? ' · ' + fmtDur(v.duration) : ''}${v.views ? ' · ' + v.views.toLocaleString() + ' views' : ''}</div>
       </div>
-      <button type="button" class="playnow" data-play="${i}" title="Start it in simpleStem now — no preview">▶ Play now</button>
+      <button type="button" class="playnow" data-play="${i}" title="Start it in Mark5 now — no preview">▶ Play now</button>
     </div>`).join('');
 }
 $('results').addEventListener('click', (e) => {
@@ -267,7 +267,7 @@ function preview(v) {
   $('empty').style.display = 'none';
   $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
   $('playbtn').disabled = false;
-  $('playbtn').textContent = v.library ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  $('playbtn').textContent = v.library ? '▶ Play the stems in Mark5' : '▶ Play in Mark5';
   if (!v.id) {
     try { player && player.stopVideo(); } catch (e) {}
     $('empty').style.display = 'flex';
@@ -296,22 +296,22 @@ function sendToPerformer(msg, onAck) {
     if (!pendingAck) return;
     pendingAck = null;
     const id = msg.id;
-    setStatus(`No simpleStem Performer tab answered. <a href="/#jam=${esc(id)}" target="simplestem-performer">Open the Performer</a> and press the start button there.`);
+    setStatus(`No Mark5 Performer tab answered. <a href="/#jam=${esc(id)}" target="simplestem-performer">Open the Performer</a> and press the start button there.`);
   }, 1500);
 }
 
 $('playbtn').addEventListener('click', () => playItem(current));
 
 // One-click Play now (Bill 2026-11-01): skip the preview — select the
-// result, cue its video silently (it follows simpleStem once playing), and
-// start it in simpleStem straight away.
+// result, cue its video silently (it follows Mark5 once playing), and
+// start it in Mark5 straight away.
 function playNow(v) {
   if (!v) return;
   current = v;
   following = null;
   renderResults();
   $('now').innerHTML = esc(v.title) + (v.inLibrary ? ' <span class="badge">IN LIBRARY</span>' : '');
-  $('playbtn').textContent = v.library ? '▶ Play the stems in simpleStem' : '▶ Play in simpleStem';
+  $('playbtn').textContent = v.library ? '▶ Play the stems in Mark5' : '▶ Play in Mark5';
   if (v.id && window.YT && YT.Player) {
     $('empty').style.display = 'none';
     if (player && playerReady) { try { player.mute(); player.cueVideoById(v.id); } catch (e) {} }
@@ -334,7 +334,7 @@ async function playItem(v) {
   $('playbtn').disabled = true;
   if (v.library && v.inLibrary) {
     try { player && player.pauseVideo(); } catch (e) {}
-    setStatus('Loading the stems in simpleStem…');
+    setStatus('Loading the stems in Mark5…');
     sendToPerformer({ type: 'loadSong', base: v.inLibrary, id: v.id || v.inLibrary }, () => setStatus('Playing the stems in simpleStem.'));
     playDone();
     return;
@@ -344,7 +344,7 @@ async function playItem(v) {
     try {
       j = await getJSON('/api/jam/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v.url, kind: importKind }) });
     } catch (e) {
-      if (e instanceof OldServerError) { showOldServer($('status'), () => { setStatus('Server restarted — press Play in simpleStem again.'); }); return; }
+      if (e instanceof OldServerError) { showOldServer($('status'), () => { setStatus('Server restarted — press Play in Mark5 again.'); }); return; }
       throw e;
     }
     const t0 = Date.now();
@@ -377,7 +377,7 @@ function playDone() {
 
 // Keyboard flow (Bill 2026-11-01): ↓ from the search box into the results,
 // ↑/↓ move, Space previews (again = pause/resume), Enter plays the result
-// in simpleStem, Esc goes back to the search box.
+// in Mark5, Esc goes back to the search box.
 function moveCursor(n) {
   if (!results.length) return;
   cursor = Math.max(0, Math.min(results.length - 1, n));
@@ -431,7 +431,7 @@ if (chan) chan.onmessage = (ev) => {
       }
     } catch (e) {}
   } else if (m.type === 'jam-ended') {
-    if (following) { following = null; setStatus('simpleStem moved on to another song.'); }
+    if (following) { following = null; setStatus('Mark5 moved on to another song.'); }
   }
 };
 

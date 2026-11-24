@@ -322,6 +322,17 @@ window.maybeCountPlayFromBeginning = maybeCountPlayFromBeginning;
 // or freezes. They show a brief toast at the bottom of the screen, then
 // fade. No buttons, no interaction required, no risk of blocking the
 // click thread.
+const WEBLOC_FAILED_SEEN_KEY = 'performer.weblocFailedSeen.v1';
+document.addEventListener('click', (e) => {
+  const chip = e.target && e.target.closest ? e.target.closest('[data-webloc-failed]') : null;
+  if (!chip) return;
+  try {
+    const seen = new Set(JSON.parse(localStorage.getItem(WEBLOC_FAILED_SEEN_KEY) || '[]'));
+    for (const n of JSON.parse(chip.dataset.weblocFailed || '[]')) seen.add(String(n));
+    localStorage.setItem(WEBLOC_FAILED_SEEN_KEY, JSON.stringify([...seen].slice(-200)));
+  } catch (x) {}
+  chip.remove();
+});
 function showToast(message, durationMs) {
   durationMs = durationMs || 3500;
   let container = document.getElementById('simpleStem-toasts');
@@ -2982,7 +2993,7 @@ let loopCacheStatus = new Map();
 // Instrument filter for the Loops tab. Empty Set = show all; otherwise only
 // rows whose .inst is in the set are shown. Same toggle semantics as the
 // FORMAT column filter in the library.
-const INSTRUMENTS = ['drums', 'drumsbass', 'bass', 'guitar', 'piano'];
+const INSTRUMENTS = ['drums', 'bass', 'guitar', 'piano'];
 let drumLoopInstFilter = new Set();
 // Column sort. key ∈ {'song','bpm','bars','inst'}. Default 'song'.
 let loopSort = { key: 'song', dir: 'asc' };
@@ -3780,7 +3791,7 @@ async function engageJam(j) {
   try { stopLooperIfActive(); } catch (e) {}
   if (isPlaying || Object.values(audioElements).some(audioHasSrc)) { try { stopAudio(); } catch (e) {} }
   if (!wireJamIntoStrips()) {
-    showToast('The audio engine is not running yet — click anywhere on this page, then press Play in simpleStem again.', 6000);
+    showToast('The audio engine is not running yet — click anywhere on this page, then press Play in Mark5 again.', 6000);
     return;
   }
   // kind 'source' = a library song's original stereo (SOURCE pill); 'song'
@@ -3873,7 +3884,7 @@ if (jamChannel) {
     try {
       const j = await fetch('/api/jam/status/' + id).then(r => r.json());
       if (j && j.state === 'ready') engageJam(j);
-      else showToast('The track is not ready yet — press Play in simpleStem in the Browse audio window again.');
+      else showToast('The track is not ready yet — press Play in Mark5 in the Browse audio window again.');
     } catch (e) { showToast('Could not reach the jam track.'); }
   };
   const b = document.createElement('button');
@@ -3954,7 +3965,7 @@ function renderIngestTracker() {
       pasted:     'submitted',
       librarian:  'reading metadata',
       queued:     'queued for stems',
-      rendering:  w.phase ? `rendering · ${w.phase}` : 'rendering',
+      rendering:  w.phase ? `fetching · ${w.phase}` : 'fetching',
       done:       'in library',
       failed:     'failed',
     })[w.status] || w.status;
@@ -4098,11 +4109,15 @@ function renderQueue(q) {
   }
   // Webloc-stage failures (yt-dlp couldn't fetch / metadata couldn't be
   // built). Hover tells the operator what to do.
-  const failedWeblocs = (q.failed || []).length;
+  // A failed link stays on Drive until someone deletes the .failed file, so the chip can be dismissed
+  // here (bug sweep 2026-11-23): click it and it stays away until a NEW link fails.
+  const failedSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem(WEBLOC_FAILED_SEEN_KEY) || '[]')); } catch (e) { return new Set(); } })();
+  const failedNames = (q.failed || []).filter(n => !failedSeen.has(String(n)));
+  const failedWeblocs = failedNames.length;
   if (failedWeblocs) {
     chips.push(
-      `<span class="queue-chip queue-err" ` +
-      `title="${failedWeblocs} .webloc file(s) in INCOMING_WEBLOC/ couldn't be processed — usually yt-dlp got a 403 / video deleted / age-restricted. Open ~/ClaudeDrive/simpleStem/INCOMING_WEBLOC/ in Finder and delete the .failed files, or fix the URL and re-drop.">` +
+      `<span class="queue-chip queue-err" data-webloc-failed="${escapeHtml(JSON.stringify(failedNames))}" style="cursor:pointer" ` +
+      `title="${failedWeblocs} .webloc file(s) in INCOMING_WEBLOC/ couldn't be processed — usually yt-dlp got a 403 / video deleted / age-restricted. Fix the URL and re-drop it. CLICK to dismiss this notice (it comes back only when another link fails); the .failed file stays in ~/ClaudeDrive/simpleStem/INCOMING_WEBLOC/ until you delete it.">` +
       `✕ ${failedWeblocs} webloc failed</span>`
     );
   }
@@ -4313,7 +4328,7 @@ async function fetchLibrary() {
     if (data.sourceMtimes && data.sourceMtimes.stems) {
       ageStr += ` · folder mtime ${timeAgo(data.sourceMtimes.stems)}`;
     }
-    els.countLabel.textContent = `Found ${mergedLibrary.length} unique songs (${songLibrary.length} files across formats)${ageStr}`;
+    els.countLabel.textContent = `Found ${mergedLibrary.length} songs${ageStr}`;
 
     // Fresh library data is loaded — refresh cache chips immediately rather
     // than waiting for the next poll tick (which could be up to 4–20s away).
@@ -4434,7 +4449,7 @@ function renderStats(stats) {
   updateLibraryCacheBanner(stats);
   els.statSongs.textContent = stats.totalSongs;
   els.statStems.textContent = stats.totalStems;
-  els.statM4as.textContent = stats.totalM4as;
+  if (els.statM4as) els.statM4as.textContent = stats.totalM4as;
   els.statArtists.textContent = stats.artistCount;
   
   const totalWithBpm = stats.bpmDistribution.slow + stats.bpmDistribution.medium + stats.bpmDistribution.fast;
@@ -4686,6 +4701,8 @@ function renderLibrary() {
     const dupGroup = libraryDupesOnly ? getDupeGroups().get(merged.id) : null;
     const freshPillHTML = (isFresh
       ? ' <span class="song-fresh-pill" title="Freshly stemmed — set levels and SAVE to clear">NEW</span>'
+      : '') + (stemsVarForStar && stemsVarForStar.awaitingStems
+      ? ' <span class="song-fresh-pill" style="background:#e67e22;color:#fff" title="This song has its original stereo but no stems yet: it is waiting in the Logic Pro stemming queue. Play gives you the original stereo (SOURCE).">LOGIC QUEUE</span>'
       : '') + (dupGroup
       ? ` <span class="song-fresh-pill" title="Suspected duplicate — rows with the same number look like the same song">DUP ${dupGroup}</span>`
       : '');
@@ -5091,7 +5108,8 @@ function setupMasterVolume() {
       // override blocks everything so the operator never misreads it.
       const pct = Math.round(v * 100);
       const boostDb = currentMasterBoost >= 3 ? 10 : currentMasterBoost >= 1.5 ? 5 : 0;
-      const dbStr = v <= 0 ? '-∞ dB' : `${(20 * Math.log10(Math.max(1e-6, Math.pow(v, MASTER_GAIN_CURVE_EXP)))).toFixed(1)} dB`;
+      // the slider scales every strip (applyMixerVolumes) and, squared, the master node: what is heard is v to the third
+      const dbStr = v <= 0 ? '-∞ dB' : `${(20 * Math.log10(Math.max(1e-6, Math.pow(v, MASTER_GAIN_CURVE_EXP + 1)))).toFixed(1)} dB`;
       els.masterVolPct.textContent = masterMuted
         ? 'MUTED'
         : `${pct}% · ${dbStr}${boostDb ? ` +${boostDb}` : ''}`;
@@ -5160,9 +5178,9 @@ function setupMediaSessionKeys() {
     if (!('mediaSession' in navigator) || !song) return;
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: song.title || song.folderName || 'simpleStem',
+        title: song.title || song.folderName || 'Mark5',
         artist: song.artist || '',
-        album: 'simpleStem',
+        album: 'Mark5',
       });
     } catch (e) {}
   };
@@ -5402,7 +5420,7 @@ async function openSongMenu(base, merged) {
   const overlay = document.createElement('div');
   overlay.className = 'song-modal-overlay';
   const stemsList = (artifacts.stems || []).join(', ') || 'none';
-  const m4aList = (artifacts.m4a || []).join(', ') || 'none';
+  const kitList = (artifacts.kit || []).join(', ') || 'none';
   const srcSize = (artifacts.sourceBytes != null) ? humanBytes(artifacts.sourceBytes) : 'not present';
 
   // Render a metadata value: URL-valued fields become clickable links.
@@ -5416,8 +5434,7 @@ async function openSongMenu(base, merged) {
   const metaRows = Object.entries(meta)
     .filter(([k]) => k !== 'processing')
     .map(([k, v]) => `<tr><td class="mk">${escapeHtml(k)}</td><td class="mv">${renderVal(k, v)}</td></tr>`)
-    .join('') +
-    `<tr><td class="mk">source.wav size</td><td class="mv">${escapeHtml(srcSize)}</td></tr>`;
+    .join('');
 
   overlay.innerHTML = `
     <div class="song-modal glass-card">
@@ -5438,7 +5455,7 @@ async function openSongMenu(base, merged) {
 
       <div class="song-modal-section">
         <details><summary>All metadata</summary>
-          <div class="song-modal-artifacts">stems: ${escapeHtml(stemsList)}<br>m4a: ${escapeHtml(m4aList)}</div>
+          <div class="song-modal-artifacts">stems: ${escapeHtml(stemsList)}<br>kit pieces: ${escapeHtml(kitList)}<br>original stereo (SOURCE): ${escapeHtml(srcSize)}</div>
           <table class="song-modal-table">${metaRows}</table>
         </details>
       </div>
@@ -5467,7 +5484,7 @@ async function openSongMenu(base, merged) {
   overlay.querySelector('.song-refetch-btn').addEventListener('click', async () => {
     const url = overlay.querySelector('.song-modal-url').value.trim();
     if (!/^https?:\/\//.test(url)) { note.textContent = 'Enter a valid YouTube URL.'; return; }
-    if (!confirm(`Re-fetch "${meta.title || base}" from the new URL? This deletes the current stems/m4a and re-downloads.`)) return;
+    if (!confirm(`Re-fetch "${meta.title || base}" from the new URL? The new version is downloaded and waits for Logic Pro stemming; the song keeps its present stems until then.`)) return;
     note.textContent = 'Clearing old artifacts and queueing re-fetch…';
     try {
       const r = await fetch(`/api/song/${encodeURIComponent(base)}/refetch`, {
@@ -5476,7 +5493,7 @@ async function openSongMenu(base, merged) {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'failed');
-      note.textContent = d.note || 'Queued. The Librarian (mini) will download; then it re-stems.';
+      note.textContent = d.note || 'Queued. The Librarian (mini) downloads it; the song then waits for Logic Pro stemming and keeps its present stems until then.';
       fetchLibrary();
     } catch (e) { note.textContent = `Error: ${e.message}`; }
   });
@@ -8812,12 +8829,13 @@ function isSongFailed(base) { return !!base && failedSongBases.has(base); }
 function healStaleFailedMarkers() {
   if (!failedSongBases.size) return 0;
   let healed = 0;
+  const haveLibrary = (mergedLibrary || []).length > 0;
   for (const base of [...failedSongBases]) {
     const m = (mergedLibrary || []).find(x => {
       const sv = x.variants && x.variants.find(v => v.type === 'stems');
       return sv && sv.folderName === base;
     });
-    if (!m) continue;
+    if (!m) { if (haveLibrary) { failedSongBases.delete(base); healed++; } continue; }   // the song is gone (deleted, renamed, an id from an older format)
     const sv = m.variants.find(v => v.type === 'stems');
     if (sv && sv.cached) {
       failedSongBases.delete(base);
@@ -9052,6 +9070,14 @@ function watchBuffering({ activeElements, channels, onReady, onFailure, softWarn
 
 function loadSong(song, opts) {
   opts = opts || {};
+  // A song still waiting for Logic Pro stemming has its SOURCE but no stems (Bill 2026-11-23, bug sweep):
+  // play the original stereo instead of failing with "no playable stems".
+  if (song && song.type === 'stems' && song.folderName && song.stems && !Object.values(song.stems).some(Boolean)) {
+    try { clearSongFailed(song.folderName); } catch (e) {}
+    try { showToast(`"${song.title || song.folderName}" is waiting for Logic Pro stemming — playing the original stereo.`, 6000); } catch (e) {}
+    engageSongSource(song, { autoplay: !!opts.autoplay });
+    return;
+  }
   // A real song replaces a jam source; every song starts with pans centred.
   try { if (jamMode) exitJam(); } catch (e) {}
   // Instrumentation marker — every loadSong call is tagged with the song
@@ -9163,8 +9189,9 @@ function loadSong(song, opts) {
   window.currentSong = song;
   // Remember which song was last loaded so the next app start can resume.
   const _songBaseForRestore = songBaseOf(song);
+  let _prevLastSongBase = null;
   if (_songBaseForRestore) {
-    try { localStorage.setItem(LAST_SONG_BASE_KEY, _songBaseForRestore); } catch (e) {}
+    try { _prevLastSongBase = localStorage.getItem(LAST_SONG_BASE_KEY); localStorage.setItem(LAST_SONG_BASE_KEY, _songBaseForRestore); } catch (e) {}
   }
   // Lyrics MUST be populated before the automation auto-repair runs,
   // because the repair re-inflates truncated labels by matching them
@@ -9480,6 +9507,13 @@ function loadSong(song, opts) {
     onFailure: (info) => {
       console.warn('[loadSong] failed for', _songBase, info);
       markSongFailed(_songBase);
+      // a song that would not load is not the one to come back to on the next page load
+      try {
+        if (localStorage.getItem(LAST_SONG_BASE_KEY) === _songBaseForRestore) {
+          if (_prevLastSongBase && _prevLastSongBase !== _songBaseForRestore) localStorage.setItem(LAST_SONG_BASE_KEY, _prevLastSongBase);
+          else localStorage.removeItem(LAST_SONG_BASE_KEY);
+        }
+      } catch (e) {}
       showSongLoadError(_songBase, info);
       // Re-render so the row in the library appears greyed; also the gig
       // sidebar if that render is available.
@@ -10437,7 +10471,7 @@ function updateSourcePill() {
   if (v) v.textContent = on ? 'ON' : 'SRC';
 }
 setInterval(() => { try { updateSourcePill(); } catch (e) {} }, 1000);
-async function engageSongSource(song) {
+async function engageSongSource(song, opts) {
   const base = song && song.folderName;
   if (!base) return;
   if (typeof mplDrumsActive !== 'undefined' && mplDrumsActive) disengageMplDrums();
@@ -10461,7 +10495,7 @@ async function engageSongSource(song) {
   setStemInputs(['vocals', 'drums']);
   await engageJam({ kind: 'source', song, id: base, file: `${base}_SOURCE.m4a`, srcUrl: url,
                     title: song.title || base, channel: song.artist || '', startAt,
-                    duration: song.duration || null, autoplay: wasPlaying });
+                    duration: song.duration || null, autoplay: wasPlaying || !!(opts && opts.autoplay) });
 }
 function leaveSongSource() {
   if (!jamMode || jamMode.kind !== 'source') return;
@@ -11523,8 +11557,6 @@ function setupLyrics() {
     if (sh) sh.addEventListener('click', stripLyricsHeaders);
     if (sb) sb.addEventListener('click', stripLyricsBlanks);
     console.log('[lyric] modal helpers wired');
-  } else {
-    console.warn('[lyric] lyrics modal element not in DOM — paste UI unavailable');
   }
 }
 
@@ -12489,12 +12521,12 @@ async function restartBackend() {
 }
 
 // ── Tab title + "first and only" marker (Bill 2026-11-05) ─────────────────
-// Tab reads "simpleStem V1.110"; on the Librarian "simpleStem Librarian V1.110".
+// Tab reads "Mark5 V1.110"; on the Librarian "Mark5 Librarian V1.110".
 // Open simpleStem tabs of this browser (same address) find each other over a
 // BroadcastChannel: alone → "· only"; with others → "· #1 of 2" for the
 // oldest, "· #2 of 2" for the next, and so on. Tabs opened via a different
 // address (localhost vs 127.0.0.1) are separate and not seen.
-let tabTitleBase = 'simpleStem';
+let tabTitleBase = 'Mark5';
 const instChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('simplestem-instances') : null;
 const instSelf = { id: Math.random().toString(36).slice(2), born: Date.now() };
 const instPeers = new Map();   // id → { born, seen }
@@ -12545,9 +12577,9 @@ async function checkVersion() {
       const r = await fetch('/api/identity', { cache: 'no-store' });
       const j = r.ok ? await r.json() : { machine: 'performer' };
       const role = (j.machine === 'librarian') ? 'Librarian' : 'Performer';
-      tabTitleBase = role === 'Librarian' ? `simpleStem Librarian ${stamp}` : `simpleStem ${stamp}`;
+      tabTitleBase = role === 'Librarian' ? `Mark5 Librarian ${stamp}` : `Mark5 ${stamp}`;
     } catch (e) {
-      tabTitleBase = `simpleStem ${stamp}`;
+      tabTitleBase = `Mark5 ${stamp}`;
     }
     refreshTabTitle();
     if (els.btnUpdate) {
@@ -12855,7 +12887,7 @@ function renderSetlist() {
         <div class="setlist-item-details">
           <span class="setlist-item-title">${escapeHtml(item.title)}</span>
           <span class="setlist-item-artist">${escapeHtml(item.artist || '')}
-            <span class="tag tag-pending" style="padding:1px 5px;font-size:8px;">${item.pendingStatus === 'rendering' ? 'rendering…' : 'queued'}</span>
+            <span class="tag tag-pending" style="padding:1px 5px;font-size:8px;">${item.pendingStatus === 'rendering' ? 'fetching…' : 'queued'}</span>
           </span>
         </div>
         <span class="setlist-item-time" title="Not yet stemmed">⏳</span>`;
@@ -15716,7 +15748,7 @@ function kbToggleFavorite() {
   } catch (e) {}
 }
 function kbServerRestart() {
-  if (confirm('Restart the simpleStem server? Audio will cut out for ~2 seconds.')) {
+  if (confirm('Restart the Mark5 server? Audio will cut out for ~2 seconds.')) {
     fetch('/api/restart', { method: 'POST' }).catch(() => {});
   }
 }
@@ -15808,10 +15840,10 @@ function kbFlashCache() {
     .catch(() => showToast('Flash cache failed'));
 }
 function kbSnapshot() {
-  fetch('/api/snapshot/create', { method: 'POST' })
-    .then(r => r.json())
-    .then(j => showToast(j && j.ok ? `Snapshot ${j.id}` : 'Snapshot failed'))
-    .catch(() => showToast('Snapshot failed'));
+  // the debug snapshot of the audio state, the same as the camera button in the Stem Mixer Console
+  const b = document.getElementById('btn-snapshot-state');
+  if (b) { b.click(); showToast('Snapshot of the audio state written to the debug log'); }
+  else showToast('Snapshot button not on this page');
 }
 function kbToggleLyrics() {
   // Reuse the lyrics-toggle button if present so we stay in sync with UI.

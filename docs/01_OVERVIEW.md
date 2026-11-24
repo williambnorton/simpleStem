@@ -1,11 +1,13 @@
-# Overview — what simpleStem is
+# Overview — what Mark5 is
 
-simpleStem turns songs from YouTube into six separated instrument tracks —
+> **Name.** Mark5 is the name of the app; it was called simpleStem until November 2026. The repository, the Drive folder and the file names keep the old name (`~/simpleStem-code`, `ClaudeDrive/simpleStem`).
+
+Mark5 turns songs from YouTube into six separated instrument tracks —
 vocals, drums, bass, guitar, piano, and "other" — and plays them back through
 a web app the band drives at rehearsals and gigs. Because each instrument is
 its own track, you can mute the vocals to sing lead, kill the guitar to solo
 over the record, or strip a song down to just drums and bass. Off-the-shelf
-backing tracks can't do that; simpleStem exists because we needed it.
+backing tracks can't do that; Mark5 exists because we needed it.
 
 The app (we call it **the portal**) runs in Chrome at `http://localhost:3000`
 on the band's MacBook Pro. It shows the whole song library, organizes songs
@@ -17,10 +19,11 @@ feeds each stem to its own channel on the Behringer XR18 mixer.
 
 ## Two machines, one library
 
-simpleStem is split across two Macs that share one Google Drive folder:
+Mark5 is split across two Macs that share one Google Drive folder:
 
 - **The Performer** — the MacBook Pro that travels to gigs. It runs the
-  portal, renders new songs (the CPU-heavy stem separation), and drives the
+  portal, fetches new songs, makes their stems with Logic Pro's Stem
+  Splitter, and drives the
   XR18. Everything it needs at a show is copied to a local cache
   (`~/.bt-cache`) ahead of time, so the portal works with **no internet at
   the venue**. That offline guarantee is the system's most important rule.

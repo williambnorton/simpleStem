@@ -1,4 +1,4 @@
-# simpleStem — architecture
+# Mark5 — architecture
 
 This document is for forkers, developers, and the project owner refreshing
 the design. It covers the two-machine model, the code/data separation, the
@@ -147,7 +147,7 @@ flowchart LR
 
 **What's git-ignored:**
 
-- `STEMS/`, `M4A/`, `STEM_QUEUE/`, `INCOMING_WEBLOC/` — runtime data
+- `STEMS/`, `STEM_QUEUE/`, `LOGIC_QUEUE/`, `INCOMING_WEBLOC/` — runtime data
 - `.run/` — pidfiles and logs
 - `node_modules/` — npm
 - `*.log`, `CATALOG.json` — derived state
@@ -221,15 +221,13 @@ nodes live in Drive and are visible to both.)
 3. **Metadata** — `metadata.py` writes `metadata.json` next to
    `source.wav`, so BPM/key/release-date are captured at ingest.
    Idempotent.
-4. **Render** — `queue_runner.sh` (on the Performer) picks up the job,
+4. **Ingest, then Logic stemming** — `queue_runner.sh` (on the Performer) picks up the job,
    sees `source.wav` already cached, writes `<slug>_SOURCE.m4a` and an
    entry in `LOGIC_QUEUE/`. The Logic Pro Stem Splitter run over that
    queue (started from the Performer's "Logic stemming queue" panel)
    produces the six stems and six kit pieces as m4a.
-5. **Minus-mixes** — `ffmpeg amix` phase-inverts the unwanted stems
-   and sums them onto the source, producing `<slug>_-V.m4a`,
-   `<slug>_-V-G.m4a`, `<slug>_-V-G-B.m4a`, and drums-only
-   `<slug>_DO.m4a` in `M4A/`.
+5. **No mixdowns.** The minus-mixes (`_-V`, `_-V-G`, `_-V-G-B`, `_DO` in `M4A/`) were retired in
+   June 2026; the mixer's INSTRUMENT ROUTING buttons (SOURCE, STEMS, D, BD, B, BDV) do that job live.
 6. **Loops** — `loop_detect.py` segments `source.wav` by recurrence
    and tiles the most-repeated sections out of each rhythm stem at
    bar boundaries, producing up to 4 loops per stem.
@@ -810,7 +808,7 @@ bandwidth:**
   the user can drag the offending files to the Trash directly from
   Finder. Deliberately *not* in-portal delete — the goal is for the
   user to eyeball each file before it goes. The Librarian writes
-  the flags; the Performer just renders them.
+  the flags; the Performer just follows them.
 
 - **Migrate `CATALOG.json` to the Drive path.** `catalog.py` and the
   portal both still point at the code-repo root for the catalog;

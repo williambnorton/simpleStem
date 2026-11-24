@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>simpleStem · Prune</title>
+<title>Mark5 · Prune</title>
 <!--
   Prune (Bill 2026-11-01) — thin the song library quickly.
     • Duplicates: versions of the same song (same YouTube video, same
@@ -296,7 +296,7 @@ async function load() {
   try {
     const r = await fetch('/api/prune/candidates');
     const ct = r.headers.get('content-type') || '';
-    if (/text\/html/.test(ct)) { $('#main').innerHTML = '<div class="msg">The server is an older version — press ⟳ reset in simpleStem, then reload this page.</div>'; return; }
+    if (/text\/html/.test(ct)) { $('#main').innerHTML = '<div class="msg">The server is an older version — press ⟳ reset in Mark5, then reload this page.</div>'; return; }
     data = await r.json();
     if (!data.ok) throw new Error(data.error || 'server error');
   } catch (e) { $('#main').innerHTML = `<div class="msg">Couldn't read the library: ${esc(e.message)}</div>`; return; }

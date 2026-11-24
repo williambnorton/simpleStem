@@ -31,7 +31,7 @@
       sections: [
         s('Header row', [
           ['Version stamp', 'The build you are running, V1.MMDDHHMM. It advances by itself when newer code lands; no manual bumping.'],
-          ['⟳ reset', 'Relaunches the MIDI sidecar and portal server. SAFE: an active render is left alone. The full restart including the render queue lives in the Stem Mixer Console.'],
+          ['⟳ reset', 'Relaunches the MIDI sidecar and portal server. SAFE: a song being fetched is left alone. The full restart including the ingest queue lives in the Stem Mixer Console.'],
           ['View buttons', 'Four surfaces of one system: Performer (this mixer), Librarian (the pipeline dashboard), MIDI (the control room), Desktop (a file-level prototype). The lit button is where you are.'],
           ['Flash Cache (hard-drive icon)', 'Forces every song’s stems into ~/.bt-cache before you leave for a gig. Shift-click overwrites files already cached. If a song is in the library, its six stems are on local disk: that is the offline contract.'],
           ['Queue chips', 'Live ingest status: downloading source, analyzing BPM/key, encoding the SOURCE m4a, queued for Logic Pro stemming. A red ✕ webloc chip means a YouTube URL could not be fetched; hover it for the fix.'],
@@ -79,12 +79,12 @@
       lead: 'This view watches the song factory: URLs dropped on the Mac mini become analyzed, stem-separated library entries. Use it to see what is flowing, what is stuck, and what the scheduled passes are doing.',
       sections: [
         s('Plumbing and the living pipeline', [
-          'The flow reads left to right: INCOMING_WEBLOC (dropped URLs) ▸ STEM_QUEUE (render jobs) ▸ STEMS (finished songs). Counts update live; a growing _failed or a red webloc badge is the thing to investigate.',
+          'The flow reads left to right: INCOMING_WEBLOC (dropped URLs) ▸ STEM_QUEUE (ingest jobs) ▸ STEMS (the song folder with its original stereo) ▸ Logic Pro stemming queue (waiting for its stems). Counts update live; a growing _failed or a red webloc badge is the thing to investigate.',
           ['✕ webloc failed', 'yt-dlp could not fetch a URL (403, deleted, age-restricted). Delete the .failed file in INCOMING_WEBLOC or fix the URL and re-drop it. Updating yt-dlp on the mini cures most VEVO 403s.'],
-          ['Failed renders', 'The download or the source file was bad. The job sits in STEM_QUEUE/_failed so it cannot loop forever.'],
+          ['Failed ingests', 'The download or the source file was bad. The job sits in STEM_QUEUE/_failed so it cannot loop forever.'],
         ]),
         s('Pending & recent', [
-          'What is queued right now and what just landed, with the current render’s phase. A new song appears in the library the moment its six stems and metadata exist.',
+          'What is queued right now and what just landed, with the current ingest’s phase. A new song appears in the library as soon as it is fetched, marked LOGIC QUEUE and playable as the original stereo; its six stems arrive with the next Logic Pro stemming run.',
         ]),
         s('Library statistics + stems health', [
           'Totals for the library plus a per-song completeness check: every song should show 6/6 stems. Anything less is listed with which stems are missing.',

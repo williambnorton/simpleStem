@@ -302,11 +302,24 @@ positions on stage:
 ![Channel strip](images/player_channel_strip.svg)
 *SCREENSHOT: one channel strip annotated — routing compass, boosts, M/S, numeric row*
 
+### INPUT ROUTING and MPL strips (2026-11-23)
+
+The routing block has a third row, **INPUT ROUTING: MPL | STEM**. MPL puts every strip that has an MPL part
+on MPL in place of its stem (MIDI to Logic Pro); STEM puts every strip back. While a song plays the switch
+happens on the next bar. A strip on MPL keeps its layout and gains: a fader that sets note intensity with its
+own value, the sequence controls under M and S (octave, backwards/forwards, the MPL text, an AI request box),
+**Song | Exact** with the score of each version, a blue LED that lights on every note, and speaker buttons
+that choose the Logic tracks the notes go to. All of it is described in
+[19_MPL_LIBRARY.md](19_MPL_LIBRARY.md).
+
 ## 10. Master volume rail
 
 The thin rail on the far right edge: a full-height vertical **MASTER**
 slider with a live percentage at the top. It scales every strip
-proportionally — strip gain is always `fader × master × boost`.
+proportionally — strip gain is always `fader × master × boost` — and the
+master output a second time on a square curve, so what is heard follows the
+slider to the third power. The dB figure beside the percentage is that
+real level (corrected 2026-11-23; it used to show the square curve only).
 
 ## 11. Odds and ends
 
@@ -327,8 +340,12 @@ A song that has Logic Pro 13 kit-piece stems (`kick.m4a`, `snare.m4a`, `hihat.m4
 `cymbals.m4a`, `percussion.m4a` in the song folder, beside the six stems) shows a **DRUM KIT** panel under the six strips. Songs without them
 show nothing new.
 
-- **KIT** — off: the whole drum stem plays, as always. On: the six pieces play in its place, each on
-  its own fader. The choice is remembered.
+- **KIT** — on (the default since 2026-11-23): the six pieces play in place of the whole drum stem, each on
+  its own fader. Off: the whole drum stem plays. The choice is remembered.
+- **Each piece also has** the boost buttons (+5, +10, +20, +50 dB, one at a time) and an **MPL nn%** button
+  that swaps the piece's audio for its MPL transcription; hold it (or Option-click) to hear both. The number
+  is how much of the transcription lines up with the audio. See
+  [19_MPL_LIBRARY.md](19_MPL_LIBRARY.md), "INPUT ROUTING: MPL | STEM, and MPL strips".
 - **The Drums strip is the kit's master.** Its fader, M, S and boost scale all six pieces.
 - **Each piece has a strip built like a stem's**, in the order Kick, Snare, Toms, Hi-Hat, Cymbals, Perc: the
   ring of buttons (L and R are the mains, V D B G P O the six amps; a lit button sends the piece there, and

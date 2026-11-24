@@ -1411,6 +1411,9 @@ function overlayCachedState(data) {
       if (recentLibraryMoves.has(s.folderName)) s.library = recentLibraryMoves.get(s.folderName);
       healStemsFromCache(s);
       s.cached = isStemsFolderCached(s.folderName);
+      // fetched, SOURCE in place, no stems yet: the song is waiting for Logic Pro stemming (bug sweep 2026-11-23)
+      s.awaitingStems = !SIX_STEM_NAMES.some(n => s.stems && s.stems[n]);
+      if (s.awaitingStems) { s.cached = false; s.stemmed_at = null; }
     } else if (s.type === 'm4a' && s.fileName) {
       s.cached = isM4aCached(s.fileName);
     }
@@ -6172,22 +6175,27 @@ function safeSongDir(base) {
   return { b, dir };
 }
 
-// Full metadata for one song.
-app.get('/api/song/:base/metadata', (req, res) => {
+// Full metadata for one song, and what is in its folder: the six stems, the six kit pieces and the
+// original stereo, all m4a (bug sweep 2026-11-23: this looked for the retired .wav stems, the retired
+// M4A mixdowns and source.wav, so the song modal said "stems: none" for every song). Drive is read
+// async on a short budget; the gig cache answers for the audio files when Drive does not.
+app.get('/api/song/:base/metadata', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json for this song' });
+  let txt = null, missing = false;
+  try { txt = await driveRace(fsp.readFile(mp, 'utf8'), 5000); } catch (e) { missing = !!(e && e.code === 'ENOENT'); }
+  if (txt == null) return res.status(missing ? 404 : 503).json({ error: missing ? 'no metadata.json for this song' : 'Drive did not answer in time' });
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
-    // also report which artifacts currently exist on disk
-    const EX = ['vocals','drums','bass','other','piano','guitar'];
-    const stems = EX.filter(x => fs.existsSync(path.join(s.dir, `${x}.wav`)));
-    let m4a = [];
-    try { m4a = fs.readdirSync(M4A_DIR).filter(f => f.startsWith(s.b + '_') && f.endsWith('.m4a')); } catch (e) {}
-    let sourceBytes = null;
-    try { sourceBytes = fs.statSync(path.join(s.dir, 'source.wav')).size; } catch (e) {}
-    res.json({ base: s.b, metadata: meta, artifacts: { stems, m4a, hasSource: sourceBytes != null, sourceBytes } });
+    const meta = JSON.parse(txt);
+    const size = async (p) => { try { return (await driveRace(fsp.stat(p), 1500)).size; } catch (e) { return -1; } };
+    const have = async (name) => (await size(path.join(AUDIO_CACHE_STEMS, s.b, `${name}.m4a`))) > 0 || (await size(path.join(s.dir, `${name}.m4a`))) > 0;
+    const stems = [], kit = [];
+    for (const x of SIX_STEM_NAMES) if (await have(x)) stems.push(x);
+    for (const x of ['kick', 'snare', 'toms', 'hihat', 'cymbals', 'percussion']) if (await have(x)) kit.push(x);
+    let sourceBytes = await size(path.join(s.dir, `${s.b}_SOURCE.m4a`));
+    if (sourceBytes < 0) sourceBytes = await size(path.join(AUDIO_CACHE_SONG_SOURCES, `${s.b}_SOURCE.m4a`));
+    res.json({ base: s.b, metadata: meta, artifacts: { stems, kit, hasSource: sourceBytes >= 0, sourceBytes: sourceBytes >= 0 ? sourceBytes : null } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -8709,7 +8717,9 @@ app.post('/api/song/:base/refetch', (req, res) => {
     fs.rmSync(path.join(AUDIO_CACHE_SONG_SOURCES, `${s.b}_SOURCE.m4a`), { force: true });
     // also any loop files + the whole cached copy
     try { for (const f of fs.readdirSync(s.dir)) if (/loop\d+_\d+bars\.(wav|m4a)$/i.test(f)) fs.rmSync(path.join(s.dir, f), { force: true }); } catch (e) {}
-    fs.rmSync(path.join(AUDIO_CACHE_STEMS, s.b), { recursive: true, force: true });
+    // The gig cache copy of the stems is NOT removed any more (bug sweep 2026-11-23): there is no
+    // Demucs render behind a re-fetch now, so the song keeps playing its present stems until the
+    // Logic Pro stemming run replaces them.
     // 3. delete old m4a mixdowns (they're from the old source)
     try { for (const f of fs.readdirSync(M4A_DIR)) if (f.startsWith(s.b + '_') && f.endsWith('.m4a')) { fs.rmSync(path.join(M4A_DIR, f), { force: true }); fs.rmSync(path.join(AUDIO_CACHE_M4A, f), { force: true }); } } catch (e) {}
     // 4. drop a webloc for the Librarian to re-ingest the new URL
@@ -8719,7 +8729,7 @@ app.post('/api/song/:base/refetch', (req, res) => {
       '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n');
     console.log(`[refetch] ${s.b}: cleared old artifacts, queued new URL ${url}`);
     refreshLibraryCache('song-refetch', true);
-    res.json({ ok: true, base: s.b, url, note: 'Old artifacts cleared and re-ingest queued. The Librarian (mini) must be running to download; then it re-stems on the Performer.' });
+    res.json({ ok: true, base: s.b, url, note: 'Re-fetch queued. The Librarian (mini) downloads the new version; the song then waits in the Logic Pro stemming queue and keeps its present stems until that run.' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -9243,6 +9253,10 @@ app.delete('/api/gigs/:slug', (req, res) => {
 
 // Fallback to serve index.html for spa behavior
 app.use((req, res) => {
+  // An address that is no page and no file used to get the Performer page, which then asked for its
+  // scripts under that address and came up broken (bug sweep 2026-11-23). Send the browser home.
+  if (req.method === 'GET' && req.path !== '/' && !req.path.startsWith('/api/')) return res.redirect(302, '/');
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'no such endpoint' });
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

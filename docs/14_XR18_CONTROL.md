@@ -1,7 +1,7 @@
-# XR18 control — MIDI + OSC research and what simpleStem uses
+# XR18 control — MIDI + OSC research and what Mark5 uses
 
 Research date 2026-07-15. The XR18 exposes TWO control surfaces, and
-simpleStem now uses both: **MIDI for writes that map cleanly to
+Mark5 now uses both: **MIDI for writes that map cleanly to
 messages** (snapshots, and the existing timeline automation), **OSC over
 the network for reads and precise writes** (console identity, fader
 values in dB, mute states, bus names).
@@ -27,7 +27,7 @@ From the official Behringer *X AIR MIDI Implementation X18/XR18*
 
 Enable *DIN/USB Rx* on the console (Setup → MIDI) or none of this lands.
 
-simpleStem path: the browser → `POST /api/midi/send` → `midi_sidecar.py`
+Mark5 path: the browser → `POST /api/midi/send` → `midi_sidecar.py`
 (:5555) → mido → the "XR18" port. Snapshot recall from the desk uses
 exactly this (PC ch 1). The song-timeline automation events already ride
 the same wire.
@@ -39,7 +39,7 @@ return to the sender's addr/port. Sending a parameter path with **no
 arguments reads it**; with an argument **sets it**. Discovery: broadcast
 `/xinfo` — the console answers with `[ip, name, model, firmware]`.
 
-Paths simpleStem reads for the desk properties card:
+Paths Mark5 reads for the desk properties card:
 
 - `/xinfo` — console identity (the connectivity proof)
 - `/-snap/index`, `/-snap/name` — current snapshot
@@ -55,7 +55,7 @@ Fader float ↔ dB uses the standard X32/X AIR piecewise curve
 (f ≥ 0.5 → 40f−30; ≥ 0.25 → 80f−50; ≥ 0.0625 → 160f−70; else 480f−90);
 0.75 = 0 dB unity, 1.0 = +10 dB.
 
-simpleStem path: `midi_sidecar.py` now carries a dependency-free OSC
+Mark5 path: `midi_sidecar.py` now carries a dependency-free OSC
 client (hand-rolled encoder/decoder, UDP socket, `/xinfo` broadcast
 discovery cached 5 min, `XR18_IP` env override). HTTP endpoints:
 `GET /xr18/info` (deep probe), `GET /xr18/query?path=`,

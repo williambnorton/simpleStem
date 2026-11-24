@@ -1,4 +1,8 @@
-# simpleStem regression test — the full regimen
+# Mark5 regression test — the full regimen
+
+> Updated 2026-11-23: the app is called Mark5; ingest no longer renders stems (Demucs is gone). A new
+> song is fetched, queued for Logic Pro stemming and playable as the original stereo until that run.
+> Tests I3, I4 and I6 below are reworded for that.
 
 When Bill says **"REGRESSION TEST"**, Claude runs this end-to-end suite
 against the Performer and Librarian using computer-use / Claude-in-Chrome,
@@ -76,7 +80,7 @@ if all are present, pick any well-known song absent from the library.
 |---|---|---|
 | I1 | Drop a YouTube URL (portal ingest box) | INCOMING_WEBLOC sees a new `.webloc` within 5s |
 | I2 | Watcher decomposes | STEM_QUEUE gains an entry within ~90s (Drive sync included) |
-| I3 | Render starts | `/api/queue` shows `processing` non-null (or header chip shows the job) |
+| I3 | Ingest starts | `/api/queue` shows `processing` non-null (or header chip shows the job) |
 
 ## Phase 3 — Library (L)
 
@@ -222,9 +226,9 @@ Test with a sacrificial folder (ZZ_TEST_DELETE_ME pattern), never a real song.
 
 | ID | Test | Pass criterion |
 |---|---|---|
-| I4 | Render completes | new STEMS/<slug>/ with 6 stems > 1 MB |
+| I4 | Ingest completes | new STEMS/<slug>/ with `<slug>_SOURCE.m4a` and `metadata.json`, no wav; `LOGIC_QUEUE/<slug>.json` written; the library row has `awaitingStems: true`, shows LOGIC QUEUE, and Play gives the original stereo |
 | I5 | metadata.json | title/artist/bpm/key populated |
-| I6 | Health row | stemsPresent 6/6 within one health pass |
+| I6 | Health row after the Logic run | stemsPresent 6/6 within one health pass once the Logic Pro stemming run has promoted the song (0/6 before it, by design) |
 | OC1 | Cache complete | /api/cache/status done==total, failed==0 (incl. the new song after precache) |
 | OC2 | Hot-path audit | no sync Drive reads in /api/audio handlers; sendCachedAudio cache-first with bounded Drive race |
 | OC3 | Physical offline drill | OPERATOR: `./offline_test.sh 60` on the Performer + play/advance/drum during the window |

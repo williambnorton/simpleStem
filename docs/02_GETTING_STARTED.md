@@ -21,8 +21,9 @@ cd ~/simpleStem-code
 ./performer.sh start
 ```
 
-That single command starts both halves of the Performer: the render queue
-(which turns downloaded songs into stems) and the portal web server. Open
+That single command starts both halves of the Performer: the ingest queue
+(which fetches new songs and queues them for Logic Pro stemming) and the
+portal web server. Open
 **Chrome** and go to:
 
 ```
@@ -64,7 +65,7 @@ You can paste:
 - a **chaptered "full album" video** — each chapter becomes its own song.
 
 The **ingest tracker** appears under the box and follows your submission
-through its stages: *pasted → librarian → queued → rendering → done*. It
+through its stages: *pasted → librarian → queued → fetching → done*. It
 polls every few seconds and fades once the song lands in the library.
 
 **The .webloc drop.** Drag a YouTube URL from Chrome's address bar to the
@@ -82,19 +83,20 @@ You don't have to do anything — but here's the relay race you just started:
 
 1. **The Librarian (Mac mini)** notices the new URL within seconds. It
    downloads the audio once at 48 kHz (`source.wav`), analyzes BPM and key,
-   writes the song's `metadata.json`, and drops a render job in the queue.
+   writes the song's `metadata.json`, and drops an ingest job in the queue.
 2. **The Performer (this laptop)** picks the job up, saves the stereo
    original as `<song>_SOURCE.m4a` and adds the song to the **Logic stemming
    queue**. The Performer shows that queue in a panel with a button to hand
    the Mac over; Logic Pro's Stem Splitter then makes the six stems and six
    drum-kit pieces (about 3 minutes per song).
-3. When the Logic run finishes, the catalog updates and the song appears in
-   the library, fully cached and playable.
+3. The song is in the library as soon as it is fetched, marked **LOGIC
+   QUEUE**; until the Logic run, Play gives you the original stereo. When
+   the run finishes the song has its stems, fully cached and playable.
 
 You can watch all of this live on the Librarian dashboard
 (`http://localhost:3000/librarian` — see [07_LIBRARIAN.md](07_LIBRARIAN.md)),
 where the **Living Pipeline** animation shows the actual files flying between
-folders. Render phases also show in `./performer.sh status`:
+folders. Ingest phases also show in `./performer.sh status`:
 *downloading source → analyzing (BPM/key) → encoding SOURCE m4a → queued for
 Logic Pro stemming*.
 

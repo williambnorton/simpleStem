@@ -29,13 +29,13 @@ The options modal for one song, top to bottom:
 
 - **Source URL** — the YouTube link the song came from, with **↗ Open**
   and **Re-fetch**. Paste a better version's URL and click Re-fetch to
-  wipe the current audio and re-ingest from the new link. You'll be asked
-  to confirm: *"This deletes the current stems/m4a and re-downloads."*
-  The Librarian downloads; the Performer re-stems — expect the usual
-  10–25 minute render.
+  ingest the song again from the new link. You'll be asked to confirm.
+  The Librarian downloads the new version and the song goes into the
+  Logic Pro stemming queue; it keeps playing its present stems until
+  that run replaces them.
 - **All metadata** — an expandable table of everything known about the
-  song (BPM, key, singer fields, durations, file inventory, source.wav
-  size). URLs are clickable.
+  song (BPM, key, singer fields, durations) and, above it, the file
+  inventory: stems, kit pieces and the size of the original stereo. URLs are clickable.
 - **Delete permanently (not reversible)** — removes the song's stems,
   metadata, and cached files. Two clicks (button + confirmation).
 
@@ -89,6 +89,8 @@ with the banner showing is not gig-safe; see the
 ## The ingest tracker
 
 When you paste a YouTube URL, the tracker under the URL box follows it
-through *pasted → librarian → queued → rendering → done* (or *failed* —
-see [09_TROUBLESHOOTING.md](09_TROUBLESHOOTING.md#a-render-failed)). The
-song appears in the table automatically when done; no refresh needed.
+through *pasted → librarian → queued → fetching → done* (or *failed* —
+see [09_TROUBLESHOOTING.md](09_TROUBLESHOOTING.md#an-ingest-failed)). The
+song appears in the table automatically when done, marked **LOGIC QUEUE**
+until Logic Pro has made its stems (Play gives the original stereo
+meanwhile); no refresh needed.

@@ -1,4 +1,4 @@
-# The Sound Desktop — a drag-and-drop paradigm for simpleStem
+# The Sound Desktop — a drag-and-drop paradigm for Mark5
 
 *Brainstorm, 2026-07-12. Rollback point if the experiment fails:
 `git checkout snapshot-2026-07-12-pre-desktop`. Interactive prototype:
@@ -11,7 +11,7 @@ verbs, and dropping a noun on a verb applies the function** — with sound as
 a first-class sense: every object can be *auditioned*, and every machine
 *sounds like what it does*.
 
-The deep insight is that simpleStem already lives this way on disk:
+The deep insight is that Mark5 already lives this way on disk:
 `INCOMING_WEBLOC/` is a hot folder, `STEMS/<song>/` is a document, the
 pipeline scripts are machines. The desktop UI just makes the existing
 architecture *visible and grabbable*.

@@ -1,4 +1,4 @@
-# simpleStem keyboard shortcuts
+# Mark5 keyboard shortcuts
 
 Press **`?`** anywhere in the portal to see the live, in-app cheat sheet.
 

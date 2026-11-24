@@ -1,4 +1,4 @@
-# simpleStem — project guide for Claude
+# Mark5 — project guide for Claude
 
 Read this first. It explains what the project is, how it's split across two
 machines, where everything lives, and the rules for cooperating without
@@ -13,7 +13,7 @@ six stems client-side — no pre-baked mixdowns, no per-song loop files. End
 goal: load a setlist and, live, drive the XR18 with per-stem level + routing
 control.
 
-The end-to-end flow is drawn in `WORKFLOW.md` (Mermaid). In short:
+The end-to-end flow is drawn in `ARCHITECTURE.md` and `docs/16_SYSTEM_ARCHITECTURE.md` (Mermaid). In short:
 
 ```
 YouTube URL → INCOMING_WEBLOC/*.webloc → webloc_watch.sh → metadata jobs in
@@ -170,14 +170,14 @@ UI (studio machine):
   system works, with live readings from `/api/librarian/state`,
   `/api/dashboard/state`, `/api/health` and `/api/identity` laid on top of each
   panel. Open `http://localhost:3000/README.html` on either machine. Same
-  content is published as the "simpleStem README" artifact (static there).
+  content is published as the "Mark5 README" artifact (static there).
 
 Data (shared via Drive, git-ignored — see below):
 - `STEMS/<slug>/` — `source.wav`, 6 stems, `metadata.json`, loops.
 - `M4A/` — mixdowns `<Title>_<Artist>_<suffix>.m4a`.
 - `STEM_QUEUE/`, `INCOMING_WEBLOC/` — runtime queues. `.run/` — PIDs/logs.
 
-Docs: `WORKFLOW.md` (diagram), `README.md`, `README-DRAFT.md`,
+Docs: `ARCHITECTURE.md` (diagrams), `README.md`,
 `bt-construction-kit/public/README.html` (active infographic).
 
 ## Running it
@@ -377,12 +377,12 @@ field. This is NOT YET WIRED — see the roadmap.
   instrumentation displayed on top of it, so the reader sees what each part
   is doing while reading what it is. When a doc change alters the pipeline,
   services, folders or commands, change the matching panel and, if a new
-  part has a live signal, add a meter for it. Then republish the "simpleStem
+  part has a live signal, add a meter for it. Then republish the "Mark5
   README" artifact from the same file. Offline mandate applies: no CDN,
   no remote fonts, everything inline.
 
 - **All songs' m4a stems must be in `~/.bt-cache` at all times — there is NO
-  warming phase.** simpleStem's offline-gig contract is absolute: if a song
+  warming phase.** Mark5's offline-gig contract is absolute: if a song
   appears in `/api/library`, its six m4a stems live in `~/.bt-cache/STEMS/<base>/`
   and are ready for end-to-end playback with no wifi. Bill plays venues with
   no internet — a "Song failed to load" dialog at downbeat is a show-stopper.
@@ -442,7 +442,7 @@ field. This is NOT YET WIRED — see the roadmap.
   reclaims itself when the owning pid is gone, so a reboot no longer wedges it.
 
 - **File format policy: m4a only — AND moov-first (fast-start).** The only
-  audio file format simpleStem uses going forward is **`.m4a`** (AAC in
+  audio file format Mark5 uses going forward is **`.m4a`** (AAC in
   MPEG-4 container) with the `moov` atom written at the FRONT of the file
   (`ffmpeg -movflags +faststart`). Without `+faststart`, ffmpeg places
   `moov` at the END of the file, and Chrome's `<audio>` decoder cannot
@@ -457,7 +457,7 @@ field. This is NOT YET WIRED — see the roadmap.
   in each `STEMS/<slug>/` folder — the raw 48 kHz ingest we keep so we
   can re-stem without re-downloading from YouTube. Per-stem `.wav` files
   written by older versions of `stem.sh` should be cleaned up; see
-  `cleanup_stems_wav.py` at the simpleStem root. **Producers**
+  `cleanup_stems_wav.py` (a one-time script, since removed from the repo). **Producers**
   (`stem.sh` plus any future ingest paths) must emit fast-start m4a —
   never new `.wav` outside of `source.wav`. **Consumers**
   (`bt-construction-kit/server.js`, `catalog.py`, the portal) read m4a only.

@@ -48,7 +48,7 @@ Chromium source facts that matter to us:
   service; if CoreAudio is hung this request hangs. Chrome bounds it with a
   **10-second timeout** (crbug 615589), after which playback proceeds into
   a **silent null sink** ("no audio" — useless at a gig, but not a stall).
-- simpleStem's stem watchdog fires at **3 seconds** — inside that window.
+- Mark5's stem watchdog fires at **3 seconds** — inside that window.
   So a wedged coreaudiod always presents as *"no stems responded after 3s"*
   before Chrome's own fallback engages. The watchdog isn't wrong — there is
   genuinely no audio coming — but the message can't distinguish "cache
@@ -86,7 +86,7 @@ the correlation; the exact Chromium line responsible is not pinned down.
 
 **XR18 / X AIR (vendor + community):**
 - Behringer firmware **v1.23 changelog: "Fixed: USB audio issues (mostly
-  at 44K1)"** — run 1.23, stay at 48 kHz (simpleStem is all-48k already).
+  at 44K1)"** — run 1.23, stay at 48 kHz (Mark5 is all-48k already).
 - Apple Communities 255046431 — XR18 absent from Sound devices on M1;
   fixes: power-cycle the board and wait, different hub, and **set USB mode
   to 18-in/18-out ("the 2 in 2 out doesn't seem to work")** — the 2-ch
@@ -126,7 +126,7 @@ mixer control to wired Ethernet if radio interference is ever suspected.
 | 4. Power-cycle the XR18 (10 s off) | Everything board-side | Replug didn't do it; re-pick the device in macOS Sound |
 | 5. Different cable / different port | The physical link | Recurring wedges — that link is the prime suspect |
 
-## Recommendations for simpleStem
+## Recommendations for Mark5
 
 1. **Hardware first**: replace the cable path with one direct USB-C→B
    cable and retire the dongle. Given three wedges in two days, this is

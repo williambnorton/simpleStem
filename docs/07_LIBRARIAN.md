@@ -20,7 +20,7 @@ folder.
 
 Open `http://localhost:3000/librarian`, or click **Librarian** in the
 brand chip at the top of the portal (Cmd+Shift+U toggles views). The page
-header reads *"curation desk for the simpleStem song library"* and shows
+header reads *"curation desk for the Mark5 song library"* and shows
 the host name plus a last-update pill that refreshes every 3 seconds — it
 turns red if the page hasn't heard from the server for 10 seconds.
 
@@ -50,13 +50,13 @@ server events.
   "newest" line names the latest arrival. Click any folder to copy its
   disk path.
 - **Files fly.** When a file actually moves through the pipeline — a
-  `.webloc` arriving from the web, a `source.wav` landing, stems being
-  written — an icon carrying the **full filename** flies along the arrow
+  `.webloc` arriving from the web, a song folder landing with its
+  original stereo — an icon carrying the **full filename** flies along the arrow
   from one folder to the next, and the arrow pulses.
-- **Render progress dots.** The STEMS folder shows the
-  most-recently-touched song with one **blue dot** for `source.wav` and
-  **six green dots** for the six stem m4as, filling in as each artifact
-  lands — you can watch the stems arrive dot by dot.
+- **Progress dots.** The STEMS folder shows the most-recently-touched
+  song with one **blue dot** for its source and **six green dots** for
+  the six stem m4as. A freshly fetched song has only the blue dot; the
+  green ones fill in when the Logic Pro stemming run writes its stems.
 - **Health tick.** *"DRIVE OK · Nms"* with a checkmark that flashes once a
   minute when the Drive health probe runs.
 - **Artifact ticker.** A persistent "Latest artifacts:" line under the
@@ -69,15 +69,17 @@ server events.
 
 ### Ingest pipeline
 
-Four cards: **INCOMING_WEBLOC** (pending drops), **STEM_QUEUE** (queued
-jobs), **Currently processing** (the active song and its render phase),
-and **Render failures** (count on record — triage them at
-[`/failed-renders.html`](09_TROUBLESHOOTING.md#a-render-failed)).
+Five cards: **INCOMING_WEBLOC** (pending drops), **STEM_QUEUE** (queued
+jobs), **Currently processing** (the active song and its ingest phase),
+**Ingest failures** (count on record — triage them at
+[`/failed-renders.html`](09_TROUBLESHOOTING.md#an-ingest-failed)), and
+**Logic Pro stemming queue** (songs that are fetched and waiting for
+their stems).
 
 ### Pending & recent
 
-Three listings: pending weblocs, queued render jobs, and the last 10
-songs rendered.
+Three listings: pending weblocs, queued ingest jobs, and the last 10
+songs ingested.
 
 ### Library statistics
 
@@ -149,7 +151,7 @@ Extras:
 for the hour. `sheet` runs the Google Sheet sync now; `--dry-run` previews
 without writing; `--master-only` skips the per-gig tabs. Unmatched sheet
 rows are reported to `LOGS/mpb_sync_report.json` for triage — the sync
-never creates songs or starts renders on its own.
+never creates songs or starts an ingest on its own.
 
-One hard rule: **never run the render queue on the mini.** Stemming
+One hard rule: **never run the ingest queue on the mini.** Stemming
 belongs on the Performer, where Logic Pro is. (The scripts now guard against this by hostname.)

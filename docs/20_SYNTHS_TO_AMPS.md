@@ -50,12 +50,12 @@ channel 10: the drums track needs no channel tricks.
 5. Output slot → Mono → Output 11 … 16 (or the pair starting there,
    panned hard left, if Mono is not offered).
 6. Record-enable all six.
-7. File › Save as Template… "simpleStem Gig".
+7. File › Save as Template… "Mark5 Gig".
 
 Logic and the Performer both play into the XR18 at once — Core Audio
 mixes the two apps, so a synth and a stem on the same amp simply add.
 
-## What changes in simpleStem
+## What changes in Mark5
 
 - MPL: parts say their amp with `m10` (drums), `m11`, `m13`-`m16`
   (docs/18 · Channels).

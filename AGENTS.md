@@ -18,7 +18,7 @@ A band backing-track system. YouTube URLs → 6-stem Logic Pro separations serve
 | Rules the codebase expects agents to follow | `CLAUDE.md` |
 | Design, data contracts, code map, endpoints | `ARCHITECTURE.md` |
 | The invariant table (what will break if you violate a rule, and why) | `CONTRACTS.md` |
-| End-to-end flow diagram | `WORKFLOW.md` |
+| End-to-end flow diagram | `ARCHITECTURE.md`, `docs/16_SYSTEM_ARCHITECTURE.md` |
 | How a bandmate uses the app | `USER_GUIDE.md` (may not exist yet) |
 | Keyboard shortcuts + KM integration | `SHORTCUTS.md` |
 | How to smoke-test the whole thing | `REGRESSION_TEST.md` |

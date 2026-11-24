@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<title>simpleStem README</title>
+<title>Mark5 README</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
@@ -170,7 +170,7 @@
 <div class="wrap">
   <div class="top">
     <div>
-      <h1>simpleStem README</h1>
+      <h1>Mark5 README</h1>
       <p class="sub">How the system works, with live readings laid on top. Each panel explains one part of the system; the shaded strip at the top of a panel shows what that part is doing right now.</p>
     </div>
     <div class="live" id="live"><span class="dot"></span><b id="live-mode">STATIC</b><span id="live-text">Checking for live data…</span></div>
@@ -206,9 +206,9 @@
       </div>
     </div>
     <div class="stage drive">
-      <div class="meter static" id="m-queue"><div class="row"><span class="big">–</span><span class="cap">waiting to render</span></div></div>
+      <div class="meter static" id="m-queue"><div class="row"><span class="big">–</span><span class="cap">waiting to be fetched</span></div></div>
       <div class="body">
-        <span class="num">STEP 3</span><span class="lane">Drive &middot; render queue</span>
+        <span class="num">STEP 3</span><span class="lane">Drive &middot; ingest queue</span>
         <h3>Wait in line</h3>
         <p>One <code>.json</code> job per song. The next job is the first filename alphabetically, not the oldest drop.</p>
         <span class="where">STEM_QUEUE/&lt;slug&gt;.json</span>
@@ -216,13 +216,13 @@
       </div>
     </div>
     <div class="stage perf">
-      <div class="meter static" id="m-render"><div class="row"><span class="big">–</span><span class="cap">rendering now</span></div></div>
+      <div class="meter static" id="m-render"><div class="row"><span class="big">–</span><span class="cap">being fetched now</span></div></div>
       <div class="body">
         <span class="num">STEP 4</span><span class="lane">Performer &middot; queue_runner.sh</span>
-        <h3>Render six stems</h3>
-        <p>Logic Pro's Stem Splitter splits vocals, drums, bass, guitar, piano and other, plus six drum-kit pieces, when the Logic stemming queue is run. Finished ingest jobs move to <code>_done/</code>, failures to <code>_failed/</code> with a log.</p>
-        <span class="where">STEMS/&lt;slug&gt;/*.m4a</span>
-        <span class="time">10 to 25 min per song</span>
+        <h3>Fetch the original, queue it for Logic</h3>
+        <p>queue_runner.sh and stem.sh write the song folder with its original stereo and its metadata, then put the song in the Logic Pro stemming queue. Finished ingest jobs move to <code>_done/</code>, failures to <code>_failed/</code>. The song is in the library from here on, marked LOGIC QUEUE and playable as the original stereo. Its six stems and six drum-kit pieces are made by Logic Pro's Stem Splitter when the queue is run (the Performer shows the queue and the button that hands the Mac to Claude).</p>
+        <span class="where">STEMS/&lt;slug&gt;/&lt;slug&gt;_SOURCE.m4a &middot; LOGIC_QUEUE/</span>
+        <span class="time">About a minute to fetch; about 3 min per song in Logic</span>
       </div>
     </div>
     <div class="stage lib">
@@ -274,7 +274,7 @@
         <p class="role">The shared data. Both machines read and write here. It can stall when the internet is down, so the gig path never waits on it.</p>
         <ul class="svc">
           <li><span class="dot" style="background:var(--red)"></span><span class="n">INCOMING_WEBLOC/</span><small>links waiting to download</small></li>
-          <li><span class="dot" style="background:var(--red)"></span><span class="n">STEM_QUEUE/</span><small>render jobs, plus _done/ and _failed/</small></li>
+          <li><span class="dot" style="background:var(--red)"></span><span class="n">STEM_QUEUE/</span><small>ingest jobs, plus _done/ and _failed/</small></li>
           <li><span class="dot" style="background:var(--red)"></span><span class="n">STEMS/&lt;slug&gt;/</span><small>one folder per song: source.wav, six stems, metadata</small></li>
           <li><span class="dot" style="background:var(--red)"></span><span class="n">CATALOG.json</span><small>the library index, written only by the Librarian</small></li>
           <li><span class="dot" style="background:var(--red)"></span><span class="n">GIGS/ &middot; SETLISTS/</span><small>what to play, in what order</small></li>
@@ -286,7 +286,7 @@
       <div class="meter static" id="m-perfsvc"><div class="row"><span class="big">–</span><span class="cap">services up</span></div></div>
       <div class="body">
         <h3>Performer &middot; MacBook Pro</h3>
-        <p class="role">The gig machine, 36 GB. Renders stems and runs the portal. <code>./performer.sh</code></p>
+        <p class="role">The gig machine, 36 GB. Fetches new songs, runs the portal, and runs Logic Pro for the stems. <code>./performer.sh</code></p>
         <ul class="svc" id="svc-perf">
           <li data-k="perf-runner"><span class="dot"></span><span class="n">runner</span><small>queue_runner.sh</small></li>
           <li data-k="perf-server"><span class="dot"></span><span class="n">server</span><small>the portal on :3000</small></li>
@@ -310,10 +310,10 @@
 
   <h2>Where is my song?</h2>
   <div class="facts">
-    <div class="fact"><strong>Follow the file</strong>A <code>.webloc</code> in INCOMING_WEBLOC/ hasn't downloaded yet. A <code>.json</code> in STEM_QUEUE/ is waiting or rendering. A file in <code>_done/</code> is finished. A file in <code>_failed/</code> needs a look.</div>
+    <div class="fact"><strong>Follow the file</strong>A <code>.webloc</code> in INCOMING_WEBLOC/ hasn't downloaded yet. A <code>.json</code> in STEM_QUEUE/ is waiting or being fetched. A file in <code>_done/</code> is finished. A file in <code>_failed/</code> needs a look.</div>
     <div class="fact"><strong>Already in the library?</strong>The watcher only catches the same YouTube video twice. A different upload of a song you have becomes a second song, so search STEMS/ before dropping a link.</div>
-    <div class="fact"><strong>Renderer stalled?</strong>Jobs sit in STEM_QUEUE/ and nothing new lands in <code>_done/</code>. Run <code>./performer.sh reset</code> on the Performer. The Step 4 strip turns red when this happens.</div>
-    <div class="fact"><strong>Status at a glance</strong><code>./performer.sh status</code> on the Performer and <code>./librarian.sh status</code> on the Librarian list every service, the queue and the current render.</div>
+    <div class="fact"><strong>Ingest stalled?</strong>Jobs sit in STEM_QUEUE/ and nothing new lands in <code>_done/</code>. Run <code>./performer.sh reset</code> on the Performer. The Step 4 strip turns red when this happens.</div>
+    <div class="fact"><strong>Status at a glance</strong><code>./performer.sh status</code> on the Performer and <code>./librarian.sh status</code> on the Librarian list every service, the queue and the song being fetched.</div>
   </div>
 
   <h2>Reference</h2>
@@ -326,10 +326,10 @@
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ source.wav <span class="note">raw 48 kHz ingest, kept so a song can be re-stemmed without re-downloading (the only permitted wav)</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ vocals / drums / bass / guitar / piano / other .m4a <span class="note">the six Logic Pro stems, AAC 256k, moov-first mandatory</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ metadata.json <span class="note">producer-consumer contract: title, BPM, key, singer fields, automation timeline, sections</span></div>
-<div>&nbsp;&nbsp;├─ <span class="d drive">STEM_QUEUE/</span> <span class="note">render jobs as .json files; setlists one level deep as NN_&lt;slug&gt;.json; the runner takes the first filename alphabetically</span></div>
+<div>&nbsp;&nbsp;├─ <span class="d drive">STEM_QUEUE/</span> <span class="note">ingest jobs as .json files; setlists one level deep as NN_&lt;slug&gt;.json; the runner takes the first filename alphabetically</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ _done/ &nbsp;_failed/ <span class="note">finished and dead jobs; every find over the queue must -prune these (327 folders in _done wedged a restart for 15 h)</span></div>
 <div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├─ .runner.lock/ <span class="note">single-runner mutex, owner-stamped (host + pid) so a reboot no longer leaves it stale</span></div>
-<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ .current &nbsp;.paused <span class="note">live render phase for the portal; pause flag honored between songs</span></div>
+<div>&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└─ .current &nbsp;.paused <span class="note">live ingest phase for the portal; pause flag honored between songs</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d drive">INCOMING_WEBLOC/</span> <span class="note">drop a .webloc here (portal Add box, webloc_drop.sh, Chrome Quick Action); webloc_watch.sh ingests it and deletes it; a failed fetch stays as .failed</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d drive">INCOMING_AUDIO/ &rarr; AUDIO_SOURCES/</span> <span class="note">audio-file ingest via audio_watch.sh (built 2026-08-28); neither folder exists on Drive yet and the Librarian's status does not list the audiowatch service</span></div>
 <div>&nbsp;&nbsp;├─ <span class="d drive">.run-status/</span> <span class="note">heartbeat files: each machine writes its service pids every ~20 s for the dashboards</span></div>
@@ -387,7 +387,7 @@
 
   <footer>
     <p>Updated 2026-10-11. Live readings come from the portal's own endpoints (<code>/api/librarian/state</code>, <code>/api/dashboard/state</code>, <code>/api/health</code>, <code>/api/identity</code>) every 10 seconds, so they appear only when this page is opened from a running portal: <code>http://localhost:3000/README.html</code> on the Performer or the Librarian. Performer service lights are read on the Performer itself; Librarian lights come from its heartbeat on Drive.</p>
-    <p style="margin-top:.4rem">Keep this page current: every simpleStem documentation update also updates <code>bt-construction-kit/public/README.html</code> (see the Conventions section of CLAUDE.md).</p>
+    <p style="margin-top:.4rem">Keep this page current: every Mark5 documentation update also updates <code>bt-construction-kit/public/README.html</code> (see the Conventions section of CLAUDE.md).</p>
   </footer>
 </div>
 
@@ -453,8 +453,8 @@
       fl.length ? 'check' : '');
 
     var q = (ing.queued || []).slice().sort();
-    meter('m-queue', q.length ? 'warn' : 'ok', q.length, 'waiting to render',
-      q.length ? '<span class="cap">In render order:</span><ol>' + q.slice(0, 6).map(function (n) { return '<li>' + esc(pretty(n)) + '</li>'; }).join('') + (q.length > 6 ? '<li>+' + (q.length - 6) + ' more</li>' : '') + '</ol>' : '<span class="detail">Queue is empty.</span>');
+    meter('m-queue', q.length ? 'warn' : 'ok', q.length, 'waiting to be fetched',
+      q.length ? '<span class="cap">In order:</span><ol>' + q.slice(0, 6).map(function (n) { return '<li>' + esc(pretty(n)) + '</li>'; }).join('') + (q.length > 6 ? '<li>+' + (q.length - 6) + ' more</li>' : '') + '</ol>' : '<span class="detail">Queue is empty.</span>');
 
     var proc = ing.processing;
     var done = ing.recentDone || [];
@@ -464,12 +464,12 @@
     var runnerDown = onPerformer && runner && !runner.running && q.length > 0;
     var lastLine = '<span class="detail">Last finished: ' + (done.length ? esc(pretty(done[0].name)) + ', ' + ago(newestDoneSec) : 'none on record') + '.</span>';
     if (proc) {
-      meter('m-render', 'ok', proc.phase || 'busy', 'rendering now', '<span class="detail"><b>' + esc(pretty(proc.song || proc.job || '')) + '</b></span>' + lastLine, 'live');
+      meter('m-render', 'ok', proc.phase || 'busy', 'being fetched now', '<span class="detail"><b>' + esc(pretty(proc.song || proc.job || '')) + '</b></span>' + lastLine, 'live');
     } else if (stalled || runnerDown) {
-      meter('m-render', 'bad', 'stalled', q.length + ' waiting, nothing rendering', lastLine, 'reset');
-      alerts.push('The renderer looks stalled: ' + q.length + ' job(s) waiting and nothing has finished since ' + ago(newestDoneSec) + '. Run <code>./performer.sh reset</code> on the Performer.');
+      meter('m-render', 'bad', 'stalled', q.length + ' waiting, nothing being fetched', lastLine, 'reset');
+      alerts.push('The ingest looks stalled: ' + q.length + ' job(s) waiting and nothing has finished since ' + ago(newestDoneSec) + '. Run <code>./performer.sh reset</code> on the Performer.');
     } else {
-      meter('m-render', 'ok', 'idle', 'nothing rendering', lastLine);
+      meter('m-render', 'ok', 'idle', 'nothing being fetched', lastLine);
     }
 
     var cat = (st && st.catalog) || {};

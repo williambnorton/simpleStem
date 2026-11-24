@@ -1,4 +1,4 @@
-# simpleStem system architecture — the whole rig, one picture
+# Mark5 system architecture — the whole rig, one picture
 
 Date 2026-07-18. This is the map behind the Sound Desktop UI: every
 system, every wire, and how they interact. The desk

@@ -1,4 +1,6 @@
-# simpleStem User's Guide
+# Mark5 User's Guide
+
+> **Name.** Mark5 is the name of the app; it was called simpleStem until November 2026. The repository, the Drive folder and the file names keep the old name (`~/simpleStem-code`, `ClaudeDrive/simpleStem`).
 
 *Updated 2026-08-28. Covers portal build V1.0828 and later.*
 
@@ -34,7 +36,7 @@ that is a design guarantee, not a hope, and there is a test for it.
 | 🎹 **MIDI** | The control room for the Helix, XR18, and Logic. Test patches here first. |
 | 🖥 **Desktop** | A file-level inspection view: song folders, the cache, device cards. |
 
-The buttons under the simpleStem logo switch views. The lit button is
+The buttons under the Mark5 logo switch views. The lit button is
 where you are.
 
 ---
@@ -60,10 +62,14 @@ decides HOW it sounds.
 ## Adding a song from YouTube
 
 Paste a YouTube link into the **"Paste YouTube URL + Enter"** box and hit
-Enter. The laptop downloads it, analyzes BPM and key, and separates it
-into six stems. That takes 10 to 25 minutes per song; everything else
-keeps working while it cooks, and the queue chips in the toolbar show
-the phase (downloading, analyzing, separating, mixing).
+Enter. The Librarian downloads it and analyzes BPM and key; the laptop
+then writes the song folder with the original stereo. About a minute later
+the song is in the library marked **LOGIC QUEUE**: Play gives you the
+original stereo. The six stems and the six drum-kit pieces are made by
+Logic Pro's Stem Splitter, about 3 minutes per song, when the Logic
+stemming queue is run. The queue panel at the bottom right of the
+Performer lists the waiting songs and has the button that hands the Mac
+to Claude for that run.
 
 You can paste a single video, a playlist (every video becomes a song,
 grouped into a setlist named after the playlist), or a chaptered full
@@ -217,10 +223,10 @@ On the laptop, always from `~/simpleStem-code` (never the Drive copy):
 ./performer.sh stop
 ```
 
-`start` brings up all five services (render queue, MIDI sidecar, portal,
+`start` brings up all five services (ingest queue, MIDI sidecar, portal,
 caffeinate, sidecar watchdog) and finishes with the gig test. `status`
-shows queue depth and the current render phase. `pause` idles the queue
-after the current song, without killing a render mid-song.
+shows queue depth and the current ingest phase. `pause` idles the queue
+after the current song, without stopping a fetch mid-song.
 
 On the mini:
 
@@ -278,8 +284,8 @@ Wi-Fi at home and play a song end to end.
 Drop any audio file (m4a, mp3, wav, aiff, flac) into `INCOMING_AUDIO/` in
 the Drive folder. The Librarian ingests it: a stereo fast-start m4a lands
 in `AUDIO_SOURCES/` (that folder is what you import into Easy Performer on
-the iPad via the Drive app), and the song is queued for a normal six-stem
-render on the laptop. Title and artist come from the file's tags, or from
+the iPad via the Drive app), and the song is queued like any other: fetched on
+the laptop, then stemmed by Logic Pro. Title and artist come from the file's tags, or from
 an "Artist - Title" filename. Originals are kept in
 `INCOMING_AUDIO/_ingested/` until you clear them.
 
@@ -300,7 +306,7 @@ purge confirmation at the end.
 A **✕ webloc failed** chip means yt-dlp could not fetch a URL. The
 `.failed` file sits in `INCOMING_WEBLOC/` on Drive. Update yt-dlp on
 the mini, then rename the file back to `.webloc` to retry, or delete it
-to dismiss. A **failed render** means the fetch or the source file failed; the job
+to dismiss (clicking the chip hides it until another link fails). A **failed ingest** means the fetch or the source file failed; the job
 waits in `STEM_QUEUE/_failed` and never retries on its own.
 
 ## The band sheet
@@ -316,7 +322,8 @@ overwrite it, so permanent changes belong in the sheet.
 ## Troubleshooting
 
 **The song I added doesn't show up.** Check the queue chips. "N awaiting
-render" means it is in line behind a 10-25 minute render. A red webloc
+metadata" means the Librarian has not fetched it yet. A song marked
+LOGIC QUEUE is fetched and waiting for its stems. A red webloc
 chip means the download failed; hover it.
 
 **The portal didn't come up after a reboot.** `./performer.sh reset`.
@@ -330,8 +337,8 @@ watchdog banner names the stall, and reset recovers the stack offline.
 **The Singer change disappeared after a day.** The band sheet overwrote
 it. Make the change in the sheet.
 
-**Pitch only goes 3 half-steps.** By design. A bigger shift should be a
-re-render, not a live stretch.
+**Pitch only goes 3 half-steps.** By design. A bigger shift is not
+offered as a live stretch.
 
 **LOOPER level jumps.** Check whether a +5/+10 boost is latched on the
 strip you are hearing.

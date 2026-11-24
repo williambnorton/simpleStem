@@ -8,7 +8,7 @@ or into an empty slot, so a set loads anywhere in the 36-slot bank.
 
 ## Where
 
-`<simpleStem data root>/MPL_LIBRARY/<id>.mpl.json` — one file per set, next
+`<Mark5 data root>/MPL_LIBRARY/<id>.mpl.json` — one file per set, next
 to `STEMS/` (song scans never look here). Google Drive syncs it to the
 Librarian. 🗑 moves a file to `MPL_LIBRARY/_trash/`; nothing is hard-deleted.
 

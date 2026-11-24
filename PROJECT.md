@@ -1,4 +1,4 @@
-# simpleStem — one-pager
+# Mark5 — one-pager
 
 **What**: A band backing-track system. YouTube URLs become 6-stem separations that a web portal mixes client-side. Used at live rehearsals and gigs.
 
@@ -26,10 +26,12 @@ YouTube URL
   ↓ (Chrome extension, or paste into portal)
 INCOMING_WEBLOC/*.webloc
   ↓ (Librarian: webloc_watch.sh)
-STEMS/<slug>/source.wav  (cached forever)
 STEM_QUEUE/<slug>.json   (job description)
   ↓ (Performer: queue_runner.sh → stem.sh)
-STEMS/<slug>/{vocals,drums,bass,guitar,piano,other}.m4a
+STEMS/<slug>/<slug>_SOURCE.m4a + metadata.json   (no wav is kept)
+LOGIC_QUEUE/<slug>.json  (waiting for Logic Pro)
+  ↓ (Performer: Logic Pro Stem Splitter, run by Claude when the Mac is handed over)
+STEMS/<slug>/{vocals,drums,bass,guitar,piano,other}.m4a + six kit pieces + MPL files
   ↓
 bt-construction-kit portal :3000 → Chrome → XR18 → speakers
 ```

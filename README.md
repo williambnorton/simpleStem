@@ -1,13 +1,16 @@
-# simpleStem
+# Mark5
+
+> **Name.** Mark5 is the name of the app; it was called simpleStem until November 2026. The repository, the Drive folder and the file names keep the old name (`~/simpleStem-code`, `ClaudeDrive/simpleStem`).
 
 A band backing-track system. Turns YouTube songs into separated stems
-(vocals · drums · bass · guitar · piano · other) plus drop-in practice
-mixes ("source minus vocals", "drums only", etc.), and serves them
+(vocals · drums · bass · guitar · piano · other) plus six drum-kit
+pieces and an MPL (MIDI) version of every part, and serves them
 through a web studio you load setlists into for rehearsal and live use.
 
 Built for and around the New Mitchell Park band. Two Macs share the
 work: a Mac mini (Librarian) ingests and indexes; a MacBook Pro
-(Performer) renders the stems and serves the portal on stage.
+(Performer) fetches new songs, makes their stems with Logic Pro's Stem
+Splitter, and serves the portal on stage.
 
 **See it working:** open `http://localhost:3000/README.html` from a running
 portal for the active infographic, an explanation of every stage with live
@@ -33,7 +36,7 @@ flowchart TB
     end
 
     subgraph DRIVE["Google Drive · ~/ClaudeDrive/simpleStem/ · DATA only"]
-      STEMS["STEMS/&lt;slug&gt;/<br/>M4A/<br/>STEM_QUEUE/"]
+      STEMS["STEMS/&lt;slug&gt;/<br/>STEM_QUEUE/<br/>LOGIC_QUEUE/"]
     end
 
     GH ==git pull==> MC
@@ -107,8 +110,10 @@ cd ~/simpleStem-code
 ```
 
 Then open <http://localhost:3000>, paste a YouTube URL into "Paste a
-YouTube URL", and click Add. Render takes 10–25 min per song; the
-portal stays responsive while it cooks.
+YouTube URL", and click Add. The song is fetched in about a minute and is then
+in the library marked LOGIC QUEUE, playable as the original stereo. Its six
+stems and six drum-kit pieces are made by Logic Pro's Stem Splitter (about
+3 minutes per song) when the Logic stemming queue is run from the Performer.
 
 For non-developers, see [USER_GUIDE.md](USER_GUIDE.md). For the
 single-machine legacy path or the Docker setup, see

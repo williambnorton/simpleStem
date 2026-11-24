@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>simpleStem</title>
+  <title>Mark5</title>
   <meta name="description" content="Build backing tracks, mix stems, loop segments, and plan setlist timings with professional Web Audio playback.">
   
   <!-- Fonts: Google Fonts CDN intentionally NOT loaded. Falls back to the
@@ -32,7 +32,7 @@
       <div class="brand">
         <!-- The PORTALS tab bar IS the brand block now: wordmark + build
              version on the top line, the four system views as tabs below. -->
-        <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
+        <nav id="portals" title="Mark5 views — four surfaces of one system. The lit button is where you are.">
   <div class="tb-brand"><i data-lucide="waves" class="logo-icon glow-purple"></i><span class="tb-name">Mark5</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
   <div class="tb-grid" title="Switch view — ⌥1 Performer · ⌥2 Librarian · ⌥3 MIDI · ⌥4 Desktop"><a class="pb pb-performer here" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
@@ -55,7 +55,7 @@
         </div>
         <button id="btn-enqueue" class="add-yt-btn" style="display:none;" aria-hidden="true"><i data-lucide="plus"></i> Add</button>
         <!-- Ingest tracker — shows status for URLs you just submitted.
-             pasted → librarian → queued → rendering → done.
+             pasted → librarian → queued → fetching → done.
              Auto-polls every 4 s while a submission is active. Stays
              visible until the song lands in the library, then fades. -->
         <div id="ingest-tracker" class="ingest-tracker"></div>
@@ -104,7 +104,7 @@
                    title="Jumps to the Library tab and filters the song list to matching rows.">
             <!-- Jam (Bill 2026-10-31): opens the YouTube backing-track finder
                  (jam.html) in its own tab. -->
-            <button type="button" id="jam-open-btn" class="jam-open-btn" title="Open a browser window showing YouTube backing tracks. Click one to preview it (Mac sound out); Play in simpleStem plays it as-is on strips 1–2, where Output Routing can send it to all six amps.">🎧 Browse for audio content</button>
+            <button type="button" id="jam-open-btn" class="jam-open-btn" title="Open a browser window showing YouTube backing tracks. Click one to preview it (Mac sound out); Play in Mark5 plays it as-is on strips 1–2, where Output Routing can send it to all six amps.">🎧 Browse for audio content</button>
             <div id="switcher-radio-grid" class="switcher-radio-grid" role="radiogroup" aria-label="Pick a setlist"></div>
             <div class="switcher-new-row">
               <input type="text" id="switcher-new-name" class="switcher-new-input"
@@ -186,7 +186,7 @@
           <div class="idle-content">
             <i data-lucide="music" class="idle-icon pulse"></i>
             <h2>Select a Song to Begin Construction</h2>
-            <p>Choose a multi-stem folder or stereo M4A backing track from your library below to start.</p>
+            <p>Choose a song from your library below to start.</p>
           </div>
         </div>
         
@@ -1271,10 +1271,6 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <span class="stat-label">Multitrack Stems</span>
             </div>
             <div class="stat-card glass-card hover-glow">
-              <span class="stat-num glow-green" id="stat-total-m4as">-</span>
-              <span class="stat-label">M4A Tracks</span>
-            </div>
-            <div class="stat-card glass-card hover-glow">
               <span class="stat-num glow-orange" id="stat-total-artists">-</span>
               <span class="stat-label">Artists</span>
             </div>
@@ -1389,10 +1385,7 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
      this is a song Bill is preparing for the first time). The Fetch
      button retries Genius; the textarea is the manual-paste escape
      hatch when Genius doesn't have it (Google/AZLyrics/Tab sites). -->
-<!-- (Static lyrics-modal removed; app.js _ensureLyricsModal injects the
-     canonical version with the left-column search buttons.) -->
-<div id="lyrics-modal-legacy-removed" style="display:none;">
-</div>
+<!-- (The lyrics modal is injected by app.js, _ensureLyricsModal.) -->
 
 <div id="midi-modal" class="midi-modal" style="display:none;">
   <div class="midi-modal-backdrop"></div>

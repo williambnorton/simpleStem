@@ -43,3 +43,8 @@ xr18_ip.txt
 
 # Claude working files, backups and run tools (large; not code)
 Claude outputs/
+
+# local outputs and Finder leftovers
+LOGS_*
+drumscribe_report.json
+Icon?

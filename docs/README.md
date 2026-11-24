@@ -1,6 +1,6 @@
-# simpleStem documentation
+# Mark5 documentation
 
-The complete user documentation for simpleStem — the band's backing-track
+The complete user documentation for Mark5 — the band's backing-track
 system. Start with the Overview if you're new; jump straight to the Gig Day
 Runbook if the van leaves in an hour.
 
@@ -8,7 +8,7 @@ Runbook if the van leaves in an hour.
 
 | Doc | What it covers |
 |---|---|
-| [01_OVERVIEW.md](01_OVERVIEW.md) | What simpleStem is, the two-machine architecture in plain words, and what each bandmate can do with it. |
+| [01_OVERVIEW.md](01_OVERVIEW.md) | What Mark5 is, the two-machine architecture in plain words, and what each bandmate can do with it. |
 | [02_GETTING_STARTED.md](02_GETTING_STARTED.md) | First launch on the Performer laptop, adding a song from YouTube, what happens during ingest, and playing your first song in each of the three playback modes. |
 | [03_PLAYER_REFERENCE.md](03_PLAYER_REFERENCE.md) | Every control in the player, region by region — pills, visualizer, sections, action bar, transport, LOOPER, pitch knobs, the stem mixer console, and the XR18 banner buttons. |
 | [04_GIGS_AND_SETLISTS.md](04_GIGS_AND_SETLISTS.md) | The Gig → Setlist → Song hierarchy, the gig picker and all nine pseudo-gigs, gig management, the Gig Builder, manual setlists, ghost-add, and auto-advance. |
@@ -63,3 +63,5 @@ badge. The player reference names every one of them by its on-screen label.
 | `16_SYSTEM_ARCHITECTURE.md` | the two-machine picture |
 | `17_EAVFA_OBJECT_MODEL.md` | object model |
 | `18_MPL_LANGUAGE.md` | MPL syntax, EBNF, semantics |
+| `19_MPL_LIBRARY.md` | MPL song files, the MPL Player panel, INPUT ROUTING, MPL strips, kit-piece MPL |
+| `20_SYNTHS_TO_AMPS.md` | Logic synth tracks and their amps |

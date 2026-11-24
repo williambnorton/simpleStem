@@ -9,8 +9,10 @@ between-machine problems.
 **One song fails, the rest play:** the song's stems are missing or
 incomplete. Check it on the Librarian dashboard's Library table (search
 its title — the **Stems** column shows `N/6`), or open the song's ⋯ menu →
-All metadata to see the file inventory. Fix by **Re-fetch** from the ⋯
-menu (re-downloads and re-renders) or wait for a pending render. The
+All metadata to see the file inventory. A song marked **LOGIC QUEUE**
+has no stems yet and plays as the original stereo until the Logic Pro
+stemming run. Otherwise fix by **Re-fetch** from the ⋯ menu (re-downloads
+and queues the song for Logic Pro stemming). The
 portal greys out rows it knows failed to load so you don't hit them
 again mid-gig.
 
@@ -64,17 +66,17 @@ health table shows `5/6`, or you find `vocals (1).m4a`-style files inside
 Fix: eyeball the song's folder in Finder, trash the ` (N)` copies (keep
 the newest good file under the canonical name), then re-run Flash Cache
 (Shift-click to force overwrite) so the cache picks up the corrected
-files. If the stem set itself is broken, ⋯ → Re-fetch re-renders the song
-cleanly.
+files. If the stems themselves are broken, ⋯ → Re-fetch downloads the
+song again and queues it for Logic Pro stemming.
 
 Prevention: this usually comes from both machines writing the same file,
 or from interrupted syncs. Let each machine own its side (Librarian
 writes metadata/catalog; Performer writes stems) and give Drive time to
 settle after big renders.
 
-## A render failed
+## An ingest failed
 
-The ingest tracker shows *failed*, or the Librarian dashboard's **Render
+The ingest tracker shows *failed*, or the Librarian dashboard's **Ingest
 failures** card has a count. Open the triage page:
 
 ```
@@ -90,13 +92,14 @@ different upload via ⋯ → Re-fetch), or a transient download error
 ## The two machines disagree (Drive sync issues)
 
 Symptoms: a song exists on one machine and not the other; the Performer's
-library count differs from the Librarian's catalog count; a brand-new
-render shows `0/6` health for a few minutes.
+library count differs from the Librarian's catalog count; a freshly
+stemmed song shows `0/6` health for a few minutes.
 
 - **Give sync a minute.** The catalog rebuilds within seconds on the
-  Librarian, but Drive still has to move files between machines. A fresh
-  render showing 0/6 that self-heals shortly after is sync latency, not
-  data loss.
+  Librarian, but Drive still has to move files between machines. A freshly
+  stemmed song showing 0/6 that self-heals shortly after is sync latency,
+  not data loss. (A song marked LOGIC QUEUE is 0/6 by design until the
+  Logic run.)
 - **Check Drive itself.** The Librarian dashboard's Plumbing card shows
   Drive health and latency; "DRIVE OK · 0ms" means the folder is live.
 - **Never both at once.** If a file is being edited on both machines in

@@ -74,8 +74,8 @@ after you arrive.
 - Song-specific automation (Helix patches, mutes, clips, lyrics) fires
   from each song's timeline on its own.
 - Keep hands off anything that isn't the mixer and transport. Do not
-  ingest songs, do not run Re-stem, do not touch the Librarian — render
-  work does not belong at a gig.
+  ingest songs, do not hand the Mac over for Logic stemming, do not touch
+  the Librarian — ingest work does not belong at a gig.
 - If a singer steps out: switch to the **🎙 RoundRobin** pseudo-gig or
   skip their songs; see [04_GIGS_AND_SETLISTS.md](04_GIGS_AND_SETLISTS.md).
 

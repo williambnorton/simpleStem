@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>simpleStem · Librarian</title>
+  <title>Mark5 · Librarian</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     /* Distinct visual identity from /dashboard. Warm cream + ink, library-
@@ -915,16 +915,16 @@
 </head>
 <body>
   <header>
-    <h1>simpleStem
+    <h1>Mark5
       <!-- Role toggle. Lives in the brand row on every page so the operator
            can switch views from anywhere. Clicking the inactive role
            navigates; the active role is a no-op. -->
-      <nav id="portals" title="simpleStem views — four surfaces of one system. The lit button is where you are.">
+      <nav id="portals" title="Mark5 views — four surfaces of one system. The lit button is where you are.">
   <div class="tb-brand"><span class="tb-name">Mark5</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
   <div class="tb-grid"><a class="pb pb-performer" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian here" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
       <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
-      <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the simpleStem song library
+      <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the Mark5 song library
         · <a href="/prune.html" target="simplestem-prune" style="font-weight:700;color:#d11a2a" title="Remove duplicate versions, live tracks and rarely played songs">🧹 Prune library</a></span>
     </h1>
     <div class="meta">
@@ -1115,7 +1115,7 @@
              history without watching every frame. -->
         <div class="artifact-ticker" id="artifact-ticker">
           <span class="ticker-label">Latest artifacts:</span>
-          <span class="ticker-empty" id="ticker-empty">waiting for first render…</span>
+          <span class="ticker-empty" id="ticker-empty">waiting for the first ingest…</span>
         </div>
       </div>
     </section>
@@ -1143,9 +1143,15 @@
           <div class="c-sub" id="processing-sub">idle</div>
         </div>
         <div id="card-failed" class="card state-idle">
-          <div class="c-title">Render failures</div>
+          <div class="c-title">Ingest failures</div>
           <div class="c-main" id="failed-main">—</div>
           <div class="c-sub" id="failed-sub">none on record</div>
+        </div>
+        <!-- The last stage (2026-11-23): a fetched song waits here until Logic Pro has made its stems. -->
+        <div id="card-logic" class="card state-idle" style="grid-column: 1 / -1;">
+          <div class="c-title">Logic Pro stemming queue</div>
+          <div class="c-main" id="logic-main">…</div>
+          <div class="c-sub" id="logic-sub">songs that have their original stereo and are waiting for stems</div>
         </div>
       </div>
     </section>
@@ -1162,11 +1168,11 @@
           <div id="incoming-list" class="listing"><div class="empty">empty</div></div>
         </div>
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Queued render jobs</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Queued ingest jobs</div>
           <div id="queued-list" class="listing"><div class="empty">empty</div></div>
         </div>
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Recently rendered (last 10)</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px;">Recently ingested (last 10)</div>
           <div id="recent-list" class="listing"><div class="empty">none yet</div></div>
         </div>
       </div>
@@ -1323,7 +1329,7 @@
         if (stamp) rememberedVersion = stamp;
         const bv = document.getElementById('brand-version');
         if (bv) bv.textContent = stamp;
-        document.title = `simpleStem Librarian ${stamp}`.trim();
+        document.title = `Mark5 Librarian ${stamp}`.trim();
         // If the server says we're not on a Librarian machine, leave a
         // hint in the host pill so the operator knows the data is being
         // viewed from the wrong side (data still real — just remote).
@@ -1454,7 +1460,7 @@
       if (ing.processing) {
         const sn = (ing.processing.song || ing.processing.job || '?');
         const ph = ing.processing.phase || '';
-        setCard('processing', 'state-warn', sn.slice(0, 60), ph || 'rendering');
+        setCard('processing', 'state-warn', sn.slice(0, 60), ph || 'ingesting');
       } else {
         setCard('processing', 'state-idle', '—', 'idle');
       }
@@ -2403,7 +2409,7 @@
         tb.innerHTML = asrcRows.map(s => `<tr>
           <td>${escapeHtml(s.file)}</td>
           <td>${s.sizeBytes ? (s.sizeBytes / 1048576).toFixed(1) + ' MB' : '<span style="color:var(--c-warn)">not cached yet</span>'}</td>
-          <td>${s.inLibrary ? '<span style="color:var(--c-good)">✓ stems in library</span>' : '<span style="color:var(--ink-dim)">render pending</span>'}</td>
+          <td>${s.inLibrary ? '<span style="color:var(--c-good)">✓ stems in library</span>' : '<span style="color:var(--ink-dim)">ingest pending</span>'}</td>
           <td style="white-space:nowrap">
             <button class="asrc-play" data-file="${escapeHtml(s.file)}" title="Play through the speakers">▶</button>
             <button class="asrc-del" data-file="${escapeHtml(s.file)}" title="Delete this stereo file (the rendered stems, if any, are untouched)">🗑</button>
@@ -2628,5 +2634,24 @@
   </script>
 <script src="help.js"></script>
 <script src="/views-keys.js"></script>
+<script>
+/* Logic Pro stemming queue card (bug sweep 2026-11-23): GET /api/logic-queue, every 15 s */
+(function () {
+  async function paint() {
+    const card = document.getElementById('card-logic'), main = document.getElementById('logic-main'), sub = document.getElementById('logic-sub');
+    if (!card) return;
+    try {
+      const j = await fetch('/api/logic-queue', { cache: 'no-store' }).then(r => r.json());
+      const p = (j && j.pending) || [], names = p.map(x => String((x && (x.title || x.folder)) || x));
+      card.classList.remove('state-good', 'state-warn', 'state-bad', 'state-info', 'state-idle');
+      card.classList.add(p.length ? 'state-warn' : 'state-good');
+      main.textContent = p.length ? p.length + (p.length === 1 ? ' song waiting' : ' songs waiting') : 'empty';
+      sub.textContent = p.length ? names.slice(0, 8).join(' · ') + (names.length > 8 ? ' · …' : '') + (j.handover ? ' — the Mac is handed to Claude' : ' — play them as the original stereo meanwhile; hand the Mac to Claude from the Performer to stem them')
+                                 : 'every fetched song has its stems';
+    } catch (e) { main.textContent = '?'; sub.textContent = 'the Performer did not answer'; }
+  }
+  paint(); setInterval(paint, 15000);
+})();
+</script>
 </body>
 </html>

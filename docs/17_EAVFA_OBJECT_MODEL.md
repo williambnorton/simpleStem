@@ -79,7 +79,7 @@ The same D/C instrumentation renders at three sizes and stays in sync:
 ## The hierarchy
 
 ```
-🌐 simpleStem SYSTEM
+🌐 Mark5 SYSTEM
 ├─ 🤖 LIBRARIAN (Mac mini)
 └─ 💻 PERFORMER (MacBook Pro)
    ├─ 🎛 portal :3000
