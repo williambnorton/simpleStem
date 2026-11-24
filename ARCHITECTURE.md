@@ -179,7 +179,6 @@ flowchart TD
     MP["metadata.py<br/>→ metadata.json"]
     DM["Logic Pro Stem Splitter<br/>→ 6 stems + 6 kit pieces"]
     MX["ffmpeg amix<br/>→ m4a minus-mixes"]
-    LO["loop_detect.py<br/>→ jam loops"]
 
     STEMS["STEMS/&lt;slug&gt;/"]
     M4A["M4A/"]
@@ -194,14 +193,13 @@ flowchart TD
     SS --> MP --> STEMS
     SS --> DM --> STEMS
     SS --> MX --> M4A
-    SS --> LO --> STEMS
     STEMS --> PORT
     M4A --> PORT
 
     classDef librarian fill:#f6f8fc,stroke:#3f6fd6;
     classDef performer fill:#fff4e6,stroke:#e07b00;
     class WW,SV,PL,PEND,IN,EQ,BR librarian;
-    class QR,SS,DL,DM,MX,LO,MP,PORT performer;
+    class QR,SS,DL,DM,MX,MP,PORT performer;
 ```
 
 (Blue nodes run on the Librarian, orange on the Performer. Brown data
@@ -228,9 +226,8 @@ nodes live in Drive and are visible to both.)
    produces the six stems and six kit pieces as m4a.
 5. **No mixdowns.** The minus-mixes (`_-V`, `_-V-G`, `_-V-G-B`, `_DO` in `M4A/`) were retired in
    June 2026; the mixer's INSTRUMENT ROUTING buttons (SOURCE, STEMS, D, BD, B, BDV) do that job live.
-6. **Loops** — `loop_detect.py` segments `source.wav` by recurrence
-   and tiles the most-repeated sections out of each rhythm stem at
-   bar boundaries, producing up to 4 loops per stem.
+6. **No automatic loops.** The loop detector (`loop_detect.py`) was retired in
+   June 2026 along with the mixdowns.
 7. **Serve** — `bt-construction-kit` reads `STEMS/`, `M4A/`, and each
    song's `metadata.json`; streams audio through `/api/audio/...`
    endpoints with a local cache at `~/.bt-cache`.
@@ -638,10 +635,8 @@ Install deps with `pipx inject demucs mido python-rtmidi`.
 | `metadata.py` | Per-song BPM (librosa beat tracking), key (Krumhansl-Schmuckler), version detection (live/studio/cover/karaoke from YouTube title), lyric/chord search URLs, clip windows for album chapters. Idempotent. (MusicBrainz release-date lookup retired 2026-06-28.) |
 | `queue_runner.sh` | Consumes `STEM_QUEUE/`. One at a time; holds `STEM_QUEUE/.runner.lock`. For album chapters: downloads the full video, slices the clip window, then stems. Publishes current job + phase to `STEM_QUEUE/.current` for the portal. Moves finished → `_done/`, failed → `_failed/`. Performer only. |
 | `stem.sh` | Source acquisition → 48 kHz `source.wav` → `metadata.json` → `<slug>_SOURCE.m4a` → `LOGIC_QUEUE/<slug>.json`. Idempotent at every step. The stems come from the Logic Pro Stem Splitter run over that queue. |
-| `loop_detect.py` | Beat-synced agglomerative segmentation of `source.wav`; tiles the most-repeated sections of each rhythm stem to song length at bar boundaries. |
 | `catalog.py` | Daily Librarian pass: rebuild `CATALOG.json` from `STEMS/`; compute missing BPM/key locally (librosa); flag (don't overwrite) drift between dirs and `metadata.json` files. (M4A/ scan + MusicBrainz fill-gaps both retired 2026-06-27/28.) |
 | `mpb_sync.py` | Mitchell Park Band Google Sheet sync. Pulls the master songlist + per-gig tabs daily; writes singer/band/drum-pattern/readiness fields into matched `STEMS/<slug>/metadata.json` and produces `GIGS/<gig>.json` files. Replaces the retired `mpbbatch.bash` path. |
-| `backfill_m4a_stems.sh`, `migrate_per_folder_loops.sh` | One-shot Librarian maintenance scripts: encode m4a siblings for the WAV-only legacy library, and consolidate legacy per-folder loops into the canonical flat `LOOPS/` layout. All idempotent; default dry-run with `--go` to commit. |
 
 ### Control scripts
 
@@ -764,14 +759,10 @@ If username/mount differs from this fallback, set the env var.
 - **Drive streaming latency:** first play of an uncached file on the
   Performer streams from Drive and can take a few seconds; the
   `~/.bt-cache` mirror covers subsequent plays.
-- **4/4 assumed throughout:** `loop_detect.py` and the beat grid
-  both assume four beats per bar. Songs in 3/4 or
-  6/8 will have wrong bar counts (audio is still correct).
+- **4/4 assumed throughout:** the beat grid assumes four beats per bar.
+  Songs in 3/4 or 6/8 will have wrong bar counts (audio is still correct).
 - **YouTube TOS:** downloading is technically against TOS. This is for
   personal band-practice use.
-- **Section labeling is recurrence-only:** `loop_detect.py` ranks
-  clusters by how often a section repeats, not by musical role. Don't
-  trust loop1 to be the chorus — it usually is, but not always.
 
 ---
 

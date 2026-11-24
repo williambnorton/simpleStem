@@ -396,8 +396,7 @@ def build(root, do_fill):
     # M4A mixdowns retired 2026-06-27 — the portal mixes the six stems
     # client-side. catalog.py now only walks STEMS/. The build_m4a_rows /
     # m4a drift logic is gone; if M4A/ exists from a pre-purge era, it is
-    # ignored by the catalog and will be moved aside by
-    # retire_legacy_files.sh.
+    # ignored by the catalog.
     stems_root = root / 'STEMS'
 
     drift = {

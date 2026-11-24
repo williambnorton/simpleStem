@@ -27,8 +27,8 @@ metadata.json + LOGIC_QUEUE/<slug>.json) → Logic Pro Stem Splitter run
 > "minus" variants (`-V`, `-V-G`, `-V-G-B`, `DO`) into `M4A/` and per-song
 > loop files. Those code paths are gone. The portal's Web Audio graph mixes
 > the six stems live; a future "loop construction kit" feature will be
-> designed from scratch when needed. Migration: `./retire_legacy_files.sh`
-> moves existing `M4A/` and loops aside; purge later with `rm -rf`.
+> designed from scratch when needed. The existing `M4A/` and loops were
+> moved aside on 2026-06-27; purge later with `rm -rf`.
 
 ## Architecture roles (important)
 
@@ -118,7 +118,6 @@ Pick from this table:
 | `queue_runner.sh` (ingest queue consumer) | **Performer** | `performer.sh start` starts this. Pulls jobs from `STEM_QUEUE/`, runs `stem.sh`: SOURCE m4a + metadata, then an entry in `LOGIC_QUEUE/`. |
 | `stem.sh` (single-job fetch + queue for Logic) | **Performer** | Called by `queue_runner.sh`. |
 | `bt-construction-kit/` Express server | **Performer** | `performer.sh start` brings up the portal at `:3000`. |
-| `retire_legacy_files.sh` | **Either** | One-shot migration that moves the retired `M4A/` and per-song loop artefacts aside. Reversible. |
 | MIDI sidecar (`midi_sidecar.py`) | **Performer** | Drives the user's Helix / XR18 / Logic via macOS MIDI ports — must be on the gig laptop. |
 | Logic bridge (`logic_bridge.py`, :5556) | **Performer** | Reads and writes Logic Pro's mixer by emulating a Mackie Control surface over virtual MIDI ports ("LogicBridge Virtual"). Track names, per-strip meters, fader moves. Verbs: `GET /tracks`, `POST /fader`, `POST /bank`, `POST /balance`; the portal proxies them at `/api/logic/*` and adds `POST /api/logic/balance-singers {base}` (resolves who sings the song from MPB metadata, matches Logic tracks named by singer first name). One-time Logic setup: Control Surfaces > Setup > New > Install > Mackie Control, both ports set to "LogicBridge Virtual". Keep vocal tracks in Logic's first 8 tracks so the surface can see them without banking. Fully offline (localhost MIDI + HTTP). At a gig the portal can fire these verbs with no Claude; Claude uses the same verbs conversationally at rehearsal. |
 | Editing `bt-construction-kit/` source | **Performer** | The Performer is the primary editor and pushes; the Librarian pulls. |

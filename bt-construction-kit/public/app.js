@@ -63,7 +63,6 @@ function _saveLibraryFiltersToStorage() {
 }
 _loadLibraryFiltersFromStorage();
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
-let setlist = []; // Array of song items in setlist
 let currentSong = null;
 let currentMode = 'full'; // 'full' or 'loop' or 'outro'
 let activeLoopNum = null;
@@ -73,12 +72,6 @@ let isLooping = false;
 let playbackSpeed = 1.0;
 let syncInterval = null;
 
-// Outro Jam Stretching state
-let stretchActive = false;
-let stretchCycles = 2; // 2, 4, 8, 'infinite'
-let isStretching = false;
-let stretchCycleCount = 0;
-let stretchTimer = null;
 let currentMasterVolume = 0.75;
 
 // Web Audio API variables
@@ -573,7 +566,6 @@ const els = {
   // Stats
   statSongs: document.getElementById('stat-total-songs'),
   statStems: document.getElementById('stat-total-stems'),
-  statM4as: document.getElementById('stat-total-m4as'),
   statArtists: document.getElementById('stat-total-artists'),
   barSlow: document.getElementById('tempo-slow-bar'),
   barMedium: document.getElementById('tempo-medium-bar'),
@@ -633,11 +625,6 @@ const els = {
   loopMixDrums: document.getElementById('loop-mix-drums'),
   loopMixBass: document.getElementById('loop-mix-bass'),
 
-  // Outro loop stretch controls
-  stretchToggle: document.getElementById('stretch-toggle'),
-  stretchCyclesContainer: document.getElementById('stretch-cycles-container'),
-  cycleBtns: document.querySelectorAll('.cycle-btn'),
-  stretchInfo: document.getElementById('stretch-info-text'),
   
   // Library list
   songListBody: document.getElementById('song-list-body'),
@@ -646,32 +633,16 @@ const els = {
   btnGridView: document.getElementById('btn-grid-view'),
   countLabel: document.getElementById('library-count-label'),
 
-  // Setlist Planner
-  setlistStatsLabel: document.getElementById('setlist-stats-label'),
-  btnClearSetlist: document.getElementById('btn-clear-setlist'),
-  setlistStartTime: document.getElementById('setlist-start-time'),
-  setlistName: document.getElementById('setlist-name'),
-  setlistSongsContainer: document.getElementById('setlist-songs-container'),
-  // Saved SetLists panel
-  setlistsList: document.getElementById('setlists-list'),
-  btnRefreshSetlists: document.getElementById('btn-refresh-setlists'),
-  btnSaveSetlist: document.getElementById('btn-save-setlist'),
   // Master volume (right rail)
   masterVol: document.getElementById('master-vol'),
   masterVolPct: document.getElementById('master-vol-pct'),
   // Version / update
   versionRunning: document.getElementById('version-running'),
   btnUpdate: document.getElementById('btn-update'),
-  btnRestart: document.getElementById('btn-restart-mixer') || document.getElementById('btn-restart-top'),
+  btnRestart: document.getElementById('btn-restart-mixer'),
   librarySpinnerCaption: document.getElementById('library-spinner-caption'),
   bufferingCaption: document.getElementById('buffering-caption'),
   updateLabel: document.getElementById('update-label'),
-  // Stemming progress
-  stemProgress: document.getElementById('stem-progress'),
-  stemProgressLabel: document.getElementById('stem-progress-label'),
-  stemProgressCount: document.getElementById('stem-progress-count'),
-  stemProgressFill: document.getElementById('stem-progress-fill'),
-  stemProgressNow: document.getElementById('stem-progress-now'),
 
   // Add-from-YouTube queue
   ytUrl: document.getElementById('yt-url'),
@@ -713,12 +684,10 @@ window.addEventListener('DOMContentLoaded', () => {
   setupUrlLoopPanel();
   setupSamplerPanel();
   setupClipQuickModalOnce();
-  loadSetlistFromLocalStorage();
   loadMixerState();
   startWallClock();
   startCacheStatusPoll();
   setupQueueUI();
-  setupSetlistsPanel();
   setupVersionWatch();
   setupMasterVolume();
   setupVizModeToggle();
@@ -789,7 +758,6 @@ window.addEventListener('DOMContentLoaded', () => {
   try { setupLyricsPageMode(); }    catch (e) { console.warn('[lyrics-page] setup failed:', e); }
   try { setupIngestEventsLog(); }   catch (e) { console.warn('[ingest-events] setup failed:', e); }
   try { setupSettingsModal(); }     catch (e) { console.warn('[settings] setup failed:', e); }
-  try { setupPortalsPulldown(); }   catch (e) { console.warn('[portals-dd] setup failed:', e); }
   // Section LOOPER button — toggle the section-loop on/off
   const looperBtn = document.getElementById('btn-section-looper');
   if (looperBtn) looperBtn.addEventListener('click', toggleSectionLooper);
@@ -2696,11 +2664,8 @@ function _hideDropIndicator(wrap) {
   if (ind) ind.style.display = 'none';
 }
 
-// Bridges: callers from before the gig rewrite (loadSong, addToSetlist,
-// removeFromSetlist, loadSetlistsList) still invoke these — wire them to the
-// gig render so the sidebar updates on song-load / saved-setlist-load.
+// Bridge: loadSong still calls this to refresh the sidebar on song-load.
 function renderSidebarSetlist() { renderGigSidebar(); }
-function _cacheSavedSetlistMeta() { /* gig sidebar doesn't depend on flat setlists */ }
 
 
 // ── Gig Mode ──────────────────────────────────────────────────────────────
@@ -4131,8 +4096,6 @@ function renderQueue(q) {
     );
   }
   el.innerHTML = chips.length ? chips.join(' ') : '<span class="queue-idle">Queue empty</span>';
-
-  renderStemProgress(q);
 }
 
 // Pick the variant a bare 'play this song' action should use. Default
@@ -4176,47 +4139,6 @@ function rememberLastVariantCode(v) {
   const code = v.type === 'stems' ? 'STEMS' : v.variantCode;
   if (!code) return;
   try { localStorage.setItem('bt_last_variant_code', code); } catch (e) {}
-}
-
-// Stemming progress bar (e.g. "Stemming 5/9").
-// /api/queue gives the CURRENT backlog (queued count) + whether one is
-// processing, but no fixed total. We derive a denominator client-side: when the
-// remaining work rises, that's the size of the current batch (high-water mark);
-// as jobs finish, the bar fills toward it. Resets to idle when the queue drains.
-let stemBatchTotal = 0;
-function renderStemProgress(q) {
-  if (!els.stemProgress) return;
-
-  // count songs still to render: queued jobs (setlist folders count their songs)
-  // + anything actively processing. Awaiting-metadata items aren't stemmable yet,
-  // so they're shown separately, not in the denominator.
-  let remaining = 0;
-  for (const j of (q.queued || [])) remaining += (j.songs || 1);
-  const processing = q.processing ? 1 : 0;
-  const toDo = remaining + processing;
-
-  if (toDo === 0) {
-    stemBatchTotal = 0;
-    els.stemProgress.style.display = 'none';
-    return;
-  }
-
-  // Grow the batch total if the workload increased (new jobs queued).
-  if (toDo > stemBatchTotal) stemBatchTotal = toDo;
-  const done = Math.max(0, stemBatchTotal - toDo);
-  const pct = stemBatchTotal ? Math.round((done / stemBatchTotal) * 100) : 0;
-
-  els.stemProgress.style.display = 'block';
-  els.stemProgressCount.textContent = `${done}/${stemBatchTotal}`;
-  els.stemProgressFill.style.width = `${pct}%`;
-
-  if (q.processing) {
-    const s = q.processing.song || q.processing.job || 'song';
-    const ph = q.processing.phase ? ` · ${q.processing.phase}` : '';
-    els.stemProgressNow.textContent = `${s}${ph}`;
-  } else {
-    els.stemProgressNow.textContent = 'waiting for the Performer to pick up the queue…';
-  }
 }
 
 // Update the small caption under the library-load spinner. Helps the
@@ -4449,7 +4371,6 @@ function renderStats(stats) {
   updateLibraryCacheBanner(stats);
   els.statSongs.textContent = stats.totalSongs;
   els.statStems.textContent = stats.totalStems;
-  if (els.statM4as) els.statM4as.textContent = stats.totalM4as;
   els.statArtists.textContent = stats.artistCount;
   
   const totalWithBpm = stats.bpmDistribution.slow + stats.bpmDistribution.medium + stats.bpmDistribution.fast;
@@ -4668,9 +4589,7 @@ function renderLibrary() {
     checkbox.className = 'song-checkbox';
     const stemsVarForBatch = merged.variants.find(v => v.type === 'stems');
     const songBaseForBatch = stemsVarForBatch && stemsVarForBatch.folderName;
-    // Checkbox is pure batch-select marker. Decoupled from the legacy
-    // `setlist` array (which had its own UI pane that is now gone, but
-    // the variable is still used internally by various restore paths).
+    // Checkbox is pure batch-select marker.
     // Checked iff the song's base is in the batch selection set.
     checkbox.checked = !!(songBaseForBatch && batchSelectedBases.has(songBaseForBatch));
     checkbox.addEventListener('click', e => e.stopPropagation());
@@ -5170,8 +5089,9 @@ function setupMediaSessionKeys() {
   const safe = (fn) => { try { if (typeof fn === 'function') fn(); } catch (e) { console.warn('[mediasession] handler failed:', e); } };
   try { navigator.mediaSession.setActionHandler('play',  () => safe(togglePlayPause)); } catch (e) {}
   try { navigator.mediaSession.setActionHandler('pause', () => safe(togglePlayPause)); } catch (e) {}
-  try { navigator.mediaSession.setActionHandler('previoustrack', () => safe(() => (typeof playPrevInSetlist === 'function') && playPrevInSetlist())); } catch (e) {}
-  try { navigator.mediaSession.setActionHandler('nexttrack',     () => safe(() => (typeof playNextInSetlist === 'function') && playNextInSetlist())); } catch (e) {}
+  // Previous/next are claimed so the keys don't reach another app; they do nothing yet.
+  try { navigator.mediaSession.setActionHandler('previoustrack', () => {}); } catch (e) {}
+  try { navigator.mediaSession.setActionHandler('nexttrack',     () => {}); } catch (e) {}
   // Refresh the OS "Now Playing" metadata whenever currentSong changes
   // so the keyboard knows a track is live.
   window.updateMediaSessionMetadata = function (song) {
@@ -5264,47 +5184,6 @@ function setupLyricsPageMode() {
   if (closeBtn) closeBtn.addEventListener('click', close);
   window.openLyricsPage = openPage;
   window.closeLyricsPage = close;
-}
-
-// ── System-view pulldown (Bill 2026-10-19) ─────────────────────────────
-// Replaces the four always-visible tabs (Performer / Librarian / MIDI /
-// Desktop) with a single trigger button that opens a menu. Trigger
-// mirrors the current view's color class so you still see where you
-// are at a glance.
-function setupPortalsPulldown() {
-  const btn   = document.getElementById('portals-dd-btn');
-  const menu  = document.getElementById('portals-dd-menu');
-  const label = btn && btn.querySelector('.tb-dd-current');
-  if (!btn || !menu) return;
-
-  // Pick the current view from URL path. Default: Performer.
-  const path = (location.pathname || '/').toLowerCase();
-  let current;
-  if (path.includes('/librarian')) current = 'librarian';
-  else if (path.includes('/midi-console')) current = 'midi';
-  else if (path.includes('/desktop-proto')) current = 'desk';
-  else current = 'performer';
-
-  const colorClasses = ['pb-performer', 'pb-librarian', 'pb-midi', 'pb-desk'];
-  const labels = { performer: '🎛 Performer', librarian: '🤖 Librarian', midi: '🎹 MIDI', desk: '🖥 Desktop' };
-  // Paint the trigger button in the current view's color + label.
-  colorClasses.forEach(c => btn.classList.remove(c));
-  btn.classList.add('pb-' + current);
-  btn.classList.add('here');
-  if (label) label.textContent = labels[current] || labels.performer;
-
-  const close = () => { menu.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); };
-  const open  = () => { menu.removeAttribute('hidden'); btn.setAttribute('aria-expanded', 'true'); };
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (menu.hasAttribute('hidden')) open(); else close();
-  });
-  document.addEventListener('click', (e) => {
-    if (!menu.hasAttribute('hidden') && !menu.contains(e.target) && e.target !== btn) close();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (!menu.hasAttribute('hidden') && e.key === 'Escape') close();
-  });
 }
 
 // ── Settings modal (Bill 2026-10-19) ───────────────────────────────────
@@ -6891,53 +6770,6 @@ function renderRoutingFxButtons() {
   }
 }
 
-// ── Sidebar splitter ──────────────────────────────────────────────────────
-// Drag the 6px bar between the sidebar and the main content to resize the
-// left pane. Width persists in localStorage. Double-click to reset to the
-// 760px default. Bounded [280, 1000] so the layout can never break.
-const SIDEBAR_WIDTH_KEY = 'simpleStem.sidebarWidth';
-const SIDEBAR_WIDTH_DEFAULT = 760;
-const SIDEBAR_WIDTH_MIN = 280;
-const SIDEBAR_WIDTH_MAX = 1000;
-
-function setupSidebarSplitter() {
-  const splitter = document.getElementById('sidebar-splitter');
-  if (!splitter) return;
-  let saved = SIDEBAR_WIDTH_DEFAULT;
-  try { saved = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || `${SIDEBAR_WIDTH_DEFAULT}`, 10); } catch (e) {}
-  applySidebarWidth(saved);
-
-  let dragging = false;
-  splitter.addEventListener('mousedown', (e) => {
-    dragging = true;
-    splitter.classList.add('dragging');
-    document.body.classList.add('splitter-dragging');
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    applySidebarWidth(e.clientX);
-  });
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    splitter.classList.remove('dragging');
-    document.body.classList.remove('splitter-dragging');
-    // Persist final width
-    const w = parseInt(document.documentElement.style.getPropertyValue('--sidebar-width') || `${SIDEBAR_WIDTH_DEFAULT}`, 10);
-    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch (e) {}
-  });
-  splitter.addEventListener('dblclick', () => {
-    applySidebarWidth(SIDEBAR_WIDTH_DEFAULT);
-    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_WIDTH_DEFAULT)); } catch (e) {}
-  });
-}
-
-function applySidebarWidth(px) {
-  const clamped = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, px));
-  document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
-}
-
 // ── Click track (v2 — whole-song, source-synced, Other-strip routed) ────
 // Rebuilt 2026-07-07 per Bill's spec. One dynamically generated beat grid
 // per loaded source (window.songBeatGrid, fitted by the visualizer at
@@ -7776,7 +7608,7 @@ function injectMixerHeaderInfo() {
 // Audio drops for ~1s. Page reloads so the routing badge re-detects.
 async function kickCoreaudiod() {
   if (!confirm('First aid: kick Core Audio (sudo killall coreaudiod)? All audio drops for ~1s; the page reloads after.')) return;
-  const btn = document.getElementById('btn-kick-coreaudio-mixer') || document.getElementById('btn-kick-coreaudio-top');
+  const btn = document.getElementById('btn-kick-coreaudio-mixer');
   if (btn) { btn.disabled = true; btn.classList.add('is-kicking'); btn.title = 'Kicking Core Audio…'; }
   try {
     const r = await fetch('/api/audio/kick-coreaudio', { method: 'POST' });
@@ -8884,10 +8716,6 @@ window.__dismissFailedSong = function () {
     const active = document.getElementById('player-active');
     if (active) active.style.display = 'none';
   } catch (e) {}
-  try {
-    const collapsed = document.getElementById('player-collapsed');
-    if (collapsed) collapsed.style.display = '';
-  } catch (e) {}
 };
 
 // ── Buffering watchdog ────────────────────────────────────────────────────
@@ -9131,9 +8959,6 @@ function loadSong(song, opts) {
   // Explicit resume point (SOURCE pill going back to the stems, 2026-11-01).
   if (opts.resumeAt > 0) resumeAt = opts.resumeAt;
 
-  // Stop running outro timers or playback
-  if (stretchTimer) clearTimeout(stretchTimer);
-  isStretching = false;
   els.buffering.style.display = 'none';
 
   stopAudio();
@@ -9421,22 +9246,10 @@ function loadSong(song, opts) {
     // Per-instrument loop buttons inside each channel strip
     renderChannelLoopButtons(song.loops || []);
 
-    // Enable Outro stretch controls if loops exist
-    if (song.loops && song.loops.length > 0) {
-      // Synced Jam Loops pane is disabled — loops are managed in the Loop
-      // Library tab now. Keep the section hidden regardless of song.loops.
-      els.loopsContainer.style.display = 'none';
-      const _so = document.querySelector('.stretch-outro-card');
-      if (_so) { _so.style.opacity = '1'; _so.style.pointerEvents = 'auto'; }
-      renderLoopButtons(song.loops);
-    } else {
-      els.loopsContainer.style.display = 'none';
-      const _so2 = document.querySelector('.stretch-outro-card');
-      if (_so2) { _so2.style.opacity = '0.5'; _so2.style.pointerEvents = 'none'; }
-      if (els.stretchToggle) els.stretchToggle.checked = false;
-      stretchActive = false;
-      toggleStretchState();
-    }
+    // Synced Jam Loops pane is disabled — loops are managed in the Loop
+    // Library tab now. Keep the section hidden regardless of song.loops.
+    els.loopsContainer.style.display = 'none';
+    if (song.loops && song.loops.length > 0) renderLoopButtons(song.loops);
   } else {
     // M4A Track
     els.trackType.textContent = 'M4A BACKING TRACK';
@@ -9444,13 +9257,6 @@ function loadSong(song, opts) {
     
     els.mixerContainer.style.display = 'none';
     els.loopsContainer.style.display = 'none';
-    // Outro Jam Stretch DOM was removed (task #139, replaced by LOOPER) —
-    // guard every read so a missing element doesn't crash loadSong.
-    const _strCard = document.querySelector('.stretch-outro-card');
-    if (_strCard) { _strCard.style.opacity = '0.5'; _strCard.style.pointerEvents = 'none'; }
-    if (els.stretchToggle) els.stretchToggle.checked = false;
-    stretchActive = false;
-    toggleStretchState();
     
     // M4A is a single stereo file — route through the 'drums' element as a carrier.
     // Clear ONLY the non-drums channels (clearing then immediately reassigning
@@ -9801,125 +9607,14 @@ function handleMasterTrackEnded() {
       audioElements[chan].currentTime = 0;
       audioElements[chan].play().catch(() => {});
     });
-  } else if (stretchActive && currentMode === 'full' && currentSong.type === 'stems') {
-    // Trigger Outro Jam loop extension!
-    triggerOutroStretch();
-  } else if (isStretching) {
-    // Loop the outro cycles programmatically
-    stretchCycleCount++;
-    const maxCycles = stretchCycles === 'infinite' ? Infinity : parseInt(stretchCycles);
-    
-    if (stretchCycleCount < maxCycles) {
-      activeTracks.forEach(chan => {
-        audioElements[chan].currentTime = 0;
-        audioElements[chan].play().catch(() => {});
-      });
-      updateStretchInfoProgress();
-    } else {
-      // Completed outro cycles, perform smooth fade-out and stop
-      fadeAndStop(1800);
-    }
   } else {
     // Regular song end
     stopAudio();
 
     // Gig setlist auto-advance: if we're in setlist-playback mode, jump to
-    // the next song in that setlist. Otherwise fall through to the legacy
-    // flat-setlist planner (Setlist tab).
-    if (gigPlayingSetlistIdx != null) {
-      advanceGigSetlistPlayback();
-    } else {
-      playNextInSetlist();
-    }
+    // the next song in that setlist.
+    if (gigPlayingSetlistIdx != null) advanceGigSetlistPlayback();
   }
-}
-
-// Dynamic Outro Song Stretching trigger
-function triggerOutroStretch() {
-  if (!currentSong || currentSong.loops.length === 0) {
-    stopAudio();
-    return;
-  }
-  
-  isPlaying = false;
-  clearInterval(syncInterval);
-  stopBeatingVisualizer();
-  
-  isStretching = true;
-  currentMode = 'outro';
-  stretchCycleCount = 1;
-  
-  const loops = currentSong.loops;
-  const lastLoop = loops[loops.length - 1]; // get last segment
-  const folder = currentSong.folderName;
-  
-  // Outro: play whatever instrument loops we have for the last segment.
-  // Mixer mute/solo lets the user shape it (e.g. drums+bass only).
-  CHANNELS.forEach(chan => { setAudioSrc(audioElements[chan], ''); });
-  LOOP_CAPABLE_CHANNELS.forEach(chan => {
-    const file = lastLoop.files[chan];
-    if (file) setAudioSrc(audioElements[chan], `/api/audio/stems/${folder}/${file}`);
-  });
-  
-  Object.values(audioElements).forEach(ae => {
-    ae.loop = false; // Programmatic wrap coord continues
-  });
-  
-  // Watchdog-protected buffering for the Outro Jam path.
-  const _outroChans = Object.keys(audioElements).filter(c => audioHasSrc(audioElements[c]));
-  const _outroActive = _outroChans.map(c => audioElements[c]);
-  watchBuffering({
-    activeElements: _outroActive, channels: _outroChans,
-    onReady: () => {
-      isPlaying = true;
-      const masterAe = _outroActive[0];
-      if (masterAe) masterAe.currentTime = 0;
-      _outroActive.forEach(item => { item.currentTime = 0; item.play().catch(() => {}); });
-      const bpm = currentSong.practiceBpm || 120;
-      const totalBeats = lastLoop.bars * 4;
-      const cycleDuration = (totalBeats * (60 / bpm)) / playbackSpeed;
-      els.timeDuration.textContent = formatTime(cycleDuration);
-      startSyncLoop();
-      startBeatingVisualizer(bpm);
-      updateStretchInfoProgress();
-    },
-  });
-  
-  applyMixerVolumes();
-  setPlaybackSpeed(playbackSpeed);
-}
-
-// Fade out Master Volume and Stop
-function fadeAndStop(fadeTimeMs) {
-  if (!masterGainNode || !audioCtx) {
-    stopAudio();
-    return;
-  }
-  
-  const step = 0.05;
-  const stepMs = fadeTimeMs * step;
-  
-  const fadeInterval = setInterval(() => {
-    currentMasterVolume -= step;
-    if (currentMasterVolume <= 0) {
-      currentMasterVolume = 0;
-      clearInterval(fadeInterval);
-      
-      // Stop completely
-      stopAudio();
-      isStretching = false;
-      loadSong(currentSong); // Restore original faders
-      
-      playNextInSetlist();
-    }
-    masterGainNode.gain.setValueAtTime(effectiveMasterGain(), audioCtx.currentTime);
-  }, stepMs);
-}
-
-// Show stretching overlay info text
-function updateStretchInfoProgress() {
-  const max = stretchCycles === 'infinite' ? '∞' : stretchCycles;
-  els.stretchInfo.innerHTML = `<span class="text-green glow-green font-bold">OUTRO STRETCH ACTIVE:</span> Cycle ${stretchCycleCount} of ${max}`;
 }
 
 // Play / Pause Coordination
@@ -12613,184 +12308,6 @@ async function applyUpdate() {
   }, 1000);
 }
 
-/* ==========================================
-   SAVED SETLISTS PANEL (Librarian-maintained)
-   Playlist-synced + manual SetLists from /api/setlists.
-   ========================================== */
-
-function setupSetlistsPanel() {
-  if (els.btnRefreshSetlists) els.btnRefreshSetlists.addEventListener('click', loadSetlistsList);
-  if (els.btnSaveSetlist) els.btnSaveSetlist.addEventListener('click', saveCurrentSetlist);
-  loadSetlistsList();
-}
-
-async function loadSetlistsList() {
-  if (!els.setlistsList) return;
-  try {
-    const res = await fetch('/api/setlists');
-    const data = await res.json();
-    const lists = (data && data.setlists) || [];
-    if (lists.length === 0) {
-      els.setlistsList.innerHTML = '<span class="setlists-empty">No saved SetLists yet.</span>';
-      return;
-    }
-    // Cache saved-setlist metadata for the sidebar panel (YTSYNC detection)
-    if (typeof _cacheSavedSetlistMeta === 'function') _cacheSavedSetlistMeta(lists);
-    els.setlistsList.innerHTML = '';
-    lists.forEach(sl => {
-      const row = document.createElement('div');
-      row.className = 'setlist-chip';
-      const isPlaylist = sl.origin === 'playlist';
-      const badge = isPlaylist
-        ? '<span class="sl-badge sl-yt" title="Synced from a YouTube playlist"><i data-lucide="rss" style="width:11px;height:11px;"></i> sync</span>'
-        : '<span class="sl-badge sl-manual" title="Hand-curated; never auto-changed">manual</span>';
-      // Manual setlists get a small × to remove them. Playlist-synced ones don't
-      // (deleting one would just re-sync on the next pass — own the source instead).
-      const deleteBtn = isPlaylist ? '' :
-        '<button class="sl-delete-btn" title="Delete this SetList" aria-label="Delete">×</button>';
-      // Gig-readiness badge: how many of this setlist's songs are fully
-      // cached locally. All-cached → solid green check. Partial → yellow
-      // 'X/N' counter. None → grey 'N' so the user knows to either save
-      // it (auto-precache fires on save) or hit the refresh button.
-      const total = sl.count;
-      const ready = sl.cached_count || 0;
-      let cacheBadge;
-      if (total === 0) {
-        cacheBadge = `<span class="sl-cache sl-cache-empty" title="No songs in this SetList">0</span>`;
-      } else if (ready >= total) {
-        cacheBadge = `<span class="sl-cache sl-cache-ready" title="All ${total} songs cached locally — gig-safe">✓ ${total}</span>`;
-      } else {
-        cacheBadge = `<span class="sl-cache sl-cache-partial" title="${ready} of ${total} songs cached; rest will fetch from Drive">${ready}/${total}</span>`;
-      }
-      row.innerHTML =
-        `<button class="sl-load-btn" title="Load &quot;${escapeHtml(sl.title)}&quot; (${total} songs; ${ready} cached) into the planner">` +
-        `${badge}<span class="sl-title">${escapeHtml(sl.title)}</span>` +
-        `${cacheBadge}` +
-        `</button>${deleteBtn}`;
-      row.querySelector('.sl-load-btn').addEventListener('click', () => loadSetlistIntoPlanner(sl.slug));
-      const delEl = row.querySelector('.sl-delete-btn');
-      if (delEl) {
-        delEl.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (!confirm(`Delete SetList "${sl.title}" (${sl.count} songs)? The songs themselves stay in the library.`)) return;
-          try {
-            const r = await fetch(`/api/setlists/${encodeURIComponent(sl.slug)}`, { method: 'DELETE' });
-            const d = await r.json();
-            if (!r.ok) throw new Error(d.error || 'failed');
-            loadSetlistsList();
-          } catch (err) { alert(`Couldn't delete: ${err.message}`); }
-        });
-      }
-      els.setlistsList.appendChild(row);
-    });
-    if (window.lucide) lucide.createIcons();
-  } catch (e) {
-    els.setlistsList.innerHTML = `<span class="setlists-empty">Couldn't load SetLists (${escapeHtml(e.message)})</span>`;
-  }
-}
-
-// Resolve a saved SetList's ordered songs to merged-library entries and load
-// them into the existing planner. Songs match by song_base (the canonical key);
-// playlist songs not yet rendered are shown as pending and skipped from playback.
-async function loadSetlistIntoPlanner(slug) {
-  try {
-    const res = await fetch(`/api/setlists/${encodeURIComponent(slug)}`);
-    if (!res.ok) throw new Error((await res.json()).error || 'not found');
-    const sl = await res.json();
-
-    // Index the merged library by song_base for O(1) lookup.
-    const byBase = new Map();
-    for (const m of mergedLibrary) {
-      const sv = m.variants.find(v => v.type === 'stems') || m.primary;
-      if (sv && sv.folderName) byBase.set(sv.folderName, m);
-    }
-
-    setlist = [];
-    let pending = 0;
-    (sl.songs || []).forEach((entry, i) => {
-      const base = entry.song_base;
-      const merged = base ? byBase.get(base) : null;
-      if (merged) {
-        const primary = merged.primary;
-        setlist.push({ ...primary, setlistItemId: `setlist-${primary.id}-${Date.now()}-${Math.random().toString(36).slice(2,6)}` });
-      } else {
-        // Not yet stemmed — add a greyed, non-playable placeholder so the set
-        // looks complete and fills in as the batch renders.
-        pending++;
-        setlist.push({
-          id: `pending-${slug}-${i}`,
-          setlistItemId: `pending-${slug}-${i}-${Date.now()}`,
-          title: entry.title || '(pending)',
-          artist: entry.artist || '',
-          duration: 0,
-          pending: true,
-          pendingStatus: entry.status || 'queued',
-        });
-      }
-    });
-
-    if (els.setlistName) els.setlistName.value = sl.title || '';
-    saveSetlistToLocalStorage();
-    renderSetlist();
-    updateLibraryCheckboxes();
-
-    if (pending > 0 && els.setlistStatsLabel) {
-      els.setlistStatsLabel.textContent += ` · ${pending} pending (stemming)`;
-    }
-
-    // Warm the local cache for this setlist's ready songs in the background.
-    fetch(`/api/precache/setlist/${encodeURIComponent(slug)}`, { method: 'POST' }).catch(() => {});
-  } catch (e) {
-    console.warn('loadSetlist failed:', e);
-    alert(`Couldn't load SetList: ${e.message}`);
-  }
-}
-
-// Save the current planner as a MANUAL SetList (server refuses to overwrite a
-// playlist-synced one). Stores by song_base so it survives across rescans.
-async function saveCurrentSetlist() {
-  if (!setlist.length) { alert('Setlist is empty — add songs first.'); return; }
-  const title = (els.setlistName && els.setlistName.value.trim()) ||
-    prompt('Name this SetList:') || '';
-  if (!title.trim()) return;
-
-  // Map each planner item back to its song_base via the merged library.
-  const bases = [];
-  for (const item of setlist) {
-    const merged = mergedLibrary.find(m => m.variants.some(v => v.id === item.id));
-    const sv = merged && (merged.variants.find(v => v.type === 'stems') || merged.primary);
-    if (sv && sv.folderName) bases.push(sv.folderName);
-  }
-  if (!bases.length) { alert('These songs have no stem folders to reference yet.'); return; }
-
-  try {
-    const res = await fetch('/api/setlists', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title.trim(), songs: bases })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'save failed');
-    // Auto-precache: a saved setlist is by definition the songs you intend
-    // to play, so warm ~/.bt-cache for all of them in the background. The
-    // server returns immediately and copies async; loadSetlistsList polling
-    // below picks up the cached_count growing.
-    fetch(`/api/precache/setlist/${encodeURIComponent(data.slug)}`, { method: 'POST' })
-      .catch(() => { /* best-effort; UI keeps polling */ });
-    loadSetlistsList();
-    // Re-poll the setlists list a few times so the cached_count counter
-    // visibly catches up while precache runs (~30s on a typical setlist).
-    let polls = 0;
-    const pollTimer = setInterval(() => {
-      polls++;
-      loadSetlistsList();
-      if (polls >= 6) clearInterval(pollTimer);
-    }, 10000);
-  } catch (e) {
-    alert(`Couldn't save: ${e.message}`);
-  }
-}
-
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12802,251 +12319,6 @@ function humanBytes(n) {
   const u = ['KB', 'MB', 'GB', 'TB'];
   let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
   return `${n.toFixed(1)} ${u[i]}`;
-}
-
-/* ==========================================
-   SETLIST PLANNER & SCHEDULER IMPLEMENTATION
-   ========================================== */
-
-function addToSetlist(song) {
-  // Avoid double adds
-  if (setlist.some(item => item.id === song.id)) return;
-
-  // Generate uniquely scheduled setlist item
-  const setlistItem = {
-    ...song,
-    setlistItemId: `setlist-${song.id}-${Date.now()}`
-  };
-
-  setlist.push(setlistItem);
-  saveSetlistToLocalStorage();
-  renderSetlist();
-
-  // Highlight row checkbox
-  updateLibraryCheckboxes();
-  if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
-}
-
-function removeFromSetlist(songId) {
-  setlist = setlist.filter(item => item.id !== songId);
-  saveSetlistToLocalStorage();
-  renderSetlist();
-  updateLibraryCheckboxes();
-  if (typeof renderSidebarSetlist === 'function') renderSidebarSetlist();
-}
-
-function removeSetlistItemById(setlistItemId) {
-  setlist = setlist.filter(item => item.setlistItemId !== setlistItemId);
-  saveSetlistToLocalStorage();
-  renderSetlist();
-  updateLibraryCheckboxes();
-}
-
-function clearSetlist() {
-  setlist = [];
-  saveSetlistToLocalStorage();
-  renderSetlist();
-  updateLibraryCheckboxes();
-}
-
-function updateLibraryCheckboxes() {
-  document.querySelectorAll('.song-row').forEach(row => {
-    const songId = row.dataset.id;
-    const isChecked = setlist.some(item => item.id === songId);
-    const cb = row.querySelector('.song-checkbox');
-    if (cb) cb.checked = isChecked;
-  });
-}
-
-// Render planned setlist rows
-function renderSetlist() {
-  const container = els.setlistSongsContainer;
-  
-  if (setlist.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <i data-lucide="clipboard-list" style="width: 32px; height: 32px;"></i>
-        <p>No tracks added to setlist yet. Use the library "Set" checkboxes to add songs.</p>
-      </div>
-    `;
-    els.setlistStatsLabel.textContent = `0 tracks // 0 min total`;
-    lucide.createIcons();
-    return;
-  }
-
-  container.innerHTML = '';
-  
-  setlist.forEach((item, index) => {
-    // Pending (not-yet-stemmed) song: greyed, non-playable placeholder.
-    if (item.pending) {
-      const card = document.createElement('div');
-      card.className = 'setlist-item setlist-item-pending';
-      card.dataset.index = index;
-      card.innerHTML = `
-        <span class="setlist-item-num">${index + 1}.</span>
-        <div class="setlist-item-details">
-          <span class="setlist-item-title">${escapeHtml(item.title)}</span>
-          <span class="setlist-item-artist">${escapeHtml(item.artist || '')}
-            <span class="tag tag-pending" style="padding:1px 5px;font-size:8px;">${item.pendingStatus === 'rendering' ? 'fetching…' : 'queued'}</span>
-          </span>
-        </div>
-        <span class="setlist-item-time" title="Not yet stemmed">⏳</span>`;
-      container.appendChild(card);
-      return;
-    }
-
-    const card = document.createElement('div');
-    card.className = 'setlist-item';
-    card.dataset.index = index;
-    card.dataset.id = item.id;
-    card.dataset.setlistItemId = item.setlistItemId;
-
-    // Support browser Drag and Drop reordering natively
-    card.draggable = true;
-    setupDragAndDropEvents(card);
-    
-    // Index / Number indicator
-    const num = document.createElement('span');
-    num.className = 'setlist-item-num';
-    num.textContent = `${index + 1}.`;
-    
-    // Drag grip handle
-    const grip = document.createElement('span');
-    grip.className = 'setlist-item-grip';
-    grip.innerHTML = `<i data-lucide="grip-vertical" style="width: 14px; height: 14px;"></i>`;
-    
-    // Details
-    const details = document.createElement('div');
-    details.className = 'setlist-item-details';
-    
-    // Format tag badge
-    const tagText = item.type === 'stems' ? 'stems' : 'm4a';
-    details.innerHTML = `
-      <span class="setlist-item-title">${item.title}</span>
-      <span class="setlist-item-artist">${item.artist} <span class="tag tag-${tagText}" style="padding: 1px 4px; font-size: 8px;">${tagText}</span></span>
-    `;
-    
-    // Meta / Timings
-    const meta = document.createElement('div');
-    meta.className = 'setlist-item-meta';
-    
-    const timeLabel = document.createElement('span');
-    timeLabel.className = 'setlist-item-time';
-    timeLabel.textContent = '--:--'; // Will be calculated dynamically next
-    timeLabel.id = `time-lbl-${item.setlistItemId}`;
-    
-    const durationLabel = document.createElement('span');
-    durationLabel.className = 'setlist-item-duration';
-    const durSec = item.duration || 210; // default 3.5 min
-    durationLabel.textContent = formatTime(durSec);
-    
-    meta.appendChild(timeLabel);
-    meta.appendChild(durationLabel);
-    
-    // Trash delete action button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'setlist-item-delete';
-    deleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>`;
-    deleteBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      removeSetlistItemById(item.setlistItemId);
-    });
-    
-    card.appendChild(grip);
-    card.appendChild(num);
-    card.appendChild(details);
-    card.appendChild(meta);
-    card.appendChild(deleteBtn);
-    
-    // Clicking load and plays card
-    card.addEventListener('click', () => {
-      const songRef = songLibrary.find(s => s.id === item.id);
-      if (songRef) loadSong(songRef);
-    });
-    
-    container.appendChild(card);
-  });
-  
-  // Calculate dynamic start times increments
-  calculateSetlistTimes();
-  lucide.createIcons();
-}
-
-// Dynamic Starting Time Increments Scheduler
-function calculateSetlistTimes() {
-  const startTimeVal = els.setlistStartTime.value; // e.g. "16:00"
-  let [hours, minutes] = startTimeVal.split(':').map(Number);
-  
-  let currentDateTime = new Date();
-  currentDateTime.setHours(hours, minutes, 0, 0);
-  
-  let totalDurationSec = 0;
-  
-  setlist.forEach(item => {
-    const lbl = document.getElementById(`time-lbl-${item.setlistItemId}`);
-    if (lbl) {
-      // Formatted AM/PM clock time
-      const timeStr = currentDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      lbl.textContent = timeStr;
-    }
-    
-    const duration = item.duration || 210; // default 3.5 min
-    totalDurationSec += duration;
-    
-    // Increment accumulated clock
-    currentDateTime = new Date(currentDateTime.getTime() + duration * 1000);
-  });
-  
-  // Update overall kit statistics
-  const totalMin = Math.floor(totalDurationSec / 60);
-  const totalSec = Math.floor(totalDurationSec % 60);
-  els.setlistStatsLabel.textContent = `${setlist.length} tracks // ${totalMin}:${totalSec < 10 ? '0' : ''}${totalSec} total`;
-}
-
-// Drag and drop events setup for cards
-let dragSourceEl = null;
-
-function setupDragAndDropEvents(el) {
-  el.addEventListener('dragstart', function(e) {
-    dragSourceEl = this;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', this.dataset.index);
-    this.classList.add('dragging');
-  });
-  
-  el.addEventListener('dragover', function(e) {
-    if (e.preventDefault) e.preventDefault();
-    this.classList.add('drag-over-item');
-    e.dataTransfer.dropEffect = 'move';
-    return false;
-  });
-  
-  el.addEventListener('dragleave', function() {
-    this.classList.remove('drag-over-item');
-  });
-  
-  el.addEventListener('drop', function(e) {
-    e.stopPropagation();
-    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
-    const toIndex = parseInt(this.dataset.index);
-    
-    if (fromIndex !== toIndex) {
-      // Reorder setlist model
-      const movedItem = setlist.splice(fromIndex, 1)[0];
-      setlist.splice(toIndex, 0, movedItem);
-      saveSetlistToLocalStorage();
-      renderSetlist();
-    }
-    this.classList.remove('drag-over-item');
-    return false;
-  });
-  
-  el.addEventListener('dragend', function() {
-    this.classList.remove('dragging');
-    document.querySelectorAll('.setlist-item').forEach(item => {
-      item.classList.remove('drag-over-item');
-    });
-  });
 }
 
 // Mixer state persistence — survives reload AND is fixed across all songs.
@@ -13077,33 +12349,6 @@ function loadMixerState() {
   } catch (e) { console.warn('mixer state restore failed', e); }
 }
 
-// Local Storage persist
-function saveSetlistToLocalStorage() {
-  localStorage.setItem('bt_construction_setlist', JSON.stringify(setlist));
-}
-
-function saveSetlistName() {
-  localStorage.setItem('bt_construction_setlist_name', els.setlistName.value || '');
-}
-
-function saveSetlistStartTime() {
-  localStorage.setItem('bt_construction_setlist_start', els.setlistStartTime.value || '16:00');
-}
-
-function loadSetlistFromLocalStorage() {
-  // Setlist song selections are session-only — clear any persisted picks on
-  // boot so library-row checkboxes start unchecked. (Songs land in `setlist`
-  // when the user checks library rows to batch-add; persisting that across
-  // restarts left ghost selections on every startup.) Name + start time are
-  // still restored — those are config, not selections.
-  localStorage.removeItem('bt_construction_setlist');
-  const name = localStorage.getItem('bt_construction_setlist_name');
-  if (name && els.setlistName) els.setlistName.value = name;
-  const start = localStorage.getItem('bt_construction_setlist_start');
-  if (start && els.setlistStartTime) els.setlistStartTime.value = start;
-}
-
-// Auto-advance playlist play
 // Remaining time in the playing set (Bill 2026-07-22): rest of the
 // current song from the playhead + full duration of every song after
 // it. Rendered in the playing setlist's transport, ticked every 1 s.
@@ -13134,54 +12379,6 @@ function updateSetRemaining() {
   el.textContent = remain > 0 ? `${mm}:${String(ss).padStart(2, '0')} left` : '';
 }
 setInterval(updateSetRemaining, 1000);
-
-function playNextInSetlist() {
-  if (setlist.length === 0 || !currentSong) return;
-  
-  // Find index of current song in setlist
-  const currentIndex = setlist.findIndex(item => item.id === currentSong.id);
-  if (currentIndex !== -1 && currentIndex < setlist.length - 1) {
-    // Next song exists! Play after a 2 second staggered pause
-    const nextItem = setlist[currentIndex + 1];
-    setTimeout(() => {
-      const songRef = songLibrary.find(s => s.id === nextItem.id);
-      if (songRef) {
-        loadSong(songRef);
-        togglePlayPause(); // Auto-start next song!
-      }
-    }, 2000);
-  }
-}
-
-/* =============================
-   OUTRO SONG STRETCHING HANDLERS
-   ============================= */
-
-function toggleStretchState() {
-  // The Outro Jam Stretch UI was replaced by the section LOOPER (task #139)
-  // and its DOM elements (stretchCyclesContainer, stretchInfo) were removed.
-  // This function is still called from loadSong's m4a/stems branches — make
-  // it a graceful no-op when the elements are gone. Without these guards,
-  // every song load on boot logs
-  //   [restore] last song failed: TypeError: Cannot read properties of null
-  //                                 (reading 'style') at toggleStretchState
-  // and the auto-restore path silently aborts.
-  if (!els.stretchCyclesContainer || !els.stretchInfo) return;
-  if (stretchActive) {
-    els.stretchCyclesContainer.style.opacity = '1';
-    els.stretchCyclesContainer.style.pointerEvents = 'auto';
-    els.stretchInfo.textContent = 'Will seamlessly stretch outro loop when song ends.';
-  } else {
-    els.stretchCyclesContainer.style.opacity = '0.5';
-    els.stretchCyclesContainer.style.pointerEvents = 'none';
-    els.stretchInfo.textContent = 'Extend track using the last loop.';
-    if (isStretching) {
-      stopAudio();
-      isStretching = false;
-      loadSong(currentSong);
-    }
-  }
-}
 
 /* ===============================
    DASHBOARD INPUT EVENT SETUP
@@ -13298,21 +12495,6 @@ function setupEventListeners() {
     });
   });
   
-  // Outro Jam Stretch controls
-  if (els.stretchToggle) els.stretchToggle.addEventListener('change', (e) => {
-    stretchActive = e.target.checked;
-    toggleStretchState();
-  });
-  
-  els.cycleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      els.cycleBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      stretchCycles = btn.dataset.cycles;
-      if (isStretching) updateStretchInfoProgress();
-    });
-  });
-  
   // Player section collapse/expand — frees up the song list on large displays
   if (els.btnCollapsePlayer) {
     els.btnCollapsePlayer.addEventListener('click', () => {
@@ -13380,16 +12562,6 @@ function setupEventListeners() {
     });
   }
 
-  // Setlist Controls — these legacy DOM nodes were removed when the
-  // Setlist tab was replaced with the AI Setlist Builder. Guard each
-  // attach so the boot path doesn't crash on a null reference.
-  if (els.btnClearSetlist) els.btnClearSetlist.addEventListener('click', clearSetlist);
-  if (els.setlistStartTime) els.setlistStartTime.addEventListener('change', () => {
-    saveSetlistStartTime();
-    calculateSetlistTimes();
-  });
-  if (els.setlistName) els.setlistName.addEventListener('input', saveSetlistName);
-  
   // Mixer faders
   CHANNELS.forEach(chan => {
     const fader = document.getElementById(`fader-${chan}`);
@@ -13548,33 +12720,20 @@ function timeAgo(iso) {
   } catch (e) { return ''; }
 }
 
-// Wall clock — animated analog SVG (hour/minute/second hands) plus a small
-// digital readout next to it. Both sit in #player-top-bar at the top-right
+// Wall clock — a small digital readout in #player-top-bar at the top-right
 // of the main pane, persistent across idle/active player states.
 function startWallClock() {
-  const hourHand = document.getElementById('clock-hour');
-  const minHand  = document.getElementById('clock-min');
-  const secHand  = document.getElementById('clock-sec');
   const digital  = document.getElementById('analog-clock-digital');
   // Legacy text element kept hidden — also update it so anything still
   // reading wall-clock.textContent continues to work.
   const legacyEl = document.getElementById('wall-clock');
-  if (!hourHand && !legacyEl) return;
+  if (!digital && !legacyEl) return;
   const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const tick = () => {
     const d = new Date();
-    const s = d.getSeconds();
     const m = d.getMinutes();
     const h = d.getHours() % 12;
-    // 360° / 12h = 30°/hr; 360/60 = 6°/min and 6°/sec. Add fractional
-    // contributions so the hour/minute hands creep smoothly between ticks.
-    const secAngle  = s * 6;
-    const minAngle  = m * 6 + s * 0.1;
-    const hourAngle = h * 30 + m * 0.5;
-    if (secHand)  secHand.style.transform  = `rotate(${secAngle}deg)`;
-    if (minHand)  minHand.style.transform  = `rotate(${minAngle}deg)`;
-    if (hourHand) hourHand.style.transform = `rotate(${hourAngle}deg)`;
     const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
     const h12  = h === 0 ? 12 : h;
     const mm   = m < 10 ? `0${m}` : `${m}`;
@@ -13583,7 +12742,7 @@ function startWallClock() {
     if (legacyEl) legacyEl.textContent = `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}  ${h12}:${mm} ${ampm}`;
   };
   tick();
-  setInterval(tick, 1000); // 1s — animates the seconds hand smoothly
+  setInterval(tick, 1000);
 }
 
 // Utility formattings (secs -> MM:SS)
@@ -15721,7 +14880,6 @@ function removeCurrentSongFromActiveSetlist() {
 function kbNextInSetlist() {
   try {
     if (typeof gigSetlistJump === 'function' && activeGig) gigSetlistJump(activeSetlistIdx || 0, +1);
-    else if (typeof playNextInSetlist === 'function') playNextInSetlist();
   } catch (e) {}
 }
 function kbPrevInSetlist() {
@@ -15846,17 +15004,17 @@ function kbSnapshot() {
   else showToast('Snapshot button not on this page');
 }
 function kbToggleLyrics() {
-  // Reuse the lyrics-toggle button if present so we stay in sync with UI.
-  const btn = document.getElementById('btn-toggle-lyrics') || document.querySelector('[data-action="toggle-lyrics"]');
-  if (btn) btn.click();
+  // Reuse the Show Lyrics button so we stay in sync with the UI. It is
+  // hidden when the song has no lyric actions placed.
+  const btn = document.getElementById('midi-btn-lyrics-show');
+  if (btn && btn.style.display !== 'none') btn.click();
   else showToast('No lyrics for current song');
 }
 function kbTransportPlay() {
   // Toggle play/pause via the on-screen Play button so existing logic
   // (audio context resume, playhead saver, etc.) all runs as if a real
   // click happened.
-  if (typeof togglePlayPause === 'function') togglePlayPause();
-  else { const btn = document.getElementById('btn-play'); if (btn) btn.click(); }
+  togglePlayPause();
 }
 
 // ─── Tag/readiness pulldown ───────────────────────────────────────
@@ -16605,13 +15763,6 @@ async function sendMidiNow(event) {
   return r.json();
 }
 
-// ── Action-row constants (hoisted to module scope, NOT inside setupMidiUI) ─
-// Previously these were declared mid-function which made setupMidiActionRow
-// crash with "Cannot access RECENT_SLOTS before initialization" because the
-// row's render runs before the line that introduces the const. Top-level
-// declarations dodge the temporal-dead-zone entirely.
-const RECENT_KEY   = 'simpleStem.midiRecentUses.v1';
-const RECENT_SLOTS = 5;
 // Remember what the user picked last time so the dialog opens with their
 // most recent choices instead of starting from scratch. Keyed by action
 // type so PC and CC each keep their own "last values."
@@ -16777,9 +15928,6 @@ function setupMidiUI() {
     if (automationEditingIdx === null) automationEvents.push(ev);
     else automationEvents[automationEditingIdx] = ev;
     automationEvents.sort((a, b) => a.t - b.t);
-    // Bump the usage counter so the most-used actions float up into the
-    // quick-fire row beside +Action.
-    recordRecentUse(ev);
     // Remember per-type defaults + per-device channel so the next open
     // of this dialog starts where we left off.
     recordActionDefaults(ev);
@@ -16828,41 +15976,8 @@ function setupMidiUI() {
     });
   }
 
-  // ── MIDI action row: +Action + frequency-tracked recent-actions slots ──
-  // Replaces the crosshair-cursor "click anywhere on the lane to add" UX
-  // AND the static 5-slot manual presets. Every time the user saves an
-  // action through the modal, we increment a usage counter keyed by the
-  // action's signature; the top 5 most-used actions are then shown as
-  // quick-fire buttons to the right of +Action. Single click drops the
-  // action at the playhead and fires it live through the sidecar.
-  // (RECENT_KEY / RECENT_SLOTS hoisted to module scope above setupMidiUI
-  // so this row renders even though setupMidiActionRow() runs first.)
+  // ── MIDI action row: +Action and +Clip ──
 
-  function loadRecentMap() {
-    try {
-      const raw = localStorage.getItem(RECENT_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return {};
-  }
-  function saveRecentMap(m) {
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(m)); } catch (e) {}
-  }
-  // Stable signature so e.g. "PC ch4 prog3 on helix" tallies the same
-  // every time. The user's custom label is NOT part of the signature
-  // (two labels for the same MIDI payload share a counter).
-  function actionSignature(a) {
-    const parts = [a.type || 'x'];
-    if (a.device) parts.push(a.device);
-    if (a.channel != null) parts.push('c' + a.channel);
-    if (a.program != null) parts.push('p' + a.program);
-    if (a.controller != null) parts.push('cc' + a.controller);
-    if (a.value != null) parts.push('v' + a.value);
-    if (a.note != null) parts.push('n' + a.note);
-    if (a.velocity != null) parts.push('vel' + a.velocity);
-    if (a.stem) parts.push(a.stem);
-    return parts.join(':');
-  }
   // Shorthand the user can read at a glance. Format follows Bill's
   // example "M4P12" (MIDI channel 4, Program 12).
   function actionShorthand(a) {
@@ -16875,87 +15990,6 @@ function setupMidiUI() {
     if (a.type === 'unmute')   return `${(a.stem||'?')[0].toUpperCase()}-on`;
     if (a.type === 'fade')     return `${(a.stem||'?')[0].toUpperCase()}${a.level}`;
     return a.type || '?';
-  }
-  // Bump the usage counter when an action lands in the timeline.
-  // Stored entry: { sig, count, lastUsed, sample: the action itself }
-  function recordRecentUse(a) {
-    if (!a || !a.type) return;
-    const sig = actionSignature(a);
-    const m = loadRecentMap();
-    const prev = m[sig] || { sig, count: 0, sample: null };
-    m[sig] = {
-      sig,
-      count: prev.count + 1,
-      lastUsed: Date.now(),
-      sample: a,    // keep the most recent invocation as the canonical form
-    };
-    saveRecentMap(m);
-    renderRecentSlots();
-  }
-  // Pick the top-RECENT_SLOTS most-used (ties broken by recency). Empty
-  // slots are NOT shown — slots only materialize once you've used an
-  // action at least once.
-  function topRecentActions() {
-    const m = loadRecentMap();
-    return Object.values(m)
-      .filter(e => e.sample)
-      .sort((a, b) => (b.count - a.count) || (b.lastUsed - a.lastUsed))
-      .slice(0, RECENT_SLOTS);
-  }
-  function renderRecentSlots() {
-    const host = document.getElementById('midi-preset-slots');
-    if (!host) return;
-    const top = topRecentActions();
-    host.innerHTML = '';
-    if (!top.length) {
-      const hint = document.createElement('span');
-      hint.className = 'midi-recent-hint';
-      hint.textContent = '↑ your most-used actions will appear here';
-      host.appendChild(hint);
-      return;
-    }
-    top.forEach(({ sample, count }) => {
-      const a = sample;
-      const sh = actionShorthand(a);
-      const btn = document.createElement('button');
-      btn.className = 'midi-preset-slot';
-      // Bottom line:
-      //   - Use the custom label IF the user actually typed something
-      //     different from the auto-shorthand.
-      //   - Otherwise show just the use count (·N), no duplicate of the
-      //     shorthand on the line above.
-      const isCustom = a.label && a.label !== sh;
-      const bottom = isCustom
-        ? `${escapeHtml(a.label)}${count > 1 ? ` ·${count}` : ''}`
-        : (count > 1 ? `·${count}` : '');
-      btn.innerHTML = `<span class="midi-preset-lingo">${escapeHtml(sh)}</span>` +
-                      (bottom ? `<span class="midi-preset-human">${bottom}</span>` : '');
-      btn.title = `Click: drop ${sh} at the playhead.\nRight-click: forget this action.`;
-      btn.addEventListener('click', () => fireRecentAtPlayhead(a));
-      btn.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const m = loadRecentMap();
-        delete m[actionSignature(a)];
-        saveRecentMap(m);
-        renderRecentSlots();
-      });
-      host.appendChild(btn);
-    });
-  }
-  function fireRecentAtPlayhead(a) {
-    if (!automationCurrentBase) { alert('Load a song first.'); return; }
-    const t = currentPlayheadSec();
-    const ev = Object.assign({}, a, {
-      t,
-      label: a.label || actionShorthand(a),
-      fired: true,
-    });
-    automationEvents.push(ev);
-    try { fireAutomationEvent(ev); } catch (e) { console.warn('[recent] fire failed:', e); }
-    automationEvents.sort((a, b) => a.t - b.t);
-    renderAutomationLane();
-    markAutomationDirty();
-    recordRecentUse(a);   // bump count so winners keep winning
   }
 
   function setupMidiActionRow() {
@@ -16980,11 +16014,7 @@ function setupMidiUI() {
         openClipQuickModal();
       });
     }
-    renderRecentSlots();
   }
-  // Exposed so other code (modal save) can refresh the row.
-  window.__renderRecentSlots = renderRecentSlots;
-  window.__recordRecentUse   = recordRecentUse;
   window.__actionShorthand   = actionShorthand;
 
   // Per user spec: the shorthand is now the DEFAULT VALUE of the Label

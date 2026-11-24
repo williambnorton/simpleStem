@@ -178,7 +178,6 @@ def main():
     # logic13.json in the song folder). The old 'mixdowns' block
     # (-V / -V-G / -V-G-B / DO) was retired 2026-06-27 with the mixdown
     # pipeline itself - the portal mixes the six stems client-side.
-    # cleanup_mixdown_metadata.py strips the stale block from old files.
     processing = {
         'download': {
             'tool': 'yt-dlp',

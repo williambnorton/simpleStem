@@ -706,7 +706,7 @@ async function scanStems() {
         readiness = mj.readiness || null;
         sourceUrl = mj.source_url || null;
         // Only operator-pasted lyrics count (lyrics_source === 'manual').
-        // Legacy Genius-fetched text is ignored; purge_legacy_lyrics.py removes it.
+        // Legacy Genius-fetched text is ignored.
         if (mj.lyrics_source === 'manual') {
           lyricsText = mj.lyrics || null;
           lyricsChunks = Array.isArray(mj.lyrics_chunks) ? mj.lyrics_chunks : null;
@@ -2024,10 +2024,6 @@ function parseDrumName(filename) {
   return { bpm: Number(m[1]), pattern: Number(m[2]), filename };
 }
 
-app.get('/api/drum-machine/list', (req, res) => {
-  res.json({ patterns: listDrumPatterns() });
-});
-
 // Pick a drum file for the current song. Query params:
 //   ?drum_pattern=120@130  (from metadata.json; optional)
 //   ?bpm=92                 (fallback metronome target; optional but desired)
@@ -2278,16 +2274,6 @@ function readBackingManifest() {
   } catch (e) { console.warn('[backing-tracks] manifest read failed:', e.message); }
   return {};
 }
-function writeBackingManifest(obj) {
-  try {
-    fs.mkdirSync(path.dirname(BACKING_MANIFEST_PATH), { recursive: true });
-    fs.writeFileSync(BACKING_MANIFEST_PATH, JSON.stringify(obj, null, 2) + '\n');
-    return true;
-  } catch (e) {
-    console.warn('[backing-tracks] manifest write failed:', e.message);
-    return false;
-  }
-}
 
 // Rebuild the song_base → filename assignment. Runs on boot + hourly
 // (after precache) + on demand. Two changes from the first draft:
@@ -2343,10 +2329,6 @@ function rebuildBackingTrackAssignments() {
   console.log(`[backing-tracks] rebuilt assignments: ${Object.keys(assignments).length} songs matched (${autoCount} auto, ${manifestCount} manifest), ${backingTrackList.length} files available`);
 }
 
-app.get('/api/backing-tracks/list', (req, res) => {
-  res.json({ files: backingTrackList, total: backingTrackList.length });
-});
-
 // Pairing for a specific song. Returns { file, url, score, source } or 404.
 app.get('/api/backing-tracks/pick/:base', (req, res) => {
   const base = req.params.base;
@@ -2358,34 +2340,6 @@ app.get('/api/backing-tracks/pick/:base', (req, res) => {
     score: a.score,
     source: a.source,
   });
-});
-
-// Manual override — sends { file } to force a specific pairing (edge
-// cases the auto-matcher missed, or an operator preference). Writes to
-// BACKING_TRACKS/manifest.json so the pairing survives server restart.
-// Sending { file: null } removes the override (auto-match takes over).
-app.post('/api/backing-tracks/assign/:base', express.json(), (req, res) => {
-  const base = req.params.base;
-  const file = req.body && req.body.file;
-  const manifest = readBackingManifest();
-  if (file === null || file === '') {
-    delete manifest[base];
-    writeBackingManifest(manifest);
-    rebuildBackingTrackAssignments();
-    return res.json({ ok: true, file: null, note: 'override removed' });
-  }
-  if (!file || !backingTrackList.includes(file)) {
-    return res.status(400).json({ error: 'file not present in cache' });
-  }
-  manifest[base] = file;
-  writeBackingManifest(manifest);
-  rebuildBackingTrackAssignments();
-  res.json({ ok: true, file, persisted: true });
-});
-
-// Bulk assignments — one call to render a "map" view for the operator.
-app.get('/api/backing-tracks/assignments', (req, res) => {
-  res.json({ assignments: backingTrackAssignments });
 });
 
 app.get('/api/audio/backing/:file', (req, res) => {
@@ -2861,11 +2815,10 @@ app.get('/api/cache/status', (req, res) => {
 });
 
 // =====================================================================
-// OPERATIONS DASHBOARD
-// /dashboard renders a live workflow diagram with blocks colored by the
-// state returned here. Polled every 3-5s by the client. Bounded with
-// per-section timeouts so any one stalled probe (Drive in particular)
-// can't wedge the whole response.
+// OPERATIONS STATE (/api/dashboard/state)
+// Read by the live summary on README.html. Bounded with per-section
+// timeouts so any one stalled probe (Drive in particular) can't wedge
+// the whole response.
 // =====================================================================
 // ── Drive dashboard snapshot (no-internet mandate, 2026-08-17) ───────────
 // The dashboard/queue endpoints are POLLED every few seconds and used to
@@ -3109,14 +3062,8 @@ app.get('/api/dashboard/state', async (req, res) => {
   }
 });
 
-// Static page lives at /dashboard.html in public/. Provide /dashboard as
-// a convenience alias.
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-});
-
 // =====================================================================
-// LIBRARIAN DASHBOARD — separate from the Performer-flavored /dashboard.
+// LIBRARIAN DASHBOARD — separate from the Performer.
 // Bill: "I want the Librarian UI to be distinct from the simpleStem UI —
 // it shows the librarian activities with minimal overlap with Performer."
 // Focused on: ingest pipeline, catalog health + drift, MPB Sheet sync,
@@ -4419,18 +4366,6 @@ app.post('/api/prune/apply', async (req, res) => {
   const ok = results.filter(r => r.ok).length;
   logActivity('warn', 'library', `prune: deleted ${ok} song(s)${results.length - ok ? `, ${results.length - ok} failed` : ''}`);
   res.json({ ok: true, deleted: ok, failed: results.length - ok, results });
-});
-
-// Manual trigger — POST /api/precache/library forces all four passes immediately
-// (useful after a big import or when prepping for a gig). Returns 202 fast;
-// the work runs in the background and progress is in the server log.
-app.post('/api/precache/library', (req, res) => {
-  res.status(202).json({ status: 'started', m4a: 'background', stems: 'background', clips: 'background', drums: 'background', backing: 'background' });
-  setImmediate(precacheAllM4as);
-  setImmediate(precacheAllStemsM4a);
-  setImmediate(precacheAllCustomLoops);
-  setImmediate(precacheAllDrumPatterns);
-  setImmediate(precacheAllBackingTracks);
 });
 
 // Auto-prune stale gigs (Bill 2026-07-09). GIGS/*.json files whose file
@@ -6151,15 +6086,6 @@ app.get('/api/health', (req, res) => {
     // request handling since boot. MUST be 0; the gig test fails otherwise.
     driveSyncViolations,
   });
-});
-
-// Boot trace — last two runs of the post-mortem journal. Read from the
-// LOCAL-disk trace; never touches Drive.
-app.get('/api/boot-trace', (req, res) => {
-  const out = { current: '', previous: '', path: BOOT_TRACE_PATH };
-  try { out.current  = fs.readFileSync(BOOT_TRACE_PATH, 'utf8'); } catch (e) {}
-  try { out.previous = fs.readFileSync(BOOT_TRACE_PATH + '.prev', 'utf8'); } catch (e) {}
-  res.json(out);
 });
 
 // =====================================================================
@@ -8312,15 +8238,6 @@ app.get('/api/midi/health', async (req, res) => {
     res.status(r.status).json(r.body);
   } catch (e) {
     res.status(503).json({ ok: false, error: 'midi sidecar unreachable', detail: e.message });
-  }
-});
-
-app.get('/api/midi/ports', async (req, res) => {
-  try {
-    const r = await sidecarFetch('/ports');
-    res.status(r.status).json(r.body);
-  } catch (e) {
-    res.status(503).json({ error: 'midi sidecar unreachable', detail: e.message, available: [] });
   }
 });
 
