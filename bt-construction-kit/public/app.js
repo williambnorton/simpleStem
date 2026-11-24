@@ -744,7 +744,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setupRollups();
   setupGigSidebar();
   setupRoutingUI();
-  setupFormatFilters();
   setupClickTrack();
   loadPitchState();
   setupPitchKnobs();
@@ -1642,13 +1641,13 @@ function wireSwitcherOnce() {
   const nameInput = document.getElementById('switcher-new-name');
   const doCreate = async () => {
     const raw = (nameInput && nameInput.value || '').trim();
-    if (!raw) { nameInput && nameInput.focus(); return; }
+    if (!raw) { if (nameInput) nameInput.focus(); if (typeof showToast === 'function') showToast('Type a name for the new setlist first'); return; }
     const slug = raw.replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
     if (!slug) { alert('Pick a name with at least one letter or number.'); return; }
     try {
       const res = await fetch('/api/setlists', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, title: raw, origin: 'manual', songs: [] }),
+        body: JSON.stringify({ slug, title: raw, origin: 'manual', songs: [], create: true }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1706,7 +1705,7 @@ async function loadActiveGig(slug) {
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
         const placeholderTitle =
           slug === YOUTUBE_SYNC_GIG_SLUG    ? '(no playlist setlists yet)' :
-          slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — save one from the planner)' :
+          slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — type a name above and press Create)' :
           slug === RECENTS_GIG_SLUG         ? '(no recently played songs yet)' :
           slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
           slug === FRESH_GIG_SLUG           ? '(no fresh stems — every song has saved levels 🎉)' :
@@ -2246,7 +2245,7 @@ function renderOneGigSetlist(sl, idx) {
     <i data-lucide="list-music" style="width:14px;height:14px;"></i>
     <input class="gig-setlist-title-input" type="text" value="${escapeHtml(sl.title)}" maxlength="40" />
     <span class="gig-setlist-count">${sl.songs.length}</span>
-    <button class="gig-setlist-del" title="Remove this setlist from the gig">×</button>
+    <button class="gig-setlist-del" title="${activeGig && activeGig.synthetic && activeGig.syntheticKind === 'manual' ? 'Delete this setlist for good' : 'Remove this setlist from the gig'}">×</button>
     <i data-lucide="chevron-down" class="gig-setlist-caret" style="width:14px;height:14px;"></i>
   `;
   if (isPlayingThisSetlist) wrap.classList.add('playing');
@@ -2290,7 +2289,9 @@ function renderOneGigSetlist(sl, idx) {
       alert("Can't delete the only setlist in the gig.");
       return;
     }
-    if (!confirm(`Remove "${sl.title}" from the gig?`)) return;
+    if (!confirm(isManualPseudo
+      ? `Delete the setlist "${sl.title}"? Its file is removed for good.`
+      : `Remove "${sl.title}" from the gig?`)) return;
     // Manual pseudo-gig: the setlist is a standalone SETLISTS/<slug>.json
     // file on disk. Removing it from the in-memory array isn't enough —
     // we also have to DELETE the file, otherwise the next /api/setlists
@@ -2467,7 +2468,7 @@ function renderOneGigSetlist(sl, idx) {
       batchSelectedBases.clear();
       renderGigSidebar();
       // Also re-render the library so the checkboxes visually reset.
-      if (typeof renderSongList === 'function') renderSongList();
+      if (typeof renderLibrary === 'function') renderLibrary();
       scheduleGigSave();
     };
 
@@ -2687,8 +2688,8 @@ function setupGigMode() {
     try { localStorage.setItem('simpleStem.gigMode', on ? '1' : '0'); } catch (e) {}
     // Re-render the library so per-row .gig-uncached classes get
     // applied/cleared based on current cache state.
-    if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
-      renderSongList();
+    if (typeof renderLibrary === 'function' && mergedLibrary && mergedLibrary.length) {
+      renderLibrary();
     }
     // Going on while a gig is loaded: precache the whole gig so nothing
     // can spin during the show. Fire-and-forget; the server returns
@@ -3009,8 +3010,8 @@ async function loadDrumLoops() {
     // and re-renders.
     hydrateLoopCacheStatus();
     if (grid) renderDrumLoops();
-    if (typeof renderSongList === 'function' && mergedLibrary && mergedLibrary.length) {
-      renderSongList();
+    if (typeof renderLibrary === 'function' && mergedLibrary && mergedLibrary.length) {
+      renderLibrary();
     }
   } catch (e) {
     if (grid) grid.innerHTML = `<div class="empty-state">Couldn't load loops: ${escapeHtml(e.message)}</div>`;
@@ -5672,7 +5673,7 @@ async function onMakeSetlistFromSelection(presetBases) {
   try {
     const res = await fetch('/api/setlists', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, origin: 'manual', songs: bases }),
+      body: JSON.stringify({ title, origin: 'manual', songs: bases, create: true }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
@@ -5802,6 +5803,11 @@ function getDupeGroups() {
 
 function applyFilters() {
   const query = els.search.value.toLowerCase().trim();
+  // Words in any order, punctuation and accents ignored: "dont", "don’t",
+  // "acdc" and "zeppelin rock" all find their songs.
+  const normSearch = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’‘`"“”]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const qWords = normSearch(query).split(' ').filter(Boolean);
   const format = document.querySelector('.filter-btn.active').id;
   const key = els.filterKey.value;
   const bpmRange = els.filterBpm.value;
@@ -5819,7 +5825,12 @@ function applyFilters() {
     if (/^\d{2,3}$/.test(bpmQ) && song.practiceBpm) {
       bpmMatch = Math.abs(song.practiceBpm - parseInt(bpmQ, 10)) <= 3;
     }
-    const matchesQuery = !query || titleMatch || artistMatch || keyMatchStr || stemsMatch || bpmMatch;
+    let wordsMatch = false;
+    if (qWords.length) {
+      const hay = normSearch(song.title + ' ' + song.artist), hayTight = hay.replace(/ /g, '');
+      wordsMatch = qWords.every(w => hay.includes(w) || hayTight.includes(w));
+    }
+    const matchesQuery = !query || titleMatch || artistMatch || keyMatchStr || stemsMatch || bpmMatch || wordsMatch;
 
     let matchesFormat = true;
     if (format === 'btn-filter-stems') matchesFormat = song.variants.some(v => v.type === 'stems');
@@ -7465,21 +7476,6 @@ function startClickScheduler() {
       }
     }
   }, 60);
-}
-
-// ── Format-column variant filters ────────────────────────────────────────
-// STEM / -V / -V-G / -V-G-B / DO toggle pills in the FORMAT header.
-// Active → solid green. Multi-select with OR (show songs that have any
-// of the selected variants). Click an active button to turn it off.
-function setupFormatFilters() {
-  document.querySelectorAll('.ff-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.dataset.code;
-      formatVariantFilters[code] = !formatVariantFilters[code];
-      btn.classList.toggle('active', formatVariantFilters[code]);
-      filterLibrary();
-    });
-  });
 }
 
 // "Preset: Stereo" — sends Chrome audio back to the built-in Mac speakers
@@ -9512,7 +9508,7 @@ function playLoopSegment(loopNum) {
   isLooping = true;
   els.btnLoop.classList.add('active');
   
-  const masterAe = activeElements[0];
+  const masterAe = _loopActive[0];
   if (masterAe) {
     masterAe.addEventListener('durationchange', () => {
       els.timeDuration.textContent = formatTime(masterAe.duration);
@@ -13259,7 +13255,6 @@ function deleteSectionDividerAt(i) {
   } else {
     automationSections.splice(i, 1);
   }
-  selectedSectionDividerIdx = null;
   renderAutomationLane();
   markAutomationDirty();
 }
@@ -14708,7 +14703,7 @@ function setupGlobalKeyboardShortcuts() {
 
   const SHORTCUTS = [
     { keys: ['cmd+s'],       label: 'Focus search bar',                         action: () => focusEl('song-search') },
-    { keys: ['cmd+g'],       label: 'Focus gig picker',                         action: () => focusEl('gig-picker') },
+    { keys: ['cmd+g'],       label: 'Focus gig picker',                         action: () => { const b = document.querySelector('.switcher-radio-btn.active') || document.querySelector('.switcher-radio-btn'); if (b) b.focus(); } },
     { keys: ['+'],           label: 'Add current song to active setlist',       action: () => addCurrentSongToActiveSetlist() },
     { keys: ['-'],           label: 'Remove current song from active setlist',  action: () => removeCurrentSongFromActiveSetlist() },
     { keys: ['cmd+.'],       label: 'Toggle drum machine (persists per song)', action: () => { if (typeof toggleDrumMachine === 'function') toggleDrumMachine(); } },
@@ -16801,7 +16796,7 @@ async function setupAiSetlistBuilder() {
             const r = await fetch('/api/setlists', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title, songs }),
+              body: JSON.stringify({ title, songs, create: true }),
             });
             const d = await r.json();
             if (!r.ok) {
@@ -17351,7 +17346,7 @@ async function setupAiSetlistBuilder() {
     if (state._draftSlug) {
       try { await fetch(`/api/gigs/${encodeURIComponent(state._draftSlug)}`, { method: 'DELETE' }); } catch (e) {}
       state._draftSlug = null;
-      if (typeof fetchGigs === 'function') await fetchGigs();
+      await refreshGigList();
     }
     close();
   });
@@ -17442,7 +17437,7 @@ async function setupAiSetlistBuilder() {
       const j = await rr.json();
       if (!rr.ok) throw new Error(j.error || 'save failed');
       state._draftSlug = j.slug || state._draftSlug;
-      if (typeof fetchGigs === 'function') await fetchGigs();
+      await refreshGigList();
       if (typeof loadActiveGig === 'function' && j.slug) await loadActiveGig(j.slug);
       if (typeof showToast === 'function') showToast(`Draft in sidebar: "${state.title}"`, 2000);
     } catch (e) {
@@ -17474,7 +17469,7 @@ async function setupAiSetlistBuilder() {
       const j = await rr.json();
       if (!rr.ok) throw new Error(j.error || 'save failed');
       close();
-      if (typeof fetchGigs === 'function') await fetchGigs();
+      await refreshGigList();
       if (typeof loadActiveGig === 'function' && j.slug) await loadActiveGig(j.slug);
       if (typeof showToast === 'function') showToast(`"${title}" saved`, 2000);
     } catch (e) {

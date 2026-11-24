@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mark5 · Failed renders</title>
+<title>Mark5 · Failed ingests</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   :root {
@@ -79,7 +79,7 @@
 <script>fetch('/api/health').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('portals-version');if(el&&j&&j.bootVersion)el.textContent=j.bootVersion;}).catch(function(){});</script>
 
 <header>
-  <h1>Failed renders<span class="sub">retry or clear individual jobs · also see <a href="/librarian">/librarian</a></span></h1>
+  <h1>Failed ingests<span class="sub">links and jobs that failed: retry or clear · also see <a href="/librarian">/librarian</a></span></h1>
   <div><a href="/" style="font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--ink-dim);">← back to portal</a></div>
 </header>
 <main>
@@ -155,7 +155,7 @@ async function load() {
 }
 document.getElementById('reload').addEventListener('click', load);
 document.getElementById('retry-all').addEventListener('click', async () => {
-  if (!confirm('Move every failed job back to the render queue?')) return;
+  if (!confirm('Give every failed link and job back to the ingest queue?')) return;
   const r = await fetch('/api/failed-renders/retry-all', { method: 'POST' });
   const j = await r.json();
   showToast(`Retried ${j.moved} (${j.failed} failed to move)`);

@@ -268,9 +268,9 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # the library. Without these the tracker can never trim a row.
         'source_url':         meta.get('source_url'),
         'videoId':            _extract_video_id(meta.get('source_url')),
-        # Lyrics — fetched at ingest by lyrics_fetch.py. lyrics_chunks is
+        # Lyrics — pasted by hand in the lyrics editor. lyrics_chunks is
         # the section-split form ({label, text}[]); lyrics is the full
-        # flat text as a fallback. Both null when Genius had no match.
+        # flat text as a fallback. Both null when none were pasted.
         'lyrics':             meta.get('lyrics'),
         'lyrics_chunks':      meta.get('lyrics_chunks'),
         # Fill-missing-lyrics workflow: "Skip for all" (server.js
@@ -280,6 +280,10 @@ def build_stems_row(base, stem_dir, files_in_folder, meta):
         # library:"jam"; server.js PUT /api/song/:base/library). 'jam' rows
         # live in the Performer's Jam Tracks tab, not the Song Library.
         'library':            'jam' if meta.get('library') == 'jam' else 'song',
+        # Play history (server.js POST /api/song/:base/play). The Top 20
+        # view needs these on every catalog load.
+        'play_count':         int(meta.get('play_count') or 0),
+        'last_played_at':     meta.get('last_played_at'),
         'stems': stems,
         'cached': False,
         'logicProjectName': find_logicx(files_in_folder),
@@ -403,7 +407,19 @@ def build(root, do_fill):
         'stems_without_metadata': [],
         'metadata_without_stems': [],
         'incomplete':             [],
+        'unreadable_kept':        [],
     }
+
+    # Rows of the last catalog, to carry forward a song this machine cannot
+    # read right now. Leaving it out removed it from the Performer's library.
+    prev_rows = {}
+    try:
+        prev = json.load(open(root / 'CATALOG.json'))
+        for r in ((prev.get('data') or {}).get('songs') or []):
+            if r.get('folderName'):
+                prev_rows[r['folderName']] = r
+    except Exception:
+        pass
 
     stem_rows = []
     if stems_root.exists():
@@ -416,8 +432,17 @@ def build(root, do_fill):
                 files = os.listdir(d)
             except Exception as e:
                 print(f"   !! {d}: unreadable ({e})", file=sys.stderr)
+                if base in prev_rows:
+                    stem_rows.append(prev_rows[base])
+                    drift['unreadable_kept'].append(base)
                 continue
             meta = load_metadata(d)
+            if not meta and 'metadata.json' in files and base in prev_rows \
+                    and (prev_rows[base].get('artist') or 'Unknown Artist') != 'Unknown Artist':
+                # metadata.json is there but could not be read: keep the last good row
+                stem_rows.append(prev_rows[base])
+                drift['unreadable_kept'].append(base)
+                continue
             if not meta:
                 drift['stems_without_metadata'].append(base)
             if do_fill and meta:
@@ -478,8 +503,11 @@ def main():
 
     if not args.report_only:
         out = args.root / 'CATALOG.json'
-        json.dump(payload, open(out, 'w'), indent=2, ensure_ascii=False)
-        open(out, 'a').write('\n')
+        tmp = args.root / '.CATALOG.json.tmp'      # write beside it, then swap: a reader never sees half a file
+        with open(tmp, 'w') as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
+            fh.write('\n')
+        os.replace(tmp, out)
         print(f">> wrote {out.name} ({n_rows} stems rows)")
 
     print_drift(drift, n_rows, n_stems)

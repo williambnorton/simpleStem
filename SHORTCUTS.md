@@ -29,7 +29,7 @@ swallowed your `+`.
 | Shortcut | Action |
 |---|---|
 | **Cmd+S** | Focus search bar — start typing immediately |
-| **Cmd+G** | Focus gig picker — ↑↓ to select, then Tab into setlist |
+| **Cmd+G** | Focus the gig and setlist buttons — Tab moves along them, Enter picks |
 | **Cmd+L** | Focus YouTube-URL ingest input |
 | **Cmd+Shift+U** | Toggle Performer ↔ Librarian view |
 | **Cmd+]** | Next song in setlist |
@@ -66,7 +66,7 @@ swallowed your `+`.
 |---|---|
 | **Cmd+T** | Tap tempo — press 4 or more times in rhythm; the avg BPM is applied to the drum machine if engaged |
 | **Cmd+Shift+P** | Flash cache (pre-warm `~/.bt-cache` from `STEMS/`, `DRUM_MACHINE/`, `CUSTOM_LOOPS/`) |
-| **Cmd+Shift+;** | Take a debug snapshot (writes a manifest to `~/.simpleStem-catalog/snapshots/`) |
+| **Cmd+Shift+;** | Write a snapshot of the audio state to the debug log (same as the snapshot button) |
 | **Cmd+Shift+/** | Toggle the lyrics overlay |
 | **Cmd+Shift+R** | Restart server (with confirm) |
 

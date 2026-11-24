@@ -754,7 +754,6 @@ _sched = Scheduler()
 # IAC), keeps a ring buffer of recent messages (clock/active-sense
 # filtered out), and derives last-known device state: XR18 fader/mute/
 # pan CC maps (ch 1/2/3), Stadium program + snapshot (PC / CC69).
-from collections import deque
 
 _chain_cache = {"result": None, "at": 0.0}
 _rx = {"events": deque(maxlen=150), "listening": [],

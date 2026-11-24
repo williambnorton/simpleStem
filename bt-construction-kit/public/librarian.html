@@ -923,7 +923,7 @@
   <div class="tb-brand"><span class="tb-name">Mark5</span><span id="brand-version" class="tb-ver" title="build stamp V1.MMDDHHMM"></span><button class="tb-reset" style="margin-left:auto;font:700 9.5px -apple-system,sans-serif;color:#8a2f10;background:#ffe1d6;border:1px solid #e08a63;border-radius:7px;padding:2px 7px;cursor:pointer" onclick="if(window.performerReset){performerReset()}else if(confirm('Restart the Performer services (MIDI sidecar + portal server)? An active render is left alone; the page reloads in ~10s.')){fetch('/api/performer/reset',{method:'POST'}).catch(function(){});setTimeout(function(){location.reload()},10000)}" title="RESET PERFORMER — relaunch the MIDI sidecar + portal server (SAFE: an active render is left alone). The FULL restart including the render queue is the ⟳ in the Stem Mixer Console.">⟳ reset</button></div>
   <div class="tb-grid"><a class="pb pb-performer" href="/" title="🎛 Performer view">🎛 Performer</a><a class="pb pb-librarian here" href="/librarian" title="🤖 Librarian view">🤖 Librarian</a><a class="pb pb-midi" href="/midi-console.html" title="🎹 MIDI view">🎹 MIDI</a><a class="pb pb-desk" href="/desktop-proto.html" title="🖥 Desktop view">🖥 Desktop</a></div>
 </nav>
-      <span id="brand-version" class="brand-version-inline" title="build stamp"></span>
+      <span id="brand-version-inline" class="brand-version-inline" title="build stamp"></span>
       <span class="sub" style="display: block; margin-left: 0; margin-top: 4px;">curation desk for the Mark5 song library
         · <a href="/prune.html" target="simplestem-prune" style="font-weight:700;color:#d11a2a" title="Remove duplicate versions, live tracks and rarely played songs">🧹 Prune library</a></span>
     </h1>
@@ -1327,8 +1327,10 @@
         const i = iRes.ok ? await iRes.json() : null;
         const stamp = (v && v.running) || '';
         if (stamp) rememberedVersion = stamp;
-        const bv = document.getElementById('brand-version');
-        if (bv) bv.textContent = stamp;
+        for (const id of ['brand-version', 'brand-version-inline']) {
+          const bv = document.getElementById(id);
+          if (bv) bv.textContent = stamp;
+        }
         document.title = `Mark5 Librarian ${stamp}`.trim();
         // If the server says we're not on a Librarian machine, leave a
         // hint in the host pill so the operator knows the data is being
@@ -1501,8 +1503,14 @@
       if (lyricsSub && ls.withLyrics != null && ls.songs) {
         lyricsSub.textContent = `${Math.round((ls.withLyrics / ls.songs) * 100)}% of library`;
       }
-      if (missingMain) missingMain.textContent = (ls.missingMetadata != null) ? ls.missingMetadata : '—';
-      if (ls.missingMetadata > 0) {
+      const leftOut = ls.notInCatalog || [];
+      if (missingMain) missingMain.textContent = (ls.missingMetadata != null) ? ls.missingMetadata + (leftOut.length ? ` · ${leftOut.length} left out` : '') : '—';
+      const missSub = document.querySelector('#card-missing-meta .c-sub');
+      if (missSub && leftOut.length) {
+        missSub.textContent = 'song folders the catalog left out: ' + leftOut.slice(0, 3).join(', ') + (leftOut.length > 3 ? '…' : '');
+        missSub.title = leftOut.join('\n');
+      }
+      if (ls.missingMetadata > 0 || leftOut.length) {
         document.getElementById('card-missing-meta').classList.remove('state-info');
         document.getElementById('card-missing-meta').classList.add('state-warn');
       }
@@ -2445,7 +2453,11 @@
         const base = play.dataset.base;
         const src = asrcRows.find(s => s.base === base);
         if (src) return playSource(src.file);
-        return alert('No stereo source file for this song (it was ingested from YouTube). Play it in the Performer view.');
+        // Every song keeps its original stereo beside the stems.
+        asrcPlayer.style.display = 'block';
+        asrcPlayer.src = '/api/audio/song-source/' + encodeURIComponent(base);
+        asrcPlayer.play().catch(() => alert('No original stereo for this song. Play it in the Performer view.'));
+        return;
       }
       if (del) {
         const base = del.dataset.base;

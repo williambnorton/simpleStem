@@ -153,6 +153,17 @@ function getAudioDuration(filePath) {
 
 app.use(cors());
 app.use(express.json());
+// A NUL byte or an over-long name in the address can never be a real file.
+// Answer 400 here; the file system would answer with a 500 that quotes a
+// full path on this machine.
+app.use((req, res, next) => {
+  let p;
+  try { p = decodeURIComponent(req.path); } catch (e) { return res.status(400).json({ error: 'bad address' }); }
+  if (p.includes('\0') || p.split('/').some(seg => seg.length > 255)) {
+    return res.status(400).json({ error: 'bad name in address' });
+  }
+  next();
+});
 
 // In-flight request counter for the no-internet mandate's Drive-sync
 // guard (armed further down, after SIMPLE_STEM_ROOT is defined). Sync
@@ -685,7 +696,7 @@ async function scanStems() {
     // them the tracker has no way to recognize completion (folderName is
     // a title/artist slug, never the video id).
     let sourceUrl = null, videoId = null;
-    // Lyrics — fetched at ingest by lyrics_fetch.py on the Librarian.
+    // Lyrics — pasted by hand in the lyrics editor (lyrics.txt + metadata).
     let lyricsText = null, lyricsChunks = null;
     const metaJsonPath = path.join(folderPath, 'metadata.json');
     let usedMetaJson = false;
@@ -843,7 +854,7 @@ async function scanStems() {
       // recognize when a submitted URL has finished rendering.
       source_url: sourceUrl,
       videoId: videoId,
-      // Lyrics — fetched at ingest by lyrics_fetch.py (Librarian).
+      // Lyrics — pasted by hand in the lyrics editor.
       // Pass through for the show-lyrics action overlay; both fields
       // null when Genius had no match.
       lyrics: lyricsText,
@@ -884,6 +895,7 @@ async function scanStems() {
 const LIBRARY_CACHE_FILE = path.join(__dirname, 'library_cache.json');
 const LIBRARY_REFRESH_MS = 60 * 60 * 1000; // 1 hour
 let libraryCache = null;       // { scannedAt: ISO string, data: { stats, songs } }
+let _newSongPrecacheTimer = null, _lastNewSongKick = 0;
 let libraryRefreshing = false; // re-entrancy guard
 // Tombstones for deleted songs: base -> Date.now() at deletion. Filters
 // stale CATALOG.json rows so a deleted song cannot resurrect in the
@@ -1053,6 +1065,56 @@ function refreshLibraryCache(reason, force) {
                 fromCatalog.data.stats.uncachedSongs = total - cachedN;
               }
             } catch (e) { console.warn('[lib] cachedSongs augment failed:', e.message); }
+            // Keep-what-we-had guard (2026-11-24). The Librarian's catalog
+            // leaves a song out when it cannot read the folder on its own
+            // machine, and writes "Unknown Artist" when it cannot read the
+            // metadata. If the gig cache still holds the stems and the
+            // folder is still on Drive, the song is real: keep the row we
+            // had. (A song deleted on purpose is covered by the tombstones.)
+            try {
+              const prev = libraryCache && libraryCache.data && Array.isArray(libraryCache.data.songs) ? libraryCache.data.songs : [];
+              if (prev.length && fromCatalog.data && Array.isArray(fromCatalog.data.songs)) {
+                const nowRows = new Map(fromCatalog.data.songs.map(x => [x.folderName, x]));
+                const kept = [], healed = [];
+                for (const old of prev) {
+                  if (old.type !== 'stems' || !old.folderName || recentSongDeletes.has(old.folderName)) continue;
+                  const cur = nowRows.get(old.folderName);
+                  if (!cur) {
+                    if (!isStemsFolderCached(old.folderName)) continue;
+                    // Gone from Drive as well (ENOENT) means really deleted; no answer (offline) keeps it.
+                    const gone = await withDriveBudget(fsp.access(path.join(STEMS_DIR, old.folderName)), 2000, 'catalog-guard')
+                      .then(() => false, e => !!(e && e.code === 'ENOENT'));
+                    if (gone) continue;
+                    fromCatalog.data.songs.push(old);
+                    kept.push(old.folderName);
+                  } else if ((!cur.artist || cur.artist === 'Unknown Artist') && old.artist && old.artist !== 'Unknown Artist') {
+                    const cachedNow = cur.cached;
+                    Object.assign(cur, old, { cached: cachedNow });
+                    healed.push(old.folderName);
+                  }
+                }
+                if (kept.length || healed.length) {
+                  const st = fromCatalog.data.stats || {};
+                  if (typeof st.totalSongs === 'number') st.totalSongs += kept.length;
+                  if (typeof st.totalStems === 'number') st.totalStems += kept.length;
+                  console.warn(`[lib] catalog guard: kept ${kept.length} song(s) the catalog left out [${kept.join(', ')}]; kept the metadata of ${healed.length} it blanked [${healed.join(', ')}]`);
+                  try { logActivity('warn', 'library', `the catalog left out ${kept.length} song(s) and blanked ${healed.length}; the earlier rows were kept`, { kept, healed }); } catch (e) {}
+                }
+              }
+            } catch (e) { console.warn('[lib] catalog guard failed:', e.message); }
+            // A song new to the library goes into the gig cache now, not at
+            // the next hourly pass (at most one extra pass every 10 minutes).
+            try {
+              const fresh = (fromCatalog.data.songs || []).filter(x => x.type === 'stems' && x.cached === false && x.stats && x.stats.stemCount > 0);
+              if (fresh.length && !_newSongPrecacheTimer && Date.now() - _lastNewSongKick > 10 * 60 * 1000) {
+                _lastNewSongKick = Date.now();
+                console.log(`[lib] ${fresh.length} song(s) not in the gig cache yet — stem precache in 5 s`);
+                _newSongPrecacheTimer = setTimeout(() => {
+                  _newSongPrecacheTimer = null;
+                  precacheAllStemsM4a({ trigger: 'new-song' }).catch(e => console.warn('[stem precache] new-song pass failed:', e.message));
+                }, 5000);
+              }
+            } catch (e) {}
             // Tombstone filter (2026-08-14): a song deleted via
             // DELETE /api/song/:base vanishes from disk instantly, but the
             // Librarian's CATALOG.json can list it for up to an hour until
@@ -2915,12 +2977,17 @@ async function refreshDriveSnap() {
       next.catalog.shape = 'canonical';
       next.catalog.songCount = j.data.songs.length;
       next.catalog.scannedAt = j.scannedAt || null;
-      const songsWithMeta = j.data.songs.filter(s => s.title && s.artist);
+      const songsWithMeta = j.data.songs.filter(s => s.title && s.artist && s.artist !== 'Unknown Artist');
+      // Song folders this machine can see that the catalog does not list.
+      const inCat = new Set(j.data.songs.map(s => s.folderName));
+      const notInCatalog = ((_stemsHealthCache && _stemsHealthCache.rows) || [])
+        .filter(r => r && r.base && !inCat.has(r.base) && (r.stemsPresent === undefined || r.stemsPresent > 0)).map(r => r.base);
       next.catalog.libraryStats = {
         songs: j.data.songs.length,
         artistCount: new Set(j.data.songs.map(s => s.artist).filter(Boolean)).size,
         withLyrics: j.data.songs.filter(s => s.lyrics && String(s.lyrics).trim()).length,
         missingMetadata: j.data.songs.length - songsWithMeta.length,
+        notInCatalog,
       };
     } else if (Array.isArray(j.songs)) {
       next.catalog.shape = 'legacy';
@@ -3210,14 +3277,16 @@ async function probeLibrarianState() {
     // Fallback: local pid files (only truthful on the machine that runs them).
     const pidPath1 = path.join(dotRun, `${name}.pid`);
     const pidPath2 = path.join(codeDotRun, `${name}.pid`);
-    const pidPath = fs.existsSync(pidPath1) ? pidPath1 :
-                    fs.existsSync(pidPath2) ? pidPath2 : null;
+    // Async and bounded: these sit on Drive, and this route is polled.
+    const pidThere = (f) => withDriveBudget(fsp.access(f), 1500, 'pid-access').then(() => true, () => false);
+    const pidPath = (await pidThere(pidPath1)) ? pidPath1 :
+                    (await pidThere(pidPath2)) ? pidPath2 : null;
     if (!pidPath) {
       state.librarianDaemons[name] = { running: false, pid: null, reason: 'no pid file / no heartbeat' };
       continue;
     }
     try {
-      const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
+      const pid = parseInt((await withDriveBudget(fsp.readFile(pidPath, 'utf8'), 1500, 'pid-read')).trim(), 10);
       let alive = false;
       try { process.kill(pid, 0); alive = true; } catch (e) {}
       state.librarianDaemons[name] = { running: alive, pid, pidPath, source: 'local-pid' };
@@ -4573,21 +4642,27 @@ app.get('/api/cache-status', (req, res) => {
 function xmlEscape(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-app.post('/api/enqueue', (req, res) => {
-  const url = ((req.body && req.body.url) || '').trim();
-  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\//i.test(url)) {
+app.post('/api/enqueue', async (req, res) => {
+  let url = ((req.body && req.body.url) || '').trim();
+  if (!/^https?:\/\/((www|m|music)\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
     return res.status(400).json({ error: 'Please paste a YouTube video or playlist URL.' });
   }
+  // A phone's share link (m.youtube.com) is the same video.
+  url = url.replace(/^(https?:\/\/)m\.youtube\.com\//i, '$1www.youtube.com/');
+  const m = url.match(/[?&]v=([\w-]{6,})/) || url.match(/youtu\.be\/([\w-]{6,})/) ||
+            url.match(/youtube\.com\/(?:shorts|live|embed)\/([\w-]{6,})/) || url.match(/[?&]list=([\w-]+)/);
+  if (!m) {
+    return res.status(400).json({ error: 'That link has no video or playlist in it. Paste the link of one video or one playlist.' });
+  }
   try {
-    fs.mkdirSync(INCOMING_DIR, { recursive: true });
+    await withDriveBudget(fsp.mkdir(INCOMING_DIR, { recursive: true }), 8000, 'enqueue-mkdir');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const m = url.match(/[?&]v=([\w-]+)/) || url.match(/youtu\.be\/([\w-]+)/) || url.match(/[?&]list=([\w-]+)/);
-    const tag = m ? m[1].slice(0, 20) : 'link';
+    const tag = m[1].slice(0, 20);
     const file = path.join(INCOMING_DIR, `portal_${stamp}_${tag}.webloc`);
     const plist = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
       '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>' + xmlEscape(url) + '</string>\n</dict>\n</plist>\n';
-    fs.writeFileSync(file, plist);
+    await withDriveBudget(fsp.writeFile(file, plist), 8000, 'enqueue-write');
     logActivity('info', 'ingest', `webloc queued: ${path.basename(file)}`, { url });
     res.json({ ok: true, queued: path.basename(file) });
   } catch (e) {
@@ -4973,13 +5048,33 @@ app.get('/api/failed-renders', async (req, res) => {
       }
       items.push({ file: f, mtime, body });
     }
+    // Links the watcher could not fetch stay in INCOMING_WEBLOC as
+    // *.webloc.failed (the "N webloc failed" chip counts these).
+    const dropped = await fsp.readdir(INCOMING_DIR).catch(() => []);
+    for (const f of dropped) {
+      if (!f.endsWith('.webloc.failed')) continue;
+      const p = path.join(INCOMING_DIR, f);
+      let mtime = null, url = '';
+      try { mtime = (await fsp.stat(p)).mtime.toISOString(); } catch (e) {}
+      try {
+        const mm = /<string>([^<]+)<\/string>/.exec(await fsp.readFile(p, 'utf8'));
+        if (mm) url = mm[1].replace(/&amp;/g, '&');
+      } catch (e) {}
+      items.push({ file: f, mtime, body: { title: 'YouTube link', source_url: url, error: 'The link could not be fetched' } });
+    }
     items.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
   } catch (e) {}
   res.json({ ok: true, count: items.length, items });
 });
+const isFailedWebloc = (f) => typeof f === 'string' && !f.includes('..') && !f.includes('/') && f.endsWith('.webloc.failed');
 // Retry one — moves the JSON back to STEM_QUEUE/ so the runner picks it up.
 app.post('/api/failed-renders/retry/:file', (req, res) => {
   const f = req.params.file;
+  if (isFailedWebloc(f)) {     // a link: give it back to the watcher
+    return fsp.rename(path.join(INCOMING_DIR, f), path.join(INCOMING_DIR, f.replace(/\.failed$/, '')))
+      .then(() => res.json({ ok: true, file: f }))
+      .catch(e => res.status(e.code === 'ENOENT' ? 404 : 500).json({ ok: false, error: e.code === 'ENOENT' ? 'not found' : e.message }));
+  }
   if (!f || f.includes('..') || !f.endsWith('.json')) return res.status(400).json({ ok: false, error: 'bad name' });
   const src = path.join(QUEUE_DIR, '_failed', f);
   const dst = path.join(QUEUE_DIR, f);
@@ -4996,6 +5091,11 @@ app.post('/api/failed-renders/retry/:file', (req, res) => {
 // Clear one.
 app.delete('/api/failed-renders/:file', (req, res) => {
   const f = req.params.file;
+  if (isFailedWebloc(f)) {
+    return fsp.unlink(path.join(INCOMING_DIR, f))
+      .then(() => res.json({ ok: true, file: f }))
+      .catch(e => res.status(e.code === 'ENOENT' ? 404 : 500).json({ ok: false, error: e.code === 'ENOENT' ? 'not found' : e.message }));
+  }
   if (!f || f.includes('..') || !f.endsWith('.json')) return res.status(400).json({ ok: false, error: 'bad name' });
   const p = path.join(QUEUE_DIR, '_failed', f);
   try {
@@ -5017,6 +5117,13 @@ app.post('/api/failed-renders/retry-all', (req, res) => {
       catch (e) { failed++; }
     }
   } catch (e) {}
+  try {
+    for (const f of fs.readdirSync(INCOMING_DIR)) {
+      if (!isFailedWebloc(f)) continue;
+      try { fs.renameSync(path.join(INCOMING_DIR, f), path.join(INCOMING_DIR, f.replace(/\.failed$/, ''))); moved++; }
+      catch (e) { failed++; }
+    }
+  } catch (e) {}
   res.json({ ok: true, moved, failed });
 });
 app.delete('/api/failed-renders', (req, res) => {
@@ -5026,6 +5133,12 @@ app.delete('/api/failed-renders', (req, res) => {
     for (const f of fs.readdirSync(dir)) {
       if (!f.endsWith('.json')) continue;
       try { fs.unlinkSync(path.join(dir, f)); deleted++; } catch (e) {}
+    }
+  } catch (e) {}
+  try {
+    for (const f of fs.readdirSync(INCOMING_DIR)) {
+      if (!isFailedWebloc(f)) continue;
+      try { fs.unlinkSync(path.join(INCOMING_DIR, f)); deleted++; } catch (e) {}
     }
   } catch (e) {}
   res.json({ ok: true, deleted });
@@ -5176,22 +5289,31 @@ app.post('/api/setlists', (req, res) => {
   }
   const slug = String(title).replace(/[^A-Za-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   if (!slug) return res.status(400).json({ error: 'title produced an empty slug' });
+  // registry.json in the same folder is the playlist registry, not a setlist.
+  if (slug === 'registry') return res.status(400).json({ error: 'that name is reserved; pick another' });
   const file = path.join(SETLISTS_DIR, `${slug}.json`);
   if (!file.startsWith(SETLISTS_DIR)) return res.status(400).json({ error: 'bad slug' });
   try {
     // Existing-check reads from the mirror first.
     const mirrorFile = path.join(SETLISTS_LOCAL_MIRROR, `${slug}.json`);
     const checkFile = fs.existsSync(mirrorFile) ? mirrorFile : file;
+    let createdAt = null;
     if (fs.existsSync(checkFile)) {
       const existing = JSON.parse(fs.readFileSync(checkFile, 'utf8'));
       if (existing.origin === 'playlist') {
         return res.status(409).json({ error: 'that name is a playlist-synced setlist; pick another' });
       }
+      // { create: true } means "make a new setlist": never replace one
+      // that is already there (it used to be emptied without a word).
+      if (req.body.create) {
+        return res.status(409).json({ error: `a setlist named "${existing.title || slug}" already exists; pick another name`, exists: true, slug });
+      }
+      createdAt = existing.created_at || null;
     }
     const payload = {
       origin: 'manual',
       title,
-      created_at: new Date().toISOString(),
+      created_at: createdAt || new Date().toISOString(),
       count: songs.length,
       songs: songs.map((sb, i) => ({ position: i + 1, song_base: sb })),
     };
@@ -6484,15 +6606,18 @@ app.post('/api/song/:base/fetch-lyrics', (req, res) => {
 //                                               Google search URL for
 //                                               the song title + artist
 function lyricsTxtPath(songDir) { return path.join(songDir, 'lyrics.txt'); }
-app.get('/api/song/:base/lyrics-file', (req, res) => {
+app.get('/api/song/:base/lyrics-file', async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const lp = lyricsTxtPath(s.dir);
-  if (!fs.existsSync(lp)) return res.status(404).json({ error: 'no lyrics.txt' });
   try {
-    const text = fs.readFileSync(lp, 'utf8');
+    const text = await driveRace(fsp.readFile(lp, 'utf8'), 4000);
     res.json({ ok: true, text, path: lp, size: Buffer.byteLength(text, 'utf8') });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return res.status(404).json({ error: 'no lyrics.txt' });
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable' });
+    res.status(500).json({ error: e.message });
+  }
 });
 app.put('/api/song/:base/lyrics-file', (req, res) => {
   const s = safeSongDir(req.params.base);
@@ -6647,7 +6772,7 @@ app.put('/api/song/:base/lyrics', (req, res) => {
 // the drums stem (beats + which beat is the 1, from the kick); the first
 // load saves it here so the looper, markers and click always use the same
 // grid. Body: { beats: [sec…], downbeat: 0..3, bpm, source, fit }.
-app.put('/api/song/:base/beat-grid', express.json({ limit: '1mb' }), (req, res) => {
+app.put('/api/song/:base/beat-grid', express.json({ limit: '1mb' }), async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const b = req.body || {};
@@ -6656,9 +6781,9 @@ app.put('/api/song/:base/beat-grid', express.json({ limit: '1mb' }), (req, res) 
     return res.status(400).json({ error: 'beats must be 8+ increasing seconds' });
   }
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     meta.beat_grid = {
       v: 1,
       beats: beats.map(t => Math.round(t * 1000) / 1000),
@@ -6668,24 +6793,27 @@ app.put('/api/song/:base/beat-grid', express.json({ limit: '1mb' }), (req, res) 
       fit: String(b.fit || ''),
       saved_at: new Date().toISOString(),
     };
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     res.json({ ok: true, beats: meta.beat_grid.beats.length, downbeat: meta.beat_grid.downbeat });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — not saved (offline)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Fill-missing-lyrics workflow (Bill 2026-10-23): "Skip for all" marks a
 // song (an instrumental, say) so later runs leave it out. Saved as
 // metadata.json `lyrics_skip`. Body: { skip: true | false }.
-app.put('/api/song/:base/lyrics-skip', express.json(), (req, res) => {
+app.put('/api/song/:base/lyrics-skip', express.json(), async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   const skip = !!(req.body && req.body.skip);
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     if (skip) meta.lyrics_skip = true; else delete meta.lyrics_skip;
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     recentLyricsSkips.set(s.b, skip);
     try {
       const songs = libraryCache && libraryCache.data && libraryCache.data.songs;
@@ -6693,7 +6821,10 @@ app.put('/api/song/:base/lyrics-skip', express.json(), (req, res) => {
       if (row) row.lyrics_skip = skip;
     } catch (e) {}
     res.json({ ok: true, lyrics_skip: skip });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — not saved (offline)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Move a stemmed song between the Song Library and the Jam Tracks tab
@@ -6701,16 +6832,16 @@ app.put('/api/song/:base/lyrics-skip', express.json(), (req, res) => {
 // lyrics_skip (an instrumental is never asked for lyrics); 'song' clears
 // the library flag only. Used to backfill jam tracks stemmed before the
 // Jam page's Import-as switch existed.
-app.put('/api/song/:base/library', express.json(), (req, res) => {
+app.put('/api/song/:base/library', express.json(), async (req, res) => {
   const s = safeSongDir(req.params.base);
   if (!s) return res.status(400).json({ error: 'bad song id' });
   const mp = path.join(s.dir, 'metadata.json');
-  if (!fs.existsSync(mp)) return res.status(404).json({ error: 'no metadata.json' });
   const lib = ((req.body && req.body.library) === 'jam') ? 'jam' : 'song';
   try {
-    const meta = JSON.parse(fs.readFileSync(mp, 'utf8')) || {};
+    const meta = await readMetaBounded(mp);
+    if (meta === null) return res.status(404).json({ error: 'no metadata.json' });
     if (lib === 'jam') { meta.library = 'jam'; meta.lyrics_skip = true; } else { delete meta.library; delete meta.lyrics_skip; }
-    fs.writeFileSync(mp, JSON.stringify(meta, null, 2) + '\n');
+    await writeMetaBounded(mp, meta);
     recentLibraryMoves.set(s.b, lib);
     recentLyricsSkips.set(s.b, lib === 'jam');
     try {
@@ -6719,7 +6850,10 @@ app.put('/api/song/:base/library', express.json(), (req, res) => {
       if (row) { row.library = lib; row.lyrics_skip = (lib === 'jam'); }
     } catch (e) {}
     res.json({ ok: true, library: lib });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (isDriveTimeout(e)) return res.status(503).json({ error: 'Drive unreachable — not saved (offline)' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Fill-missing-lyrics queue, read from disk (Bill 2026-11-02). The library
@@ -6921,16 +7055,21 @@ app.post('/api/song/:base/play', async (req, res) => {
 // root as TAGS.json so it syncs with the rest of the library.
 const TAGS_REGISTRY_PATH = path.join(SIMPLE_STEM_ROOT, 'TAGS.json');
 const DEFAULT_TAGS = ['Protest', 'Bill&Matt'];
+let _tagRegistry = null;   // read once at boot; requests are answered from memory (no Drive read)
 function loadTagRegistry() {
+  if (_tagRegistry) return _tagRegistry.slice();
+  let tags = DEFAULT_TAGS.slice();
   try {
     if (fs.existsSync(TAGS_REGISTRY_PATH)) {
       const j = JSON.parse(fs.readFileSync(TAGS_REGISTRY_PATH, 'utf8'));
-      if (Array.isArray(j.tags)) return j.tags.map(t => String(t).trim()).filter(Boolean);
+      if (Array.isArray(j.tags)) tags = j.tags.map(t => String(t).trim()).filter(Boolean);
     }
   } catch (e) { console.warn('[tags] registry read failed:', e.message); }
-  return DEFAULT_TAGS.slice();
+  _tagRegistry = tags;
+  return tags.slice();
 }
 function saveTagRegistry(tags) {
+  _tagRegistry = tags.slice();
   try {
     fs.writeFileSync(TAGS_REGISTRY_PATH, JSON.stringify({ tags }, null, 2) + '\n');
   } catch (e) { console.warn('[tags] registry write failed:', e.message); }
@@ -6938,6 +7077,7 @@ function saveTagRegistry(tags) {
 // Boot: ensure the file exists with the default tags so first call to
 // GET /api/tags is never blank.
 if (!fs.existsSync(TAGS_REGISTRY_PATH)) saveTagRegistry(DEFAULT_TAGS.slice());
+loadTagRegistry();
 
 app.get('/api/tags', (req, res) => {
   res.json({ ok: true, tags: loadTagRegistry() });

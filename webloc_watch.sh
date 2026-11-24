@@ -315,7 +315,8 @@ _already_ingested() {
 }
 
 process_single() {
-  local id="$1" url="https://www.youtube.com/watch?v=$id"
+  local id="$1"
+  local url="https://www.youtube.com/watch?v=$id"
   # Skip if this id is already in the library — re-ingest of the same
   # video creates the Harvest-Moon-style duplicates Bill ran into.
   local existing

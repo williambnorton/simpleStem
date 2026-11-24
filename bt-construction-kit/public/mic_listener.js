@@ -590,7 +590,7 @@
   }
 
   function currentKey() {
-    const k = document.getElementById('active-key')?.textContent?.trim() || 'Unknown';
+    const k = document.getElementById('active-key-value')?.textContent?.trim() || 'Unknown';
     return `The key is ${k}.`;
   }
   function currentTempo() {

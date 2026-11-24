@@ -164,7 +164,6 @@ UI (studio machine):
   `GET /api/audio/m4a/:file`, `POST /api/enqueue` (drops a `.webloc`),
   `GET /api/queue` (live status), `POST /api/precache/...`. Reads `STEMS/`,
   `M4A/`, and each song's `metadata.json`; caches audio to `~/.bt-cache`.
-- `start_server.bash` — `cd bt-construction-kit && node server.js`.
 - `bt-construction-kit/public/README.html` — the active infographic: how the
   system works, with live readings from `/api/librarian/state`,
   `/api/dashboard/state`, `/api/health` and `/api/identity` laid on top of each
