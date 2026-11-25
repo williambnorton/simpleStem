@@ -262,12 +262,13 @@ Each strip is laid out as a compass around its fader, mirroring the stems'
 positions on stage:
 
 ```
-        V          (top — Vocals, ch 11)
+   ✱    V    🍭    (top — all amps, Vocals ch 11, swirl)
    O  [fader]  P   (corners — Other ch 16 / Piano ch 15)
    L  [fader]  R   (sides — Stereo Left ch 1 / Right ch 2)
    G  [fader]  B   (corners — Guitar ch 14 / Bass ch 13)
   +5 +10 D +20 +50 (bottom — Drums ch 12, flanked by boosts)
         M  S
+   dark (tone) bright
   3 4 5 6 7 8 9 10 17 18
 ```
 
@@ -282,6 +283,23 @@ positions on stage:
   stem can go to several outputs at once; by default each stem is routed
   to its own home channel. Buttons beyond the current device's channel
   count are disabled (grey) until an XR18 is the output.
+- **✱ (all amps)** — top left of every strip, the six kit strips included.
+  Sends this strip to every amp (V, D, B, G, P, O) plus L and R; click
+  again and the strip gets back the routes it had. On an MPL strip it
+  sends the strip's notes to all five pitched Logic tracks instead.
+- **🍭 (swirl)** — top right of every strip. Moves this strip from amp to
+  amp round the ring (V→P→B→D→G→O), one step a second, starting at its own
+  amp; L and R stay as they are. Click again to stop and put its amps
+  back. A choice in OUTPUT ROUTING ends every strip's swirl, and starting
+  one ends the OUTPUT ROUTING Swirl. On an MPL strip it hands the notes
+  from Logic track to track; it is off on the Drums MPL strip and on kit
+  pieces playing as MPL.
+- **Tone dial** — under M and S on every strip. Centre is flat; turn right
+  (drag up or right) for a brighter sound, left for less high end: a high
+  shelf at 2 kHz, up to ±15 dB. Double-click for flat. Saved across
+  reloads. The Drums dial also moves the six kit pieces, on top of each
+  piece's own dial. Stem audio only: it does not change MPL notes played
+  by Logic.
 - **Numeric row (3–10, 17–18)** — the remaining XR18 outputs, for anything
   unconventional (wedges, recorder feeds).
 - **Boost buttons** — four latching gain trims flanking the D button:

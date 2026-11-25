@@ -5538,7 +5538,7 @@ body.server-stale .player-active:hover::after {
 .pos-btn:disabled { opacity: 0.22; cursor: not-allowed; }
 
 /* Named positional buttons — bigger and visually heavier than numerics. */
-.pos-V, .pos-O, .pos-P, .pos-L, .pos-R, .pos-G, .pos-B, .pos-D {
+.pos-V, .pos-O, .pos-P, .pos-L, .pos-R, .pos-G, .pos-B, .pos-D, .pos-all, .pos-swirl {
   width: 30px;
   height: 28px;
   font-size: 14px;
@@ -9317,3 +9317,19 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .kit-strip > .channel-buttons { width: 100%; margin-top: 2px; display: flex; gap: 4px; padding: 0 4px; box-sizing: border-box; }
 .kit-strip > .channel-buttons .mute-btn, .kit-strip > .channel-buttons .solo-btn { flex: 1 1 50%; min-width: 0; padding: 8px 0; font-size: 14px; }
 .kit-strip .pos-bottom-row .pos-btn { flex: 0 0 32px; }
+
+/* * (all amps) and 🍭 (swirl) at the two top corners of every strip, V between them (2026-11-25) */
+.channel-strip .pos-top-row, .kit-strip .pos-top-row { justify-content: space-between; padding: 0 1px; }
+.pos-all { font-size: 15px; line-height: 1; }
+.pos-swirl { font-size: 15px; }
+.pos-btn.pos-swirl.active { background: #ff7eb6; border: 1px solid #d6408a; }
+/* tone dial: one per strip, under M and S. The ring runs from blue (dark) through grey (flat) to amber (bright). */
+.tone-row { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 2px;
+  font: 700 8.5px 'Space Grotesk', sans-serif; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); user-select: none; }
+.tone-dial { --tone: 0; position: relative; flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%; cursor: grab; touch-action: none; outline: none;
+  background: radial-gradient(circle at 50% 30%, #ffffff, #cfd3d8);
+  border: 3px solid hsl(calc(130 - 85 * var(--tone)), calc(70% * max(var(--tone), -1 * var(--tone)) + 4%), 52%); box-sizing: border-box; }
+.tone-dial:focus-visible { box-shadow: 0 0 0 2px var(--color-green); }
+.tone-dial:active { cursor: grabbing; }
+.tone-dial-mark { position: absolute; left: 50%; top: 50%; width: 2px; height: 9px; margin-left: -1px; border-radius: 1px; background: #2b2f36;
+  transform-origin: 50% 0; transform: rotate(calc(180deg + 135deg * var(--tone))); pointer-events: none; }

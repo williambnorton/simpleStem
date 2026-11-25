@@ -551,7 +551,57 @@ const mixerState = {
   // +5 turns off +10 and vice versa, clicking the same selection again turns
   // boost off. Riding stripGain so it stays consistent with the LOOPER path.
   boost:   { vocals: 0, drums: 0, bass: 0, guitar: 0, piano: 0, other: 0 },
+  // Per-strip tone dial, -1 (darker) .. 0 (flat) .. +1 (brighter). Restored on reload.
+  tone:    { vocals: 0, drums: 0, bass: 0, guitar: 0, piano: 0, other: 0 },
 };
+
+// ── Tone dial (Bill 2026-11-25) ───────────────────────────────────────────
+// One dial per strip: centre is flat, right is brighter, left is darker. It
+// drives a high shelf at TONE_HZ in the strip's audio path, ±TONE_DB at the
+// ends. Audio only: an MPL strip's sound is made in Logic.
+const TONE_HZ = 2000, TONE_DB = 15;
+const toneClamp = (t) => { t = Math.max(-1, Math.min(1, +t || 0)); return Math.abs(t) < 0.04 ? 0 : t; };
+const toneDb = (t) => toneClamp(t) * TONE_DB;
+function setStripTone(chan, t) {
+  mixerState.tone[chan] = toneClamp(t);
+  const n = stripNodes && stripNodes[chan];
+  if (n && n.tone) n.tone.gain.setTargetAtTime(toneDb(t), audioCtx.currentTime, 0.02);
+  if (chan === 'drums' && typeof kitApplyTone === 'function') kitApplyTone();   // the Drums dial moves the six kit pieces too
+  saveMixerState();
+}
+// The dial itself, shared with the kit strips (kit-drums.js). get/set work in -1..+1.
+function makeToneDial(label, get, set) {
+  const row = document.createElement('div');
+  row.className = 'tone-row';
+  const d = document.createElement('div');
+  d.className = 'tone-dial'; d.tabIndex = 0; d.setAttribute('role', 'slider');
+  d.setAttribute('aria-label', label + ' tone'); d.setAttribute('aria-valuemin', '-100'); d.setAttribute('aria-valuemax', '100');
+  d.innerHTML = '<span class="tone-dial-mark"></span>';
+  const paint = () => {
+    const t = toneClamp(get()), db = Math.round(toneDb(t));
+    d.style.setProperty('--tone', t);
+    d.setAttribute('aria-valuenow', String(Math.round(t * 100)));
+    d.title = label + ' tone: ' + (t === 0 ? 'flat' : (t > 0 ? 'brighter, +' : 'darker, ') + db + ' dB above ' + (TONE_HZ / 1000) + ' kHz') +
+      '. Drag up or right for a brighter sound, down or left for less high end. Double-click for flat. Stem audio only: it does not change MPL notes played by Logic.';
+  };
+  const put = (t) => { set(toneClamp(t)); paint(); };
+  let drag = null;
+  d.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, t: toneClamp(get()) }; try { d.setPointerCapture(e.pointerId); } catch (x) {} e.preventDefault(); e.stopPropagation(); });
+  d.addEventListener('pointermove', (e) => { if (drag) put(drag.t + ((e.clientX - drag.x) - (e.clientY - drag.y)) / 80); });
+  for (const ev of ['pointerup', 'pointercancel']) d.addEventListener(ev, () => { drag = null; });
+  d.addEventListener('dblclick', (e) => { e.stopPropagation(); put(0); });
+  d.addEventListener('wheel', (e) => { e.preventDefault(); put(toneClamp(get()) - Math.sign(e.deltaY) * 0.1); }, { passive: false });
+  d.addEventListener('keydown', (e) => {
+    const k = { ArrowUp: 0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowLeft: -0.1 }[e.key];
+    if (k) { e.preventDefault(); e.stopPropagation(); put(toneClamp(get()) + k); }
+  });
+  const lo = document.createElement('span'); lo.textContent = 'dark';
+  const hi = document.createElement('span'); hi.textContent = 'bright';
+  row.append(lo, d, hi);
+  row.paint = paint;
+  paint();
+  return row;
+}
 
 // UI Elements
 const els = {
@@ -6011,7 +6061,10 @@ function initAudioCtx() {
     source.connect(mediaMute);
     mediaMute.connect(preFader);
     preFader.connect(stripGain);
-    stripGain.connect(splitter);
+    const tone = audioCtx.createBiquadFilter();   // the strip's tone dial (0 dB = flat)
+    tone.type = 'highshelf'; tone.frequency.value = TONE_HZ; tone.gain.value = toneDb(mixerState.tone[chan]);
+    stripGain.connect(tone);
+    tone.connect(splitter);
     // Level tap for the strip's coloured fill (2026-10-28) — PRE-fader
     // since 2026-11-01 (Bill: show every stem's colour whenever it has
     // signal, as if all faders were at 10). Fader, mute and boost don't
@@ -6020,7 +6073,7 @@ function initAudioCtx() {
     meter.fftSize = 1024;
     meter.smoothingTimeConstant = 0;
     preFader.connect(meter);
-    stripNodes[chan] = { source, mediaMute, preFader, stripGain, splitter, meter };
+    stripNodes[chan] = { source, mediaMute, preFader, stripGain, tone, splitter, meter };
     trackSources[chan] = source;
   });
 
@@ -6453,6 +6506,45 @@ function toggleStripChannel(chan, channelIdx) {
   renderRoutingGrids();
 }
 
+// ── One strip to every amp (*) and one strip round the amps (🍭) — Bill 2026-11-25
+// * lights every amp plus L and R for this strip; pressed again it puts back what
+// the strip had. 🍭 moves this strip from amp to amp round the ring (V→P→B→D→G→O),
+// one step a second, its L and R left as they are; pressed again it stops and puts
+// the strip's amps back. A choice in OUTPUT ROUTING ends every strip's swirl.
+const stripAllPrev = {};       // chan → its routes before *
+const stripSwirl = {};         // chan → { timer, i, prev }
+const stripAllOn = (chan) => { const r = routingMatrix[chan] || []; return ALL_AMPS_ROUTES.every(o => r.includes(o)); };
+function setStripRoutes(chan, routes, save) {
+  routingMatrix[chan] = [...new Set(routes)].sort((a, b) => a - b);
+  if (save) saveRoutingMatrix();
+  applyRoutingForStem(chan);
+  renderRoutingGrids();
+}
+function stopStripSwirl(chan, restore) {
+  const s = stripSwirl[chan];
+  if (!s) return;
+  clearInterval(s.timer);
+  delete stripSwirl[chan];
+  if (restore) setStripRoutes(chan, s.prev, true);
+}
+function stopAllStripSwirls() { Object.keys(stripSwirl).forEach(c => stopStripSwirl(c, false)); }
+function toggleStripAll(chan) {
+  stopStripSwirl(chan, true);
+  if (stripAllOn(chan)) setStripRoutes(chan, stripAllPrev[chan] || defaultRoutes(chan), true);
+  else { stripAllPrev[chan] = [...(routingMatrix[chan] || [])]; setStripRoutes(chan, ALL_AMPS_ROUTES, true); }
+}
+function toggleStripSwirl(chan) {
+  if (stripSwirl[chan]) { stopStripSwirl(chan, true); return; }
+  if (outputMode === 'swirl') setOutputMode('normal');     // one swirl at a time on a strip
+  const s = stripSwirl[chan] = { prev: [...(routingMatrix[chan] || [])], i: Math.max(0, AMP_RING.indexOf(HOME_CHAN[chan])), timer: null };
+  const step = () => {
+    const keep = (routingMatrix[chan] || []).filter(o => !AMP_RING.includes(o));   // L, R and the numbered outputs stay
+    setStripRoutes(chan, [...keep, AMP_RING[s.i++ % AMP_RING.length]], false);
+  };
+  step();
+  s.timer = setInterval(step, SWIRL_STEP_MS);
+}
+
 function applyRoutingForStem(chan) {
   const s = stripNodes && stripNodes[chan];
   if (!s || !masterMerger) return;
@@ -6671,6 +6763,7 @@ function mapMatrixFlip(m) {
 
 function setOutputMode(mode) {
   stopSwirl();
+  stopAllStripSwirls();
   outputMode = mode;
   if (mode === 'normal' || mode === 'swirl') outputFlipped = false;
   if (mode === 'swirl') {
@@ -6684,6 +6777,7 @@ function setOutputMode(mode) {
 }
 
 function toggleOutputFlip() {
+  stopAllStripSwirls();
   if (outputMode === 'swirl') {      // Flip ends the Swirl: Normal, then flipped
     stopSwirl();
     outputMode = 'normal';
@@ -8528,7 +8622,19 @@ function injectStripRoutingButtons() {
 
     const topRow = document.createElement('div');
     topRow.className = 'pos-top-row';
+    const allBtn = document.createElement('button');
+    allBtn.className = 'pos-btn pos-all';
+    allBtn.textContent = '✱';
+    allBtn.title = `All amps: send ${chan} to every amp (V, D, B, G, P, O) and L and R. Click again to put back what it had.`;
+    allBtn.addEventListener('click', e => { e.stopPropagation(); toggleStripAll(chan); });
+    const swirlBtn = document.createElement('button');
+    swirlBtn.className = 'pos-btn pos-swirl';
+    swirlBtn.textContent = '🍭';
+    swirlBtn.title = `Swirl: move ${chan} from amp to amp round you (V→P→B→D→G→O), one step a second. L and R stay as they are. Click again to stop and put its amps back.`;
+    swirlBtn.addEventListener('click', e => { e.stopPropagation(); toggleStripSwirl(chan); });
+    topRow.appendChild(allBtn);
     topRow.appendChild(makeBtn(chan, TOP_BUTTON.ch, TOP_BUTTON.pos, TOP_BUTTON.label));
+    topRow.appendChild(swirlBtn);
 
     const middleRow = document.createElement('div');
     middleRow.className = 'pos-middle-row';
@@ -8597,6 +8703,7 @@ function injectStripRoutingButtons() {
     strip.appendChild(middleRow);
     strip.appendChild(bottomRow);
     if (channelButtons) strip.appendChild(channelButtons);
+    strip.appendChild(makeToneDial(chan[0].toUpperCase() + chan.slice(1), () => mixerState.tone[chan], t => setStripTone(chan, t)));
     strip.appendChild(numericRow);
   });
 }
@@ -8618,6 +8725,10 @@ function renderRoutingGrids() {
       btn.classList.toggle('active', routes.includes(ch));
       btn.disabled = ch >= outputChannelCount;
     });
+    const noAmps = outputChannelCount <= 2;                  // a stereo device has no amps to spread over
+    const allBtn = strip.querySelector('.pos-all'), swirlBtn = strip.querySelector('.pos-swirl');
+    if (allBtn) { allBtn.classList.toggle('active', !noAmps && stripAllOn(chan)); allBtn.disabled = noAmps; }
+    if (swirlBtn) { swirlBtn.classList.toggle('active', !!stripSwirl[chan]); swirlBtn.disabled = noAmps; }
   });
   renderRoutingFxButtons();
 }
@@ -12336,6 +12447,7 @@ function loadMixerState() {
     if (ms && ms.volumes) Object.assign(mixerState.volumes, ms.volumes);
     if (ms && ms.muted)   Object.assign(mixerState.muted,   ms.muted);
     if (ms && ms.soloed)  Object.assign(mixerState.soloed,  ms.soloed);
+    if (ms && ms.tone)    CHANNELS.forEach(c => { if (typeof ms.tone[c] === 'number') mixerState.tone[c] = toneClamp(ms.tone[c]); });
 
     // Sync the DOM faders / buttons to the restored state
     CHANNELS.forEach(chan => {
@@ -12348,6 +12460,7 @@ function loadMixerState() {
       if (mute)  mute.classList.toggle('active', !!mixerState.muted[chan]);
       if (solo)  solo.classList.toggle('active', !!mixerState.soloed[chan]);
     });
+    document.querySelectorAll('.channel-strip .tone-row').forEach(r => { if (r.paint) r.paint(); });
   } catch (e) { console.warn('mixer state restore failed', e); }
 }
 

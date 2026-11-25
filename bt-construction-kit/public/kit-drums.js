@@ -36,7 +36,7 @@ const KIT_TICK_MS = 40;
 const KIT_UNITY = 0.8;       // where a fader rests, like the stem faders: the piece at the level it has in the drum stem
 const KIT_PRESETS = [100, 75, 50, 10, 5];
 
-const kit = { on: true, v3: true, vol: {}, mplVol: {}, mute: {}, solo: {}, routes: {}, mplRoute: {}, boost: {} };   // v3: saved since ON became the default
+const kit = { on: true, v3: true, vol: {}, mplVol: {}, mute: {}, solo: {}, routes: {}, mplRoute: {}, boost: {}, tone: {} };   // v3: saved since ON became the default
 let kitSong = null;          // folder whose pieces are loaded into the elements
 let kitProbe = null;         // folder being asked "do you have kit pieces?"
 let kitFailed = false;       // a piece of kitSong would not load
@@ -54,7 +54,7 @@ function kitSpread() { const r = {}; for (const p of KIT_PIECES) r[p.id] = ['L',
 
 (function kitLoadState() {
   kit.routes = kitSpread();
-  for (const p of KIT_PIECES) { kit.vol[p.id] = KIT_UNITY; kit.mplVol[p.id] = KIT_UNITY; kit.mute[p.id] = false; kit.solo[p.id] = false; kit.mplRoute[p.id] = ['D']; kit.boost[p.id] = 0; }
+  for (const p of KIT_PIECES) { kit.vol[p.id] = KIT_UNITY; kit.mplVol[p.id] = KIT_UNITY; kit.mute[p.id] = false; kit.solo[p.id] = false; kit.mplRoute[p.id] = ['D']; kit.boost[p.id] = 0; kit.tone[p.id] = 0; }
   try {
     const s = JSON.parse(localStorage.getItem(KIT_KEY) || 'null');
     if (!s) return;
@@ -67,10 +67,42 @@ function kitSpread() { const r = {}; for (const p of KIT_PIECES) r[p.id] = ['L',
       if (Array.isArray(r)) kit.routes[p.id] = r.filter(k => k in KIT_OUT);
       const mr = (s.mplRoute || {})[p.id];
       if (Array.isArray(mr)) kit.mplRoute[p.id] = mr.filter(k => 'VDBGPO'.includes(k));
+      if (typeof (s.tone || {})[p.id] === 'number') kit.tone[p.id] = Math.max(-1, Math.min(1, s.tone[p.id]));
     }
   } catch (e) {}
 })();
-function kitSave() { try { localStorage.setItem(KIT_KEY, JSON.stringify(kit)); } catch (e) {} }
+function kitSave() {
+  const routes = Object.assign({}, kit.routes);
+  for (const id of Object.keys(kitSwirl)) routes[id] = kitSwirl[id].prev;      // a swirling piece is saved with the amps it had before
+  try { localStorage.setItem(KIT_KEY, JSON.stringify(Object.assign({}, kit, { routes }))); } catch (e) {}
+}
+
+// * and 🍭 on a kit strip (Bill 2026-11-25), as on the six stem strips: * lights every amp plus L and R
+// (again: back to what the piece had); 🍭 moves the piece from amp to amp, one step a second, L and R left alone.
+const KIT_RING = ['V', 'P', 'B', 'D', 'G', 'O'], KIT_ALL = ['L', 'R', 'V', 'D', 'B', 'G', 'P', 'O'];
+const kitAllPrev = {}, kitSwirl = {};
+const kitAllOn = (id) => KIT_ALL.every(k => (kit.routes[id] || []).includes(k));
+function kitSwirlStop(id, restore) {
+  const s = kitSwirl[id]; if (!s) return;
+  clearInterval(s.timer); delete kitSwirl[id];
+  if (restore) { kit.routes[id] = s.prev; kitApplyRoutes(id); }
+}
+function kitSwirlStart(id) {
+  const piece = KIT_PIECES.find(p => p.id === id);
+  const s = kitSwirl[id] = { prev: [...(kit.routes[id] || [])], i: Math.max(0, KIT_RING.indexOf(piece.amp)), timer: null };
+  const step = () => {
+    kit.routes[id] = (kit.routes[id] || []).filter(k => k === 'L' || k === 'R').concat(KIT_RING[s.i++ % KIT_RING.length]);
+    kitApplyRoutes(id); kitPaint();
+  };
+  step();
+  s.timer = setInterval(step, 1000);
+}
+// the piece's own dial plus the Drums strip's dial, which moves all six
+function kitApplyTone() {
+  if (!kitNodes) return;
+  const d = typeof mixerState !== 'undefined' && mixerState.tone ? +mixerState.tone.drums || 0 : 0;
+  for (const p of KIT_PIECES) kitNodes.piece[p.id].tone.gain.setTargetAtTime(toneDb((kit.tone[p.id] || 0) + d), audioCtx.currentTime, 0.02);
+}
 
 for (const p of KIT_PIECES) {
   const el = new Audio();
@@ -123,14 +155,16 @@ function kitWire() {
     const split = audioCtx.createChannelSplitter(2);
     const mono = audioCtx.createGain();                             // an amp gets left + right, halved
     mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
-    src.connect(fader); fader.connect(group); group.connect(split); group.connect(mono);
+    const tone = audioCtx.createBiquadFilter(); tone.type = 'highshelf'; tone.frequency.value = TONE_HZ;      // the piece's tone dial
+    src.connect(fader); fader.connect(tone); tone.connect(group); group.connect(split); group.connect(mono);
     src.connect(n.pre);
     const meter = audioCtx.createAnalyser(); meter.fftSize = 1024; meter.smoothingTimeConstant = 0;   // the strip's level fill, pre-fader
     src.connect(meter);
-    n.piece[p.id] = { fader, group, split, mono, meter };
+    n.piece[p.id] = { fader, tone, group, split, mono, meter };
   }
   kitNodes = n;
   kitApplyFaders();
+  kitApplyTone();
   for (const p of KIT_PIECES) kitApplyRoutes(p.id);
   // follow the drum stem's transport at once, not a tick later
   for (const ev of ['play', 'pause', 'seeking', 'ratechange']) audioElements.drums.addEventListener(ev, () => { try { kitTick(); } catch (e) {} });
@@ -264,7 +298,7 @@ function kitBuild() {
     <div class="kit-strips">${KIT_PIECES.map(p => `
       <div class="kit-strip" data-kit="${p.id}">
         <div class="strip-level-fill" style="--lvl-rgb: ${p.rgb};"></div>
-        <div class="pos-top-row">${out(p, 'V')}</div>
+        <div class="pos-top-row"><button class="pos-btn pos-all kit-all" title="All amps: send the ${p.label} to every amp (V, D, B, G, P, O) and L and R. Click again to put back what it had.">✱</button>${out(p, 'V')}<button class="pos-btn pos-swirl kit-swirl" title="Swirl: move the ${p.label} from amp to amp round you (V→P→B→D→G→O), one step a second. L and R stay as they are. Click again to stop and put its amps back.">🍭</button></div>
         <div class="pos-middle-row">
           <div class="pos-side-left">${out(p, 'O')}${out(p, 'L')}${out(p, 'G')}</div>
           <div class="fader-container">
@@ -287,13 +321,30 @@ function kitBuild() {
     </div>`;
   host.insertAdjacentElement('afterend', panel);
   try { lucide.createIcons(); } catch (e) {}
+  for (const strip of panel.querySelectorAll('.kit-strip')) {
+    const id = strip.dataset.kit, label = KIT_PIECES.find(p => p.id === id).label;
+    strip.appendChild(makeToneDial(label, () => kit.tone[id] || 0, (t) => { kit.tone[id] = t; kitApplyTone(); kitSave(); }));
+  }
 
   panel.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     const strip = b.closest('.kit-strip'), id = strip && strip.dataset.kit;
     if (b.id === 'kit-on') { kit.on = !kit.on; }
-    else if (b.id === 'kit-spread') { kit.routes = kitSpread(); KIT_PIECES.forEach(p => kitApplyRoutes(p.id)); }
-    else if (b.id === 'kit-home') { for (const p of KIT_PIECES) { kit.routes[p.id] = ['L', 'R', 'D']; kitApplyRoutes(p.id); } }
+    else if (b.id === 'kit-spread') { KIT_PIECES.forEach(p => kitSwirlStop(p.id)); kit.routes = kitSpread(); KIT_PIECES.forEach(p => kitApplyRoutes(p.id)); }
+    else if (b.id === 'kit-home') { for (const p of KIT_PIECES) { kitSwirlStop(p.id); kit.routes[p.id] = ['L', 'R', 'D']; kitApplyRoutes(p.id); } }
+    else if (id && b.classList.contains('kit-all') && kitMplFader(id)) {          // an MPL fader: every Logic track, or back to the drum track
+      const all = 'VDBGPO'.split('').every(k => (kit.mplRoute[id] || []).includes(k));
+      kit.mplRoute[id] = all ? ['D'] : 'VDBGPO'.split('');
+    }
+    else if (id && b.classList.contains('kit-all')) {
+      kitSwirlStop(id, true);
+      if (kitAllOn(id)) kit.routes[id] = kitAllPrev[id] || ['L', 'R', KIT_PIECES.find(p => p.id === id).amp];
+      else { kitAllPrev[id] = kit.routes[id] || []; kit.routes[id] = [...KIT_ALL]; }
+      kitApplyRoutes(id);
+    }
+    else if (id && b.classList.contains('kit-swirl')) {
+      if (kitSwirl[id]) kitSwirlStop(id, true); else kitSwirlStart(id);
+    }
     else if (id && b.classList.contains('kit-out') && kitMplFader(id)) {          // an MPL fader: the speakers are Logic tracks
       const k = b.dataset.out, r = kit.mplRoute[id] || [];
       if (k === 'L' || k === 'R') { try { showToast('In MPL mode the sound comes from Logic: pick one of its tracks (V, D, B, G, P, O)'); } catch (x) {} return; }
@@ -352,6 +403,9 @@ function kitPaint() {
       b.classList.toggle('active', r.includes(k) && !(mf && k === 'D' && typeof mplRouteOf === 'function' && !mplRouteOf('drums').has('D')));
       b.disabled = mf ? (k === 'L' || k === 'R') : (stereo && KIT_OUT[k] > 1);      // no such output on this audio device, as on the stem strips; no Logic track for L and R
     }
+    const ab = strip.querySelector('.kit-all'), sb = strip.querySelector('.kit-swirl');
+    ab.classList.toggle('active', mf ? 'VDBGPO'.split('').every(k => r.includes(k)) : (!stereo && kitAllOn(id))); ab.disabled = !mf && stereo;
+    sb.classList.toggle('active', !mf && !!kitSwirl[id]); sb.disabled = mf || stereo;
     for (const b of strip.querySelectorAll('.kit-boost')) b.classList.toggle('latched', kit.boost[id] === +b.dataset.db);
     const mb = strip.querySelector('.kit-mpl');
     if (mb) {

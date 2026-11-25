@@ -76,9 +76,16 @@ const mplExactHas = (stem) => stem === 'drums' ? MPL_KIT_IDS.some(p => mplAcc(p)
 const mplSrcOf = (strip) => mplSrc[strip] === 'exact' && mplExactHas(strip) ? 'exact' : 'song';
 /* the % shown for what a strip's MPL button plays: the transcription's score, or (drums only) the song MPL's drum grade */
 function mplPctOf(strip) {
-  if (mplSrcOf(strip) === 'exact') return mplAcc(strip);
-  const g = strip === 'drums' && mplDrums && mplDrums.bank && mplDrums.bank.grade;
-  return g && g.pct != null ? +g.pct : null;
+  return mplSrcOf(strip) === 'exact' ? mplAcc(strip) : mplSongPct(strip);
+}
+/* the song MPL's own part against its stem: the drum grade (hits), and for the five pitched parts the
+   score songpartscore.py wrote into the file (pitch classes beat by beat, the measure of the transcriptions) */
+function mplSongPct(strip) {
+  const b = mplDrums && mplDrums.bank;
+  if (!b) return null;
+  if (strip === 'drums') return b.grade && b.grade.pct != null ? +b.grade.pct : null;
+  const a = b.song_accuracy && b.song_accuracy.stems && b.song_accuracy.stems[strip];
+  return a && a.accuracy != null ? +a.accuracy : null;
 }
 function mplExactBuild(stem, tbank) {
   const keep = mplLive; mplLive = mplLiveNew();               // the panel's switches belong to the song MPL's rows, not to these
@@ -991,6 +998,12 @@ function mplFaderPaint() {
         : (lit ? 'Lit: ' : '') + MPL_STRIP_LABEL[chan] + '\'s notes ' + (lit ? 'go' : 'can also go') + ' to the ' + MPL_STRIP_LABEL[MPL_AMP_STRIP[l]] + ' track in Logic (MIDI ' + track + ') and play with that track\'s instrument. Click to ' + (lit ? 'remove' : 'add') + '.';
       else if (b.dataset.stemTitle) { b.title = b.dataset.stemTitle.trim(); delete b.dataset.stemTitle; }
     }
+    if (on || was) {                                          // * and 🍭: lit for the Logic tracks while this is an MPL strip
+      if (!on) mplSwirlStop(chan);
+      const a = strip.querySelector('.pos-all'), sw = strip.querySelector('.pos-swirl');
+      if (a) a.classList.toggle('mpl-on', on && chan !== 'drums' && mplAllOn(chan));
+      if (sw) sw.classList.toggle('mpl-on', on && !!mplSwirl[chan]);
+    }
     if (!on && !was) continue;
     if (on !== was) {
       strip.classList.toggle('mpl-mode', on);
@@ -1025,6 +1038,33 @@ document.addEventListener('click', (e) => {                // a speaker button o
   else { const r = mplRouteOf(strip); if (r.has(l)) r.delete(l); else r.add(l); }
   mplFaderPaint();
 }, true);
+/* * and 🍭 on an MPL strip (Bill 2026-11-25): the same two tricks with Logic tracks in place of amps. * sends the
+   strip's notes to all five pitched tracks (again: its own track only); 🍭 hands them from track to track, one a
+   second. Not on the Drums strip, whose track buttons are the D sends. */
+const MPL_RING = ['V', 'P', 'B', 'G', 'O'];
+const mplSwirl = {};                                         // strip → { timer, i, prev }
+const mplAllOn = (strip) => MPL_RING.every(l => mplRouteOf(strip).has(l));
+function mplSwirlStop(strip) {
+  const s = mplSwirl[strip]; if (!s) return;
+  clearInterval(s.timer); delete mplSwirl[strip]; mplRoute[strip] = s.prev;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('.channel-strip.mpl-mode .pos-all, .channel-strip.mpl-mode .pos-swirl') : null;
+  if (!b) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const strip = Object.keys(MPL_STRIP_LABEL).find(c => b.closest('.channel-strip').classList.contains(c + '-strip'));
+  if (!strip || strip === 'drums') { try { showToast('On the Drums MPL strip, each track button sends the drum sequence to that track: use those.'); } catch (x) {} return; }
+  const swirling = !!mplSwirl[strip];
+  mplSwirlStop(strip);
+  if (b.classList.contains('pos-all')) mplRoute[strip] = new Set(mplAllOn(strip) ? [MPL_HOME[strip]] : MPL_RING);
+  else if (!swirling) {
+    const s = mplSwirl[strip] = { prev: mplRouteOf(strip), i: MPL_RING.indexOf(MPL_HOME[strip]), timer: null };
+    const step = () => { mplRoute[strip] = new Set([MPL_RING[s.i++ % MPL_RING.length]]); mplFaderPaint(); };
+    step();
+    s.timer = setInterval(step, 1000);
+  }
+  mplFaderPaint();
+}, true);
 (function mplLedLoop() {
   const paint = () => {
     requestAnimationFrame(paint);
@@ -1048,8 +1088,8 @@ document.addEventListener('click', (e) => {                // a speaker button o
     '.mpl-led{display:none;width:9px;height:9px;border-radius:50%;background:#16233f;border:1px solid #3b5ea8;margin-left:6px;flex:0 0 9px;transition:background .05s}' +
     '.mpl-live .mpl-led,.kit-strip.mpl-piece .mpl-led{display:inline-block}' +
     '.mpl-led.on{background:#3b9dff;border-color:#9fd0ff;box-shadow:0 0 8px 3px rgba(59,157,255,.85)}' +
-    '.channel-strip.mpl-mode .pos-btn[data-ch]{background:transparent !important;color:var(--text-muted) !important;border:1px dashed var(--border-color) !important;box-shadow:none !important}' +
-    '.channel-strip.mpl-mode .pos-btn[data-ch].mpl-on,.kit-strip.mpl-fader .kit-out.active{background:#3b82f6 !important;color:#fff !important;border:1px solid #1d4ed8 !important}' +
+    '.channel-strip.mpl-mode .pos-btn[data-ch],.channel-strip.mpl-mode .pos-all,.channel-strip.mpl-mode .pos-swirl{background:transparent !important;color:var(--text-muted) !important;border:1px dashed var(--border-color) !important;box-shadow:none !important}' +
+    '.channel-strip.mpl-mode .pos-btn.mpl-on,.kit-strip.mpl-fader .kit-out.active,.kit-strip.mpl-fader .kit-all.active{background:#3b82f6 !important;color:#fff !important;border:1px solid #1d4ed8 !important}' +
     '.channel-strip.mpl-mode .pos-btn.mpl-na{opacity:.22 !important}' +
     '.mpl-strip-btn.kit-mpl{flex:1 1 34%;font-size:11px;padding:8px 0}' +
     '.mpl-strip-btn{white-space:nowrap}' +

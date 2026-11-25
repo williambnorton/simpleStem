@@ -832,8 +832,8 @@
     c.down = b('⬇', (id) => octave(id, -1)); c.up = b('⬆', (id) => octave(id, 1));
     c.back = b('◀', (id) => direction(id, true)); c.fwd = b('▶', (id) => direction(id, false));
     row.append(c.down, c.up, c.back, c.fwd);
-    c.text = mk('textarea', 'width:100%;box-sizing:border-box;height:58px;resize:vertical;background:#0d0b13;color:#f2ecff;border:1px solid #4b3b6b;border-radius:4px;padding:3px 4px;' +
-                            'font:10.5px/1.35 ui-monospace,Menlo,monospace');
+    c.text = mk('textarea', 'width:100%;box-sizing:border-box;height:150px;resize:vertical;background:#0d0b13;color:#f2ecff;border:1px solid #4b3b6b;border-radius:4px;padding:5px 6px;' +
+                            'font:13px/1.4 ui-monospace,Menlo,monospace');
     c.text.spellcheck = false;
     c.text.addEventListener('input', () => {
       c.typedAt = Date.now(); clearTimeout(c.timer);
@@ -869,13 +869,13 @@
     if (c.box.style.display !== 'flex') c.box.style.display = 'flex';
     if (c.folder !== m.folder) { c.folder = m.folder; c.id = null; c.err = ''; c.note = ''; }
     // Song | Exact, each with its score against the stem's audio
-    const exact = mplSrcOf(strip) === 'exact', hasX = mplExactHas(strip), accX = mplAcc(strip), g = strip === 'drums' && m.bank.grade && m.bank.grade.pct != null ? +m.bank.grade.pct : null;
+    const exact = mplSrcOf(strip) === 'exact', hasX = mplExactHas(strip), accX = mplAcc(strip), g = mplSongPct(strip);
     const sl = 'Song' + (g != null ? ' ' + Math.round(g) + '%' : ''), xl = 'Exact' + (accX != null ? ' ' + Math.round(accX) + '%' : '');
     if (c.song.textContent !== sl) c.song.textContent = sl;
     if (c.exact.textContent !== xl) c.exact.textContent = xl;
     lit(c.song, !exact, '#c084fc'); lit(c.exact, exact, '#3b9dff');
     c.exact.disabled = !hasX; c.exact.style.opacity = hasX ? '1' : '.4';
-    c.song.title = 'Song: this strip plays its part of the song MPL — sections and loops, which you can change below.' + (strip === 'drums' ? (g != null ? ' Its drum part matches ' + Math.round(g) + '% of the hits in the drum stem.' : '') : ' This part has no score: it was never measured against the stem.');
+    c.song.title = 'Song: this strip plays its part of the song MPL — sections and loops, which you can change below.' + (g == null ? ' This part has no score yet.' : strip === 'drums' ? ' Its drum part matches ' + Math.round(g) + '% of the hits in the drum stem.' : ' Beat by beat, ' + Math.round(g) + '% of the notes it plays are the notes heard in the ' + LABEL[strip] + ' stem.');
     c.exact.title = hasX ? 'Exact: this strip plays the ' + LABEL[strip] + ' transcription — every note where it was found in the stem, no loops' + (accX != null ? ', ' + Math.round(accX) + '% accurate against the stem\'s audio' : '') + '. Use it to hear how close the MPL is to the original; it cannot be edited here.' + (strip === 'drums' ? ' For the drums it is the six kit pieces\' transcriptions together.' : '')
       : 'This song has no exact transcription of the ' + LABEL[strip] + '.';
     for (const x of [c.head, c.row, c.text, c.aiRow, c.msg]) { const d = exact ? 'none' : (x === c.row || x === c.aiRow ? 'flex' : ''); if (x.style.display !== d) x.style.display = d; }
