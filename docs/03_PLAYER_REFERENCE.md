@@ -111,11 +111,21 @@ playhead:
   playhead position."* The full editor: device (Helix / Logic Pro (IAC) /
   XR18), type (Program Change, CC, Note On/Off, Mute/Unmute stem, Play
   clip), channel, values, label, and a **Test send** button.
-- **Place Lyrics (n) / Fetch Lyrics / Replace Lyrics** — one button, three
-  labels: **Fetch Lyrics** when the song has no lyrics (opens the editor),
-  **Place Lyrics (n)** when n lines are waiting to be placed, **Replace
-  Lyrics** when every line is on the lane (asks before starting over).
-  Place: *"Drop the next lyric line at the playhead. Tap
+- **Place Lyrics (n) / Fetch Lyrics / Lyrics Placed** — one button, three
+  states: **Fetch Lyrics** when the song has no lyrics (opens the editor),
+  **Place Lyrics (n)** when n lines are waiting to be placed, and greyed
+  out as **Lyrics Placed** when every line is on the lane (a click does
+  nothing; right-click still opens the editor).
+- **Clear Lyrics** — shown while lyric lines are on the lane. Takes every
+  placed line off the timeline (it asks first, and saves at once); the
+  lyrics text is kept, so Place Lyrics starts again from the first line.
+- **Lines placed for you** — `lyricplace.py` (repo root) places a song's
+  lyric lines from its vocal stem: speech recognition times the words
+  heard, each line starts at its first matched word, pulled back to the
+  start of the sung phrase. It writes only songs with lyrics and nothing
+  placed, and only when at least 85% of the lines were timed by one of
+  their own words. See the script's header for how to run it.
+- Place Lyrics: *"Drop the next lyric line at the playhead. Tap
   multiple times within 2s to stack; tap after >2s to replace. Right-click
   to re-open the lyrics editor."* The first press fetches lyrics — the
   dialog offers search buttons (Google / Ultimate Guitar / AZLyrics) and a

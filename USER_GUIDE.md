@@ -173,8 +173,9 @@ sections. INIT replaces only the initial-state event.
 **Place Lyrics (n)** places the next lyric line at the playhead; placed
 lines paint the overlay during playback. The same button reads **Fetch
 Lyrics** when the song has no lyrics (it opens the editor, where lyrics
-get pasted in from a search) and **Replace Lyrics** once every line is
-placed (it asks before starting over).
+get pasted in from a search). Once every line is placed the button is
+greyed out; **Clear Lyrics** takes the placed lines off the timeline so
+they can be placed again.
 
 ## Drum machine, clips, and backing tracks
 

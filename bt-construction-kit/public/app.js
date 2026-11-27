@@ -11320,6 +11320,10 @@ document.addEventListener('click', (e) => {
     onLyricTap(e);
     return;
   }
+  if (e.target.closest('#midi-btn-lyrics-clear')) {
+    clearPlacedLyrics();
+    return;
+  }
   if (e.target.closest('#midi-btn-lyrics-show')) {
     console.log('[lyric] delegated click hit (Show/Hide)');
     lyricsState.playbackOff = !lyricsState.playbackOff;
@@ -11523,11 +11527,15 @@ async function onLyricTap(e) {
     // still be there — the wipe only happens in onLyricsModalSave when
     // new lyrics are actually committed. We just mark the intent with a
     // one-shot flag so the save path knows not to double-confirm.
-    if (typeof lyricsHasPlacedActions === 'function' && lyricsHasPlacedActions()) {
-      if (!confirm('Do you want to replace the current lyrics?')) return;
-      lyricsState._replaceConfirmed = true;
+    //
+    // Bill 2026-11-27: with every line placed the button is greyed out and a
+    // click only says so. Clear Lyrics takes the lines off; right-click (or a
+    // modifier click, above) still opens the editor to change the text.
+    if (lyricsState.cachedLines.length) {
+      showToast('Every lyric line is placed. Clear Lyrics takes them off the timeline so you can place them again.');
+      return;
     }
-    openLyricsModal(lyricsState.cachedLines.length ? 'edit' : 'initial');
+    openLyricsModal('initial');
     return;
   }
   const now = Date.now();
@@ -11559,6 +11567,28 @@ async function onLyricTap(e) {
   // Live-fire so the operator sees the placement land in the overlay.
   try { fireAutomationEvent(ev); } catch (er) { console.warn('[lyric] live fire failed:', er); }
   lyricsState.lastTapAt = now;
+}
+
+// Clear Lyrics (Bill 2026-11-27): take every placed lyric line of this song off the
+// timeline. The lyrics text stays, so the button goes back to Place Lyrics (n). Saved at
+// once, like the wipe when new lyrics are loaded: an unsaved wipe would come back on reload.
+async function clearPlacedLyrics() {
+  const n = automationEvents.filter(e => e.type === 'lyric-line').length;
+  if (!n) return;
+  if (!confirm(`Remove the ${n} placed lyric line${n === 1 ? '' : 's'} from this song's timeline?\n\nThe lyrics text is kept, ready to be placed again.`)) return;
+  automationEvents = automationEvents.filter(e => e.type !== 'lyric-line');
+  lyricsState.placedCount = 0;
+  lyricsState.placedStack = [];
+  lyricsState.lastTapAt = 0;
+  lyricsState.activeLines = [];
+  markAutomationDirty();
+  try { renderAutomationLane(); } catch (e) {}
+  _renderLyricDisplay();
+  if (automationCurrentBase) {
+    try { await saveAutomationForSong(automationCurrentBase, automationEvents); }
+    catch (er) { console.warn('[lyric] saving the cleared lyric lines failed:', er); showToast('Cleared on screen, but not saved: press SAVE.'); return; }
+  }
+  showToast(`Cleared ${n} placed lyric line${n === 1 ? '' : 's'}. Place Lyrics starts again from the first line.`);
 }
 
 // Undo the most recent lyric tap. Removes the event from the lane,
@@ -11694,12 +11724,13 @@ function _refreshLyricButtonLabel() {
   // cached-line count.
   const btn = document.getElementById('midi-btn-add-lyric');
   if (btn) {
-    btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
+    btn.classList.remove('mode-fetch', 'mode-place', 'mode-show', 'mode-done');
     // usable lines: the queue, or (before a click has built the queue) what the song's lyrics text holds
     const total = lyricsState.cachedLines.length || (currentSong ? _normalizeLyrics(currentSong.lyrics).length : 0);
     const remaining = Math.max(0, total - lyricsCursor());
     // Three states (Bill 2026-11-27): Fetch = the song has no lyrics, Place = lines are
-    // waiting to be placed, Replace = every line is on the lane already.
+    // waiting to be placed, greyed out = every line is on the lane already (Clear Lyrics,
+    // the button beside it, takes them off again).
     let label, mode, title;
     if (!currentSong) {
       label = 'Place Lyrics'; mode = 'mode-place'; title = 'Load a song first.';
@@ -11707,8 +11738,8 @@ function _refreshLyricButtonLabel() {
       label = 'Fetch Lyrics'; mode = 'mode-fetch';
       title = 'This song has no lyrics yet. Click to open the editor and paste them.';
     } else if (remaining === 0) {
-      label = 'Replace Lyrics'; mode = 'mode-place';
-      title = 'Every lyric line of this song is placed. Click to replace the lyrics and place them again (it asks first). Right-click to edit the lyrics.';
+      label = 'Lyrics Placed'; mode = 'mode-done';
+      title = 'Every lyric line of this song is placed. Clear Lyrics takes them off the timeline so they can be placed again. Right-click to edit the lyrics text.';
     } else {
       label = `Place Lyrics (${remaining})`; mode = 'mode-place';
       title = 'Drop the next lyric line at the playhead. Tap multiple times within 2s to stack; tap after >2s to replace. Right-click to re-open the lyrics editor.';
@@ -11716,6 +11747,7 @@ function _refreshLyricButtonLabel() {
     if (btn.textContent !== label) btn.textContent = label;
     btn.classList.add(mode);
     if (btn.title !== title) btn.title = title;
+    btn.setAttribute('aria-disabled', mode === 'mode-done' ? 'true' : 'false');
   }
   // Show/Hide Lyrics — separate button. Only visible when this song has
   // lyric actions placed (otherwise nothing to show). Label flips with
@@ -11730,6 +11762,8 @@ function _refreshLyricButtonLabel() {
       showBtn.style.display = 'none';
     }
   }
+  const clearBtn = document.getElementById('midi-btn-lyrics-clear');
+  if (clearBtn) clearBtn.style.display = lyricsHasPlacedActions() ? '' : 'none';
 }
 
 // Build the overlay (if missing) and paint the current lyrics state.
@@ -11946,13 +11980,6 @@ function openLyricsModal(mode = 'initial') {
 function closeLyricsModal() {
   const m = els.lyricsModal || document.getElementById('lyrics-modal');
   if (m) m.style.display = 'none';
-  // Clear the "user consented to replace at click time" one-shot flag.
-  // If they Cancelled without saving, the flag must NOT persist to the
-  // next open — otherwise a totally unrelated later Save would silently
-  // wipe placements (Bill 2026-07-10). closeLyricsModal runs on both
-  // Save success and Cancel, so the Save-path has already used the flag
-  // by the time this fires.
-  lyricsState._replaceConfirmed = false;
 }
 
 // Live counter — recomputes the displayed-line count as Bill types or
@@ -12211,16 +12238,10 @@ async function onLyricsModalSave() {
     .filter(e => e.type === 'lyric-line').length;
   const hadLyrics = !!(currentSong.lyrics && String(currentSong.lyrics).trim()) && !_isAutoLyrics(currentSong);
   if (hadLyrics || placedNow) {
-    // One-shot bypass: if the operator already consented to the replace
-    // when they clicked Fetch Lyrics (see onLyricTap), don't ask again.
-    if (lyricsState._replaceConfirmed) {
-      lyricsState._replaceConfirmed = false;
-    } else {
-      const parts = [];
-      if (hadLyrics) parts.push('saved lyrics');
-      if (placedNow) parts.push(`${placedNow} lyric line${placedNow === 1 ? '' : 's'} placed on the timeline`);
-      if (!confirm(`This song already has ${parts.join(' and ')}.\n\nReplace with the pasted lyrics? The placed lyric lines will be cleared so you can re-place them.`)) return;
-    }
+    const parts = [];
+    if (hadLyrics) parts.push('saved lyrics');
+    if (placedNow) parts.push(`${placedNow} lyric line${placedNow === 1 ? '' : 's'} placed on the timeline`);
+    if (!confirm(`This song already has ${parts.join(' and ')}.\n\nReplace with the pasted lyrics? The placed lyric lines will be cleared so you can re-place them.`)) return;
   }
   els.lyricsModalSave.disabled = true;
   try {

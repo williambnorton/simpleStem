@@ -7153,6 +7153,8 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
   font-weight: 800;
 }
 .midi-action-lyric.mode-fetch:hover { background: #1d2e54; color: #fff; border-color: #fff; }
+/* every line placed: greyed out, nothing to do here until Clear Lyrics */
+.midi-action-lyric.mode-done, .midi-action-lyric.mode-done:hover { opacity: 0.45; cursor: default; background: transparent; color: var(--text-dim); border-style: dashed; }
 .midi-action-lyric.mode-show {
   background: rgba(46, 204, 113, 0.18);
   border-color: rgba(46, 204, 113, 0.55);

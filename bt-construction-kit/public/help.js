@@ -65,7 +65,7 @@
           ['Sections', 'Keys 1-9 drop section markers. Placement snaps to detected boundaries (the faint vertical ticks are the detector’s suggestions) and falls back to the BPM grid.'],
           ['+ Action / + Clip / Skip Section', 'Authoring tools for the yellow automation lane: MIDI events to the Helix, XR18, or Logic, sample clips, and skip jumps. Each event fires as the playhead crosses it.'],
           ['SAVE is the only commit', 'Nothing auto-saves. SAVE persists everything including placed lyric lines. CLEAR wipes actions but keeps sections. INIT replaces only the initial-state event.'],
-          ['Place Lyrics', 'Places the next lyric line at the playhead; the number is how many lines are still waiting. A song with no lyrics shows Fetch Lyrics (opens the editor to paste them). Once every line is placed it shows Replace Lyrics, which asks before starting over.'],
+          ['Place Lyrics', 'Places the next lyric line at the playhead; the number is how many lines are still waiting. A song with no lyrics shows Fetch Lyrics (opens the editor to paste them). Once every line is placed the button is greyed out (Lyrics Placed). Clear Lyrics, beside it, takes the placed lines off the timeline so they can be placed again; right-click Place Lyrics to change the text.'],
         ]),
         s('Hardware', [
           ['XR18 button', 'Makes the mixer the audio output. The gig test warns if it is not the default output before the downbeat.'],

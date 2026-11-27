@@ -264,8 +264,12 @@ function mplDrumsBuild(folder, bank) {
   const row = slots.find(s => String(s.key) === String(bank.main != null ? bank.main : '0')) || slots[0];
   if (!row || !String(row.src || '').trim()) throw new Error('the MPL file has no drum row');
   const an = bank.analysis || {};
-  const bpm = +an.bpm || +bank.bpm || 120, t0 = +an.first_bar_t || 0, spb = 60 / bpm;
-  const bt = Array.isArray(an.beat_t) && an.beat_t.length > 1 ? an.beat_t.map(Number) : null;
+  // SKEW (Bill 2026-11-27): a number of milliseconds at the top of the song's MPL file. The whole MPL — every
+  // part, every row — plays that much later against the recording (negative: earlier). It moves the beat
+  // grid the notes are placed on, so cycles, bars and the MPL Player panel move with it.
+  const skew = (+bank.SKEW || 0) / 1000;
+  const bpm = +an.bpm || +bank.bpm || 120, t0 = (+an.first_bar_t || 0) + skew, spb = 60 / bpm;
+  const bt = Array.isArray(an.beat_t) && an.beat_t.length > 1 ? an.beat_t.map(x => +x + skew) : null;
   const timeOf = (b) => {                                  // MPL beat → seconds into the recording
     if (!bt) return t0 + b * spb;
     const n = bt.length - 1;
