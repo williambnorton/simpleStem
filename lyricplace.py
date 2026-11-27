@@ -4,7 +4,7 @@
 For every song that has lyrics and no lyric line placed yet: speech recognition (faster-whisper) gives the words
 heard in vocals.m4a with their times; the lyric words are matched to them in order; each line starts at its first
 matched word, pulled back to the start of the sung phrase it belongs to (the stem's level rising after quiet),
-and shown LEAD seconds early. Lines nothing was matched for take the free phrase starts between their neighbours.
+and shown --lead seconds early (1 s). Lines nothing was matched for take the free phrase starts between their neighbours.
 The result is the same lyric-line actions the Performer's Place Lyrics button writes into metadata.json.
 
 A song is written only when its confidence (the share of lines timed by one of their own words) reaches
@@ -12,12 +12,16 @@ A song is written only when its confidence (the share of lines timed by one of t
 2 s of the hand placement, songs below it 53-71%.
 
     python3 lyricplace.py STEMS_DIR --cache ~/.bt-cache/STEMS --model MODEL_DIR [--write] [--only NAME]
-                          [--min-confidence 0.85] [--work DIR] [--seconds N]
+                          [--min-confidence 0.85] [--lead 1.0] [--redo-own] [--work DIR] [--seconds N]
 
 STEMS_DIR: the song folders with metadata.json (Drive). --cache: where vocals.m4a is read from. --model: a
 faster-whisper model folder or name (small.en was used). --work: recognition results are kept there, so a run cut
 short by --seconds is continued by the next one; the report (lyricplace_report.json) and, with --write, a copy of
-every metadata.json before it is changed (backup/) go there too. Without --write nothing is changed.
+every metadata.json before it is first changed (backup/) go there too. Without --write nothing is changed.
+--min-confidence 0 places every song that has at least one line timed by its own words; the report and the
+lyrics_placed note in metadata.json carry each song's confidence, so the weak ones can be found.
+--redo-own places again the songs this script placed before (with another --lead, say), but only where the
+lines on the timeline are still exactly the ones it wrote: a song whose lines were moved or cleared by hand is left.
 Needs: pip install faster-whisper numpy; ffmpeg.
 """
 import argparse, os, sys, time
@@ -25,7 +29,7 @@ import re, json, subprocess, difflib
 import numpy as np
 norm = lambda w: re.sub(r"[^a-z0-9]", '', w.lower().replace("'", ''))
 WEAK = set('the a an and of to in it its i you oh but so that my we he she they is on for with'.split())
-LEAD = 0.3                # a line appears this long before it is sung
+LEAD = 1.0                # a line appears this long before it is sung (Bill 2026-11-27: one second); --lead changes it
 
 def lyric_lines(text):
     return [s.strip() for s in (text or '').splitlines() if s.strip() and not re.match(r'^\[.*\]$', s.strip())]
@@ -74,7 +78,7 @@ def confidence(out):
     """Share of the lines whose time comes from a recognised word of that line."""
     return sum(1 for o in out if o['how'].startswith('word')) / max(1, len(out))
 
-def align(lines, words, onsets=()):
+def align(lines, words, onsets=(), lead=LEAD, duration=None):
     """words: [[start, end, text, prob], ...]. Returns one dict per line: t (seconds, None when nothing anchors it), how, hits, n."""
     lw = [(i, norm(w)) for i, l in enumerate(lines) for w in l.split() if norm(w)]
     rw = [(w[0], norm(w[2])) for w in words if norm(w[2])]
@@ -132,9 +136,14 @@ def align(lines, words, onsets=()):
     last = -1.0
     for o in out:
         if o['t'] is None: continue
-        o['t'] = round(max(o['t'] - LEAD, 0.0), 3)
+        o['t'] = round(max(o['t'] - lead, 0.0), 3)
         if o['t'] <= last: o['t'] = round(last + 0.3, 3)
         last = o['t']
+    if duration and out and all(o['t'] is not None for o in out):    # lines that ran past the end of the song (guesses): packed in front of it
+        cap = duration - 1.0
+        for k, o in enumerate(reversed(out)):
+            if o['t'] <= cap: break
+            o['t'] = round(max(0.0, cap), 3); o['how'] = 'guess'; cap -= 0.3
     return out
 
 
@@ -150,6 +159,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('stems_dir'); ap.add_argument('--cache', required=True); ap.add_argument('--model', default='small.en'); ap.add_argument('--work', default='lyricplace_work')
     ap.add_argument('--only'); ap.add_argument('--min-confidence', type=float, default=0.85); ap.add_argument('--write', action='store_true'); ap.add_argument('--seconds', type=float, default=0)
+    ap.add_argument('--lead', type=float, default=LEAD); ap.add_argument('--redo-own', action='store_true')
     a = ap.parse_args()
     root = os.path.expanduser(a.stems_dir); cache = os.path.expanduser(a.cache); work = os.path.expanduser(a.work)
     os.makedirs(work + '/asr', exist_ok=True); os.makedirs(work + '/backup', exist_ok=True)
@@ -157,12 +167,13 @@ def main():
     t0 = time.time(); model = None
     for s in sorted(os.listdir(root)):
         mp = os.path.join(root, s, 'metadata.json')
-        if (a.only and a.only not in s) or not os.path.isfile(mp) or (rep.get(s) or {}).get('written'): continue
+        if (a.only and a.only not in s) or not os.path.isfile(mp) or ((rep.get(s) or {}).get('written') and (rep[s].get('lead') == a.lead or not a.redo_own)): continue
         if a.seconds and time.time() - t0 > a.seconds: break
         try:
             meta = json.load(open(mp)); lines = lyric_lines(meta.get('lyrics'))
             auto = meta.get('automation') or []
-            if not lines or any(e.get('type') == 'lyric-line' for e in auto): continue          # no lyrics, or lines are placed already: never touched
+            mine = (meta.get('lyrics_placed') or {}) if a.redo_own and (meta.get('lyrics_placed') or {}).get('by') == 'lyricplace.py' else None
+            if not lines or (any(e.get('type') == 'lyric-line' for e in auto) and mine is None): continue   # no lyrics, or lines placed by hand: never touched
             vp = os.path.join(cache, s, 'vocals.m4a'); ap_ = work + '/asr/' + s + '.json'
             if not os.path.isfile(vp): rep[s] = {'skipped': 'no vocals.m4a'}; continue
             if not os.path.isfile(ap_):
@@ -172,16 +183,26 @@ def main():
                 json.dump(recognise(model, vp), open(ap_, 'w'))
             asr = json.load(open(ap_))
             if 'words' not in asr: rep[s] = {'skipped': 'recognition failed'}; continue
-            out = align(lines, asr['words'], phrase_onsets(vp))
+            ons = phrase_onsets(vp); dur = asr.get('duration')
+            out = align(lines, asr['words'], ons, a.lead, dur)
             conf = round(confidence(out), 2)
-            ok = conf >= a.min_confidence and all(o['t'] is not None for o in out) and out[-1]['t'] < asr.get('duration', 1e9)   # a line after the end of the song: not trusted
-            r = rep[s] = {'lines': len(lines), 'confidence': conf, 'first': out[0]['t'], 'last': out[-1]['t'], 'guessed': sum(1 for o in out if o['how'] == 'guess'), 'placed': ok}
+            ok = conf >= a.min_confidence and all(o['t'] is not None for o in out)            # no time at all: not one word of the lyrics was recognised
+            r = rep[s] = {'lines': len(lines), 'confidence': conf, 'lead': a.lead, 'first': out[0]['t'], 'last': out[-1]['t'], 'guessed': sum(1 for o in out if o['how'] == 'guess'), 'placed': ok}
+            if mine is not None:                                                              # placed by this script before: still exactly as written?
+                was = [e for e in auto if e.get('type') == 'lyric-line']
+                old = align(lines, asr['words'], ons, mine.get('lead', 0.3))                   # as the first version wrote it (0.3 s, no packing at the end)
+                if len(was) != len(old) or any(e.get('text') != o['line'] or o['t'] is None or abs(e.get('t', -9) - o['t']) > 0.002 for e, o in zip(was, old)):
+                    r['placed'] = False; r['skipped'] = 'its lines were changed since they were placed'; continue
+                if mine.get('lead', 0.3) == a.lead: r['written'] = True; continue
             if ok and a.write:
                 meta = json.load(open(mp))                                                    # read again: the Performer rewrites this file (play counts)
-                if any(e.get('type') == 'lyric-line' for e in (meta.get('automation') or [])): r['placed'] = False; r['skipped'] = 'placed meanwhile'; continue
-                with open(os.path.join(work, 'backup', s + '.metadata.json'), 'w') as f: json.dump(meta, f, ensure_ascii=False, indent=1)
-                meta['automation'] = sorted((meta.get('automation') or []) + lyric_events(out), key=lambda e: e.get('t', 0))
-                meta['lyrics_placed'] = {'by': 'lyricplace.py', 'date': time.strftime('%Y-%m-%d'), 'model': os.path.basename(str(a.model).rstrip('/')), 'confidence': conf, 'lines': len(lines)}
+                now = [e for e in (meta.get('automation') or []) if e.get('type') == 'lyric-line']
+                if now and (mine is None or now != [e for e in auto if e.get('type') == 'lyric-line']): r['placed'] = False; r['skipped'] = 'placed meanwhile'; continue
+                bk = os.path.join(work, 'backup', s + '.metadata.json')
+                if not os.path.isfile(bk):
+                    with open(bk, 'w') as f: json.dump(meta, f, ensure_ascii=False, indent=1)
+                meta['automation'] = sorted([e for e in (meta.get('automation') or []) if e.get('type') != 'lyric-line'] + lyric_events(out), key=lambda e: e.get('t', 0))
+                meta['lyrics_placed'] = {'by': 'lyricplace.py', 'date': time.strftime('%Y-%m-%d'), 'model': os.path.basename(str(a.model).rstrip('/')), 'confidence': conf, 'lead': a.lead, 'lines': len(lines)}
                 tmp = mp + '.tmp_lyricplace'
                 with open(tmp, 'w') as f: f.write(json.dumps(meta, ensure_ascii=False, indent=2) + '\n')     # as the Performer writes it
                 os.replace(tmp, mp); r['written'] = True
