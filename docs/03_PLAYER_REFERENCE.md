@@ -111,7 +111,11 @@ playhead:
   playhead position."* The full editor: device (Helix / Logic Pro (IAC) /
   XR18), type (Program Change, CC, Note On/Off, Mute/Unmute stem, Play
   clip), channel, values, label, and a **Test send** button.
-- **+ Lyric** — *"Drop the next cached lyric line at the playhead. Tap
+- **Place Lyrics (n) / Fetch Lyrics / Replace Lyrics** — one button, three
+  labels: **Fetch Lyrics** when the song has no lyrics (opens the editor),
+  **Place Lyrics (n)** when n lines are waiting to be placed, **Replace
+  Lyrics** when every line is on the lane (asks before starting over).
+  Place: *"Drop the next lyric line at the playhead. Tap
   multiple times within 2s to stack; tap after >2s to replace. Right-click
   to re-open the lyrics editor."* The first press fetches lyrics — the
   dialog offers search buttons (Google / Ultimate Guitar / AZLyrics) and a

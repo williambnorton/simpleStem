@@ -170,10 +170,11 @@ event fires as the playhead crosses its timestamp.
 actions including placed lyric lines. CLEAR wipes actions but keeps
 sections. INIT replaces only the initial-state event.
 
-**+ Lyric** places the next cached lyric line at the playhead; placed
-lines paint the overlay during playback. When no lines remain, the same
-button reads Fetch Lyrics and opens the editor, where lyrics get pasted
-in from a search.
+**Place Lyrics (n)** places the next lyric line at the playhead; placed
+lines paint the overlay during playback. The same button reads **Fetch
+Lyrics** when the song has no lyrics (it opens the editor, where lyrics
+get pasted in from a search) and **Replace Lyrics** once every line is
+placed (it asks before starting over).
 
 ## Drum machine, clips, and backing tracks
 

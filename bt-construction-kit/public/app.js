@@ -5180,7 +5180,7 @@ function setupLyricsPageMode() {
     if (!currentSong) { try { alert('Load a song first.'); } catch (e) {} return; }
     const lyr = (currentSong.lyrics || '').trim();
     if (!lyr) {
-      try { alert('This song has no lyrics installed. Use + Lyric / Fetch Lyrics to paste some first.'); } catch (e) {}
+      try { alert('This song has no lyrics installed. Use Fetch Lyrics to paste some first.'); } catch (e) {}
       return;
     }
     songEl.textContent   = currentSong.title || currentSong.folderName || 'Song';
@@ -11695,21 +11695,27 @@ function _refreshLyricButtonLabel() {
   const btn = document.getElementById('midi-btn-add-lyric');
   if (btn) {
     btn.classList.remove('mode-fetch', 'mode-place', 'mode-show');
-    const hasLyrics = lyricsState.cachedLines.length > 0 || !!(currentSong && currentSong.lyrics);
-    const remaining = Math.max(0, lyricsState.cachedLines.length - lyricsCursor());
+    // usable lines: the queue, or (before a click has built the queue) what the song's lyrics text holds
+    const total = lyricsState.cachedLines.length || (currentSong ? _normalizeLyrics(currentSong.lyrics).length : 0);
+    const remaining = Math.max(0, total - lyricsCursor());
+    // Three states (Bill 2026-11-27): Fetch = the song has no lyrics, Place = lines are
+    // waiting to be placed, Replace = every line is on the lane already.
+    let label, mode, title;
     if (!currentSong) {
-      btn.textContent = '+ Lyric';
-      btn.classList.add('mode-place');
-    } else if (!hasLyrics || remaining === 0) {
-      // Nothing to place — either lyrics file is empty / all-headers, or the
-      // operator has already placed every line. Either way, the useful action
-      // is to re-open the editor and paste again.
-      btn.textContent = 'Fetch Lyrics';
-      btn.classList.add('mode-fetch');
+      label = 'Place Lyrics'; mode = 'mode-place'; title = 'Load a song first.';
+    } else if (!total) {
+      label = 'Fetch Lyrics'; mode = 'mode-fetch';
+      title = 'This song has no lyrics yet. Click to open the editor and paste them.';
+    } else if (remaining === 0) {
+      label = 'Replace Lyrics'; mode = 'mode-place';
+      title = 'Every lyric line of this song is placed. Click to replace the lyrics and place them again (it asks first). Right-click to edit the lyrics.';
     } else {
-      btn.textContent = `+ Lyric (${remaining})`;
-      btn.classList.add('mode-place');
+      label = `Place Lyrics (${remaining})`; mode = 'mode-place';
+      title = 'Drop the next lyric line at the playhead. Tap multiple times within 2s to stack; tap after >2s to replace. Right-click to re-open the lyrics editor.';
     }
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.classList.add(mode);
+    if (btn.title !== title) btn.title = title;
   }
   // Show/Hide Lyrics — separate button. Only visible when this song has
   // lyric actions placed (otherwise nothing to show). Label flips with
@@ -12966,6 +12972,10 @@ async function loadAutomationForSong(songBase) {
       console.log(`[lyric] auto-repair: ${repairedFromLabel} from label, ${repairedFromCache} reinflated from lyrics cache`);
     }
     automationEvents = events.map(e => ({ ...e, fired: false }));
+    // The lyric cursor resumes after the lines already on the lane. refreshLyricsForNewSong
+    // counted them before this fetch answered, so it saw none: the button then read
+    // "Fetch Lyrics" while a click quietly dropped line 1 again at the playhead.
+    if (typeof lyricsState !== 'undefined') lyricsState.placedCount = automationEvents.filter(e => e.type === 'lyric-line').length;
     if ((repairedFromLabel || repairedFromCache) && typeof markAutomationDirty === 'function') {
       markAutomationDirty();
     }
