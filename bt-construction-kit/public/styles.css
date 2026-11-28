@@ -1593,6 +1593,10 @@ select {
   transition: background 90ms ease-out, border-color 90ms ease-out, transform 60ms ease-out;
 }
 .switcher-radio-btn:active { transform: scale(0.98); }
+/* Song count on the four singer buttons: small and thin, to save width;
+   those buttons give up side padding so name and count fit on one line. */
+.switcher-count { font-size: 10px; font-weight: 300; letter-spacing: 0; }
+.switcher-radio-btn.has-count { padding-left: 3px; padding-right: 3px; }
 
 /* Separator between user setlists and system-curated pills (Bill 2026-10-19).
    Spans the full grid width thanks to grid-column: 1 / -1. */
@@ -3586,35 +3590,6 @@ select {
 }
 .hh-does { flex: 1; opacity: 0.85; }
 
-/* Library filter bar: tag / singer / tempo checkbox chips. */
-.library-filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px 12px;
-  flex: 1;
-  min-width: 0;
-  margin: 0 12px;
-}
-.lfb-group { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.lfb-group-label {
-  font-size: 9px; font-weight: 800; letter-spacing: 0.6px;
-  opacity: 0.5; text-transform: uppercase;
-}
-.lfb-chip {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 600;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 10px;
-  padding: 2px 7px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-.lfb-chip input { margin: 0; accent-color: var(--color-green, #27ae60); cursor: pointer; }
-.lfb-chip.checked { background: rgba(39, 174, 96, 0.15); border-color: rgba(39, 174, 96, 0.5); }
-
 .lfb-actions { display: inline-flex; align-items: center; gap: 6px; }
 .lfb-action-btn {
   font-size: 10px; font-weight: 700;
@@ -4041,20 +4016,6 @@ select {
   color: var(--text-muted);
 }
 
-/* Filter pane sits under the header on its own surface (Bill 2026-07-09).
-   Distinct from the Song Library itself so the chips + Make Gig / Add
-   setlist buttons read as a discrete controls area. */
-.library-filter-pane {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 10px;
-}
-.library-filter-pane .library-filter-bar { flex: 1; margin: 0; }
 
 .library-view-toggles {
   display: flex;
@@ -4100,7 +4061,7 @@ select {
 
 .song-table-header {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 200px 55px 70px 52px 80px 75px 50px 55px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 64px 55px 70px 52px 70px 75px 50px 55px 55px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-dim);
@@ -4134,7 +4095,7 @@ select {
 
 .song-row {
   display: grid;
-  grid-template-columns: 40px 2fr 1.4fr 200px 55px 70px 52px 80px 75px 50px 55px 55px;
+  grid-template-columns: 40px 2fr 1.4fr 64px 55px 70px 52px 70px 75px 50px 55px 55px;
   align-items: center;
   padding: 9px 16px;     /* was 14px — reduced 30% so more rows fit on screen */
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -4188,37 +4149,19 @@ select {
   font-size: 13px;
 }
 
-/* Category and singer checkboxes on every library row (Bill 2026-11-27):
-   ten 18px slots and four, lined up under the names in the header. */
-.song-cats-cell, .song-sing-cell, .song-table-header .col-cats, .song-table-header .col-singer {
-  display: flex;
-  align-items: center;
-  gap: 0;
+/* Grade and singer on every library row (Bill 2026-11-28): one character each. */
+.chr-field {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  text-align: center;
+  text-transform: uppercase;
+  font: 700 13px 'Space Grotesk', sans-serif;
+  color: var(--text-main);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
 }
-.cat-cb, .cat-head, .sing-head { width: 18px; flex: 0 0 18px; margin: 0; }
-.cat-cb { height: 14px; cursor: pointer; accent-color: var(--color-green, #27ae60); }
-.cat-cb:disabled { opacity: 0.25; cursor: default; }
-.song-table-header { align-items: end; }
-.song-table-header .col-cats { cursor: default; }
-.cat-head {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  max-height: 84px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  padding: 2px 0;
-  background: none;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  text-transform: none;
-  letter-spacing: 0;
-  cursor: pointer;
-}
-.cat-head:hover { color: var(--color-yellow); }
-.cat-head.empty { opacity: 0.45; }
-.sing-head { text-align: center; }
+.chr-field:focus { outline: 2px solid #7c4dff; outline-offset: 0; }
 
 /* Library Analytics — read-only count blocks for Key + Singer. */
 .lib-stat-block {
@@ -6176,18 +6119,29 @@ body.server-stale .player-active:hover::after {
   width: 3px; height: 0;
   border-top: 1px dashed rgba(127, 137, 153, 0.4);
 }
-/* Singer-coded backgrounds. Bill's spec 2026-06-30:
-     Bill → light yellow ·  Matt → light green ·  Dan → light purple
-   Other / unknown stays the default sidebar background.
-   These overlay the base row color; .playing and .song-failed take
-   precedence via their later !important rules. */
-.sls-row.sls-singer-bill { background: #fff7c0; }   /* light yellow */
-.sls-row.sls-singer-matt { background: #d8f1d8; }   /* light green */
-.sls-row.sls-singer-dan  { background: #ead7f5; }   /* light purple */
+/* Singer-coded row backgrounds, library and sidebar (Bill 2026-11-28):
+     Bill → blue ·  Matt → green ·  Dan → yellow ·  JD → pink
+   No singer stays the default background. In the sidebar these overlay
+   the base row color; .playing and .song-failed take precedence via their
+   later !important rules. Library rows need !important to beat the
+   light-theme surface rule; the loaded (.active) row keeps its dark pill. */
+.sls-row.singer-b { background: #d6e8ff; }
+.sls-row.singer-m { background: #d8f1d8; }
+.sls-row.singer-d { background: #fff7c0; }
+.sls-row.singer-j { background: #ffd9e8; }
+.song-row.singer-b:not(.active) { background: #d6e8ff !important; }
+.song-row.singer-m:not(.active) { background: #d8f1d8 !important; }
+.song-row.singer-d:not(.active) { background: #fff7c0 !important; }
+.song-row.singer-j:not(.active) { background: #ffd9e8 !important; }
 /* Keep contrast strong on hover so the operator sees the focus state. */
-.sls-row.sls-singer-bill:hover { background: #fff0a0; }
-.sls-row.sls-singer-matt:hover { background: #c2e7c2; }
-.sls-row.sls-singer-dan:hover  { background: #ddc0ef; }
+.sls-row.singer-b:hover { background: #c2dcff; }
+.sls-row.singer-m:hover { background: #c2e7c2; }
+.sls-row.singer-d:hover { background: #fff0a0; }
+.sls-row.singer-j:hover { background: #ffc4db; }
+.song-row.singer-b:not(.active):hover { background: #c2dcff !important; }
+.song-row.singer-m:not(.active):hover { background: #c2e7c2 !important; }
+.song-row.singer-d:not(.active):hover { background: #fff0a0 !important; }
+.song-row.singer-j:not(.active):hover { background: #ffc4db !important; }
 
 /* The "active" setlist — the one that is ready to play (where the ghost
    preview row lives and where new song-adds land). Distinct from .playing:

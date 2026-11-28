@@ -936,14 +936,6 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
             </div>
           </div>
 
-          <!-- Filter pane (Bill 2026-07-09) — split out from the header
-               into its own bordered surface. Holds the tag / singer /
-               tempo chips + the two prominent "Make Gig / Add setlist"
-               action buttons. renderLibraryFilterBar() populates
-               #library-filter-bar in place. -->
-          <div class="library-filter-pane">
-            <div id="library-filter-bar" class="library-filter-bar"></div>
-          </div>
           
           <div id="lfb-delete-list" class="lfb-delete-list" style="display:none;"></div>
           <div class="library-wrapper list-mode" id="library-container">
@@ -951,14 +943,14 @@ Use this button only when the Mac-side audio daemon is wedged (rare). The full r
               <div class="col-select" style="width: 45px;"><input type="checkbox" id="library-select-all" title="Select every song now listed in the library. If any songs are selected, this clears the selection instead."></div>
               <div class="col-title" data-sort="title">Song Title <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-artist" data-sort="artist">Artist <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-cats" id="library-cat-header"></div>
+              <div class="col-grade" data-sort="grade" title="Grade: A = InTheCan, B = InRehearsal, C = TBD. Click to sort.">Grade <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-duration" data-sort="duration">Dur <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-bpm" data-sort="bpm">Tempo <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-key" data-sort="key">Key <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-singer" data-sort="singer" id="library-singer-header" title="Singers: Bill, Matt, Dan, JD. Click to sort by singer."></div>
+              <div class="col-singer" data-sort="singer" title="Singer: B = Bill, M = Matt, D = Dan, J = JD. Click to sort.">Singer <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-drum" data-sort="drum">Drum <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-plays" data-sort="plays" title="Times audio actually produced output for this song">Plays <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
-              <div class="col-lastplayed" data-sort="lastplayed" title="Days since this song was last played. ∞ = never played (sorts to the top so you see what needs attention first).">Last <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
+              <div class="col-lastplayed" data-sort="lastplayed" title="Days since this song was last played. ∞ = never played (sorts as the largest number).">Last <i data-lucide="chevrons-up-down" class="sort-icon"></i></div>
               <div class="col-action">Action</div>
             </div>
             

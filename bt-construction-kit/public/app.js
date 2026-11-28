@@ -24,42 +24,7 @@ let mergedLibrary = []; // grouped: one entry per song with .variants array
 // top of a practice gig, click +, all 10 join the setlist + precache.
 const batchSelectedBases = new Set();
 let filteredLibrary = []; // filtered view of mergedLibrary
-// Library filter bar state (Bill 2026-07-07; categories 2026-11-27).
-// Categories and singers: the CHECKED chips — an empty set = no filtering;
-// with chips checked a song shows when it has any of them ('none' = no tick).
-// Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
-let libraryCatFilters = new Set();      // category slot numbers as strings, or 'none'
 let libraryDupesOnly = false;       // "Duplicates only" button (Bill 2026-11-05)
-let librarySingerFilters = new Set();   // singer names, or 'none'
-// Default CHECKED (Bill 2026-07-09): both tempo chips start on, so nothing
-// is filtered out until the operator unchecks one.
-let libraryTempoFilters = new Set(['upbeat', 'savory']);
-
-// Filter chip state persists across reloads (Bill 2026-07-10). The four
-// sets above are the source of truth; localStorage holds the last-seen
-// arrays. Restore runs before the first library render so chips paint in
-// the state Bill left them in.
-const LIB_FILTER_STORAGE_KEY = 'simpleStem.libraryFilters.v1';
-function _loadLibraryFiltersFromStorage() {
-  try {
-    const raw = localStorage.getItem(LIB_FILTER_STORAGE_KEY);
-    if (!raw) return;
-    const j = JSON.parse(raw);
-    if (Array.isArray(j.catFilters))    libraryCatFilters    = new Set(j.catFilters);
-    if (Array.isArray(j.singerFilters)) librarySingerFilters = new Set(j.singerFilters);
-    if (Array.isArray(j.tempoFilters))  libraryTempoFilters = new Set(j.tempoFilters);
-  } catch (e) { /* corrupt storage — fall back to defaults */ }
-}
-function _saveLibraryFiltersToStorage() {
-  try {
-    localStorage.setItem(LIB_FILTER_STORAGE_KEY, JSON.stringify({
-      catFilters:    [...libraryCatFilters],
-      singerFilters: [...librarySingerFilters],
-      tempoFilters: [...libraryTempoFilters],
-    }));
-  } catch (e) {}
-}
-_loadLibraryFiltersFromStorage();
 let formatVariantFilters = { STEMS: false, '-V': false, '-V-G': false, '-V-G-B': false, DO: false };
 let currentSong = null;
 let currentMode = 'full'; // 'full' or 'loop' or 'outro'
@@ -727,7 +692,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener(ev, markGesture, { once: true, capture: true })
   );
   fetchLibrary();
-  fetchSongCategories();
+  fetchSongMarks();
   setupEventListeners();
   setupDrumMachineButton();
   setupUrlLoopPanel();
@@ -951,6 +916,7 @@ function setupGigSidebar() {
   const mkSetBtn = document.getElementById('lfb-make-setlist');
   if (mkSetBtn) mkSetBtn.addEventListener('click', onMakeSetlistFromSelection);
   setupLibrarySelectAll();
+  setupSongMarkFields();
   document.getElementById('gig-dup-btn').addEventListener('click', onGigDuplicate);
   document.getElementById('gig-del-btn').addEventListener('click', onGigDelete);
   const renameBtn = document.getElementById('gig-rename-btn');
@@ -1035,11 +1001,7 @@ function setupGigSidebar() {
       };
       const stateOf = (song) => {
         const hit = resolve(song);
-        const r = hit && hit.sv && hit.sv.readiness ? String(hit.sv.readiness) : '';
-        if (/inthecan/i.test(r)) return 'InTheCan';
-        if (/rehearse|rehearsal/i.test(r)) return 'InRehearsal';
-        if (/tbd/i.test(r)) return 'TBD';
-        return 'unstated';
+        return GRADE_NAMES[songMark(hit && hit.sv && hit.sv.folderName).g] || 'unstated';
       };
       const bpmOf = (song) => {
         const hit = resolve(song);
@@ -1047,9 +1009,7 @@ function setupGigSidebar() {
       };
       const singerOf = (song) => {
         const hit = resolve(song);
-        const s = hit && hit.sv && hit.sv.singer_lead ? String(hit.sv.singer_lead).trim() : '';
-        if (!s) return 'Unassigned';
-        return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+        return SINGER_NAMES[songMark(hit && hit.sv && hit.sv.folderName).s] || 'Unassigned';
       };
       const titleOf = (song) => {
         const hit = resolve(song);
@@ -1172,7 +1132,7 @@ const FAVORITES_GIG_SLUG       = '__favorites__';
 const FRESH_GIG_SLUG           = '__fresh__';
 let freshBases = new Set();    // bases currently on the to-do list (🆕 pill)
 // Per-singer + RoundRobin pseudo-gigs. Each one is a single read-only setlist
-// filtered from mergedLibrary by singer_lead. RoundRobin alternates singers
+// filtered from mergedLibrary by the library's singer field. RoundRobin alternates singers
 // so any one of them gets to step away briefly without dead air.
 const BILL_GIG_SLUG  = '__bill_songs__';
 const MATT_GIG_SLUG  = '__matt_songs__';
@@ -1190,6 +1150,7 @@ const SINGER_GIG_MAP = {
   [DAN_GIG_SLUG]:  'Dan',
   [JD_GIG_SLUG]:   'JD',
 };
+const SINGER_GIG_LETTER = { [BILL_GIG_SLUG]: 'B', [MATT_GIG_SLUG]: 'M', [DAN_GIG_SLUG]: 'D', [JD_GIG_SLUG]: 'J' };
 const SYNTHETIC_GIG_SLUGS = new Set([
   YOUTUBE_SYNC_GIG_SLUG,
   MANUAL_SETLISTS_GIG_SLUG,
@@ -1289,17 +1250,8 @@ function paintGigPicker(gigs, playlistSetlists, manualSetlists) {
   // Per-singer pseudo-gigs (Bill / Matt / Dan / JD) + RoundRobin alternation.
   // Counts come from mergedLibrary's stems variants when it's ready; before
   // the library lands we still offer the option so the picker is stable.
-  const singerCount = (who) => {
-    if (!Array.isArray(mergedLibrary)) return null;
-    let n = 0;
-    for (const m of mergedLibrary) {
-      const v = m.variants.find(x => x.type === 'stems');
-      if (v && (v.singer_lead || '').toLowerCase() === who.toLowerCase()) n++;
-    }
-    return n;
-  };
   const sgLabel = (who, slug) => {
-    const n = singerCount(who);
+    const n = Array.isArray(mergedLibrary) ? songsOfSinger(SINGER_GIG_LETTER[slug]).length : null;
     return `<option value="${slug}">🎤 ${who} Songs${n != null ? ' (' + n + ')' : ''}</option>`;
   };
   options.push(sgLabel('Bill', BILL_GIG_SLUG));
@@ -1407,18 +1359,10 @@ async function loadRecentsGig() {
 }
 
 // Per-singer pseudo-gig builder. Filters mergedLibrary's stems variants by
-// singer_lead (case-insensitive). Read-only — no SETLISTS file backs it.
+// the library's singer field. Read-only — no SETLISTS file backs it.
 function loadSingerGig(slug, who) {
-  const songs = [];
-  if (Array.isArray(mergedLibrary)) {
-    for (const m of mergedLibrary) {
-      const v = m.variants.find(x => x.type === 'stems');
-      if (!v) continue;
-      if ((v.singer_lead || '').toLowerCase() === who.toLowerCase()) {
-        songs.push({ song_base: v.folderName, title: m.title, artist: m.artist });
-      }
-    }
-  }
+  const songs = songsOfSinger(SINGER_GIG_LETTER[slug]).map(m => (
+    { song_base: m.variants.find(x => x.type === 'stems').folderName, title: m.title, artist: m.artist }));
   songs.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
   return {
     slug, title: `${who} Songs`,
@@ -1436,10 +1380,7 @@ function loadRoundRobinGig() {
     for (const m of mergedLibrary) {
       const v = m.variants.find(x => x.type === 'stems');
       if (!v) continue;
-      const lead = (v.singer_lead || '').trim();
-      // Normalize via lookup — naive capitalization turns "JD" into "Jd",
-      // which silently drops JD's entire bucket from the rotation.
-      const cap = { bill: 'Bill', matt: 'Matt', dan: 'Dan', jd: 'JD' }[lead.toLowerCase()];
+      const cap = SINGER_NAMES[songMark(v.folderName).s];
       if (cap && buckets[cap]) {
         buckets[cap].push({ song_base: v.folderName, title: m.title, artist: m.artist });
       }
@@ -1630,6 +1571,12 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
     if (typeof b.setlistIdx === 'number') btn.dataset.setlistIdx = String(b.setlistIdx);
     btn.textContent = b.label;
     btn.title = b.label;
+    if (b.slug in SINGER_GIG_LETTER) {
+      const n = songsOfSinger(SINGER_GIG_LETTER[b.slug]).length;
+      btn.insertAdjacentHTML('beforeend', ` <span class="switcher-count">(${n})</span>`);
+      btn.classList.add('has-count');
+      btn.title = `${b.label} (${n})`;
+    }
     btn.setAttribute('role', 'radio');
     const isActive = (b.slug === activeSlug) &&
       (typeof b.setlistIdx !== 'number' || b.setlistIdx === activeIdx);
@@ -2005,10 +1952,10 @@ function openGigTemplatePicker() {
 
   const TEMPLATES = [
     { slug: FAVORITES_GIG_SLUG, label: '★ Favorites',          hint: 'every song with favorite = true (★ on the library row)' },
-    { slug: BILL_GIG_SLUG,      label: 'Bill Songs',            hint: 'singer_lead = Bill' },
-    { slug: MATT_GIG_SLUG,      label: 'Matt Songs',            hint: 'singer_lead = Matt' },
-    { slug: DAN_GIG_SLUG,       label: 'Dan Songs',             hint: 'singer_lead = Dan' },
-    { slug: JD_GIG_SLUG,        label: 'JD Songs',              hint: 'singer_lead = JD' },
+    { slug: BILL_GIG_SLUG,      label: 'Bill Songs',            hint: 'Singer = B' },
+    { slug: MATT_GIG_SLUG,      label: 'Matt Songs',            hint: 'Singer = M' },
+    { slug: DAN_GIG_SLUG,       label: 'Dan Songs',             hint: 'Singer = D' },
+    { slug: JD_GIG_SLUG,        label: 'JD Songs',              hint: 'Singer = J' },
     { slug: ROUND_ROBIN_GIG_SLUG, label: '🎙 Round Robin',     hint: 'singers alternate so nobody bears the whole set' },
     { slug: PROTEST_GIG_SLUG,   label: '✊ Protest Songs',     hint: 'tag = "protest" (set via ⋯ menu on library rows)' },
     { slug: RECENTS_GIG_SLUG,   label: '🕒 Recents',             hint: 'last 50 songs you played' },
@@ -2445,17 +2392,12 @@ function renderOneGigSetlist(sl, idx) {
         if (ms >= 0 && ms < 3 * 60 * 60 * 1000) row.classList.add('recently-played');
       }
     } catch (e) {}
-    // Color the row background by lead singer. Bill's request 2026-06-30:
-    //   Bill → light yellow · Matt → light green · Dan → light purple
-    //   everyone else → white (no class). singer_lead comes from the
-    //   stems variant (MPB Sheet sync) or per-row override; folded down
-    //   to first-name token to match the canonical bucket.
+    // Color the row background by singer (Bill 2026-11-28): Bill → blue ·
+    // Matt → green · Dan → yellow · JD → pink; no singer → no class. The
+    // singer is the library's one-character singer field.
     const stemsForSinger = merged && merged.variants && merged.variants.find(v => v.type === 'stems');
-    const singerLead = (stemsForSinger && stemsForSinger.singer_lead) || (merged && merged.singer_lead) || '';
-    const singerToken = singerLead.trim().split(/\s+/)[0].toLowerCase();
-    if      (singerToken === 'bill') row.classList.add('sls-singer-bill');
-    else if (singerToken === 'matt') row.classList.add('sls-singer-matt');
-    else if (singerToken === 'dan')  row.classList.add('sls-singer-dan');
+    const singerLetter = songMark(stemsForSinger && stemsForSinger.folderName).s;
+    if (singerLetter) row.classList.add('singer-' + singerLetter.toLowerCase());
     row.draggable = true;
     row.dataset.setlistIdx = String(idx);
     row.dataset.songIdx = String(songIdx);
@@ -4259,7 +4201,6 @@ async function fetchLibrary() {
     window.mergedLibrary = mergedLibrary;   // voice control + split methods read this
 
     filteredLibrary = mergedLibrary.filter(song => !isJamLibraryRow(song));
-    try { renderLibraryFilterBar(); } catch (e) { console.warn('[filter-bar]', e); }
 
     // Heal stale "failed to load" markers on songs that now have valid
     // cached stems. Stops greyed rows from sticking after a successful
@@ -4542,20 +4483,20 @@ function librarySortValue(m, key) {
     case 'duration': return (typeof m.duration === 'number' && Number.isFinite(m.duration)) ? m.duration : -1;
     case 'bpm':      return (typeof m.practiceBpm === 'number' && m.practiceBpm > 0) ? m.practiceBpm : -1;
     case 'key':      return (m.key || '').toLowerCase();
-    case 'singer':   return songCatEntry(stems && stems.folderName).s.join(' ').toLowerCase();
+    case 'grade':    return songMark(stems && stems.folderName).g;
+    case 'singer':   return songMark(stems && stems.folderName).s;
     case 'drum':     return (stems && stems.drum_pattern || '').toLowerCase();
     case 'plays': {
       const p = (stems && stems.play_count) || m.play_count || 0;
       return Number(p) || 0;
     }
     case 'lastplayed': {
-      // "days since last played", inverted so the DEFAULT ascending click
-      // puts least-recently-played (∞ / never) at the top — Bill's spec
-      // 2026-07-10. Second click reverses to most-recently-played first.
+      // Days since last played, as a number: the first click lists the most
+      // recently played first (0d, 1d, 2d …) with never-played (∞) at the
+      // end; the second click reverses it (Bill 2026-11-28).
       const lastAt = stems && stems.last_played_at;
-      if (!lastAt) return -Number.MAX_SAFE_INTEGER;
-      const days = Math.max(0, Math.floor((Date.now() - new Date(lastAt).getTime()) / 86400000));
-      return -days;
+      if (!lastAt) return Number.MAX_SAFE_INTEGER;
+      return Math.max(0, Math.floor((Date.now() - new Date(lastAt).getTime()) / 86400000));
     }
     default:         return (m.title || '').toLowerCase();
   }
@@ -4639,6 +4580,12 @@ function renderLibrary() {
     const _hasLyrics = merged.variants.some(v => v && (v.lyrics || (Array.isArray(v.lyrics_chunks) && v.lyrics_chunks.length)));
     row.className = `song-row ${isActive ? 'active' : ''} ${hasCachedVariant ? '' : 'gig-uncached'} ${isFailed ? 'song-failed' : ''} ${_hasLyrics ? 'has-lyrics' : ''}`;
     row.dataset.id = merged.id;
+    const _stemsForMark = merged.variants.find(v => v.type === 'stems');
+    if (_stemsForMark && _stemsForMark.folderName) {
+      row.dataset.base = _stemsForMark.folderName;
+      const _sg = songMark(_stemsForMark.folderName).s;
+      if (_sg) row.classList.add('singer-' + _sg.toLowerCase());
+    }
 
     // Library row checkbox doubles as both:
     //   (a) the legacy Setlist Planner toggle (right-side pane) AND
@@ -4769,28 +4716,18 @@ function renderLibrary() {
       durationCell.textContent = '--';
     }
 
-    // Category and singer cells (Bill 2026-11-27): ten category checkboxes
-    // (the names sit in the column header; a slot with no name yet is
-    // greyed) and four singer checkboxes. A tick on a selected row goes to
-    // every selected row. Stored in CATEGORIES.json, not in the song.
-    const catsCell = document.createElement('div');
-    catsCell.className = 'song-cats-cell';
+    // Grade and singer cells (Bill 2026-11-28): one character each. Grade
+    // A = InTheCan, B = InRehearsal, C = TBD; singer B = Bill, M = Matt,
+    // D = Dan, J = JD; empty = none. A change on a selected row goes to
+    // every selected row. Stored in GRADES.json, not in the song.
+    const gradeCell = document.createElement('div');
+    gradeCell.className = 'song-grade-cell';
     const singerCell = document.createElement('div');
-    singerCell.className = 'song-sing-cell';
+    singerCell.className = 'song-singer-cell';
     if (songBaseForBatch) {
-      const tick = songCatEntry(songBaseForBatch);
-      catsCell.dataset.base = singerCell.dataset.base = songBaseForBatch;
-      catsCell.innerHTML = songCategories.slots.map((name, i) =>
-        `<input type="checkbox" class="cat-cb" data-slot="${i}" title="${name ? escapeHtml(name) : `Category ${i + 1} has no name yet: click its + in the header`}"${name ? '' : ' disabled'}${tick.c.includes(i) ? ' checked' : ''}>`).join('');
-      singerCell.innerHTML = songCategories.singers.map(n =>
-        `<input type="checkbox" class="cat-cb" data-singer="${n}" title="${n} sings this one"${tick.s.includes(n) ? ' checked' : ''}>`).join('');
-      [catsCell, singerCell].forEach(cell => {
-        cell.addEventListener('click', e => e.stopPropagation());
-        cell.addEventListener('change', e => {
-          const cb = e.target;
-          setSongCategoryTick(songBaseForBatch, cb.dataset.slot != null ? { slot: +cb.dataset.slot } : { singer: cb.dataset.singer }, cb.checked);
-        });
-      });
+      const mark = songMark(songBaseForBatch);
+      gradeCell.innerHTML = `<input type="text" class="chr-field" data-field="g" maxlength="1" autocomplete="off" value="${mark.g}" title="Grade: A = InTheCan, B = InRehearsal, C = TBD, empty = none">`;
+      singerCell.innerHTML = `<input type="text" class="chr-field" data-field="s" maxlength="1" autocomplete="off" value="${mark.s}" title="Singer: B = Bill, M = Matt, D = Dan, J = JD, empty = none">`;
     }
 
     // Action — Load button removed. Clicking the row loads the song (wired
@@ -4937,7 +4874,7 @@ function renderLibrary() {
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
-    row.appendChild(catsCell);          // wider, sits right after Artist (Bill 2026-06-30)
+    row.appendChild(gradeCell);
     row.appendChild(durationCell);
     row.appendChild(bpmCell);
     row.appendChild(keyCell);
@@ -4968,7 +4905,6 @@ function renderLibrary() {
   });
   
   lucide.createIcons();
-  alignCategoryHeader();
 }
 
 // ── Master volume (full-height right-rail slider) ──────────────────────────
@@ -5461,159 +5397,108 @@ async function openSongMenu(base, merged) {
 }
 
 // Client Side Search and Filters
-// ── Library filter bar ───────────────────────────────────────────────────
-// Checkbox chips right of the "Song Library" title: every named category
-// and every singer (plus 'none' for songs with no tick), each with its song
-// count, and the two tempo categories (Upbeat > 110 bpm, Savory ≤ 110; a
-// song in a category named Upbeat/Savory overrides its BPM). Checking boxes
-// narrows filteredLibrary live; the list-plus button by the Gig picker turns
-// the narrowed list into a new gig.
-function renderLibraryFilterBar() {
-  const bar = document.getElementById('library-filter-bar');
-  if (!bar) return;
-  // Drop filter state for a category that no longer has a name.
-  for (const k of [...libraryCatFilters]) if (k !== 'none' && !songCategories.slots[+k]) libraryCatFilters.delete(k);
-  const ticks = mergedLibrary.filter(m => !isJamLibraryRow(m)).map(m => {
-    const sv = m.variants.find(v => v.type === 'stems');
-    return songCatEntry(sv && sv.folderName);
-  });
-
-  const chip = (group, value, label, checked) =>
-    `<label class="lfb-chip ${checked ? 'checked' : ''}" data-group="${group}" data-value="${value.replace(/"/g, '&quot;')}">` +
-    `<input type="checkbox" ${checked ? 'checked' : ''}>${label}</label>`;
-
-  let html = '<span class="lfb-group"><span class="lfb-group-label">Categories</span>';
-  songCategories.slots.forEach((name, i) => {
-    if (name) html += chip('cat', String(i), `${escapeHtml(name)} ${ticks.filter(e => e.c.includes(i)).length}`, libraryCatFilters.has(String(i)));
-  });
-  html += chip('cat', 'none', `none ${ticks.filter(e => !e.c.length).length}`, libraryCatFilters.has('none'));
-  html += '</span><span class="lfb-group"><span class="lfb-group-label">Singers</span>';
-  for (const n of songCategories.singers) html += chip('singer', n, `${n} ${ticks.filter(e => e.s.includes(n)).length}`, librarySingerFilters.has(n));
-  html += chip('singer', 'none', `none ${ticks.filter(e => !e.s.length).length}`, librarySingerFilters.has('none'));
-  html += '</span>';
-  html += '<span class="lfb-group"><span class="lfb-group-label">Tempo</span>';
-  html += chip('tempo', 'upbeat', 'Upbeat (>110bpm)', libraryTempoFilters.has('upbeat'));
-  html += chip('tempo', 'savory', 'Savory (≤110bpm)', libraryTempoFilters.has('savory'));
-  html += '</span>';
-  bar.innerHTML = html;
-
-  bar.querySelectorAll('.lfb-chip').forEach(el => {
-    const input = el.querySelector('input');
-    input.addEventListener('change', () => {
-      const group = el.dataset.group, value = el.dataset.value;
-      if (group === 'cat') {
-        if (input.checked) libraryCatFilters.add(value); else libraryCatFilters.delete(value);
-      } else if (group === 'singer') {
-        if (input.checked) librarySingerFilters.add(value); else librarySingerFilters.delete(value);
-      } else if (group === 'tempo') {
-        if (input.checked) libraryTempoFilters.add(value); else libraryTempoFilters.delete(value);
-      }
-      el.classList.toggle('checked', input.checked);
-      // Persist the chip state so a reload brings back the same filter
-      // configuration (Bill 2026-07-10).
-      _saveLibraryFiltersToStorage();
-      applyFilters();
-    });
+// ── Song grade and singer (Bill 2026-11-28) ─────────────────────────────
+// Two one-character fields on every library row, kept in one server file:
+// songMarks[<song folder>] = { g: 'A'|'B'|'C'|'', s: 'B'|'M'|'D'|'J'|'' }.
+const GRADE_NAMES = { A: 'InTheCan', B: 'InRehearsal', C: 'TBD' };
+const SINGER_NAMES = { B: 'Bill', M: 'Matt', D: 'Dan', J: 'JD' };
+const MARK_LETTERS = { g: Object.keys(GRADE_NAMES).join(''), s: Object.keys(SINGER_NAMES).join('') };
+let songMarks = {};
+function songMark(base) { return (base && songMarks[base]) || { g: '', s: '' }; }
+function songsOfSinger(letter) {
+  return (Array.isArray(mergedLibrary) ? mergedLibrary : []).filter(m => {
+    const v = m.variants.find(x => x.type === 'stems');
+    return v && songMark(v.folderName).s === letter;
   });
 }
 
-// ── Song categories and singers (Bill 2026-11-27) ───────────────────────
-// Ten category slots (named in the column header) and four singers, a
-// checkbox each on every library row. One server file holds the names and
-// every song's ticks ({ c: [slot numbers], s: [singer names] } per song).
-let songCategories = { slots: [], singers: [], songs: {} };
-function songCatEntry(base) { return (base && songCategories.songs[base]) || { c: [], s: [] }; }
-
-async function fetchSongCategories() {
+async function fetchSongMarks() {
   try {
-    const r = await fetch('/api/categories');
+    const r = await fetch('/api/grades');
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    songCategories = { slots: j.slots || [], singers: j.singers || [], songs: j.songs || {} };
-  } catch (e) { console.warn('[categories] not loaded:', e.message); return; }
-  renderCategoryHeader();
-  renderLibraryFilterBar();
+    songMarks = (await r.json()).songs || {};
+  } catch (e) { console.warn('[grades] not loaded:', e.message); return; }
   if (mergedLibrary.length) applyFilters();
+  refreshSingerViews();
 }
 
-function renderCategoryHeader() {
-  const h = document.getElementById('library-cat-header'), sh = document.getElementById('library-singer-header');
-  if (h) {
-    h.innerHTML = songCategories.slots.map((name, i) =>
-      `<button type="button" class="cat-head${name ? '' : ' empty'}" data-slot="${i}" title="${name ? `${escapeHtml(name)}: click to rename (an empty name removes the category)` : `Name category ${i + 1}`}">${name ? escapeHtml(name) : '+'}</button>`).join('');
-    h.onclick = (e) => { const b = e.target.closest('.cat-head'); if (b) { e.stopPropagation(); renameSongCategory(+b.dataset.slot); } };
-  }
-  if (sh) sh.innerHTML = songCategories.singers.map(n => `<span class="sing-head" title="${n}">${n.charAt(0)}</span>`).join('');
-  alignCategoryHeader();
-}
-
-// The header's columns sit a few pixels right of the rows' (the list's
-// scrollbar and the rows' left border narrow the rows), which would put each
-// name beside its box, not over it: shift the two headers onto the first row.
-function alignCategoryHeader() {
-  [['library-cat-header', '.song-cats-cell'], ['library-singer-header', '.song-sing-cell']].forEach(([id, sel]) => {
-    const h = document.getElementById(id), cell = els.songListBody && els.songListBody.querySelector(sel);
-    if (!h || !cell) return;
-    h.style.marginLeft = '0px';
-    h.style.marginLeft = (cell.getBoundingClientRect().left - h.getBoundingClientRect().left) + 'px';
-  });
-}
-
-// The boxes on screen follow the store (after a tick that went to several rows, or one that did not save).
-function paintSongCategoryTicks() {
-  els.songListBody.querySelectorAll('input.cat-cb').forEach(cb => {
-    const e = songCatEntry(cb.parentElement.dataset.base);
-    cb.checked = cb.dataset.slot != null ? e.c.includes(+cb.dataset.slot) : e.s.includes(cb.dataset.singer);
-  });
-}
-
-// what = { slot: n } or { singer: name }. A tick on a selected row goes to every selected row.
-async function setSongCategoryTick(base, what, on) {
-  const bases = (batchSelectedBases.has(base) && batchSelectedBases.size > 1) ? selectedStemBasesInLibraryOrder() : [base];
-  const has = (b) => { const e = songCatEntry(b); return 'slot' in what ? e.c.includes(what.slot) : e.s.includes(what.singer); };
-  const put = (b, v) => {
-    const e = songCategories.songs[b] || (songCategories.songs[b] = { c: [], s: [] });
-    if ('slot' in what) { e.c = e.c.filter(x => x !== what.slot); if (v) e.c = e.c.concat(what.slot).sort((x, y) => x - y); }
-    else e.s = songCategories.singers.filter(n => (n === what.singer ? v : e.s.includes(n)));
-  };
-  const before = bases.map(has);
-  bases.forEach(b => put(b, on));
-  if (bases.length > 1) paintSongCategoryTicks();
+// The singer views (Bill Songs … JD Songs, RoundRobin) and their counts follow the singer field.
+function refreshSingerViews() {
   try {
-    const r = await fetch('/api/categories/assign', {
+    const cached = readCache(SETLISTS_CACHE_KEY) || [];
+    const picker = document.getElementById('gig-picker'), slug = picker && picker.value;
+    paintGigPicker(readCache(GIGS_CACHE_KEY) || [], cached.filter(s => s.origin === 'playlist'), cached.filter(s => (s.origin || 'manual') === 'manual'));
+    if (picker && slug) picker.value = slug;
+    if (slug in SINGER_GIG_MAP || slug === ROUND_ROBIN_GIG_SLUG) loadActiveGig(slug);
+    else if (typeof renderGigSidebar === 'function') renderGigSidebar();
+  } catch (e) { console.warn('[grades] singer views not refreshed:', e); }
+}
+
+// The fields and row colours on screen follow the store.
+function paintSongMarks() {
+  els.songListBody.querySelectorAll('.song-row').forEach(row => {
+    const mark = songMark(row.dataset.base);
+    row.querySelectorAll('.chr-field').forEach(inp => { inp.value = mark[inp.dataset.field]; });
+    Object.keys(SINGER_NAMES).forEach(l => row.classList.toggle('singer-' + l.toLowerCase(), mark.s === l));
+  });
+}
+
+// field = 'g' (grade) or 's' (singer). A change on a selected row goes to every selected row.
+async function setSongMark(base, field, val) {
+  const bases = (batchSelectedBases.has(base) && batchSelectedBases.size > 1) ? selectedStemBasesInLibraryOrder() : [base];
+  const before = bases.map(b => songMark(b)[field]);
+  const put = (b, v) => {
+    const e = { ...songMark(b), [field]: v };
+    if (e.g || e.s) songMarks[b] = e; else delete songMarks[b];
+  };
+  bases.forEach(b => put(b, val));
+  paintSongMarks();
+  try {
+    const r = await fetch('/api/grades', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bases, ...what, on }),
+      body: JSON.stringify({ bases, [field === 'g' ? 'grade' : 'singer']: val }),
     });
     if (!r.ok) { let d = {}; try { d = await r.json(); } catch (er) {} throw new Error(d.error || 'HTTP ' + r.status); }
-    if (bases.length > 1) showToast(`${on ? 'Ticked' : 'Unticked'} ${'slot' in what ? songCategories.slots[what.slot] : what.singer} on ${bases.length} selected songs`);
+    if (bases.length > 1) showToast(`${field === 'g' ? 'Grade' : 'Singer'} ${val || 'cleared'} on ${bases.length} selected songs`);
   } catch (e) {
     bases.forEach((b, i) => put(b, before[i]));
-    paintSongCategoryTicks();
+    paintSongMarks();
     showToast(`Not saved: ${e.message}`);
   }
-  renderLibraryFilterBar();
+  if (field === 's') refreshSingerViews();
 }
 
-async function renameSongCategory(i) {
-  const cur = songCategories.slots[i] || '';
-  const typed = prompt(cur ? `Rename the category "${cur}" (an empty name removes it):` : `Name for category ${i + 1} (20 characters at most):`, cur);
-  if (typed === null) return;
-  const next = typed.replace(/\s+/g, ' ').trim().slice(0, 20);
-  if (next === cur) return;
-  if (!next) {
-    const n = Object.values(songCategories.songs).filter(e => e.c.includes(i)).length;
-    if (n && !confirm(`Remove the category "${cur}"? ${n} song${n === 1 ? '' : 's'} will lose that tick.`)) return;
-  }
-  const slots = songCategories.slots.slice();
-  slots[i] = next;
-  try {
-    const r = await fetch('/api/categories/slots', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slots }),
-    });
-    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (er) {} throw new Error(d.error || 'HTTP ' + r.status); }
-  } catch (e) { showToast(`Category not saved: ${e.message}`); return; }
-  await fetchSongCategories();
+// One listener each for every row's two fields. Typing a letter saves it;
+// Enter / ↓ / ↑ move to the same field of the next / previous row.
+function setupSongMarkFields() {
+  const body = els.songListBody;
+  const field = (e) => (e.target.classList && e.target.classList.contains('chr-field') ? e.target : null);
+  body.addEventListener('click', e => { if (field(e)) e.stopPropagation(); });
+  body.addEventListener('focusin', e => { if (field(e)) e.target.select(); });
+  body.addEventListener('input', e => {
+    const inp = field(e);
+    if (!inp) return;
+    const base = inp.closest('.song-row').dataset.base, f = inp.dataset.field;
+    const v = inp.value.trim().toUpperCase();
+    if (v && !MARK_LETTERS[f].includes(v)) {
+      inp.value = songMark(base)[f];
+      inp.select();
+      showToast(f === 'g' ? 'Grade is A, B or C (or empty)' : 'Singer is B, M, D or J (or empty)');
+      return;
+    }
+    inp.value = v;
+    inp.select();
+    if (v !== songMark(base)[f]) setSongMark(base, f, v);
+  });
+  body.addEventListener('keydown', e => {
+    const inp = field(e);
+    if (!inp || !['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    e.preventDefault();
+    const row = inp.closest('.song-row');
+    const next = e.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+    const to = next && next.querySelector(`.chr-field[data-field="${inp.dataset.field}"]`);
+    if (to) to.focus();
+  });
 }
 
 // ── Selection → gig/setlist (buttons in the filter bar) ─────────────────
@@ -5928,38 +5813,10 @@ function applyFilters() {
       });
     }
 
-    // Filter bar: categories / singers / tempo (Bill 2026-07-07).
-    const svBar = song.variants.find(v => v.type === 'stems');
-    const tickBar = songCatEntry(svBar && svBar.folderName);
-    const songTags = tickBar.c.map(i => songCategories.slots[i] || '');   // a category named Upbeat / Savory overrides the BPM below
-    // Category and singer chips start UNCHECKED (= nothing filtered); with
-    // chips checked a song shows when it has any of them.
-    const matchesTagBar = !libraryCatFilters.size ||
-      [...libraryCatFilters].some(k => (k === 'none' ? !tickBar.c.length : tickBar.c.includes(+k)));
-    const matchesSinger = !librarySingerFilters.size ||
-      [...librarySingerFilters].some(n => (n === 'none' ? !tickBar.s.length : tickBar.s.includes(n)));
-    let matchesTempo = true;
-    if (libraryTempoFilters.size) {
-      const bpmBar = song.practiceBpm || 0;
-      const tagUp = songTags.some(t => /^upbeat$/i.test(t));
-      const tagSav = songTags.some(t => /^savou?ry$/i.test(t));
-      const isUp = tagUp || (!tagSav && bpmBar > 110);
-      const isSav = tagSav || (!tagUp && bpmBar > 0 && bpmBar <= 110);
-      // Unknown tempo (no BPM analysis yet, no Upbeat/Savory tag) matches
-      // ANY tempo filter — an unanalyzed song must never vanish from the
-      // library for lacking a BPM (found 2026-08-10: a cache-rebuilt song
-      // with bpm:null was invisible with every filter checkbox checked).
-      const tempoUnknown = !tagUp && !tagSav && !(bpmBar > 0);
-      matchesTempo = tempoUnknown ||
-                     (libraryTempoFilters.has('upbeat') && isUp) ||
-                     (libraryTempoFilters.has('savory') && isSav);
-    }
-
     const matchesDupes = !libraryDupesOnly || getDupeGroups().has(song.id);
     const notJam = !isJamLibraryRow(song);
 
-    return notJam && matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips &&
-           matchesTagBar && matchesSinger && matchesTempo && matchesDupes;
+    return notJam && matchesQuery && matchesFormat && matchesKey && matchesBpm && matchesVariantChips && matchesDupes;
   });
   
   els.countLabel.textContent = libraryDupesOnly
@@ -12840,7 +12697,6 @@ async function cacheStatusRefresh() {
     if (dirty) {
       mergedLibrary = mergeByTitleArtist(songLibrary);
       window.mergedLibrary = mergedLibrary;
-      try { renderLibraryFilterBar(); } catch (e) {}
       mergedLibrary.sort((a, b) => a.title.localeCompare(b.title));
       applyFilters();
     }
@@ -17021,10 +16877,10 @@ async function setupAiSetlistBuilder() {
     return true;
   }
   function readinessOk(row){
-    const r = row.readiness || 'tbd';
+    const g = songMark(row.folderName).g || 'C';   // no grade counts as TBD
     return state.purpose === 'gig'
-      ? (r === 'InTheCan' || r === 'Rehearse')
-      : (r === 'Rehearse' || r === 'tbd');
+      ? (g === 'A' || g === 'B')
+      : (g === 'B' || g === 'C');
   }
   function tagsOk(row){
     if (!state.tagsAll.size) return true;
@@ -17134,7 +16990,7 @@ async function setupAiSetlistBuilder() {
       return `
         <div class="gb-libr" data-base="${b}">
           <div class="tt">${escapeHtml(r.title || b)}<span class="art">${escapeHtml(r.artist || '')}</span></div>
-          <div class="mono">${escapeHtml((r.singer_lead || '').slice(0,1))}</div>
+          <div class="mono">${songMark(b).s}</div>
           <select data-req="${b}">${reqOpts}</select>
           <select data-key="${b}">${keyOpts}</select>
           <div class="mono">${fmt(dur(r))}</div>
@@ -17192,7 +17048,7 @@ async function setupAiSetlistBuilder() {
           song_base: base,
           title: row.title || base,
           artist: row.artist || '',
-          singer: row.singer_lead || '',
+          singer: SINGER_NAMES[songMark(base).s] || '',
           key: keyShort(row) || row.key || '',
           duration_sec: dur(row),
           mode: currentMode(row),

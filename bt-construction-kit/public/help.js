@@ -37,10 +37,9 @@
           ['Queue chips', 'Live ingest status: downloading source, analyzing BPM/key, encoding the SOURCE m4a, queued for Logic Pro stemming. A red ✕ webloc chip means a YouTube URL could not be fetched; hover it for the fix.'],
         ]),
         s('Library', [
-          ['Columns', 'Set / Title (with ☆ favorite star) / Artist / Duration / Tempo / Key / Singer / Action (⋯ menu). After Artist come ten category checkboxes; the category names stand upright in the header (click a name to rename it, a + to name a new one). The Singer column is four checkboxes: Bill, Matt, Dan, JD. A tick on a selected row goes to every selected row.'],
+          ['Columns', 'Set / Title (with ☆ favorite star) / Artist / Duration / Tempo / Key / Singer / Action (⋯ menu). Grade and Singer are one-character fields: Grade A = InTheCan, B = InRehearsal, C = TBD; Singer B = Bill, M = Matt, D = Dan, J = JD; empty = none. Type the letter; Enter or the down arrow moves to the next row. A change on a selected row goes to every selected row. Rows are coloured by singer: Bill blue, Matt green, Dan yellow, JD pink.'],
           ['Drum pattern pill', 'The opaque pattern tag from the band sheet, like 120@130. Shown next to BPM and key; the drum machine uses it to pick a pattern.'],
           ['Add from YouTube', 'Paste a video or playlist URL. It becomes a .webloc for the Librarian, which downloads the audio. The Performer then queues the song for Logic Pro stemming; it plays once the Logic stemming queue has been run.'],
-          ['Filters', 'Category, singer, tempo, key. Category and singer chips start unchecked (nothing filtered); check chips to see only the songs with any of them, or "none" for songs with no tick. Each chip shows its song count. A song with no BPM or tags stays visible when every filter is checked; vanishing rows are a bug, not a feature.'],
         ]),
         s('Gig sidebar: Gig ▸ Setlist ▸ Song', [
           'A performance is a gig holding ordered setlists holding ordered songs. Real gigs are editable files; the picker also offers built-in views that need no setup:',

@@ -14,36 +14,32 @@ into that song's data.
 | **Set** | Checkbox for the batch-add flow. | Tick rows, then commit them into the active setlist via the green + on the ghost rows in the sidebar (see [04_GIGS_AND_SETLISTS.md](04_GIGS_AND_SETLISTS.md#batch-adding-songs--the-ghost-add-flow)). |
 | **Song Title** | ☆ star + title. | The star toggles Favorite (syncs with the player and sidebar stars). Clicking the row loads the song. |
 | **Artist** | Artist name. | Sortable. |
-| **Categories** | Ten checkboxes, one per category. The category names stand upright in the header. | Tick a box to put the song in that category. Click a name in the header to rename it, a **+** to name an unused slot (20 characters at most); an empty name removes the category and its ticks. A slot with no name is greyed. A tick on a selected row (Set checkbox) goes to every selected row. |
+| **Grade** | One character: **A** = InTheCan, **B** = InRehearsal, **C** = TBD, empty = none. | Type the letter in the box; it saves at once. Enter or ↓ moves to the next row, ↑ to the previous. A change on a selected row (Set checkbox) goes to every selected row. Sortable. |
 | **Dur** | mm:ss. | Sortable. |
 | **Tempo** | Detected BPM. | Sortable. |
 | **Key** | Detected key. | Sortable. |
-| **Singer** | Four checkboxes under **B M D J**: Bill, Matt, Dan, JD. | Tick who sings the song (more than one is fine). Sortable. A tick on a selected row goes to every selected row. |
+| **Singer** | One character: **B** = Bill, **M** = Matt, **D** = Dan, **J** = JD, empty = none. | Typed like the grade. Sortable. The row is coloured by singer: Bill blue, Matt green, Dan yellow, JD pink (the loaded row keeps its dark colour). |
 | **Drum** | The song's drum-machine chip (e.g. `120@130`). | Shows which pattern the drum machine will use. |
 | **Plays** | How many times audio actually produced output for this song (5+ seconds of real playback counts as a play). | Sortable; the tooltip shows how stale the song is (time since last play). Feeds the Gig Builder's Stale column. |
 | **Action** | The ⋯ menu. | Opens the per-song options modal (below). |
 
-## Categories, singers and building a set
+## Grade, singer and building a set
 
-The names of the ten categories and every song's ticks are kept in one file,
-`CATEGORIES.json` in the simpleStem folder on Drive (with a copy on the
-Performer, so it works with no Drive). They are not stored in the song and
-the band sheet does not change them. The values the band sheet syncs
-(`singer_lead`, `readiness`) are still in each song and still feed the
-built-in singer views (Bill Songs, Matt Songs, Dan Songs, JD Songs,
-RoundRobin) and the Gig Builder; the library table no longer shows or
-edits them.
+Every song's grade and singer are kept in one file, `GRADES.json` in the
+simpleStem folder on Drive (with a copy on the Performer, so it works with
+no Drive). They are not stored in the song and the band sheet does not
+change them. They were filled once, on 2026-11-28, from the band sheet
+(New Master List). The built-in singer views (Bill Songs, Matt Songs, Dan
+Songs, JD Songs, each with its song count, and RoundRobin), the sidebar row
+colours, the gig split tools and the Gig Builder all read these two fields.
 
-The filter bar above the table has one chip per named category and per
-singer, each with its song count, plus **none** (songs with no tick).
-All chips start unchecked, which filters nothing; check chips to see only
-the songs that have any of them.
+There is no filter bar. To see one grade or one singer together, click the
+**Grade** or **Singer** header to sort, or open a singer view.
 
-To build a set: check a category or singer chip (or search), tick the songs
-with the Set checkbox or the select-all box in the header, then **Make Gig
-from selection**, **Make setlist from selection** or **Add to current
-setlist**. To categorise many songs at once: tick them, then tick one
-category box on any of the ticked rows.
+To build a set: sort or search, tick the songs with the Set checkbox or the
+select-all box in the header, then **Make Gig from selection**, **Make
+setlist from selection** or **Add to current setlist**. To set many songs at
+once: tick them, then type the letter on any of the ticked rows.
 
 ## The ⋯ action menu
 

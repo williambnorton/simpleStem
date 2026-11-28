@@ -602,7 +602,8 @@
     if (Array.isArray(window.mergedLibrary)) {
       const m = window.mergedLibrary.find(m => (m.title || '').trim() === title);
       const v = m && m.variants && m.variants.find(v => v.type === 'stems');
-      if (v && v.singer_lead) return `${v.singer_lead} sings this one.`;
+      const who = v && SINGER_NAMES[songMark(v.folderName).s];
+      if (who) return `${who} sings this one.`;
     }
     return 'No singer assigned to this song.';
   }
