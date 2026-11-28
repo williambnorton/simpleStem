@@ -96,8 +96,9 @@
           <i data-lucide="chevron-down" class="rollup-caret"></i>
         </button>
         <div class="rollup-body">
-          <!-- Setlist Switcher: search + radio-button grid + "name and
-               Create" row. The ONLY thing the operator sees up here. -->
+          <!-- Setlist Switcher: search + radio-button grid of the built-in
+               views + the drop-down of the user's own setlists. The ONLY
+               thing the operator sees up here. -->
           <div class="setlist-switcher-panel">
             <input type="search" id="switcher-song-search" class="switcher-search"
                    placeholder="Search a song in the library…"
@@ -106,11 +107,7 @@
                  (jam.html) in its own tab. -->
             <button type="button" id="jam-open-btn" class="jam-open-btn" title="Open a browser window showing YouTube backing tracks. Click one to preview it (Mac sound out); Play in Mark5 plays it as-is on strips 1–2, where Output Routing can send it to all six amps.">🎧 Browse for audio content</button>
             <div id="switcher-radio-grid" class="switcher-radio-grid" role="radiogroup" aria-label="Pick a setlist"></div>
-            <div class="switcher-new-row">
-              <input type="text" id="switcher-new-name" class="switcher-new-input"
-                     placeholder="New setlist name…" maxlength="60">
-              <button id="switcher-new-create" class="switcher-new-btn" type="button" title="Create a new empty setlist with this name">Create</button>
-            </div>
+            <select id="switcher-setlist-pick" class="switcher-setlist-pick" title="Your own setlists. Pick one to list it below (the last three picked stay listed, collapsed), or choose New setlist… to name and create one."></select>
           </div>
           <!-- Hidden gig controls kept for JS lookups; see note above. -->
           <div class="gig-side-controls hidden-gig-apparatus">

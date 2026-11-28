@@ -875,6 +875,11 @@ let gigSaveTimer = null;
 // survives re-renders (drag, edit, etc.). Reset to {0} on each gig load so
 // the first setlist starts expanded.
 let openSetlistIdxs = new Set([0]);
+// The user's own setlists listed in the sidebar (Bill 2026-11-28): the last
+// three picked in the drop-down, newest first, each a collapsed bar.
+const SHOWN_SETLISTS_KEY = 'simpleStem.shownSetlists';
+let shownSetlistSlugs = [];
+try { const j = JSON.parse(localStorage.getItem(SHOWN_SETLISTS_KEY) || '[]'); if (Array.isArray(j)) shownSetlistSlugs = j.filter(x => typeof x === 'string'); } catch (e) {}
 // Sequential-playback state: when a setlist is playing through, these point
 // at which setlist + which song are live. null/null when no setlist is playing.
 let gigPlayingSetlistIdx = null;
@@ -1525,34 +1530,20 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
     PSEUDO.push({ slug: YOUTUBE_SYNC_GIG_SLUG, label: `▶ YT Sync (${playlistSetlists.length})`, kind: 'pseudo' });
   }
 
-  // Each standalone manual setlist as its own button so NoKings, Friday_Set
-  // etc. are reachable with one click. These load MANUAL_SETLISTS_GIG_SLUG
-  // then jump activeSetlistIdx to the matching sub-setlist index. Each
-  // manual button carries its sub-setlist's slug so the delete × knows
-  // which SETLISTS/<slug>.json to remove.
-  const manualButtons = (manualSetlists || []).map((sl, i) => ({
-    slug: MANUAL_SETLISTS_GIG_SLUG,
-    setlistIdx: i,
-    label: sl.title || sl.slug || `set ${i+1}`,
-    matchTitle: sl.title || sl.slug,
-    manualSlug: sl.slug,
-    kind: 'manual',
-  }));
-
-  // Real gigs REMOVED from the switcher (Bill 2026-10-19: "remove the gig
-  // creation multi set thing for now"). GIGS/*.json files on disk are
-  // untouched; just not surfaced in the primary navigator.
-  //
-  // Order (Bill 2026-10-19): user setlists FIRST, then a separator, then
-  // the system-curated pseudo-gigs below.
-  const all = [...manualButtons, { kind: 'separator' }, ...PSEUDO];
+  // The user's own setlists are in the drop-down under the grid (Bill
+  // 2026-11-28), not buttons here; picking one lists it in the sidebar.
+  const pick = document.getElementById('switcher-setlist-pick');
+  if (pick) {
+    pick.innerHTML = '<option value="">Select a setlist…</option>' +
+      (manualSetlists || []).map(sl => `<option value="${escapeHtml(sl.slug)}">${escapeHtml(sl.title || sl.slug)}</option>`).join('') +
+      '<option value="__new__">＋ New setlist…</option>';
+  }
+  const all = [{ kind: 'separator' }, ...PSEUDO];
   const activeSlug = (activeGig && activeGig.slug) || null;
-  const activeIdx = activeSetlistIdx || 0;
 
   grid.innerHTML = '';
   for (const b of all) {
     if (b.kind === 'separator') {
-      // Visual break between user setlists and system-curated pseudo-gigs.
       const sep = document.createElement('div');
       sep.className = 'switcher-separator';
       sep.innerHTML = '<span>System setlists</span>';
@@ -1568,7 +1559,6 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
     btn.type = 'button';
     btn.className = 'switcher-radio-btn';
     btn.dataset.slug = b.slug;
-    if (typeof b.setlistIdx === 'number') btn.dataset.setlistIdx = String(b.setlistIdx);
     btn.textContent = b.label;
     btn.title = b.label;
     if (b.slug in SINGER_GIG_LETTER) {
@@ -1578,8 +1568,7 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
       btn.title = `${b.label} (${n})`;
     }
     btn.setAttribute('role', 'radio');
-    const isActive = (b.slug === activeSlug) &&
-      (typeof b.setlistIdx !== 'number' || b.setlistIdx === activeIdx);
+    const isActive = b.slug === activeSlug;
     btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
     if (isActive) btn.classList.add('active');
     cell.appendChild(btn);
@@ -1587,12 +1576,6 @@ function renderSetlistSwitcher(gigs, manualSetlists, playlistSetlists) {
     btn.addEventListener('click', async () => {
       try {
         await loadActiveGig(b.slug);
-        if (typeof b.setlistIdx === 'number' && activeGig && Array.isArray(activeGig.setlists)) {
-          activeSetlistIdx = Math.min(b.setlistIdx, activeGig.setlists.length - 1);
-          openSetlistIdxs = new Set([activeSetlistIdx]);
-          renderGigSidebar();
-          try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, b.slug); } catch (e) {}
-        }
         try {
           const picker = document.getElementById('gig-picker');
           if (picker) picker.value = b.slug;
@@ -1630,43 +1613,50 @@ function wireSwitcherOnce() {
     });
   }
 
-  // New-setlist create: POST /api/setlists with the typed name as a new
-  // standalone manual setlist, then refresh the switcher so the new button
-  // appears, and load it active.
-  const createBtn = document.getElementById('switcher-new-create');
-  const nameInput = document.getElementById('switcher-new-name');
-  const doCreate = async () => {
-    const raw = (nameInput && nameInput.value || '').trim();
-    if (!raw) { if (nameInput) nameInput.focus(); if (typeof showToast === 'function') showToast('Type a name for the new setlist first'); return; }
-    const slug = raw.replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
-    if (!slug) { alert('Pick a name with at least one letter or number.'); return; }
-    try {
-      const res = await fetch('/api/setlists', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, title: raw, origin: 'manual', songs: [], create: true }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert(`Create failed: ${err.error || res.statusText}`);
-        return;
-      }
-      if (nameInput) nameInput.value = '';
-      await refreshGigList();
-      await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG);
-      if (activeGig && Array.isArray(activeGig.setlists)) {
-        const idx = activeGig.setlists.findIndex(sl => (sl.title || '').trim() === raw);
-        if (idx >= 0) {
-          activeSetlistIdx = idx;
-          openSetlistIdxs = new Set([idx]);
-          renderGigSidebar();
-        }
-      }
-    } catch (e) { alert('Create failed: ' + e.message); }
-  };
-  if (createBtn) createBtn.addEventListener('click', doCreate);
-  if (nameInput) nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); doCreate(); }
+  // Drop-down of the user's own setlists: pick one to list it below, or
+  // "New setlist…" to name and create one.
+  const pick = document.getElementById('switcher-setlist-pick');
+  if (pick) pick.addEventListener('change', () => {
+    const v = pick.value;
+    pick.value = '';
+    if (v === '__new__') createUserSetlist();
+    else if (v) showUserSetlist(v);
   });
+}
+
+// List one of the user's own setlists in the sidebar and make it the active
+// one (where adds land). It goes to the top of the three bars; the oldest
+// of the three drops out of view (it is not deleted).
+async function showUserSetlist(slug) {
+  if (!activeGig || activeGig.slug !== MANUAL_SETLISTS_GIG_SLUG) await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG);
+  const idx = (activeGig && Array.isArray(activeGig.setlists)) ? activeGig.setlists.findIndex(sl => sl.slug === slug) : -1;
+  if (idx < 0) { showToast('That setlist is not there any more'); return; }
+  activeSetlistIdx = idx;
+  rememberSetlistIdx(MANUAL_SETLISTS_GIG_SLUG, idx);
+  shownSetlistSlugs = [slug, ...shownSetlistSlugs.filter(x => x !== slug)];
+  renderGigSidebar();
+  repaintGigPickerFromCache();   // the built-in button that was lit goes dark
+}
+
+// "New setlist…": ask for a name, POST /api/setlists as a new standalone
+// setlist, then list it.
+async function createUserSetlist() {
+  const typed = prompt('Name the new setlist:');
+  const raw = (typed || '').trim();
+  if (!raw) return;
+  const slug = raw.replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (!slug) { alert('Pick a name with at least one letter or number.'); return; }
+  try {
+    const res = await fetch('/api/setlists', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, title: raw, origin: 'manual', songs: [], create: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(`Create failed: ${data.error || res.statusText}`); return; }
+    await refreshGigList();
+    await loadActiveGig(MANUAL_SETLISTS_GIG_SLUG);
+    await showUserSetlist(data.slug || slug);
+  } catch (e) { alert('Create failed: ' + e.message); }
 }
 
 async function loadActiveGig(slug) {
@@ -1701,7 +1691,7 @@ async function loadActiveGig(slug) {
       if (!Array.isArray(activeGig.setlists) || !activeGig.setlists.length) {
         const placeholderTitle =
           slug === YOUTUBE_SYNC_GIG_SLUG    ? '(no playlist setlists yet)' :
-          slug === MANUAL_SETLISTS_GIG_SLUG ? '(no manual setlists yet — type a name above and press Create)' :
+          slug === MANUAL_SETLISTS_GIG_SLUG ? '(no setlists yet — choose New setlist… in the menu above)' :
           slug === RECENTS_GIG_SLUG         ? '(no recently played songs yet)' :
           slug === FAVORITES_GIG_SLUG       ? '(no favorites yet — click ★ next to a song to add)' :
           slug === FRESH_GIG_SLUG           ? '(no fresh stems — every song has saved levels 🎉)' :
@@ -1718,7 +1708,8 @@ async function loadActiveGig(slug) {
         activeSetlistIdx = savedIdxSyn;
       }
       activeSetlistIdx = Math.min(activeSetlistIdx, activeGig.setlists.length - 1);
-      openSetlistIdxs = new Set([activeSetlistIdx]);
+      // The user's own setlists start as collapsed bars; a built-in view opens.
+      openSetlistIdxs = slug === MANUAL_SETLISTS_GIG_SLUG ? new Set() : new Set([activeSetlistIdx]);
       try { localStorage.setItem(GIG_ACTIVE_SLUG_KEY, slug); } catch (e) {}
       renderGigSidebar();
       // Cache-first contract: kick off the stem prefetcher on EVERY gig
@@ -2207,15 +2198,27 @@ function renderGigSidebar() {
   }
 
   setlistsEl.innerHTML = '';
-  // Single-set view (Bill 2026-10-19 "I do not want this multi set thing").
-  // Only the active setlist renders. Rename and Delete controls live
-  // inside its rollup, so deletion is only reachable by first SELECTING
-  // the setlist in question. Switching between setlists happens from the
-  // pills above, not from a stack of accordions here.
   const slCount = activeGig.setlists.length;
   const idx = Math.max(0, Math.min(activeSetlistIdx || 0, slCount - 1));
   const sl = activeGig.setlists[idx];
-  if (sl) {
+  if (activeGig.slug === MANUAL_SETLISTS_GIG_SLUG) {
+    // The user's own setlists (Bill 2026-11-28): up to three bars, each
+    // collapsed until clicked — the last three picked in the drop-down,
+    // newest first, filled up with other setlists while fewer were picked.
+    // The active setlist (where adds land) is always one of them.
+    const own = activeGig.setlists.filter(x => x.slug).map(x => x.slug);
+    if (sl && sl.slug && !shownSetlistSlugs.includes(sl.slug)) shownSetlistSlugs.unshift(sl.slug);
+    shownSetlistSlugs = shownSetlistSlugs.filter(x => own.includes(x)).slice(0, 3);
+    try { localStorage.setItem(SHOWN_SETLISTS_KEY, JSON.stringify(shownSetlistSlugs)); } catch (e) {}
+    const shown = shownSetlistSlugs.concat(own.filter(x => !shownSetlistSlugs.includes(x))).slice(0, 3);
+    if (!shown.length) setlistsEl.innerHTML = '<div class="setlist-side-hint">No setlists yet. Choose New setlist… in the menu above, or tick songs in the library and press Make setlist from selection.</div>';
+    for (const slug of shown) {
+      const i = activeGig.setlists.findIndex(x => x.slug === slug);
+      setlistsEl.appendChild(renderOneGigSetlist(activeGig.setlists[i], i));
+    }
+    if (window.lucide) lucide.createIcons();
+  } else if (sl) {
+    // A built-in view (Top 20, Bill Songs …) is one setlist, shown open.
     // Make sure the single rendered setlist is in the "open" set so the
     // songs show, not collapsed.
     openSetlistIdxs = new Set([idx]);
@@ -2305,10 +2308,18 @@ function renderOneGigSetlist(sl, idx) {
         return;
       }
     }
+    const wasActive = activeSetlistIdx === idx;
     activeGig.setlists.splice(idx, 1);
+    // The setlists after the deleted one moved up a place: keep the open
+    // bars and the active setlist pointing at the same setlists. If the
+    // active one was deleted, another listed bar becomes the active one.
+    openSetlistIdxs = new Set([...openSetlistIdxs].filter(i => i !== idx).map(i => (i > idx ? i - 1 : i)));
+    if (activeSetlistIdx > idx) activeSetlistIdx--;
+    else if (wasActive) activeSetlistIdx = Math.max(0, activeGig.setlists.findIndex(x => x.slug && shownSetlistSlugs.includes(x.slug)));
     if (activeSetlistIdx >= activeGig.setlists.length) activeSetlistIdx = activeGig.setlists.length - 1;
     renderGigSidebar();
     scheduleGigSave();
+    if (isManualPseudo) refreshGigList();   // the drop-down drops the deleted setlist
   });
 
   const body = document.createElement('div');
@@ -5422,13 +5433,20 @@ async function fetchSongMarks() {
   refreshSingerViews();
 }
 
+// Redraw the gig picker, the built-in buttons and the setlist drop-down from
+// the lists already in hand (no fetch); returns the slug that stays selected.
+function repaintGigPickerFromCache() {
+  const cached = readCache(SETLISTS_CACHE_KEY) || [];
+  const picker = document.getElementById('gig-picker'), slug = (activeGig && activeGig.slug) || (picker && picker.value);
+  paintGigPicker(readCache(GIGS_CACHE_KEY) || [], cached.filter(s => s.origin === 'playlist'), cached.filter(s => (s.origin || 'manual') === 'manual'));
+  if (picker && slug) picker.value = slug;
+  return slug;
+}
+
 // The singer views (Bill Songs … JD Songs, RoundRobin) and their counts follow the singer field.
 function refreshSingerViews() {
   try {
-    const cached = readCache(SETLISTS_CACHE_KEY) || [];
-    const picker = document.getElementById('gig-picker'), slug = picker && picker.value;
-    paintGigPicker(readCache(GIGS_CACHE_KEY) || [], cached.filter(s => s.origin === 'playlist'), cached.filter(s => (s.origin || 'manual') === 'manual'));
-    if (picker && slug) picker.value = slug;
+    const slug = repaintGigPickerFromCache();
     if (slug in SINGER_GIG_MAP || slug === ROUND_ROBIN_GIG_SLUG) loadActiveGig(slug);
     else if (typeof renderGigSidebar === 'function') renderGigSidebar();
   } catch (e) { console.warn('[grades] singer views not refreshed:', e); }

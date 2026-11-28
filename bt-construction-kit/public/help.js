@@ -44,7 +44,7 @@
         s('Gig sidebar: Gig ▸ Setlist ▸ Song', [
           'A performance is a gig holding ordered setlists holding ordered songs. Real gigs are editable files; the picker also offers built-in views that need no setup:',
           ['YouTube Sync', 'Setlists mirrored from YouTube playlists. Read-only, because the next sync would overwrite edits.'],
-          ['Manual Setlists', 'Setlists you build in the Builder. Fully editable, saved automatically.'],
+          ['Your setlists', 'The drop-down under the built-in buttons lists the setlists you made, plus New setlist… (asks for a name). The last three you pick are listed below as collapsed bars; click a bar to open it, drag songs to re-order, × deletes the setlist for good after a confirmation. Fully editable, saved automatically.'],
           ['Recents / Favorites', 'The last 50 songs you loaded, and every song you starred.'],
           ['Singer views + Round Robin', 'Bill, Matt, Dan, and JD each get their bucket, and Round Robin interleaves all four (shuffled) so no singer sings twice in a row.'],
         ]),

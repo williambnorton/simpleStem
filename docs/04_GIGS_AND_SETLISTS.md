@@ -38,13 +38,26 @@ setlist in rotation — Bill → Matt → Dan → JD → Bill… — until every
 runs dry. It's built for the night a singer has to step out mid-set: the
 next song never lands on the missing voice twice in a row.
 
-To move a song out of a singer pseudo-gig, change its **Singer** either in
-the band's Google Sheet (the canonical source) or with the in-row Singer
-pulldown in the library (a quick fix the next sheet sync may overwrite).
+To move a song out of a singer pseudo-gig, change its **Singer** letter in
+the song's library row (B, M, D, J or empty).
 
-In the **Manual Setlists** pseudo-gig, the "Add a setlist" button is
-intentionally disabled — new standalone setlists are created from the
-planner (its tooltip says so). Everything else there is editable.
+## Your own setlists: the drop-down and the three bars
+
+Under the ten built-in buttons (Top 20 … Protest) is a drop-down that lists
+only the setlists you made, plus **＋ New setlist…**, which asks for a name
+and creates an empty one.
+
+- Picking a setlist lists it below as a collapsed bar: name (editable),
+  song count, **×** and an open arrow. It becomes the active setlist, the
+  one "Add to current setlist" and the ghost rows add to.
+- Up to three bars are listed: the last three you picked, newest on top
+  (while you have picked fewer, other setlists fill the places). Picking a
+  fourth drops the oldest from view; it is not deleted.
+- Click a bar to open or close its songs. Drag a song by its handle to
+  re-order it, or onto another open bar to move it there.
+- **×** deletes the setlist's file for good, after a confirmation.
+- A built-in button replaces the bars with that view; pick a setlist in the
+  drop-down to bring the bars back.
 
 ## Managing gigs
 
