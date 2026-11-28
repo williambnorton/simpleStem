@@ -127,8 +127,13 @@ playhead:
   when at least 85% of its lines were timed by one of their own words;
   `--min-confidence 0` writes every song with at least one such line (the
   library was done this way on 2026-11-27; each song's `lyrics_placed`
-  note in `metadata.json` carries its confidence). See the script's header
-  for how to run it.
+  note in `metadata.json` carries its confidence). For a song with no
+  lyrics at all, `--transcribe` writes what is heard in the vocal stem as
+  the song's lyrics (a new line at each pause) and places those lines the
+  same way. Such lyrics are rough and are marked `lyrics_source:
+  "transcribed"`: the song still counts as missing real lyrics, and lyrics
+  pasted in the editor replace them. See the script's header for how to
+  run it.
 - Place Lyrics: *"Drop the next lyric line at the playhead. Tap
   multiple times within 2s to stack; tap after >2s to replace. Right-click
   to re-open the lyrics editor."* The first press fetches lyrics — the

@@ -22,6 +22,14 @@ every metadata.json before it is first changed (backup/) go there too. Without -
 lyrics_placed note in metadata.json carry each song's confidence, so the weak ones can be found.
 --redo-own places again the songs this script placed before (with another --lead, say), but only where the
 lines on the timeline are still exactly the ones it wrote: a song whose lines were moved or cleared by hand is left.
+
+--transcribe (Bill 2026-11-27) is for the songs with NO lyrics text: the words recognised in the vocal stem become
+the song's lyrics. A new line starts where the singer pauses; each line is placed where it was heard, --lead
+seconds early. metadata.json gets lyrics (lyrics_source "transcribed", so the Performer still counts the song as
+missing real lyrics and pasted lyrics replace these without fuss) and the lyric-line actions. Recognition of sung
+words is rough: on songs whose lyrics are known it hears about 70% of the words, and about one heard word in six
+is wrong. Songs marked lyrics_skip, songs with lines placed by hand and songs where fewer than --min-words words
+are heard (instrumentals) are left alone. lyrics.txt is never written.
 Needs: pip install faster-whisper numpy; ffmpeg.
 """
 import argparse, os, sys, time
@@ -152,6 +160,35 @@ def recognise(model, path):
                                   condition_on_previous_text=False, beam_size=3, temperature=0.0)
     return {'duration': info.duration, 'words': [[round(w.start, 3), round(w.end, 3), w.word.strip(), round(w.probability, 3)] for s in segs for w in (s.words or [])]}
 
+def transcript_lines(words, onsets=(), lead=LEAD, pause=0.8, max_words=12, min_prob=0.35):
+    """The recognised words as lyric lines: a new line after a pause, or once a line is long and the singer breathes.
+    Returns [{line, t}] with t the line's start, pulled back to the phrase start and shown lead seconds early."""
+    lines = []; cur = []
+    def close():
+        if not cur: return
+        p = float(np.mean([w[3] for w in cur]))
+        if p >= min_prob and not (len(cur) == 1 and p < 0.6):               # a mumble the recogniser was not sure of is not a lyric line
+            txt = ' '.join(w[2] for w in cur).strip(' ,.;:-')
+            if txt: lines.append({'line': txt[0].upper() + txt[1:], 't': cur[0][0], 'n': len(cur)})
+        cur.clear()
+    for w in words:
+        if not norm(w[2]): continue
+        if cur:
+            gap = w[0] - cur[-1][1]
+            if gap > pause or (len(cur) >= max_words - 4 and gap > 0.25) or len(cur) >= max_words: close()
+        cur.append(w)
+    close()
+    onsets = np.array(sorted(onsets)); last = -1.0
+    for o in lines:
+        t = o['t']
+        if len(onsets):
+            c = onsets[(onsets <= t + 0.3) & (onsets >= t - 0.8)]
+            if len(c): t = float(c[-1])
+        o['t'] = round(max(t - lead, 0.0), 3)
+        if o['t'] <= last: o['t'] = round(last + 0.3, 3)
+        last = o['t']
+    return lines
+
 def lyric_events(out):
     return [{'t': o['t'], 'type': 'lyric-line', 'label': o['line'] if len(o['line']) <= 30 else o['line'][:28] + '\u2026', 'text': o['line'], 'mode': 'replace'} for o in out]
 
@@ -160,6 +197,7 @@ def main():
     ap.add_argument('stems_dir'); ap.add_argument('--cache', required=True); ap.add_argument('--model', default='small.en'); ap.add_argument('--work', default='lyricplace_work')
     ap.add_argument('--only'); ap.add_argument('--min-confidence', type=float, default=0.85); ap.add_argument('--write', action='store_true'); ap.add_argument('--seconds', type=float, default=0)
     ap.add_argument('--lead', type=float, default=LEAD); ap.add_argument('--redo-own', action='store_true')
+    ap.add_argument('--transcribe', action='store_true'); ap.add_argument('--min-words', type=int, default=25)
     a = ap.parse_args()
     root = os.path.expanduser(a.stems_dir); cache = os.path.expanduser(a.cache); work = os.path.expanduser(a.work)
     os.makedirs(work + '/asr', exist_ok=True); os.makedirs(work + '/backup', exist_ok=True)
@@ -172,6 +210,37 @@ def main():
         try:
             meta = json.load(open(mp)); lines = lyric_lines(meta.get('lyrics'))
             auto = meta.get('automation') or []
+            if a.transcribe:                                                                   # only songs with no lyrics at all
+                if lines or meta.get('lyrics_skip') or any(e.get('type') == 'lyric-line' for e in auto) or os.path.isfile(os.path.join(root, s, 'lyrics.txt')): continue
+                vp = os.path.join(cache, s, 'vocals.m4a'); ap_ = work + '/asr/' + s + '.json'
+                if not os.path.isfile(vp): rep[s] = {'skipped': 'no vocals.m4a'}; continue
+                if not os.path.isfile(ap_):
+                    if model is None:
+                        from faster_whisper import WhisperModel
+                        model = WhisperModel(a.model, device='cpu', compute_type='int8', cpu_threads=os.cpu_count() or 4)
+                    json.dump(recognise(model, vp), open(ap_, 'w'))
+                asr = json.load(open(ap_))
+                if 'words' not in asr: rep[s] = {'skipped': 'recognition failed'}; continue
+                out = transcript_lines(asr['words'], phrase_onsets(vp), a.lead)
+                nw = sum(o['n'] for o in out)
+                r = rep[s] = {'transcribed': True, 'lines': len(out), 'words': nw, 'lead': a.lead, 'placed': nw >= a.min_words and len(out) >= 4}
+                if not r['placed']: r['skipped'] = 'too few words heard (an instrumental?)'; continue
+                r['first'] = out[0]['t']; r['last'] = out[-1]['t']
+                if a.write:
+                    meta = json.load(open(mp))
+                    if lyric_lines(meta.get('lyrics')) or any(e.get('type') == 'lyric-line' for e in (meta.get('automation') or [])): r['placed'] = False; r['skipped'] = 'lyrics arrived meanwhile'; continue
+                    bk = os.path.join(work, 'backup', s + '.metadata.json')
+                    if not os.path.isfile(bk):
+                        with open(bk, 'w') as f: json.dump(meta, f, ensure_ascii=False, indent=1)
+                    text = '\n'.join(o['line'] for o in out)
+                    meta['lyrics'] = text; meta['lyrics_source'] = 'transcribed'; meta['lyrics_fetched_at'] = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
+                    meta['lyrics_chunks'] = [{'label': 'Lyrics', 'text': text}]
+                    meta['automation'] = sorted((meta.get('automation') or []) + lyric_events(out), key=lambda e: e.get('t', 0))
+                    meta['lyrics_placed'] = {'by': 'lyricplace.py', 'mode': 'transcribed', 'date': time.strftime('%Y-%m-%d'), 'model': os.path.basename(str(a.model).rstrip('/')), 'lead': a.lead, 'lines': len(out), 'words': nw}
+                    tmp = mp + '.tmp_lyricplace'
+                    with open(tmp, 'w') as f: f.write(json.dumps(meta, ensure_ascii=False, indent=2) + '\n')
+                    os.replace(tmp, mp); r['written'] = True
+                continue
             mine = (meta.get('lyrics_placed') or {}) if a.redo_own and (meta.get('lyrics_placed') or {}).get('by') == 'lyricplace.py' else None
             if not lines or (any(e.get('type') == 'lyric-line' for e in auto) and mine is None): continue   # no lyrics, or lines placed by hand: never touched
             vp = os.path.join(cache, s, 'vocals.m4a'); ap_ = work + '/asr/' + s + '.json'
