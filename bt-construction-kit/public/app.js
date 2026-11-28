@@ -2407,6 +2407,7 @@ function renderOneGigSetlist(sl, idx) {
   // Songs list
   const songsEl = document.createElement('div');
   songsEl.className = 'gig-setlist-songs';
+  const unfetched = [];
   sl.songs.forEach((s, songIdx) => {
     const merged = mergedLibrary.find(m => {
       const sv = m.variants.find(v => v.type === 'stems');
@@ -2425,6 +2426,10 @@ function renderOneGigSetlist(sl, idx) {
     // Grey out failed songs so the operator can SEE which setlist entries
     // would hang the player if clicked. Matches the library row treatment.
     if (s.song_base && isSongFailed(s.song_base)) row.classList.add('song-failed');
+    // A playlist entry whose video is not in the library (being fetched, or its fetch
+    // failed) cannot be played: it is kept out of sight, and counted in a line under the
+    // list (Bill 2026-11-27). The row stays in the DOM so the positions of the others hold.
+    if (!s.song_base && !merged) { row.classList.add('sls-unfetched'); unfetched.push(s); }
     // Lyrics-installed marker (Bill 2026-10-18). A song is "lyriced" when
     // its stems variant carries non-empty lyrics text OR chunked lyrics.
     const _svL = merged && merged.variants && merged.variants.find(v => v.type === 'stems');
@@ -2546,6 +2551,15 @@ function renderOneGigSetlist(sl, idx) {
   }
 
   body.appendChild(songsEl);
+  if (unfetched.length) {
+    const failed = unfetched.filter(x => x.status === 'failed').length, n = unfetched.length;
+    const note = document.createElement('div');
+    note.className = 'sls-unfetched-note';
+    note.textContent = `${n} more on the playlist ${n === 1 ? 'is' : 'are'} not in the library yet` + (failed ? ` (${failed} could not be fetched)` : '');
+    note.title = 'On the YouTube playlist, but not in the library, so not shown above:\n' + unfetched.map(x => '• ' + (x.title || x.video_id || '?') + (x.status ? ' — ' + x.status : '')).join('\n') +
+      '\nThe Librarian fetches them; each one appears in the list once its song is in the library.';
+    body.appendChild(note);
+  }
 
   attachGigDragHandlers(wrap, songsEl);
 

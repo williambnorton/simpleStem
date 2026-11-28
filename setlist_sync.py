@@ -133,13 +133,21 @@ def index_library(root):
 
 
 def queued_video_ids(root):
-    """video_ids already sitting in STEM_QUEUE (awaiting render) or INCOMING."""
+    """video_ids waiting in STEM_QUEUE (awaiting render) or INCOMING.
+
+    Only what is still waiting counts. Finished and failed jobs (STEM_QUEUE/_done,
+    _failed, anything under a folder whose name starts with _ or .) are skipped:
+    counting them kept a video "queued" for good once its job had failed or its
+    song folder was gone, so it was never fetched again (Friday Set, 2026-11-27).
+    """
     out = set()
     for sub in ('STEM_QUEUE', 'INCOMING_WEBLOC'):
         base = root / sub
         if not base.exists():
             continue
         for p in base.rglob('*'):
+            if any(part.startswith(('_', '.')) for part in p.relative_to(base).parts):
+                continue
             if p.suffix == '.json':
                 try:
                     vid = video_id(json.load(open(p)).get('source_url') or '')
@@ -224,7 +232,30 @@ def save_registry(root, reg):
     open(p, 'a').write('\n')
 
 
-def sync_one(root, pid, entry, lib, queued, dry):
+# ── how often each video has been handed to the ingest ─────────────────────
+# A video that is not in the library and not waiting is queued again, but only
+# MAX_QUEUE_TRIES times: one that keeps failing must not be downloaded on every
+# pass. After that its entry reads "failed" until it turns up in the library.
+MAX_QUEUE_TRIES = 2
+
+
+def tries_path(root):
+    return setlists_dir(root) / 'queue_tries.state'     # not *.json: the portal lists those as setlists
+
+
+def load_tries(root):
+    try:
+        return json.load(open(tries_path(root)))
+    except Exception:
+        return {}
+
+
+def save_tries(root, tries):
+    json.dump(tries, open(tries_path(root), 'w'), indent=2)
+    open(tries_path(root), 'a').write('\n')
+
+
+def sync_one(root, pid, entry, lib, queued, dry, tries):
     url = entry['url']
     yt_title, pl_entries = fetch_playlist(url)
     if yt_title is None:
@@ -233,13 +264,14 @@ def sync_one(root, pid, entry, lib, queued, dry):
     title = entry.get('title') or yt_title
     print(f"== syncing SetList \"{title}\" ({len(pl_entries)} entries)")
 
-    songs, n_have, n_queued, n_new = [], 0, 0, 0
+    songs, n_have, n_queued, n_new, n_failed = [], 0, 0, 0, 0
     for e in pl_entries:
         vid = e['video_id']
         have = lib.get(vid)
         if have:
             status = 'ready' if have['stems_complete'] else 'rendering'
             n_have += 1
+            tries.pop(vid, None)
             songs.append({'position': e['position'], 'video_id': vid,
                           'title': have['title'] or e['title'],
                           'artist': have['artist'],
@@ -249,9 +281,16 @@ def sync_one(root, pid, entry, lib, queued, dry):
             songs.append({'position': e['position'], 'video_id': vid,
                           'title': e['title'], 'artist': None,
                           'song_base': None, 'status': 'queued'})
+        elif tries.get(vid, 0) >= MAX_QUEUE_TRIES:
+            n_failed += 1
+            songs.append({'position': e['position'], 'video_id': vid,
+                          'title': e['title'], 'artist': None,
+                          'song_base': None, 'status': 'failed'})
         else:
             drop_webloc(root, vid, e['title'], dry)
             queued.add(vid)
+            if not dry:
+                tries[vid] = tries.get(vid, 0) + 1
             n_new += 1
             songs.append({'position': e['position'], 'video_id': vid,
                           'title': e['title'], 'artist': None,
@@ -278,12 +317,12 @@ def sync_one(root, pid, entry, lib, queued, dry):
             pass
     if dry:
         print(f"   would write {out.name}: {n_have} ready/rendering, "
-              f"{n_queued} already queued, {n_new} newly queued")
+              f"{n_queued} already queued, {n_new} newly queued, {n_failed} failed")
     else:
         json.dump(setlist, open(out, 'w'), indent=2, ensure_ascii=False)
         open(out, 'a').write('\n')
         print(f"   wrote {out.name}: {n_have} in library, "
-              f"{n_queued} already queued, {n_new} newly queued")
+              f"{n_queued} already queued, {n_new} newly queued, {n_failed} failed")
 
 
 def sync_all(root, only_pid, dry):
@@ -293,10 +332,13 @@ def sync_all(root, only_pid, dry):
         return
     lib = index_library(root)
     queued = queued_video_ids(root)
+    tries = load_tries(root)
     for pid, entry in reg.items():
         if only_pid and pid != only_pid:
             continue
-        sync_one(root, pid, entry, lib, queued, dry)
+        sync_one(root, pid, entry, lib, queued, dry, tries)
+    if not dry:
+        save_tries(root, tries)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────

@@ -9335,3 +9335,7 @@ body.gig-mode .variant-chip:not(.chip-cached):not(.chip-drumloop) { display: non
 .tone-dial:active { cursor: grabbing; }
 .tone-dial-mark { position: absolute; left: 50%; top: 50%; width: 2px; height: 9px; margin-left: -1px; border-radius: 1px; background: #2b2f36;
   transform-origin: 50% 0; transform: rotate(calc(180deg + 135deg * var(--tone))); pointer-events: none; }
+
+/* playlist entries whose video is not in the library: out of sight, counted in one line under the list (2026-11-27) */
+.sls-row.sls-unfetched { display: none; }
+.sls-unfetched-note { margin: 4px 6px 2px; font-size: 10.5px; font-style: italic; color: var(--text-dim); cursor: help; }
