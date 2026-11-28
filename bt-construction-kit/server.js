@@ -1291,6 +1291,7 @@ const mirrorB = (p) => Promise.race([
   p,
   new Promise((_, rej) => setTimeout(() => rej(new Error('drive-timeout')), MIRROR_BUDGET_MS)),
 ]);
+const mirrorSynced = {};          // label → true once a pass has compared the mirror with Drive
 async function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
   let copied = 0, skipped = 0, removed = 0;
   try {
@@ -1316,6 +1317,7 @@ async function mirrorJsonDirOnce(srcDir, mirrorDir, label) {
         try { await fsp.unlink(path.join(mirrorDir, f)); removed++; } catch (e) {}
       }
     }
+    mirrorSynced[label] = true;
     if (copied || removed) {
       console.log(`[${label} mirror] copied ${copied} skipped ${skipped} removed ${removed}`);
     }
@@ -5186,10 +5188,14 @@ app.get('/api/queue', (req, res) => {
 // are also dropped into the mirror so the next read sees them without
 // waiting for the 60s poll. If the mirror is empty (first boot before
 // any sync), fall back to Drive read just for that one request.
+// A mirror with no files in it is still the mirror once it has been synced:
+// "no gigs" and "no setlists" are valid states (Bill cleared them all on
+// 2026-11-27), and falling back to Drive then put sync Drive reads in the
+// request path on every call.
 function bestSetlistsDir() {
   try {
     if (fs.existsSync(SETLISTS_LOCAL_MIRROR) &&
-        fs.readdirSync(SETLISTS_LOCAL_MIRROR).some(f => f.endsWith('.json'))) {
+        (mirrorSynced.setlists || fs.readdirSync(SETLISTS_LOCAL_MIRROR).some(f => f.endsWith('.json')))) {
       return SETLISTS_LOCAL_MIRROR;
     }
   } catch (e) {}
@@ -5198,7 +5204,7 @@ function bestSetlistsDir() {
 function bestGigsDir() {
   try {
     if (fs.existsSync(GIGS_LOCAL_MIRROR) &&
-        fs.readdirSync(GIGS_LOCAL_MIRROR).some(f => f.endsWith('.json'))) {
+        (mirrorSynced.gigs || fs.readdirSync(GIGS_LOCAL_MIRROR).some(f => f.endsWith('.json')))) {
       return GIGS_LOCAL_MIRROR;
     }
   } catch (e) {}
@@ -7090,6 +7096,103 @@ function saveTagRegistry(tags) {
 // GET /api/tags is never blank.
 if (!fs.existsSync(TAGS_REGISTRY_PATH)) saveTagRegistry(DEFAULT_TAGS.slice());
 loadTagRegistry();
+
+// ── Song categories and singers (Bill 2026-11-27) ─────────────────────────
+// Every song has ten category checkboxes and four singer checkboxes in the
+// library. The ten category names ("slots") and every song's ticks live in ONE
+// file, CATEGORIES.json at the simpleStem root — not in each song's
+// metadata.json, which the Librarian's catalog and the band-sheet sync own.
+// A tick is stored by slot number, so renaming a category touches no song.
+// Requests are answered from memory; a local mirror carries the file across a
+// restart with no Drive, and the Drive copy is written behind the reply.
+const CATEGORIES_PATH = path.join(SIMPLE_STEM_ROOT, 'CATEGORIES.json');
+const CATEGORIES_MIRROR = path.join(os.homedir(), '.simpleStem-catalog', 'CATEGORIES.json');
+const CATEGORY_SLOTS = 10;
+const CATEGORY_SINGERS = ['Bill', 'Matt', 'Dan', 'JD'];
+let categories = { slots: ['InTheCan', 'Rehearsal', 'TBD', '', '', '', '', '', '', ''], songs: {}, updated_at: null };
+let categoriesDirty = false, categoriesSaving = false, categoriesDriveBehind = false, categoriesEdited = false;
+function categoriesClean(j) {
+  if (!j || !Array.isArray(j.slots) || j.slots.length !== CATEGORY_SLOTS || typeof j.songs !== 'object' || !j.songs) return null;
+  const songs = {};
+  for (const [base, e] of Object.entries(j.songs)) {
+    const c = [...new Set((Array.isArray(e && e.c) ? e.c : []).filter(i => Number.isInteger(i) && i >= 0 && i < CATEGORY_SLOTS))].sort((a, b) => a - b);
+    const sg = CATEGORY_SINGERS.filter(n => Array.isArray(e && e.s) && e.s.includes(n));
+    if (c.length || sg.length) songs[base] = { c, s: sg };
+  }
+  return { slots: j.slots.map(x => String(x || '')), songs, updated_at: j.updated_at || null };
+}
+async function categoriesLoad() {
+  const read = async (p, bounded) => {
+    try { return categoriesClean(JSON.parse(bounded ? await driveRace(fsp.readFile(p, 'utf8'), 5000) : await fsp.readFile(p, 'utf8'))); } catch (e) { return null; }
+  };
+  const local = await read(CATEGORIES_MIRROR, false), drive = await read(CATEGORIES_PATH, true);
+  const newest = [local, drive].filter(Boolean).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))[0];
+  if (newest && !categoriesEdited) categories = newest;      // an edit made while this was loading wins
+  if (local && newest === local && (!drive || drive.updated_at !== local.updated_at)) categoriesPersist();   // Drive missed a save: catch it up
+}
+async function categoriesPersist() {
+  if (categoriesSaving) { categoriesDirty = true; return; }
+  categoriesSaving = true;
+  do {
+    categoriesDirty = false;
+    const txt = JSON.stringify(categories, null, 1) + '\n';
+    try { await fsp.mkdir(path.dirname(CATEGORIES_MIRROR), { recursive: true }); await fsp.writeFile(CATEGORIES_MIRROR, txt); }
+    catch (e) { console.warn('[categories] local mirror not written:', e.message); }
+    try {
+      await driveRace(fsp.writeFile(CATEGORIES_PATH + '.tmp', txt), 8000);
+      await driveRace(fsp.rename(CATEGORIES_PATH + '.tmp', CATEGORIES_PATH), 8000);
+      categoriesDriveBehind = false;
+    } catch (e) { categoriesDriveBehind = true; console.warn('[categories] Drive copy not written (kept in the local mirror, tried again in a minute):', e.message); }
+  } while (categoriesDirty);
+  categoriesSaving = false;
+}
+function categoriesTouch() { categoriesEdited = true; categories.updated_at = new Date().toISOString(); categoriesPersist(); }
+setInterval(() => { if (categoriesDriveBehind && !categoriesSaving) categoriesPersist(); }, 60 * 1000);
+categoriesLoad();
+
+app.get('/api/categories', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, slots: categories.slots, singers: CATEGORY_SINGERS, songs: categories.songs, updated_at: categories.updated_at });
+});
+// Name, rename or clear the ten categories. Body: { slots: [ten names] }. A slot whose name is cleared loses its ticks.
+app.put('/api/categories/slots', express.json(), (req, res) => {
+  const inp = req.body && req.body.slots;
+  if (!Array.isArray(inp) || inp.length !== CATEGORY_SLOTS) return res.status(400).json({ ok: false, error: `need { slots: [${CATEGORY_SLOTS} names] }` });
+  const slots = inp.map(x => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 20));
+  const named = slots.filter(Boolean).map(x => x.toLowerCase());
+  if (new Set(named).size !== named.length) return res.status(400).json({ ok: false, error: 'two categories have the same name' });
+  let cleared = 0;
+  slots.forEach((name, i) => {
+    if (name || !categories.slots[i]) return;
+    for (const [base, e] of Object.entries(categories.songs)) {
+      if (!e.c.includes(i)) continue;
+      e.c = e.c.filter(x => x !== i); cleared++;
+      if (!e.c.length && !e.s.length) delete categories.songs[base];
+    }
+  });
+  categories.slots = slots;
+  categoriesTouch();
+  res.json({ ok: true, slots, cleared });
+});
+// Tick or untick one category or one singer for one song or many.
+// Body: { bases: [song folders], slot: 0-9 | singer: "Bill", on: true|false }.
+app.put('/api/categories/assign', express.json(), (req, res) => {
+  const b = req.body || {};
+  const bases = (Array.isArray(b.bases) ? b.bases : []).map(x => String(x)).filter(x => x && x.length < 300 && !x.includes('/') && !x.includes('\\') && !x.startsWith('.'));
+  const slot = Number.isInteger(b.slot) ? b.slot : null;
+  const singer = CATEGORY_SINGERS.includes(b.singer) ? b.singer : null;
+  if (!bases.length || (slot == null) === (singer == null)) return res.status(400).json({ ok: false, error: 'need { bases: [...], slot: n | singer: name, on: bool }' });
+  if (slot != null && (slot < 0 || slot >= CATEGORY_SLOTS || !categories.slots[slot])) return res.status(400).json({ ok: false, error: 'that category has no name yet' });
+  const on = !!b.on;
+  for (const base of bases) {
+    const e = categories.songs[base] || (categories.songs[base] = { c: [], s: [] });
+    if (slot != null) { e.c = e.c.filter(x => x !== slot); if (on) e.c = e.c.concat(slot).sort((x, y) => x - y); }
+    else e.s = CATEGORY_SINGERS.filter(n => (n === singer ? on : e.s.includes(n)));
+    if (!e.c.length && !e.s.length) delete categories.songs[base];
+  }
+  categoriesTouch();
+  res.json({ ok: true, changed: bases.length });
+});
 
 app.get('/api/tags', (req, res) => {
   res.json({ ok: true, tags: loadTagRegistry() });

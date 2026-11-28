@@ -24,13 +24,13 @@ let mergedLibrary = []; // grouped: one entry per song with .variants array
 // top of a practice gig, click +, all 10 join the setlist + precache.
 const batchSelectedBases = new Set();
 let filteredLibrary = []; // filtered view of mergedLibrary
-// Library filter bar state (Bill 2026-07-07). Tags: checked values —
-// empty set = no tag filtering. Singers: UNchecked names (all checked by
-// default). Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
-let libraryTagFilters = new Set();
+// Library filter bar state (Bill 2026-07-07; categories 2026-11-27).
+// Categories and singers: the CHECKED chips — an empty set = no filtering;
+// with chips checked a song shows when it has any of them ('none' = no tick).
+// Tempo: checked of 'upbeat'/'savory' — empty = no tempo filter.
+let libraryCatFilters = new Set();      // category slot numbers as strings, or 'none'
 let libraryDupesOnly = false;       // "Duplicates only" button (Bill 2026-11-05)
-let libraryKnownTags = new Set();   // tags ever seen — new ones default to CHECKED
-let librarySingersOff = new Set();
+let librarySingerFilters = new Set();   // singer names, or 'none'
 // Default CHECKED (Bill 2026-07-09): both tempo chips start on, so nothing
 // is filtered out until the operator unchecks one.
 let libraryTempoFilters = new Set(['upbeat', 'savory']);
@@ -45,18 +45,16 @@ function _loadLibraryFiltersFromStorage() {
     const raw = localStorage.getItem(LIB_FILTER_STORAGE_KEY);
     if (!raw) return;
     const j = JSON.parse(raw);
-    if (Array.isArray(j.tagFilters))    libraryTagFilters   = new Set(j.tagFilters);
-    if (Array.isArray(j.knownTags))     libraryKnownTags    = new Set(j.knownTags);
-    if (Array.isArray(j.singersOff))    librarySingersOff   = new Set(j.singersOff);
+    if (Array.isArray(j.catFilters))    libraryCatFilters    = new Set(j.catFilters);
+    if (Array.isArray(j.singerFilters)) librarySingerFilters = new Set(j.singerFilters);
     if (Array.isArray(j.tempoFilters))  libraryTempoFilters = new Set(j.tempoFilters);
   } catch (e) { /* corrupt storage — fall back to defaults */ }
 }
 function _saveLibraryFiltersToStorage() {
   try {
     localStorage.setItem(LIB_FILTER_STORAGE_KEY, JSON.stringify({
-      tagFilters:   [...libraryTagFilters],
-      knownTags:    [...libraryKnownTags],
-      singersOff:   [...librarySingersOff],
+      catFilters:    [...libraryCatFilters],
+      singerFilters: [...librarySingerFilters],
       tempoFilters: [...libraryTempoFilters],
     }));
   } catch (e) {}
@@ -729,6 +727,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener(ev, markGesture, { once: true, capture: true })
   );
   fetchLibrary();
+  fetchSongCategories();
   setupEventListeners();
   setupDrumMachineButton();
   setupUrlLoopPanel();
@@ -4543,7 +4542,7 @@ function librarySortValue(m, key) {
     case 'duration': return (typeof m.duration === 'number' && Number.isFinite(m.duration)) ? m.duration : -1;
     case 'bpm':      return (typeof m.practiceBpm === 'number' && m.practiceBpm > 0) ? m.practiceBpm : -1;
     case 'key':      return (m.key || '').toLowerCase();
-    case 'singer':   return (stems && stems.singer_lead || '').toLowerCase();
+    case 'singer':   return songCatEntry(stems && stems.folderName).s.join(' ').toLowerCase();
     case 'drum':     return (stems && stems.drum_pattern || '').toLowerCase();
     case 'plays': {
       const p = (stems && stems.play_count) || m.play_count || 0;
@@ -4770,63 +4769,28 @@ function renderLibrary() {
       durationCell.textContent = '--';
     }
 
-    // Singer cell — opens a pulldown on click to edit singer_lead locally.
-    // Reads stems variant's singer_lead (populated by mpb_sync.py or
-    // edited here via PATCH /api/song/:base/singer).
+    // Category and singer cells (Bill 2026-11-27): ten category checkboxes
+    // (the names sit in the column header; a slot with no name yet is
+    // greyed) and four singer checkboxes. A tick on a selected row goes to
+    // every selected row. Stored in CATEGORIES.json, not in the song.
+    const catsCell = document.createElement('div');
+    catsCell.className = 'song-cats-cell';
     const singerCell = document.createElement('div');
-    singerCell.className = 'song-singer-cell';
-    const stemsVarForSinger = merged.variants.find(v => v.type === 'stems');
-    const SINGER_CHOICES = ['', 'Bill', 'Matt', 'Dan', 'JD', 'All'];
-    const currentSinger = (stemsVarForSinger && stemsVarForSinger.singer_lead) || '';
-    if (stemsVarForSinger && stemsVarForSinger.folderName) {
-      const sel = document.createElement('select');
-      sel.className = 'singer-select';
-      sel.title = 'Lead singer for this song (saved locally to metadata.json; the next mpb_sync may overwrite this if the sheet says otherwise)';
-      SINGER_CHOICES.forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name || '—';
-        if (name === currentSinger) opt.selected = true;
-        sel.appendChild(opt);
+    singerCell.className = 'song-sing-cell';
+    if (songBaseForBatch) {
+      const tick = songCatEntry(songBaseForBatch);
+      catsCell.dataset.base = singerCell.dataset.base = songBaseForBatch;
+      catsCell.innerHTML = songCategories.slots.map((name, i) =>
+        `<input type="checkbox" class="cat-cb" data-slot="${i}" title="${name ? escapeHtml(name) : `Category ${i + 1} has no name yet: click its + in the header`}"${name ? '' : ' disabled'}${tick.c.includes(i) ? ' checked' : ''}>`).join('');
+      singerCell.innerHTML = songCategories.singers.map(n =>
+        `<input type="checkbox" class="cat-cb" data-singer="${n}" title="${n} sings this one"${tick.s.includes(n) ? ' checked' : ''}>`).join('');
+      [catsCell, singerCell].forEach(cell => {
+        cell.addEventListener('click', e => e.stopPropagation());
+        cell.addEventListener('change', e => {
+          const cb = e.target;
+          setSongCategoryTick(songBaseForBatch, cb.dataset.slot != null ? { slot: +cb.dataset.slot } : { singer: cb.dataset.singer }, cb.checked);
+        });
       });
-      sel.addEventListener('click', e => e.stopPropagation());
-      sel.addEventListener('change', async () => {
-        const newSinger = sel.value;
-        try {
-          await fetch(`/api/song/${encodeURIComponent(stemsVarForSinger.folderName)}/singer`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ singer_lead: newSinger }),
-          });
-          stemsVarForSinger.singer_lead = newSinger || null;
-          // Refresh the gig picker so the "🎤 Bill Songs (N)" counts update
-          // immediately. paintGigPicker reads mergedLibrary fresh on each
-          // call. If we're currently inside a singer pseudo-gig, also
-          // reload it so the song shows up / disappears.
-          try {
-            const picker = document.getElementById('gig-picker');
-            const activeSlug = picker && picker.value;
-            const gigs = readCache(GIGS_CACHE_KEY) || [];
-            const cachedSetlists = readCache(SETLISTS_CACHE_KEY) || [];
-            paintGigPicker(
-              gigs,
-              cachedSetlists.filter(s => s.origin === 'playlist'),
-              cachedSetlists.filter(s => (s.origin || 'manual') === 'manual'),
-            );
-            if (picker) picker.value = activeSlug;
-            if (activeSlug in SINGER_GIG_MAP || activeSlug === ROUND_ROBIN_GIG_SLUG) {
-              await loadActiveGig(activeSlug);
-            }
-          } catch (e) {
-            console.warn('[singer] picker refresh failed:', e);
-          }
-        } catch (err) {
-          console.warn('[singer] save failed:', err);
-        }
-      });
-      singerCell.appendChild(sel);
-    } else {
-      singerCell.textContent = '--';
     }
 
     // Action — Load button removed. Clicking the row loads the song (wired
@@ -4941,33 +4905,6 @@ function renderLibrary() {
       drumCell.textContent = drumPattern || '—';
     }
 
-    // Tags cell — pulldown of checkboxes (Protest, Bill&Matt, user-added)
-    // plus an "Add tag…" item and a radio group for readiness
-    // (InTheBag / Rehearsal / TBD). Bill's spec 2026-06-30.
-    const tagsCell = document.createElement('div');
-    tagsCell.className = 'song-tags-cell';
-    const stemsForTags = merged.variants.find(v => v.type === 'stems');
-    const songBaseForTags = stemsForTags && stemsForTags.folderName;
-    const tagsBtn = document.createElement('button');
-    tagsBtn.type = 'button';
-    tagsBtn.className = 'tags-pulldown-btn';
-    function renderTagsBtn() {
-      const tags = (stemsForTags && stemsForTags.tags) || [];
-      const readiness = (stemsForTags && stemsForTags.readiness) || '';
-      const parts = [];
-      if (tags.length) parts.push(tags.join(', '));
-      if (readiness) parts.push(`• ${readiness}`);
-      tagsBtn.textContent = parts.length ? parts.join(' ') : '+ tag';
-      tagsBtn.title = parts.length ? parts.join('  ') : 'Click to tag this song';
-    }
-    renderTagsBtn();
-    tagsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!songBaseForTags) return;
-      openTagsMenu(songBaseForTags, stemsForTags, tagsBtn, renderTagsBtn);
-    });
-    tagsCell.appendChild(tagsBtn);
-
     // Play count cell — incremented by the server every time a stem fires
     // 'playing' (debounced to one per song-load). Click counts are honest
     // because they require the audio decoder to actually produce output,
@@ -5000,7 +4937,7 @@ function renderLibrary() {
     row.appendChild(selectCell);
     row.appendChild(titleCell);
     row.appendChild(artistCell);
-    row.appendChild(tagsCell);          // wider, sits right after Artist (Bill 2026-06-30)
+    row.appendChild(catsCell);          // wider, sits right after Artist (Bill 2026-06-30)
     row.appendChild(durationCell);
     row.appendChild(bpmCell);
     row.appendChild(keyCell);
@@ -5031,6 +4968,7 @@ function renderLibrary() {
   });
   
   lucide.createIcons();
+  alignCategoryHeader();
 }
 
 // ── Master volume (full-height right-rail slider) ──────────────────────────
@@ -5524,66 +5462,35 @@ async function openSongMenu(base, merged) {
 
 // Client Side Search and Filters
 // ── Library filter bar ───────────────────────────────────────────────────
-// Checkbox chips right of the "Song Library" title: every tag/readiness
-// value that exists in the library (plus 'none'), every lead singer (all
-// checked by default — unchecking hides that singer's songs), and the two
-// tempo categories (Upbeat > 110 bpm, Savory ≤ 110; a song tagged Upbeat/
-// Savory overrides its BPM). Checking boxes narrows filteredLibrary live;
-// the list-plus button by the Gig picker turns the narrowed list into a
-// new gig.
+// Checkbox chips right of the "Song Library" title: every named category
+// and every singer (plus 'none' for songs with no tick), each with its song
+// count, and the two tempo categories (Upbeat > 110 bpm, Savory ≤ 110; a
+// song in a category named Upbeat/Savory overrides its BPM). Checking boxes
+// narrows filteredLibrary live; the list-plus button by the Gig picker turns
+// the narrowed list into a new gig.
 function renderLibraryFilterBar() {
   const bar = document.getElementById('library-filter-bar');
   if (!bar) return;
-  // Case-insensitive tag vocabulary (Bill 2026-07-09): "tbd" and "TBD"
-  // collapse into a single chip. Key is lowercased; value keeps the
-  // first-seen display casing so the UI still shows how humans wrote it.
-  const tagVocab = new Map();
-  const seedTag = (raw) => {
-    if (!raw) return;
-    const s = String(raw).trim();
-    if (!s) return;
-    const lc = s.toLowerCase();
-    if (!tagVocab.has(lc)) tagVocab.set(lc, s);
-  };
-  const singers = new Set();
-  for (const m of mergedLibrary) {
+  // Drop filter state for a category that no longer has a name.
+  for (const k of [...libraryCatFilters]) if (k !== 'none' && !songCategories.slots[+k]) libraryCatFilters.delete(k);
+  const ticks = mergedLibrary.filter(m => !isJamLibraryRow(m)).map(m => {
     const sv = m.variants.find(v => v.type === 'stems');
-    if (!sv) continue;
-    if (Array.isArray(sv.tags)) sv.tags.forEach(seedTag);
-    if (sv.readiness) seedTag(sv.readiness);
-    const lead = (sv.singer_lead || '').trim();
-    if (lead) singers.add(lead.charAt(0).toUpperCase() + lead.slice(1));
-  }
-  // First draw (and any newly appearing tag): default CHECKED, so nothing
-  // is filtered out until the operator unchecks something (Bill 2026-07-08).
-  // Everything below deals in lowercase tag keys.
-  for (const lc of [...tagVocab.keys(), '__none__']) {
-    if (!libraryKnownTags.has(lc)) { libraryKnownTags.add(lc); libraryTagFilters.add(lc); }
-  }
-  // Drop stale filter state that no longer exists in the library.
-  for (const lc of [...libraryTagFilters]) if (lc !== '__none__' && !tagVocab.has(lc)) { libraryTagFilters.delete(lc); libraryKnownTags.delete(lc); }
-  for (const nm of [...librarySingersOff]) if (![...singers].some(x => x.toLowerCase() === nm)) librarySingersOff.delete(nm);
-  // Persist the (possibly newly-seeded) filter state — new tags default to
-  // CHECKED, so this snapshots them so the next reload doesn't re-toggle
-  // them into whatever the fresh-tag default is.
-  _saveLibraryFiltersToStorage();
+    return songCatEntry(sv && sv.folderName);
+  });
 
   const chip = (group, value, label, checked) =>
     `<label class="lfb-chip ${checked ? 'checked' : ''}" data-group="${group}" data-value="${value.replace(/"/g, '&quot;')}">` +
     `<input type="checkbox" ${checked ? 'checked' : ''}>${label}</label>`;
 
-  let html = '';
-  const tagList = [...tagVocab.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  html += '<span class="lfb-group"><span class="lfb-group-label">Tags</span>';
-  for (const [lc, display] of tagList) html += chip('tag', lc, display, libraryTagFilters.has(lc));
-  html += chip('tag', '__none__', 'none', libraryTagFilters.has('__none__'));
+  let html = '<span class="lfb-group"><span class="lfb-group-label">Categories</span>';
+  songCategories.slots.forEach((name, i) => {
+    if (name) html += chip('cat', String(i), `${escapeHtml(name)} ${ticks.filter(e => e.c.includes(i)).length}`, libraryCatFilters.has(String(i)));
+  });
+  html += chip('cat', 'none', `none ${ticks.filter(e => !e.c.length).length}`, libraryCatFilters.has('none'));
+  html += '</span><span class="lfb-group"><span class="lfb-group-label">Singers</span>';
+  for (const n of songCategories.singers) html += chip('singer', n, `${n} ${ticks.filter(e => e.s.includes(n)).length}`, librarySingerFilters.has(n));
+  html += chip('singer', 'none', `none ${ticks.filter(e => !e.s.length).length}`, librarySingerFilters.has('none'));
   html += '</span>';
-  const singerList = [...singers].sort((a, b) => a.localeCompare(b));
-  if (singerList.length) {
-    html += '<span class="lfb-group"><span class="lfb-group-label">Singers</span>';
-    for (const nm of singerList) html += chip('singer', nm.toLowerCase(), nm, !librarySingersOff.has(nm.toLowerCase()));
-    html += '</span>';
-  }
   html += '<span class="lfb-group"><span class="lfb-group-label">Tempo</span>';
   html += chip('tempo', 'upbeat', 'Upbeat (>110bpm)', libraryTempoFilters.has('upbeat'));
   html += chip('tempo', 'savory', 'Savory (≤110bpm)', libraryTempoFilters.has('savory'));
@@ -5594,10 +5501,10 @@ function renderLibraryFilterBar() {
     const input = el.querySelector('input');
     input.addEventListener('change', () => {
       const group = el.dataset.group, value = el.dataset.value;
-      if (group === 'tag') {
-        if (input.checked) libraryTagFilters.add(value); else libraryTagFilters.delete(value);
+      if (group === 'cat') {
+        if (input.checked) libraryCatFilters.add(value); else libraryCatFilters.delete(value);
       } else if (group === 'singer') {
-        if (input.checked) librarySingersOff.delete(value); else librarySingersOff.add(value);
+        if (input.checked) librarySingerFilters.add(value); else librarySingerFilters.delete(value);
       } else if (group === 'tempo') {
         if (input.checked) libraryTempoFilters.add(value); else libraryTempoFilters.delete(value);
       }
@@ -5608,6 +5515,105 @@ function renderLibraryFilterBar() {
       applyFilters();
     });
   });
+}
+
+// ── Song categories and singers (Bill 2026-11-27) ───────────────────────
+// Ten category slots (named in the column header) and four singers, a
+// checkbox each on every library row. One server file holds the names and
+// every song's ticks ({ c: [slot numbers], s: [singer names] } per song).
+let songCategories = { slots: [], singers: [], songs: {} };
+function songCatEntry(base) { return (base && songCategories.songs[base]) || { c: [], s: [] }; }
+
+async function fetchSongCategories() {
+  try {
+    const r = await fetch('/api/categories');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    songCategories = { slots: j.slots || [], singers: j.singers || [], songs: j.songs || {} };
+  } catch (e) { console.warn('[categories] not loaded:', e.message); return; }
+  renderCategoryHeader();
+  renderLibraryFilterBar();
+  if (mergedLibrary.length) applyFilters();
+}
+
+function renderCategoryHeader() {
+  const h = document.getElementById('library-cat-header'), sh = document.getElementById('library-singer-header');
+  if (h) {
+    h.innerHTML = songCategories.slots.map((name, i) =>
+      `<button type="button" class="cat-head${name ? '' : ' empty'}" data-slot="${i}" title="${name ? `${escapeHtml(name)}: click to rename (an empty name removes the category)` : `Name category ${i + 1}`}">${name ? escapeHtml(name) : '+'}</button>`).join('');
+    h.onclick = (e) => { const b = e.target.closest('.cat-head'); if (b) { e.stopPropagation(); renameSongCategory(+b.dataset.slot); } };
+  }
+  if (sh) sh.innerHTML = songCategories.singers.map(n => `<span class="sing-head" title="${n}">${n.charAt(0)}</span>`).join('');
+  alignCategoryHeader();
+}
+
+// The header's columns sit a few pixels right of the rows' (the list's
+// scrollbar and the rows' left border narrow the rows), which would put each
+// name beside its box, not over it: shift the two headers onto the first row.
+function alignCategoryHeader() {
+  [['library-cat-header', '.song-cats-cell'], ['library-singer-header', '.song-sing-cell']].forEach(([id, sel]) => {
+    const h = document.getElementById(id), cell = els.songListBody && els.songListBody.querySelector(sel);
+    if (!h || !cell) return;
+    h.style.marginLeft = '0px';
+    h.style.marginLeft = (cell.getBoundingClientRect().left - h.getBoundingClientRect().left) + 'px';
+  });
+}
+
+// The boxes on screen follow the store (after a tick that went to several rows, or one that did not save).
+function paintSongCategoryTicks() {
+  els.songListBody.querySelectorAll('input.cat-cb').forEach(cb => {
+    const e = songCatEntry(cb.parentElement.dataset.base);
+    cb.checked = cb.dataset.slot != null ? e.c.includes(+cb.dataset.slot) : e.s.includes(cb.dataset.singer);
+  });
+}
+
+// what = { slot: n } or { singer: name }. A tick on a selected row goes to every selected row.
+async function setSongCategoryTick(base, what, on) {
+  const bases = (batchSelectedBases.has(base) && batchSelectedBases.size > 1) ? selectedStemBasesInLibraryOrder() : [base];
+  const has = (b) => { const e = songCatEntry(b); return 'slot' in what ? e.c.includes(what.slot) : e.s.includes(what.singer); };
+  const put = (b, v) => {
+    const e = songCategories.songs[b] || (songCategories.songs[b] = { c: [], s: [] });
+    if ('slot' in what) { e.c = e.c.filter(x => x !== what.slot); if (v) e.c = e.c.concat(what.slot).sort((x, y) => x - y); }
+    else e.s = songCategories.singers.filter(n => (n === what.singer ? v : e.s.includes(n)));
+  };
+  const before = bases.map(has);
+  bases.forEach(b => put(b, on));
+  if (bases.length > 1) paintSongCategoryTicks();
+  try {
+    const r = await fetch('/api/categories/assign', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bases, ...what, on }),
+    });
+    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (er) {} throw new Error(d.error || 'HTTP ' + r.status); }
+    if (bases.length > 1) showToast(`${on ? 'Ticked' : 'Unticked'} ${'slot' in what ? songCategories.slots[what.slot] : what.singer} on ${bases.length} selected songs`);
+  } catch (e) {
+    bases.forEach((b, i) => put(b, before[i]));
+    paintSongCategoryTicks();
+    showToast(`Not saved: ${e.message}`);
+  }
+  renderLibraryFilterBar();
+}
+
+async function renameSongCategory(i) {
+  const cur = songCategories.slots[i] || '';
+  const typed = prompt(cur ? `Rename the category "${cur}" (an empty name removes it):` : `Name for category ${i + 1} (20 characters at most):`, cur);
+  if (typed === null) return;
+  const next = typed.replace(/\s+/g, ' ').trim().slice(0, 20);
+  if (next === cur) return;
+  if (!next) {
+    const n = Object.values(songCategories.songs).filter(e => e.c.includes(i)).length;
+    if (n && !confirm(`Remove the category "${cur}"? ${n} song${n === 1 ? '' : 's'} will lose that tick.`)) return;
+  }
+  const slots = songCategories.slots.slice();
+  slots[i] = next;
+  try {
+    const r = await fetch('/api/categories/slots', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slots }),
+    });
+    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (er) {} throw new Error(d.error || 'HTTP ' + r.status); }
+  } catch (e) { showToast(`Category not saved: ${e.message}`); return; }
+  await fetchSongCategories();
 }
 
 // ── Selection → gig/setlist (buttons in the filter bar) ─────────────────
@@ -5922,26 +5928,16 @@ function applyFilters() {
       });
     }
 
-    // Filter bar: tags / singers / tempo (Bill 2026-07-07).
+    // Filter bar: categories / singers / tempo (Bill 2026-07-07).
     const svBar = song.variants.find(v => v.type === 'stems');
-    const songTags = (svBar && Array.isArray(svBar.tags)) ? svBar.tags : [];
-    const songReadiness = (svBar && svBar.readiness) || '';
-    // All tag chips start CHECKED (= nothing filtered); unchecking a chip
-    // hides that tag's songs. Before the bar has initialized, no filtering.
-    let matchesTagBar = true;
-    if (libraryKnownTags.size) {
-      // Tag filters live in lowercase; compare against lowercased song tags
-      // + readiness so "tbd" and "TBD" collapse into one match (Bill 2026-07-09).
-      const songTagsLC = songTags.map(t => String(t).toLowerCase());
-      const readinessLC = String(songReadiness || '').toLowerCase();
-      matchesTagBar = [...libraryTagFilters].some(t =>
-        t === '__none__'
-          ? (songTags.length === 0 && !songReadiness)
-          : (songTagsLC.includes(t) || readinessLC === t));
-    }
-    let matchesSinger = true;
-    const leadBar = (svBar && svBar.singer_lead) ? String(svBar.singer_lead).trim().toLowerCase() : '';
-    if (leadBar && librarySingersOff.has(leadBar)) matchesSinger = false;
+    const tickBar = songCatEntry(svBar && svBar.folderName);
+    const songTags = tickBar.c.map(i => songCategories.slots[i] || '');   // a category named Upbeat / Savory overrides the BPM below
+    // Category and singer chips start UNCHECKED (= nothing filtered); with
+    // chips checked a song shows when it has any of them.
+    const matchesTagBar = !libraryCatFilters.size ||
+      [...libraryCatFilters].some(k => (k === 'none' ? !tickBar.c.length : tickBar.c.includes(+k)));
+    const matchesSinger = !librarySingerFilters.size ||
+      [...librarySingerFilters].some(n => (n === 'none' ? !tickBar.s.length : tickBar.s.includes(n)));
     let matchesTempo = true;
     if (libraryTempoFilters.size) {
       const bpmBar = song.practiceBpm || 0;
@@ -15172,185 +15168,6 @@ function kbTransportPlay() {
   // (audio context resume, playhead saver, etc.) all runs as if a real
   // click happened.
   togglePlayPause();
-}
-
-// ─── Tag/readiness pulldown ───────────────────────────────────────
-// Per-song dropdown invoked from the Tags cell in the library row.
-// Renders: checkbox per registered tag · radio group for readiness ·
-// "Add tag…" item. Persists via PUT /api/song/:base/tags and PUT
-// /api/song/:base/readiness; new tags POST /api/tags. The dropdown
-// positions itself relative to the anchor button and dismisses on
-// outside click.
-let _tagsMenuEl = null;
-async function openTagsMenu(songBase, songData, anchorBtn, refresh) {
-  closeTagsMenu();
-  let registry = ['Protest', 'Bill&Matt'];
-  try {
-    const r = await fetch('/api/tags');
-    if (r.ok) registry = (await r.json()).tags || registry;
-  } catch (e) {}
-  const currentTags = (songData && songData.tags) || [];
-  const currentReadiness = (songData && songData.readiness) || '';
-  const READINESS = ['InTheBag', 'Rehearsal', 'TBD'];
-
-  // Bulk mode — when ≥ 2 songs are selected via the leftmost checkbox,
-  // offer a toggle to apply tag/readiness edits to all of them at once.
-  // The toggle defaults OFF; clicking it broadcasts the next change to
-  // every selected base via PUT-per-song. Untoggled = the menu acts on
-  // this row only.
-  const selectedBases = [...batchSelectedBases].filter(b => !!b);
-  const bulkAvailable = selectedBases.length >= 2;
-  const includesThisSong = bulkAvailable && selectedBases.includes(songBase);
-
-  const menu = document.createElement('div');
-  menu.className = 'tags-menu';
-  menu.innerHTML = `
-    ${bulkAvailable ? `
-      <div class="tags-menu-bulk">
-        <label class="tags-menu-row">
-          <input type="checkbox" id="tags-bulk-toggle" ${includesThisSong ? 'checked' : ''}>
-          <span><strong>Apply to ${selectedBases.length} selected song${selectedBases.length === 1 ? '' : 's'}</strong></span>
-        </label>
-        <div class="tags-menu-bulk-hint">Edits below will write to ALL selected songs.</div>
-      </div>
-      <div class="tags-menu-divider"></div>
-    ` : ''}
-    <div class="tags-menu-section">
-      <div class="tags-menu-title">Tags</div>
-      <div class="tags-menu-list">
-        ${registry.map(t => `
-          <label class="tags-menu-row">
-            <input type="checkbox" data-tag="${t.toLowerCase()}" ${currentTags.includes(t.toLowerCase()) ? 'checked' : ''}>
-            <span>${escapeHtml(t)}</span>
-          </label>
-        `).join('')}
-        <button type="button" class="tags-menu-add">+ Add tag…</button>
-      </div>
-    </div>
-    <div class="tags-menu-divider"></div>
-    <div class="tags-menu-section">
-      <div class="tags-menu-title">Readiness</div>
-      <div class="tags-menu-list">
-        ${READINESS.map(r => `
-          <label class="tags-menu-row tags-menu-radio">
-            <input type="radio" name="rd-${songBase}" data-rd="${r}" ${currentReadiness === r ? 'checked' : ''}>
-            <span>${r}</span>
-          </label>
-        `).join('')}
-      </div>
-    </div>
-  `;
-  document.body.appendChild(menu);
-  _tagsMenuEl = menu;
-
-  // Position near the anchor.
-  const r = anchorBtn.getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.zIndex = '99998';
-  menu.style.top  = `${Math.min(window.innerHeight - 320, r.bottom + 4)}px`;
-  menu.style.left = `${Math.min(window.innerWidth  - 240, r.left)}px`;
-
-  // Is bulk-apply mode on? Re-checked at every change so the operator
-  // can toggle it mid-session. When on, the change PUTs to every base
-  // in selectedBases; when off, only this row.
-  const bulkOn = () => bulkAvailable && menu.querySelector('#tags-bulk-toggle')?.checked;
-  const targetBases = () => bulkOn() ? selectedBases : [songBase];
-
-  // PUT current tags state to one or many bases. Sequential awaits so
-  // errors surface — N is small (max a few hundred). Patches the
-  // mergedLibrary entry for each affected base so the library row
-  // updates without a server roundtrip.
-  const persistTags = async () => {
-    const checks = menu.querySelectorAll('input[type="checkbox"][data-tag]:checked');
-    const tags = Array.from(checks).map(c => c.dataset.tag);
-    const bases = targetBases();
-    let ok = 0, fail = 0;
-    for (const base of bases) {
-      try {
-        const j = await fetch(`/api/song/${encodeURIComponent(base)}/tags`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tags }),
-        }).then(rr => rr.json());
-        if (j && j.ok) {
-          ok++;
-          // Patch the matching merged entry so library re-render reflects it.
-          try {
-            const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
-              const sv = x.variants && x.variants.find(v => v.type === 'stems');
-              return sv && sv.folderName === base;
-            });
-            if (m) {
-              const sv = m.variants.find(v => v.type === 'stems');
-              if (sv) sv.tags = j.tags;
-            }
-          } catch (e) {}
-        } else fail++;
-      } catch (e) { fail++; }
-    }
-    if (songData && bases.includes(songBase)) songData.tags = tags;
-    if (typeof refresh === 'function') refresh();
-    if (typeof renderLibrary === 'function') renderLibrary();
-    if (bases.length > 1) showToast(`Tags applied to ${ok}/${bases.length} song${bases.length === 1 ? '' : 's'}` + (fail ? ` (${fail} failed)` : ''));
-  };
-  menu.querySelectorAll('input[type="checkbox"][data-tag]').forEach(cb => {
-    cb.addEventListener('change', persistTags);
-  });
-  menu.querySelectorAll('input[type="radio"][data-rd]').forEach(rad => {
-    rad.addEventListener('change', async () => {
-      const v = rad.dataset.rd;
-      const bases = targetBases();
-      let ok = 0, fail = 0;
-      for (const base of bases) {
-        try {
-          const j = await fetch(`/api/song/${encodeURIComponent(base)}/readiness`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ readiness: v }),
-          }).then(rr => rr.json());
-          if (j && j.ok) {
-            ok++;
-            try {
-              const m = (window.mergedLibrary || mergedLibrary || []).find(x => {
-                const sv = x.variants && x.variants.find(vv => vv.type === 'stems');
-                return sv && sv.folderName === base;
-              });
-              if (m) {
-                const sv = m.variants.find(vv => vv.type === 'stems');
-                if (sv) sv.readiness = j.readiness;
-              }
-            } catch (e) {}
-          } else fail++;
-        } catch (e) { fail++; }
-      }
-      if (songData && bases.includes(songBase)) songData.readiness = v;
-      if (typeof refresh === 'function') refresh();
-      if (typeof renderLibrary === 'function') renderLibrary();
-      if (bases.length > 1) showToast(`Readiness applied to ${ok}/${bases.length}` + (fail ? ` (${fail} failed)` : ''));
-    });
-  });
-  menu.querySelector('.tags-menu-add').addEventListener('click', async () => {
-    const name = prompt('New tag name:');
-    if (!name || !name.trim()) return;
-    const r2 = await fetch('/api/tags', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    }).then(rr => rr.json()).catch(() => ({}));
-    if (r2 && r2.ok) {
-      closeTagsMenu();
-      openTagsMenu(songBase, songData, anchorBtn, refresh);
-    }
-  });
-
-  // Dismiss on outside click.
-  setTimeout(() => {
-    document.addEventListener('click', _tagsMenuOutsideListener);
-  }, 50);
-}
-function _tagsMenuOutsideListener(e) {
-  if (_tagsMenuEl && !_tagsMenuEl.contains(e.target)) closeTagsMenu();
-}
-function closeTagsMenu() {
-  if (_tagsMenuEl) { _tagsMenuEl.remove(); _tagsMenuEl = null; }
-  document.removeEventListener('click', _tagsMenuOutsideListener);
 }
 
 // === META combo runner ===
