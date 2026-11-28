@@ -255,6 +255,18 @@ def save_tries(root, tries):
     open(tries_path(root), 'a').write('\n')
 
 
+# ── videos on a playlist that are to be left alone ─────────────────────────
+# SETLISTS/ignored_videos.state: { "<video id>": { "title": ..., "ignored_at": ... } }.
+# A listed video is not fetched and gets no entry in the SetList, as if it were
+# not on the playlist (Bill 2026-11-27: "remove all mention of them. I will add
+# these back later if I want them"). Delete its line to have it back.
+def load_ignored(root):
+    try:
+        return set(json.load(open(setlists_dir(root) / 'ignored_videos.state')))
+    except Exception:
+        return set()
+
+
 def sync_one(root, pid, entry, lib, queued, dry, tries):
     url = entry['url']
     yt_title, pl_entries = fetch_playlist(url)
@@ -265,8 +277,11 @@ def sync_one(root, pid, entry, lib, queued, dry, tries):
     print(f"== syncing SetList \"{title}\" ({len(pl_entries)} entries)")
 
     songs, n_have, n_queued, n_new, n_failed = [], 0, 0, 0, 0
+    ignored = load_ignored(root)
     for e in pl_entries:
         vid = e['video_id']
+        if vid in ignored:
+            continue
         have = lib.get(vid)
         if have:
             status = 'ready' if have['stems_complete'] else 'rendering'
